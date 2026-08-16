@@ -1,0 +1,4 @@
+interface:
+  display_name: "Orca Agent Fleet"
+  short_description: "Coordinate Codex agents through Orca task fleets"
+  default_prompt: "Use $orca-agent-fleet to plan and coordinate this work with Orca-managed Codex agents."

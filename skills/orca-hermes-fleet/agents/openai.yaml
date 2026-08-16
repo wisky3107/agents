@@ -1,0 +1,4 @@
+interface:
+  display_name: "Orca Hermes Fleet"
+  short_description: "Điều phối Hermes workers an toàn bằng Orca"
+  default_prompt: "Use $orca-hermes-fleet to refine my brief, design a reviewed task DAG, and coordinate Hermes workers through Orca."
