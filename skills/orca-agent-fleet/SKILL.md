@@ -1,11 +1,11 @@
 ---
 name: orca-agent-fleet
-description: Coordinate Codex agents through Orca Runs, Task DAGs, managed terminals, worktree isolation, structured lifecycle messages, independent reviews, and transparent recovery. Use when the user asks for an Orca-managed agent fleet, supervised multi-agent execution, parallel implementation, task dependencies, one-time plan approval, reviewer/fix/re-review loops, or model selection for Orca-launched Codex workers. Never use Hermes workers or Hermes profiles.
+description: Coordinate Orca-supported TUI agents through Orca Runs, Task DAGs, managed terminals, worktree isolation, structured lifecycle messages, independent reviews, and transparent recovery. Use when the user asks for an Orca-managed agent fleet, supervised multi-agent execution, parallel implementation, task dependencies, one-time plan approval, reviewer/fix/re-review loops, or provider and model selection for Orca-launched workers.
 ---
 
 # Orca Agent Fleet
 
-Use Orca as the coordination control plane and Codex as the only worker agent. Refine the brief, select a model for every role, obtain any required plan approval, and then supervise the complete Orca lifecycle.
+Use Orca as the coordination control plane and any current Orca TUI agent as a worker. Refine the brief, select a provider and model for every role, obtain any required plan approval, and then supervise the complete Orca lifecycle.
 
 ## Mandatory Discovery
 
@@ -15,9 +15,9 @@ Before mutating Orca state:
 2. Load the version-matched guide with `orca skills get orchestration --full`.
 3. Confirm runtime health with `orca status --json`.
 4. Inspect applicable `AGENTS.md`, Git status, repository manifests, active worktrees, terminals, Runs, Tasks, and Dispatches.
-5. Read `references/model-selection.md` before assigning models.
+5. Discover accepted and eligible providers with `python3 <skill-dir>/scripts/list_providers.py --orca-version`, then read `references/model-selection.md` before assigning a provider or model. The script checks `PATH` and runtime only; confirm auth separately with `orca account list --json` (Claude/Codex) or the provider's own CLI.
 
-Never guess Orca commands. The installed guide is authoritative. Never launch or dispatch Hermes, use Hermes profiles, or introduce another scheduler.
+Never guess Orca commands. The installed guide is authoritative. Never introduce another scheduler. For Hermes profile or Kanban fleets, use `orca-hermes-fleet`; this skill may still launch `--agent hermes` as a plain TUI worker.
 
 ## Normalize the Brief
 
@@ -39,17 +39,19 @@ Use a fleet when the work benefits from independent slices, parallelism, isolati
 
 If orchestration is justified, create a bounded Task for every independently verifiable outcome. Define exact dependencies, ownership, verification, reviewer relationships, and non-goals. If the user requests one-time approval, present the full executable plan once and do not ask again unless new material risk appears.
 
-## Select Models First
+## Select Provider and Model First
 
-Choose the model and reasoning effort before launching each worker. State the choices in the plan with a short rationale.
+Choose the provider, then that provider's model and reasoning effort, before launching each worker. State the choices in the plan with a short rationale.
 
-- Default routine implementation and repository work to `gpt-5.6-terra` with `medium` effort.
-- Use `gpt-5.6-sol` with `high` effort for architecture, difficult debugging, security-sensitive work, migrations, ambiguous cross-cutting changes, and final review.
-- Use `gpt-5.6-luna` with `low` or `medium` effort for bounded read-only searches, classification, extraction, and mechanical checks.
-- Prefer `gpt-5.6-sol` with `medium` effort when quality matters but the task is already sharply specified.
-- Improve the Task specification before increasing reasoning effort. Do not assign the strongest model to every worker by default.
+- Accept every current Orca TUI agent id as a provider (`claude`, `codex`, `cursor`, `grok`, `gemini`, and the rest listed in `references/model-selection.md`).
+- Default provider is `codex` when it is eligible and authenticated; otherwise the first eligible id in Orca's auto-pick order.
+- Only `claude`, `codex`, and `cursor` accept a launch-time `--model`/`--effort`. Every other provider launches on its CLI default; pin its model with custom argv or mid-session instead of pretending a launch flag exists.
+- After the provider is chosen, use its default model unless the Task or user needs another catalog id. Codex defaults to `gpt-5.6-terra` `medium`; Claude to `sonnet` `high`; Cursor to `auto` with no effort.
+- For architecture, difficult debugging, security-sensitive work, migrations, ambiguous cross-cutting changes, and final review, keep the chosen provider and apply its quality override (`codex` `gpt-5.6-sol` `high`, `claude` `opus` or `fable` `high`, `cursor` `claude-opus-4-8` or `gpt-5.3-codex` at `high`). When the chosen provider has no launch-time override, say so and either accept its default or move the Task to one that does.
+- For bounded read-only searches, classification, extraction, and mechanical checks, a cheaper catalog tier is allowed (`codex` `gpt-5.6-luna`, `claude` `haiku` with no `--effort`).
+- Improve the Task specification before increasing model tier or reasoning effort. Do not assign the strongest provider and model to every worker by default.
 
-Read `references/model-selection.md` for the full decision table and escalation rules. Honor an explicit user model choice unless unavailable or unsafe; report any substitution before launch.
+Read `references/model-selection.md` for the full catalog, decision table, and escalation rules. Honor an explicit user provider or model choice unless unavailable or unsafe; report any substitution before launch.
 
 ## Choose the Topology
 
@@ -66,17 +68,29 @@ independent reviewer = never the author session
 
 Only create a new worktree when the user requested one or a concrete checkout/filesystem conflict makes it necessary. State that conflict first. Use child lineage for work stacked on the current foundation and `--no-parent` for unrelated work. Decide the Git base independently from Orca lineage. Allow one writer per worktree.
 
-## Launch Codex Workers
+## Launch Workers
 
-Create or bind the Run, create the Task, and attach a Codex worker using the preferred composition from the installed orchestration guide.
+Create or bind the Run, create the Task, and attach a worker using the preferred composition from the installed orchestration guide. Pass the selected provider as `--agent`.
 
-For an existing worktree, launch Codex in an Orca terminal with explicit model settings when needed:
+Prefer `worker-start` for supervised launches. `--model` and `--effort` apply to fresh Claude, Codex, and Cursor terminals only:
 
 ```text
-orca terminal create --worktree <selector> --title <task-name> --command 'codex --model <model> -c model_reasoning_effort="<effort>"' --json
+orca orchestration worker-start --task <task_id> --worktree current --agent <provider> --model <model> --effort <effort> --json
 ```
 
-For an allowed new worktree, prefer agent-first worktree creation when its agent configuration expresses the chosen model. Otherwise use the guide's custom-command path. Require every worker prompt to include:
+`--effort` requires `--model`, neither combines with `--terminal`, and a model without an effort option (`claude` `haiku`, `cursor` `auto`) takes no `--effort`. Omit both when the provider uses its CLI default or does not support the flags. For an existing worktree when custom argv is required, launch the provider CLI with its own model flags:
+
+```text
+orca terminal create --worktree <selector> --title <task-name> --command '<launch-cmd>' --json
+```
+
+For an allowed new worktree, stay in `worker-start` — it does agent-first creation and reuses the returned startup terminal:
+
+```text
+orca orchestration worker-start --task <task_id> --worktree new-child|new-top-level --name <name> --agent <provider> --setup run --json
+```
+
+Creation flags (`--name`, `--repo`, `--base-branch`, `--setup`) are rejected for `current` and existing worktrees. Fall back to the guide's `worktree create` + `terminal create` path only when custom argv is required and the repository does not use `wait-for-setup`. Require every worker prompt to include:
 
 - Task objective, deliverables, acceptance, boundaries, and non-goals.
 - Owned files/modules and dependency context.
@@ -84,7 +98,7 @@ For an allowed new worktree, prefer agent-first worktree creation when its agent
 - Instruction to assert `pwd` and `git status` before edits.
 - Instruction to use Orca structured ask, escalation, heartbeat, and `worker_done` messages.
 
-Do not use generic background shells as untracked workers. Preserve exact Run, Task, Dispatch, terminal, model, and worktree identity.
+Do not use generic background shells as untracked workers. Preserve exact Run, Task, Dispatch, terminal, provider, model, and worktree identity.
 
 ## Supervise the Lifecycle
 
@@ -99,11 +113,22 @@ After an accepted `worker_done`:
 
 Manual Task updates are recovery-only administrative overrides. Record the reason and never present them as worker success.
 
+## Hold Human Gates
+
+Every human gate named in the brief — merge, push, deploy, credentials, destructive actions, production changes, billing — blocks its Task through Orca, not through an unrecorded pause:
+
+```text
+orca orchestration gate-create --task <task_id> --question <text> --options '<json_array>' --json
+orca orchestration gate-resolve --id <gate_id> --resolution <text> --json
+```
+
+Check pending gates with `gate-list` before declaring a Run complete. Resolve a gate only with the user's actual answer; never self-resolve one to unblock a worker. A one-time plan approval covers the plan, not the gates the plan itself identified as human decisions.
+
 ## Enforce Independent Review
 
 Review Tasks depend on exact implementation artifacts. A reviewer must:
 
-- Run in a different Codex session from the author.
+- Run in a different agent session from the author.
 - Be read-only by default.
 - Inspect the original requirements, full diff, tests, security, compatibility, and operational risk.
 - Return severity-ranked findings and exactly `APPROVED` or `CHANGES_REQUESTED`.
@@ -115,9 +140,9 @@ Use a quality-first model for consequential review according to `references/mode
 On wrong cwd, truncated prompt, provider error, stale Dispatch, ownership conflict, or terminal failure:
 
 1. Preserve evidence and inspect current Orca state.
-2. Follow the exact version-matched recovery receipt.
-3. Prefer a fresh bounded context over repeated long follow-ups.
-4. Never release or close a worker merely because it is idle or timed out.
+2. Follow the exact version-matched recovery receipt; `worker-start` exits non-zero with `stage`, `residualResources`, and recovery commands on a failed or unknown outcome.
+3. Prefer a fresh bounded context over repeated long follow-ups. Replace a proven-dead worker with `worker-start --retry-of <dispatch_id>`, repeating the intended placement and `--agent`/`--terminal` — retry does not inherit it.
+4. Use `worker-abandon` when the process state is unproven and `worker-stop` only when stopping that exact terminal is intended. Never release or close a worker merely because it is idle or timed out; record a deliberate keep-alive with `worker-retain`.
 5. Never silently replace specialist or reviewer work with coordinator work.
 6. Report partial orchestration honestly.
 
@@ -126,6 +151,7 @@ On wrong cwd, truncated prompt, provider error, stale Dispatch, ownership confli
 Before handoff, verify:
 
 - Every required Task has a valid completion or a clearly labeled administrative override.
+- No decision gate is still pending (`gate-list`).
 - Dependencies and acceptance criteria are satisfied.
 - Required tests and checks actually ran.
 - Reviewers were independent and their verdicts are recorded.
@@ -137,4 +163,5 @@ Do not call the Run end-to-end successful when required implementation, verifica
 
 ## Resources
 
-- `references/model-selection.md`: Codex model and reasoning-effort selection rules for Orca roles.
+- `references/model-selection.md`: provider catalog, launch-time model ids and effort ranges, default models, and reasoning-effort rules for Orca roles.
+- `scripts/list_providers.py`: accepted-provider inventory, detect-binary presence, eligibility, per-provider model catalogs, and fleet defaults.
