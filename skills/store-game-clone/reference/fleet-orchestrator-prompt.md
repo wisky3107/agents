@@ -1,7 +1,8 @@
 # Fleet orchestrator prompt (for `bootstrap.mjs agent-session --title fleet-<slug>`)
 
-Replace `<PROJECT>`, `<SLUG>`, `<FUNPLAY_PORT>`, `<V1_ONE_LINER>`, `<OVERRIDE_LINE>`
-(`<FUNPLAY_PORT>` comes from `AGENT_NOTES.md` `bootstrap.funplay_port`).
+Replace `<PROJECT>`, `<SLUG>`, `<FUNPLAY_PORT>`, `<V1_ONE_LINER>`, `<OVERRIDE_LINE>`, `<RIP_LINE>`
+(`<FUNPLAY_PORT>` comes from `AGENT_NOTES.md` `bootstrap.funplay_port`; `<RIP_LINE>` is kept only
+when `AGENT_NOTES.md` `store_clone.rip_path` is non-empty — delete it otherwise).
 
 ```text
 You are the cocos-orca-fleet orchestrator for <PROJECT>. Keep cwd and Orca worktree on this project or a child worktree you create from it.
@@ -16,6 +17,7 @@ Worker config: AGENT_NOTES.md yaml `fleet:` is the source for art_backend, plann
 <OVERRIDE_LINE — delete when none, e.g.: Override: writer_agent: cursor --model auto>
 
 Art: produce P0 sprites from ASSET_MANIFEST.md. Prefer importing GLBs from reference/<SLUG>/models/ when present. Blender regen only if ASSET_MANIFEST says so.
+<RIP_LINE — delete when store_clone.rip_path is empty: Rip pack: reference/<SLUG>/rip/ (unity-apk-rip output). ASSET_MANIFEST.md rows marked `import` name a file under reference/<SLUG>/rip/images_ingame/ or reference/<SLUG>/models/ — the art lane copies/slices that file (sactx-* atlases are packed pages: slice, never place whole) and generates nothing for it. Rows marked `generate` go through art_backend as usual. Read reference/<SLUG>/rip/IMAGES_INGAME_GUIDE.md + MESHES_GUIDE.md before the art lane; ignore P3 entries.>
 
 v1 slice: <V1_ONE_LINER>
 Review against EXPECT_GAMEPLAY_VISUAL.md. Its Game feel / VFX table rows are BLOCKING

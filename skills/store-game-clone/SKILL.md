@@ -2,20 +2,27 @@
 name: store-game-clone
 description: >-
   Clone any Apple App Store game into a Cocos Creator project: crawl store
-  metadata/screenshots/trailer into orca-global assets, bootstrap cc-<slug> via
-  new-cocos-game, author GAME_BRIEF/HOW_TO/EXPECT/ASSET_MANIFEST via the
-  fable-game-brief skill (source=store), then hand off game-producer (end_to_end by
-  default, or playable) — or a single cocos-orca-fleet slice — inside the new project
-  (art backend antigravity by default). Use when the user pastes an
-  apps.apple.com link and wants a Cocos clone, "crawl store", "store brief",
-  "clone game từ App Store", "store → cocos", or the Nitelore-style pipeline.
+  metadata/screenshots/trailer into orca-global assets, optionally merge a
+  unity-apk-rip output pack (ripped PNG/GLB/levels + rip briefs/guides) into the
+  same reference pack, bootstrap cc-<slug> via new-cocos-game, author
+  GAME_BRIEF/HOW_TO/EXPECT/ASSET_MANIFEST via the fable-game-brief skill
+  (source=store), then hand off game-producer (end_to_end by default, or playable)
+  — or a single cocos-orca-fleet slice — inside the new project (art backend
+  antigravity by default). Use when the user pastes an apps.apple.com link and
+  wants a Cocos clone, "crawl store", "store brief", "clone game từ App Store",
+  "store → cocos", "xài thêm assets rip", or the Nitelore-style pipeline.
 ---
 
 # Store Game Clone
 
-End-to-end pipeline: **App Store URL → reference pack → Cocos project → Fable contracts (+ slices) → game-producer (fleet per slice → commit/merge → ship)**.
+End-to-end pipeline: **App Store URL (+ optional rip pack) → reference pack → Cocos project → Fable contracts (+ slices) → game-producer (fleet per slice → commit/merge → ship)**.
 
-Do **not** invent mechanics from marketing copy alone — OBSERVE screenshots/trailer (and models if present). Mark ASSUMPTION vs OBSERVED in briefs.
+Do **not** invent mechanics from marketing copy alone — OBSERVE screenshots/trailer (and rip assets / models if present). Mark ASSUMPTION vs OBSERVED in briefs.
+
+A **rip pack** is the `output/` folder produced by `~/.agents/skills/unity-apk-rip` (`manifest.json`
+with `unity_version` + `counts`, `images_ingame/`, `meshes/`, `levels/`, `briefs/*.md`, `*_GUIDE.md`,
+`*_catalog.json`, `README.md`). It is **additive** to the store crawl, never a replacement: the store
+pack gives feel / HUD / marketing look, the rip gives exact in-game art, mesh topology, and level schema.
 
 ## Constants
 
@@ -27,6 +34,8 @@ Do **not** invent mechanics from marketing copy alone — OBSERVE screenshots/tr
 | Project slug | `cc-<slug>` |
 | Bootstrap | `~/.agents/skills/new-cocos-game` (`bootstrap.mjs`) |
 | Crawl script | `scripts/crawl-app-store.mjs` (this skill) |
+| Rip pack (optional) | any `unity-apk-rip` `output/` dir, e.g. `/Users/wikz/Works/agent/assets-ripper/<game>/output` |
+| Rip merge script | `scripts/merge-rip-pack.mjs` (this skill) → `assets/<slug>/rip/` + P0 GLBs into `assets/<slug>/models/` |
 | Brief author | `~/.agents/skills/fable-game-brief` (Claude `--model fable`; override only if user names another) |
 | Producer | `<project>/.cursor/skills/game-producer` (default handoff; runs slices per `AGENT_NOTES.md` `release.goal`) |
 | Fleet | `<project>/.cursor/skills/cocos-orca-fleet` (one slice only, when the user asks for just that) |
@@ -39,8 +48,9 @@ Do **not** invent mechanics from marketing copy alone — OBSERVE screenshots/tr
 
 ```
 Store Game Clone:
-- [ ] 0. Intake (store URL, slug, orientation?, design res?, implement?, goal=end_to_end|playable, art backend?, fleet workers?)
+- [ ] 0. Intake (store URL, slug, orientation?, design res?, implement?, goal=end_to_end|playable, art backend?, fleet workers?, rip pack?)
 - [ ] 1. Crawl App Store → assets/<slug>/ (+ optional <slug>-brief/STORE_DATA.md)
+- [ ] 1b. Rip pack given → merge-rip-pack.mjs → assets/<slug>/rip/ + models/ (skip when none)
 - [ ] 2. Bootstrap cc-<slug> via new-cocos-game (MCP gate = projectName match)
 - [ ] 3. Seed reference/<slug>/ into the project; fill AGENT_NOTES.md; initial commit if not done
 - [ ] 4. fable-game-brief (source=store) authors GAME_BRIEF + HOW_TO + EXPECT + ASSET_MANIFEST + contracts
@@ -71,8 +81,17 @@ Ask only what's missing:
    bare `claude` → `claude --model opus`). Unnamed → keep the `AGENT_NOTES.md` skeleton defaults
    (`claude --model opus …`). Note that the orchestrator (item in Step 6, default `cursor`) is a
    different knob from the workers.
+8. **Rip pack** — never ask. Accept when the user gives a folder path and says "assets rip",
+   "ripped assets", "unity-apk-rip output", "xài thêm assets rip", or the path ends in `/output`
+   and contains `manifest.json` + one of `images_ingame/` `meshes/` `levels/` `briefs/`.
+   Record the absolute path for Step 1b. Sub-options (only if the user says so):
+   `--include-full-images` (they want the 200 MB+ `images/` dump too), `--models-priority P1`
+   (obstacle/booster meshes as well), `--models-priority none` (2D-only game, skip GLB import).
+   A folder that has media but no rip `manifest.json` is **not** a rip pack → treat it as extra
+   media: rsync into `assets/<slug>/extra/` and tell Fable about it in Step 4; do not fake catalogs.
 
 Optional: existing models at `assets/<slug>/models/` (GLB + Blender script) — prefer import over regen.
+Step 1b fills `models/` from the rip catalog when a rip pack is given.
 
 ---
 
@@ -93,6 +112,42 @@ Then write a short research pack (can be agent-authored, not required for implem
 - Optional shallow `GAME_BRIEF.md` seed — Fable will rewrite at project root
 
 Read screenshots (and key trailer frames) with the Read tool before claiming feel/HUD facts.
+
+---
+
+## Step 1b — Merge rip pack (only when intake item 8 gave one)
+
+Run **after** Step 1 so the store `manifest.json` already exists (the script appends a `rip` key to it):
+
+```bash
+node ~/.agents/skills/store-game-clone/scripts/merge-rip-pack.mjs \
+  --rip /Users/wikz/Works/agent/assets-ripper/<game>/output \
+  --slug <slug>
+# optional: --include-full-images | --models-priority P0|P1|none | --force | --dry-run
+```
+
+What it does (deterministic — do not redo by hand):
+
+| Source (rip `output/`) | Destination in `assets/<slug>/` | Rule |
+|------------------------|----------------------------------|------|
+| `README.md`, `manifest.json`, `*_GUIDE.md`, `*_catalog.json`, `images_ingame_manifest.json` | `rip/` | always |
+| `images_ingame/`, `meshes/`, `levels/`, `briefs/` | `rip/…` | always |
+| `images/` (full Texture2D dump) | `rip/images/` | **skipped** when `images_ingame/` exists, unless `--include-full-images` |
+| `meshes/<file>.glb` with `meshes_catalog.json` `priority == P0` | `models/<file>.glb` (flat) | default; `--models-priority P1` widens, `none` skips; existing files kept unless `--force` |
+| — | `rip/RIP_PACK.json` | summary: source, dirs copied/excluded, counts, models list |
+| — | `manifest.json` → `rip: {…}` | lets Fable / fleet detect the pack from the store manifest |
+
+**Done when:** stdout JSON has `ok: true`, `format: "unity-apk-rip"`, `rip/RIP_PACK.json` exists and
+`models/` holds the P0 GLBs (`models.copied + models.skipped_existing == models.files.length`).
+`format: "unknown"` (no `unity_version` / `counts` in the rip manifest) is allowed but must be
+called out in `## Notes — store-game-clone` — the catalogs may be missing, so Fable has to read
+the folders directly.
+
+Then **read** `rip/README.md`, `rip/briefs/GAME_BRIEF.md`, `rip/briefs/GAMEPLAY_BRIEF.md`, and skim
+`rip/IMAGES_INGAME_GUIDE.md` + `rip/MESHES_GUIDE.md` before Step 3 so you can (a) fill the Notes
+bullets and (b) judge Fable's OBSERVED claims at the Step 4 gate. Rip briefs are **research seeds**:
+they say what the shipped Unity game does, not what v1 of the Cocos clone should be — Fable must
+rewrite, not rubber-stamp.
 
 ---
 
@@ -135,8 +190,11 @@ rsync -a /Users/wikz/orca-global/<slug>-brief/ "$PROJECT/reference/<slug>-brief/
 Then fill `$PROJECT/AGENT_NOTES.md` (skeleton shipped by the template; `new-cocos-game`
 already wrote `bootstrap:` — do not touch it):
 
-- yaml `store_clone:` → `store_url`, `slug`, `reference_path: reference/<slug>/`.
-  (`brief_agent` / `orientation` live in the `brief:` block, written by `fable-game-brief` in Step 4.)
+- yaml `store_clone:` → `store_url`, `slug`, `reference_path: reference/<slug>/`, and
+  `rip_path: reference/<slug>/rip/` + `rip_source: <absolute rip output path>` when Step 1b ran
+  (both `""` otherwise). Old skeleton without `rip_path` / `rip_source` → add the two keys under
+  `store_clone:` and say so. (`brief_agent` / `orientation` live in the `brief:` block, written
+  by `fable-game-brief` in Step 4.)
 - yaml `fleet:` → set `art_backend` from intake item 5, and `writer_agent` / `reviewer_agent` /
   `planner_agent` **only** if intake item 7 named them; otherwise leave the skeleton defaults untouched.
   `orchestrator_agent` stays whatever `new-cocos-game` wrote unless the user named one — then
@@ -148,7 +206,9 @@ already wrote `bootstrap:` — do not touch it):
 - `## Notes — store-game-clone` → 3–6 bullets: what was OBSERVED (screenshots/trailer frames
   read) vs ASSUMED, what the crawl could not fetch (no trailer, no m3u8, lookup country),
   whether `models/` exists, and that Fable contracts are pending (update this bullet after
-  Step 4 with the file list Fable produced).
+  Step 4 with the file list Fable produced). With a rip pack add one bullet: source path,
+  `format`, dirs merged / excluded (`images/` dump skipped?), P0 GLB count in `models/`, which
+  rip briefs/guides exist, and "rip briefs = seed, Fable rewrites".
 
 Never edit `## Notes — new-cocos-game` or `## Notes — cocos-orca-fleet`. Skeleton missing →
 copy from `/Users/wikz/Works/games/template/cc-game-template/AGENT_NOTES.md` and say so.
@@ -164,8 +224,13 @@ EOF
 )"
 ```
 
-**Done when:** `reference/<slug>/manifest.json` readable inside the project and
-`AGENT_NOTES.md` `store_clone.slug` == `<slug>`.
+(With a rip pack, mention it in the commit body: `+ unity-apk-rip pack under reference/<slug>/rip/`.
+`rip/` is typically 50–100 MB without the `images/` dump — acceptable for a reference folder; if the
+user asked for `--include-full-images` (200 MB+), say so before committing.)
+
+**Done when:** `reference/<slug>/manifest.json` readable inside the project,
+`AGENT_NOTES.md` `store_clone.slug` == `<slug>`, and — when Step 1b ran —
+`reference/<slug>/rip/RIP_PACK.json` exists and `store_clone.rip_path` points at it.
 
 ---
 
@@ -177,6 +242,10 @@ Read `~/.agents/skills/fable-game-brief/SKILL.md` and follow it end-to-end with:
 - **source mode = `store`** (`reference/<slug>/manifest.json` exists from Step 3)
 - `<STORE_URL>` filled in the `store` source block; orientation / design res from intake item 3
 - brief agent from intake item 6 (default `claude --model fable`)
+- **rip pack present** (`reference/<slug>/rip/RIP_PACK.json` exists) → that skill detects it from
+  `store_clone.rip_path`, fills `<RIP_BLOCK>` in the Fable prompt, and adds the rip gate rows
+  (ASSET_MANIFEST `import` vs `generate` column, level schema in HOW_TO when v1 loads levels).
+  Do not paste rip paths into the prompt yourself — `fable-game-brief` owns that block.
 
 That skill seeds nothing new for `store`, fills `AGENT_NOTES.md` `brief:`, launches Fable through
 `bootstrap.mjs agent-session` in `$PROJECT`, and gates on the 8 root contracts + `CONTEXT.md` +
@@ -210,7 +279,9 @@ Default = `game-producer`: use the prompt in
 `$PROJECT/.cursor/skills/game-producer/reference/producer-prompt.md` (fill `<PROJECT>`, slug;
 title `producer-cc-<slug>`; `--agent "<fleet.orchestrator_agent>"`). Keep the Overrides block
 only for values the user changed after Step 3 — the producer reads `release:` and `fleet:` from
-`AGENT_NOTES.md`. It runs the director gate, the slice loop (`cocos-orca-fleet` per L slice),
+`AGENT_NOTES.md`. With a rip pack, `ASSET_MANIFEST.md` already carries the `import` rows (Step 4
+gate), so the art lane imports from `reference/<slug>/rip/…` + `reference/<slug>/models/` instead
+of generating — no extra prompt line needed. It runs the director gate, the slice loop (`cocos-orca-fleet` per L slice),
 commits/merges per `release.auto_*`, and ships per `release.deploy`; stops after `v1_slice`
 when `release.goal: playable`.
 
@@ -256,8 +327,9 @@ Name `slices/S01-*.md` in the prompt so the fleet copies its PLAN from it.
 
 | User ask | Stop after |
 |----------|------------|
-| Crawl / screenshots / trailer only | Step 1 |
-| Brief docs only (no Cocos) | Step 1 + write into `<slug>-brief/` without bootstrap |
+| Crawl / screenshots / trailer only | Step 1 (+ 1b if a rip pack was given) |
+| Brief docs only (no Cocos) | Step 1 (+ 1b) + write into `<slug>-brief/` without bootstrap |
+| Rip pack only, no store URL | Not this skill — use `fable-game-brief` mode `media` with the rip `output/` as the media folder |
 | Project + contracts, no implement | Through Step 5 |
 | Playable first | Through Step 6 with `release.goal: playable` (producer stops after `v1_slice`) |
 | One slice via fleet | Through Step 6, one-slice fleet branch |
@@ -278,10 +350,16 @@ Name `slices/S01-*.md` in the prompt so the fleet copies its PLAN from it.
 | Fleet / producer idle after MCP approve | Resend the prompt with `--enter` |
 | Producer says no `MILESTONES.md` / `slices/` | Step 4 gate was skipped — re-run `fable-game-brief` (nudge Fable for H/I/J) before handing off |
 | Fleet locked `claude opus` although user asked cursor workers | `AGENT_NOTES.md` `fleet.writer_agent` was not written in Step 3, or the prompt override line contradicts it. Fix the yaml, tell the orchestrator to re-read AGENT_NOTES.md before Step 0.2 (only possible before any Task started) |
+| `merge-rip-pack.mjs` dies "no images/ … under" | Wrong folder — point `--rip` at the `output/` dir, not the workdir or `ripped/` |
+| `merge-rip-pack.mjs` `format: "unknown"` | Not a `unity-apk-rip` manifest; merge still happened. Note it; Fable reads folders directly (no catalogs) |
+| `models.copied: 0` with a rip pack | No `meshes_catalog.json` or no P0 rows — 2D-only game or catalog not enriched. Fine for sprite games; otherwise rerun `unity-apk-rip` Step 4 then `--force` |
+| Fable ASSET_MANIFEST has no `import` rows although rip exists | Step 4 gate (fable-game-brief) missed the rip — nudge Fable with `reference/<slug>/rip/IMAGES_INGAME_GUIDE.md` + `MESHES_GUIDE.md` |
+| Fleet regenerates art that exists in `rip/images_ingame/` | `ASSET_MANIFEST.md` row says `generate` for it — fix the manifest via a Fable nudge, not the fleet prompt |
 
 ## Out of scope
 
 - Google Play crawl (extend script later; do not fake Apple fields)
+- Running the rip itself (`unity-apk-rip` owns APK → `output/`); this skill only merges an existing `output/`
 - Coordinating producer / fleet workers from this chat
 - Push / remotes
 - Replacing `new-cocos-game`, `fable-game-brief`, `game-producer`, or `cocos-orca-fleet` internals
@@ -290,5 +368,6 @@ Name `slices/S01-*.md` in the prompt so the fleet copies its PLAN from it.
 
 - [fleet-orchestrator-prompt.md](reference/fleet-orchestrator-prompt.md) — one-slice fleet branch
 - Producer prompt: `<project>/.cursor/skills/game-producer/reference/producer-prompt.md`
-- Fable prompt: `~/.agents/skills/fable-game-brief/reference/fable-brief-prompt.md`
-- Sibling skills: `new-cocos-game`, `fable-game-brief`, `game-producer`, `cocos-orca-fleet`, `orca-cli`
+- Fable prompt: `~/.agents/skills/fable-game-brief/reference/fable-brief-prompt.md` (`<RIP_BLOCK>` variant for rip packs)
+- Rip pack format: `~/.agents/skills/unity-apk-rip/reference/output-readme-template.md`
+- Sibling skills: `new-cocos-game`, `fable-game-brief`, `game-producer`, `cocos-orca-fleet`, `unity-apk-rip`, `orca-cli`

@@ -9,6 +9,15 @@ Shared art rules — every art Task owns only its allowlisted paths under `PLAN.
 never creates `.meta`, never opens Creator, never touches `.scene`/`.prefab`, never calls
 Funplay / `refresh_assets`. Evidence stays under the evidence root.
 
+**Import rows (rip pack present).** When `ASSET_MANIFEST.md` has a `Source` column, rows marked
+`import` name a file under `reference/<slug>/rip/images_ingame/`, `reference/<slug>/models/` or
+`reference/<slug>/rip/meshes/`. For those rows the art Task **copies** (2D) / **imports** (GLB)
+that file into its `art_paths` destination — cropping the named region when the source is a
+`sactx-*` atlas page — and generates nothing; `manifest.json` row gets `"source": "import",
+"source_path": "<reference path>"`. `art-concept-*` is skipped for imported meshes (no concept
+pack needed). Only rows marked `generate` (or rows without a `Source` column) go through the
+backend blocks below. Never import a file the rip catalogs mark P3 / uGUI / meta.
+
 When the PLAN has **no** meshes, use the single legacy `art` Task at the bottom. When it lists
 meshes, fan out to `art-manifest` + `art-concept-<stem>`×N + `art-mesh-<stem>`×N (+ `art-2d`).
 
