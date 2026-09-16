@@ -6,9 +6,9 @@
       "sourceType": "github",
       "sourceUrl": "https://github.com/stablyai/orca.git",
       "skillPath": "skills/orchestration/SKILL.md",
-      "skillFolderHash": "9aa26fde93c0592e5983cdca1ccd33b402802255",
+      "skillFolderHash": "4199ec6988801dd491631706cba62631b4bed8fb",
       "installedAt": "2026-07-31T11:56:48.770Z",
-      "updatedAt": "2026-07-31T11:56:48.770Z"
+      "updatedAt": "2026-09-03T01:59:03.757Z"
     },
     "find-skills": {
       "source": "vercel-labs/skills",
@@ -24,9 +24,9 @@
       "sourceType": "github",
       "sourceUrl": "https://github.com/stablyai/orca.git",
       "skillPath": "skills/computer-use/SKILL.md",
-      "skillFolderHash": "2072384f53670cb61d93f4f6264ad2d8f6b5239c",
+      "skillFolderHash": "f0561c41d1f709a953684aef5d5368f8c58d269f",
       "installedAt": "2026-07-31T11:58:52.295Z",
-      "updatedAt": "2026-07-31T11:58:52.295Z"
+      "updatedAt": "2026-09-03T01:59:14.001Z"
     },
     "orca-cli": {
       "source": "stablyai/orca",

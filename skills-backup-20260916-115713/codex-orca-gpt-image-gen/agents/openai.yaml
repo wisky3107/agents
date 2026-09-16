@@ -1,0 +1,4 @@
+interface:
+  display_name: "Orca GPT Image Gen"
+  short_description: "Consistent parallel image generation via Orca"
+  default_prompt: "Use $orca-gpt-image-gen to improve my image briefs, keep one project art style, generate them in parallel through ChatGPT, and save every result to my target path."
