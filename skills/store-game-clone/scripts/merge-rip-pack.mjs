@@ -86,13 +86,17 @@ function countFiles(dir) {
 function inspectRip(rip) {
   if (!isDir(rip)) die(`rip folder not found: ${rip}`);
   const manifest = readJson(path.join(rip, 'manifest.json'));
-  const dirs = ['images', 'images_ingame', 'meshes', 'levels', 'briefs'].filter((d) => isDir(path.join(rip, d)));
+  const dirs = ['images', 'images_ingame', 'fonts', 'meshes', 'levels', 'briefs'].filter((d) => isDir(path.join(rip, d)));
   const guides = ['README.md', 'IMAGES_INGAME_GUIDE.md', 'MESHES_GUIDE.md'].filter((f) =>
     fs.existsSync(path.join(rip, f)),
   );
-  const catalogs = ['images_ingame_catalog.json', 'meshes_catalog.json', 'images_ingame_manifest.json'].filter((f) =>
-    fs.existsSync(path.join(rip, f)),
-  );
+  const catalogs = [
+    'images_ingame_catalog.json',
+    'meshes_catalog.json',
+    'images_ingame_manifest.json',
+    'de_atlas_lookup.json',
+    'de_atlas_manifest.json',
+  ].filter((f) => fs.existsSync(path.join(rip, f)));
   const briefs = isDir(path.join(rip, 'briefs'))
     ? fs.readdirSync(path.join(rip, 'briefs')).filter((f) => f.endsWith('.md'))
     : [];

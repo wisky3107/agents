@@ -15,7 +15,10 @@ paths.scene_objects; every acceptance row and feel_row is a verifiable observati
 Director decisions (GIVEN): <DIRECTOR_DECISIONS>
 
 Discover → Plan → Build → Verify. Write the evidence bundle to <EVIDENCE_DIR> (integration-notes,
-preflight, preview.png when a preview channel exists, runtime-state.json). Do not commit; when
+preflight, preview.png when a preview channel exists, runtime-state.json). Before review, wear
+the integrator hat: verify the pinned editor identity, reuse/start preview automatically per
+preview-interact-playbook, and write preview-startup.json with the verified URL or exact blocker.
+Release the editor lock before handoff. Do not commit; when
 verified, print the cocos-output-contract YAML and "READY FOR REVIEW", then stop.
 ```
 
@@ -27,12 +30,15 @@ Read <SLICE_FILE>, EXPECT_GAMEPLAY_VISUAL.md, PLAYTEST.md and the evidence in <E
 Follow the review role in .cursor/skills/cocos-orca-fleet/reference/worker-prompts.md and
 .cursor/skills/smoke-test/SKILL.md.
 
-Playtest the slice's `playtest` script in the running preview (ask me for the port if none is
-up). Every acceptance row and feel_row is a finding when missing — "plays dry" is a valid major.
+Playtest the slice's `playtest` script at the verified URL in preview-startup.json. If missing
+or unreachable, request integrator recovery through the producer; do not start preview or ask
+the human directly. Reuse the existing startup blocker/request across review rounds.
+Every acceptance row and feel_row is a finding when missing — "plays dry" is a valid major.
 Write <EVIDENCE_DIR>/review.md ending with APPROVED or CHANGES_REQUESTED (+ findings list) and
-runtime-state.json (verified | manual_required). Do not edit files. Then stop.
+runtime-state.json (verified | manual_required). Write review evidence only; do not edit game files. Then stop.
 ```
 
 On `CHANGES_REQUESTED` the producer re-prompts the writer terminal with the findings (max 2 fix
-rounds), then spawns a **new** reviewer terminal. After APPROVED and "approved — commit", the
-writer runs `/commit-guard` on the main checkout.
+rounds), then spawns a **new** reviewer terminal. Preview infrastructure alone routes to integrator
+recovery without consuming a code-fix round; resume runtime review only after readiness is observed.
+After APPROVED and "approved — commit", the writer runs `/commit-guard` on the main checkout.

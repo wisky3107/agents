@@ -108,6 +108,21 @@ const DEFAULT_MCP_PORT = 8765;
 const MCP_PORT_RANGE_END = 8799;
 const FUNPLAY_CONFIG_FILE = 'funplay-cocos-mcp.config.json';
 const MCP_SERVER_KEY = 'funplay_cocos';
+/** Copied from main → worktree; port is always re-pinned per checkout. */
+const FUNPLAY_INHERIT_KEYS = [
+  'toolProfile',
+  'enabledTools',
+  'disabledTools',
+  'enabledToolCategories',
+  'disabledToolCategories',
+  'enableSessions',
+  'executeJavascriptSafetyChecks',
+  'maxInteractionLogEntries',
+  'language',
+  'savedToolProfiles',
+  'activeToolProfileName',
+  'lastClientTargetId',
+];
 const NON_CURSOR_BOOT_PROMPT = `Before performing any task in this session:
 1. Find and read every AGENTS.md and .cursor/rules files that applies to the current workspace.
 2. Run git status once.
@@ -777,10 +792,52 @@ async function allocateFunplayPort(projectPath, preferred) {
   die(`no free Funplay port in ${DEFAULT_MCP_PORT}..${MCP_PORT_RANGE_END}`);
 }
 
+function pickFunplayInheritable(cfg) {
+  if (!cfg || typeof cfg !== 'object') return {};
+  const out = {};
+  for (const key of FUNPLAY_INHERIT_KEYS) {
+    if (cfg[key] !== undefined) out[key] = cfg[key];
+  }
+  return out;
+}
+
+/** Main checkout to copy Funplay exposure settings from (never its port). */
+function resolveFunplaySeedPath(projectPath) {
+  const fromEnv = process.env.ORCA_ROOT_PATH;
+  if (fromEnv) {
+    const abs = path.resolve(fromEnv);
+    if (fs.existsSync(path.join(abs, FUNPLAY_CONFIG_FILE))) return abs;
+  }
+  const wt = spawnSync('git', ['worktree', 'list', '--porcelain'], {
+    cwd: projectPath,
+    encoding: 'utf8',
+  });
+  if (wt.status === 0) {
+    for (const line of wt.stdout.split('\n')) {
+      if (!line.startsWith('worktree ')) continue;
+      const main = path.resolve(line.slice(9).trim());
+      if (fs.existsSync(path.join(main, FUNPLAY_CONFIG_FILE))) return main;
+      break;
+    }
+  }
+  return null;
+}
+
 function writeFunplayProjectConfig(projectPath, port) {
   const file = path.join(projectPath, FUNPLAY_CONFIG_FILE);
   const prev = readJsonSafe(file) || {};
-  const next = { ...prev, host: prev.host || '127.0.0.1', port, autostart: true };
+  const seedPath = resolveFunplaySeedPath(projectPath);
+  const seed = seedPath ? readJsonSafe(path.join(seedPath, FUNPLAY_CONFIG_FILE)) || {} : {};
+  const inherited = pickFunplayInheritable(seed);
+  const kept = pickFunplayInheritable(prev);
+  const next = {
+    ...inherited,
+    ...kept,
+    host: prev.host || inherited.host || seed.host || '127.0.0.1',
+    port,
+    autostart: prev.autostart !== false,
+    toolProfile: prev.toolProfile || kept.toolProfile || inherited.toolProfile || 'full',
+  };
   fs.writeFileSync(file, JSON.stringify(next, null, 2) + '\n');
   return file;
 }
@@ -842,8 +899,20 @@ async function configureFunplayMcp(projectPath, preferredPort) {
     claude: writeClaudeMcpJson(abs, url),
     codex: writeCodexProjectToml(abs, url),
   };
+  const seedPath = resolveFunplaySeedPath(abs);
   console.log(`→ Funplay port for ${funplayProjectName(abs)}: ${port} (${reason})`);
-  return { projectPath: abs, projectName: funplayProjectName(abs), port, url, reason, files };
+  if (seedPath) {
+    console.log(`   inherited Funplay settings from ${seedPath}`);
+  }
+  return {
+    projectPath: abs,
+    projectName: funplayProjectName(abs),
+    port,
+    url,
+    reason,
+    seedPath,
+    files,
+  };
 }
 
 /**
@@ -1447,7 +1516,7 @@ async function cmdCreate(values, flags) {
     mcp,
     next: [
       'git add -A && git commit (initial bootstrap)',
-      'if brief_author=fable → ~/.agents/skills/fable-game-brief (idea|media) writes root contracts first',
+      'if brief_author=fable → ~/.agents/skills/game-brief (idea|media) writes root contracts first',
       'run /setup-project with the brief (auto defaults unless special asks)',
       'if implement=yes → agent-session --path <project> (producer-<slug> | single | fleet-<slug>)',
       'if mode=producer (default with fable) → game-producer runs MILESTONES.md slices per AGENT_NOTES release.goal (end_to_end | playable)',

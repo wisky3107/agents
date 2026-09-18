@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Rip a Unity APK/XAPK into a case-study pack with AssetRipper.
 
-Steps: extract → merge native libs → AssetRipper headless export → collect images/meshes →
-detect & copy level data → write manifest.json.  Stdlib only.
+Steps: extract → merge native libs → AssetRipper headless export → de-atlas sprites into
+output/images + copy fonts (via scripts/de_atlas_images.py in the skill .venv; falls back to a
+plain texture copy) → collect meshes → detect & copy level data → write manifest.json.
+This file is stdlib only; de_atlas_images.py needs Pillow (auto-installed into <skill>/.venv).
 """
 from __future__ import annotations
 
@@ -211,6 +213,56 @@ def collect_files(roots: list[Path], exts: set[str], dest: Path) -> tuple[int, i
     return copied, skipped
 
 
+FONT_EXTS = {".ttf", ".otf", ".fnt"}
+SKILL_DIR = Path(__file__).resolve().parent.parent
+VENV_PY = SKILL_DIR / ".venv" / "bin" / "python"
+
+
+def ensure_venv() -> Path | None:
+    """Create the skill venv + install requirements.txt if missing. Returns python path or None."""
+    if VENV_PY.is_file():
+        return VENV_PY
+    req = SKILL_DIR / "requirements.txt"
+    log("venv", f"creating {VENV_PY.parent} …")
+    try:
+        subprocess.run([sys.executable, "-m", "venv", str(VENV_PY.parent)], check=True, capture_output=True)
+        pip = [str(VENV_PY), "-m", "pip", "install", "-q"]
+        pip += ["-r", str(req)] if req.is_file() else ["Pillow"]
+        subprocess.run(pip, check=True, capture_output=True)
+    except (subprocess.CalledProcessError, OSError) as exc:
+        log("venv", f"bootstrap failed: {exc}")
+        return VENV_PY if VENV_PY.is_file() else None
+    return VENV_PY
+
+
+def run_de_atlas(work: Path, output: Path) -> str:
+    """De-atlas sprites into output/images + fonts/. Falls back to a plain texture copy.
+
+    Returns the method used: "de_atlas" or "plain_copy".
+    """
+    ripped = work / "ripped"
+    primary = ripped / "PrimaryContent"
+    script = Path(__file__).resolve().parent / "de_atlas_images.py"
+    py = ensure_venv()
+    rc = None
+    if py is not None:
+        r = subprocess.run([str(py), str(script), "--workdir", str(work)], check=False)
+        rc = r.returncode
+        if rc == 0:
+            return "de_atlas"
+    reason = {None: "venv unavailable", 2: "Pillow missing", 3: "no UnityProject Sprite/Texture2D export"}.get(
+        rc, f"exit {rc}"
+    )
+    log("de-atlas", f"{reason} → falling back to plain texture copy (sactx-* pages kept as-is)")
+    for sub in ("images", "fonts"):
+        if (output / sub).exists():
+            shutil.rmtree(output / sub)
+    img_c, img_s = collect_files([primary, ripped / "UnityProject"], IMG_EXTS, output / "images")
+    font_c, _ = collect_files([primary, ripped / "UnityProject"], FONT_EXTS, output / "fonts")
+    log("collect", f"plain copy: images={img_c} dupes={img_s} fonts={font_c}")
+    return "plain_copy"
+
+
 # ---------------------------------------------------------------- levels
 def _level_files(d: Path) -> list[Path]:
     return [p for p in d.iterdir() if p.is_file() and p.suffix.lower() in LEVEL_FILE_EXTS and not p.name.endswith(".meta")]
@@ -375,15 +427,17 @@ def main() -> None:
     assets = project / "Assets"
     primary = ripped / "PrimaryContent"
 
-    for sub in ("images", "meshes", "levels"):
+    for sub in ("images", "meshes", "levels", "fonts"):
         d = output / sub
         if d.exists():
             shutil.rmtree(d)
     (output / "briefs").mkdir(parents=True, exist_ok=True)
 
-    log("collect", "images …")
-    img_c, img_s = collect_files([primary, ripped / "UnityProject"], IMG_EXTS, output / "images")
-    log("collect", f"images copied={img_c} dupes={img_s}")
+    log("collect", "images (de-atlas) …")
+    images_method = run_de_atlas(work, output)
+    img_c = len([p for p in (output / "images").iterdir() if p.is_file()]) if (output / "images").is_dir() else 0
+    font_c = len([p for p in (output / "fonts").iterdir() if p.is_file()]) if (output / "fonts").is_dir() else 0
+    log("collect", f"images={img_c} fonts={font_c} method={images_method}")
     log("collect", "meshes …")
     mesh_c, mesh_s = collect_files([primary, ripped / "UnityProject"], MESH_EXTS, output / "meshes")
     log("collect", f"meshes copied={mesh_c} dupes={mesh_s}")
@@ -403,13 +457,16 @@ def main() -> None:
         "unity_version": read_unity_version(ar_log, base_dir),
         "scripting_backend": read_backend(ar_log, base_dir),
         "assetripper_bin": str(args.bin),
+        "images_method": images_method,
         "counts": {
             "images": img_c,
+            "fonts": font_c,
             "meshes": mesh_c,
             "levels": lvl_n,
         },
         "sizes_bytes": {
             "images": dir_size(output / "images"),
+            "fonts": dir_size(output / "fonts"),
             "meshes": dir_size(output / "meshes"),
             "levels": dir_size(output / "levels"),
             "ripped": dir_size(ripped),

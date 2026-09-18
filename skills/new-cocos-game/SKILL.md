@@ -8,7 +8,7 @@ description: >-
   request says "cc4" / "COCOS 4" / "cocos 4" — registering it in Orca, pinning MCP
   (Funplay per-project port for 3.8; COCOS CLI per-checkout MCP/preview pins for cc4), opening the
   editor channel, waiting until MCP answers for THAT project, git init + commit,
-  optionally authoring deep contracts with fable-game-brief (brief_author=fable,
+  optionally authoring deep contracts with game-brief (brief_author=fable,
   from an idea or media folder — no store needed), running /setup-project from the
   brief, and when implement=yes spawning an Orca
   agent session in that folder. If the user asks for cocos-orca-fleet / fleet /
@@ -39,7 +39,7 @@ Do not use on an existing repo — use `/update-skills` / `/setup-project` there
 | Fleet skill | `<project>/.cursor/skills/cocos-orca-fleet` (shipped by template; mirror at `~/.agents/skills/`) |
 | Worktree hooks | `<project>/orca.yaml` + `scripts/*.sh` (shipped by template) |
 | Agent handoff file | `<project>/AGENT_NOTES.md` (shipped by template as a skeleton). This skill fills `bootstrap:` + `fleet:` in the yaml block and its own `## Notes — new-cocos-game` section. The fleet reads `fleet:` at its Step 0.2 with precedence prompt > file > skill default |
-| Brief author skill | `~/.agents/skills/fable-game-brief` — Claude Fable writes GAME_BRIEF + HOW_TO + EXPECT_GAMEPLAY_VISUAL + ASSET_MANIFEST + SCOPE/ARCHITECTURE/FOLLOWUPS/PLAYTEST + CONTEXT/ADR from an `idea` (text) or `media` folder; owns `AGENT_NOTES.md` `brief:` |
+| Brief author skill | `~/.agents/skills/game-brief` — configurable author, default Fable 5.1, writes GAME_BRIEF + HOW_TO + EXPECT_GAMEPLAY_VISUAL + ASSET_MANIFEST + SCOPE/ARCHITECTURE/FOLLOWUPS/PLAYTEST + CONTEXT/ADR from an `idea` (text) or `media` folder; owns `AGENT_NOTES.md` `brief:` |
 
 **Do not** run `cocos create`. **Do not** install from `agent-skills/cocos-creator`.
 The template already contains the Cocos project, workflow skills, and
@@ -68,7 +68,7 @@ New Cocos Game:
 - [ ] 5. Wait until MCP for THIS project answers (Funplay pin / cocos-cli pinned port)
 - [ ] 5b. Fill AGENT_NOTES.md (bootstrap facts + fleet agent defaults + release.goal/deploy from intake)
 - [ ] 6. Initial commit
-- [ ] 6b. If brief_author=fable → fable-game-brief (idea|media) writes root contracts
+- [ ] 6b. If brief_author=fable → game-brief (idea|media) writes root contracts
 - [ ] 7. /setup-project with the brief (auto defaults unless special asks)
 - [ ] 8. If implement=yes → Orca agent in project (producer | single | fleet orchestrator)
 ```
@@ -94,7 +94,12 @@ Ask only what's missing:
      (the fleet reviews against `EXPECT_GAMEPLAY_VISUAL.md`'s feel table). Source =
      `media` when a folder was given, else `idea` (the brief text).
    - `inline` — otherwise (current behaviour: `/setup-project` Phase 0 seeds `GAME_BRIEF.md`).
-   - Honor an explicit "no fable" / "brief nhanh" as `inline`.
+   - Keep `brief_author=fable` as the legacy routing value for the `game-brief` workflow;
+     it does not force the model. A request for `game-brief` or deep contracts using another
+     agent also selects this route. Pass the explicit brief agent/model to `game-brief`, which
+     resolves explicit choice → saved `brief.brief_agent` → Fable 5.1.
+   - Honor "brief nhanh" or an explicit request to skip deep contracts as `inline`.
+     "No Fable, use another model" selects deep contracts with that model.
 3c. **Release goal** (announce in one line, do not ask) → `AGENT_NOTES.md` `release.goal`:
    - `end_to_end` — **default**: producer runs every slice in `MILESTONES.md`, then ships.
    - `playable` — user says "bản chơi được trước" / "playable first" / "chỉ cần chơi được" /
@@ -240,7 +245,7 @@ JSON result, edit **only** these parts:
 - `## Notes — new-cocos-game` → 2–5 bullets: `repointed: true/false` (3.8), MCP gate result,
   Creator / open-mcp hang if it happened, `brief_author` chosen, anything skipped
   (no brief → no setup-project).
-- Never write `brief:` — that block belongs to `fable-game-brief` (Step 6b).
+- Never write `brief:` — that block belongs to `game-brief` (Step 6b).
 
 Never touch `store_clone:` or the other skills' notes sections. If the skeleton is missing
 (older template), copy it from the template you used
@@ -278,16 +283,17 @@ Do not push unless asked.
 
 ---
 
-## Step 6b — `fable-game-brief` (only when brief_author=`fable`)
+## Step 6b — `game-brief` (only when brief_author=`fable`)
 
-Read `~/.agents/skills/fable-game-brief/SKILL.md` and follow it end-to-end with:
+Read `~/.agents/skills/game-brief/SKILL.md` and follow it end-to-end with:
 
 - project = `<projectPath>`, slug = `<slug>` without the `cc-` / `cc4-` prefix
 - source mode = `media` (user gave a folder → it is rsynced to `reference/<slug>/`) or
   `idea` (brief text → written verbatim to `reference/<slug>-brief/IDEA.md`)
 - orientation / design res from the brief; engine line from `AGENT_NOTES.md` `bootstrap:`
 
-It spawns Claude Fable in `<projectPath>` via `bootstrap.mjs agent-session`, fills
+Pass any explicit brief-agent launch spec; otherwise let `game-brief` resolve the saved setting
+or its default Fable 5.1. It spawns the selected author in `<projectPath>` via `bootstrap.mjs agent-session`, fills
 `AGENT_NOTES.md` `brief:`, and gates on the 8 root contracts + `CONTEXT.md` + ADR.
 Continue to Step 7 only after its gate passes. Contracts stay uncommitted unless asked.
 
@@ -388,7 +394,7 @@ You are the cocos-orca-fleet orchestrator for the new Cocos Creator project at
 child worktree you create from it). Do not operate from any other folder.
 
 1. Assert: `pwd` is <projectPath> (or an Orca child of it). Uncommitted contract files
-   from /setup-project or fable-game-brief are expected; anything else dirty → snapshot into forbidden_changes.
+   from /setup-project or game-brief are expected; anything else dirty → snapshot into forbidden_changes.
 2. Read GAME_BRIEF.md, SCOPE.md, ARCHITECTURE.md, PLAYTEST.md, FOLLOWUPS.md, and AGENT_NOTES.md
    (plus HOW_TO.md, EXPECT_GAMEPLAY_VISUAL.md, ASSET_MANIFEST.md when present — the
    EXPECT feel-table rows are blocking acceptance criteria).
@@ -444,12 +450,12 @@ Report terminal handle and stop monitoring.
 | Two cc4 checkouts | Supported: each pins MCP (9527–9559) + preview (7456–7489). Run `mcp-config` / `open-mcp.sh` per checkout; probe the pinned URL |
 | Cursor/Claude/Codex/Antigravity "Trust this project?" | `bootstrap.mjs trust --path <abs>` seeds Cursor + Claude + Codex **and** Antigravity (`~/.gemini/trustedFolders.json` + `antigravity-cli` `trustedWorkspaces`). Worktree hook `scripts/setup-orca-worktree.sh` seeds the same for every child worktree. Antigravity still launches with `agy --dangerously-skip-permissions`. Never send before `tui-idle` |
 | User asked fleet/producer but agent opened elsewhere | Abort handoff; re-run `agent-session --path <projectPath>` — orchestrator must be in the new project |
-| mode=producer but no `MILESTONES.md` / `slices/` | Run Step 6b (`fable-game-brief`) first, or fall back to `single`/`fleet` and say so |
+| mode=producer but no `MILESTONES.md` / `slices/` | Run Step 6b (`game-brief`) first, or fall back to `single`/`fleet` and say so |
 
 ## Out of scope
 
 - `cocos create` / blank Creator project
 - Installing workflow from `agent-skills/cocos-creator`
-- Authoring contracts itself when brief_author=`fable` (delegate to `fable-game-brief`)
+- Authoring contracts itself when brief_author=`fable` (delegate to `game-brief`)
 - Push / remotes
 - Building features **or running game-producer / cocos-orca-fleet** in the bootstrap chat when implement=yes

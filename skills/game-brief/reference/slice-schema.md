@@ -1,6 +1,6 @@
 # Slice schema — MILESTONES.md, slices/S<nn>-<name>.md, RELEASE_CHECKLIST.md
 
-Written once by Fable (`fable-game-brief`), read by `game-producer` and `cocos-orca-fleet`.
+Written once by the brief author (`game-brief`), read by `game-producer` and `cocos-orca-fleet`.
 Every field of a slice maps 1:1 onto the fleet PLAN (`vibe-game-director/reference/plan-schema.md`)
 so the producer never has to infer scope. Slice files are **contracts**: the producer never edits
 them; progress lives in `AGENT_NOTES.md` `release:`.
@@ -9,10 +9,15 @@ them; progress lives in `AGENT_NOTES.md` `release:`.
 
 - **Vertical slices only** — each slice is playable, previewable, and reviewable on its own.
   No "engine-only" or "refactor" slice.
-- `S01` = the v1 playable slice `GAME_BRIEF.md` describes. Last slice = `release-polish`
-  (see below) and closes every remaining `RELEASE_CHECKLIST.md` row.
-- 6–9 slices for a casual game. Typical order: core loop → win/fail/restart → progression /
-  levels → HUD + menu → juice + audio → persistence + settings → onboarding → release-polish.
+- `S01` = the v1 playable slice `GAME_BRIEF.md` describes. It is presentation-ready, not a
+  mechanics prototype: complete core loop, fail/restart, polished in-game UX/UI, all required P0
+  UI art/fonts, responsive safe-area behavior, and close correspondence to the expected mock screen
+  in `EXPECT_GAMEPLAY_VISUAL.md`. It must contain no placeholder/debug UI. Last slice =
+  `release-polish` (see below) and closes every remaining `RELEASE_CHECKLIST.md` row.
+- 6–9 slices for a casual game. Typical order: polished playable core loop (including in-game HUD,
+  responsive layout, and fail/restart) → progression / levels → shell/menu → extra juice + audio →
+  persistence + settings → onboarding → release-polish. A later HUD slice may add meta/shell UI,
+  but cannot defer the in-game presentation required for S01.
 - `paths` of two slices listed in `parallel_ok` must be disjoint (code, art, scene objects).
 - Every acceptance row carries an evidence label: `OBSERVED (<file>)`, `GIVEN (IDEA §n)`,
   `ASSUMPTION`. A slice with ≥ 3 `ASSUMPTION` rows is flagged `needs_director_ok: true`.
@@ -50,17 +55,21 @@ stop_when: RELEASE_CHECKLIST.md all rows PASS
 
 ## slices/S<nn>-<name>.md
 
+The example below illustrates the fail/restart portion of S01. A generated S01 must also
+include its core gameplay, HUD, responsive layout, visual target, and all their dependencies;
+derive the full paths and change budget from that scope.
+
 ```markdown
 ---
-id: S03
-name: fail-restart-loop
-one_liner: Player can die, see a fail screen, and restart within one tap
+id: S01
+name: polished-playable
+one_liner: Player can play the core loop with polished responsive UI and restart within one tap
 size: L                            # L → fleet · S|M → single agent
-depends_on: [S01, S02]
-unlocks: [S05, S06]
+depends_on: []
+unlocks: [S02, S04]
 needs_director_ok: false           # true when ≥ 3 ASSUMPTION rows or a SCOPE-level choice is open
 player_outcome: "After this slice the player can: die → see result → play again"
-release_items: [RC-03, RC-07]      # RELEASE_CHECKLIST rows this slice closes
+release_items: [RC-03, RC-05, RC-06, RC-07, RC-10, RC-17, RC-22]
 
 scope:
   in:  [death detection, FailPanel UI, restart flow, best-score persist]
@@ -110,10 +119,49 @@ One paragraph tying the slice to GAME_BRIEF §n / HOW_TO rows.
 |-----------|-------------------|--------|
 ```
 
+For S01 specifically, acceptance and playtest must compare the running game against the S01
+expected mock screen using the visual contract below. Include the mock screen's required UI
+art/fonts in S01 `assets`; later slices cannot be prerequisites for a visually presentable S01.
+
+## S01 visual target and review contract
+
+Put this contract in `EXPECT_GAMEPLAY_VISUAL.md`; carry its concrete checks into S01's existing
+`acceptance`, `runtime_checks`, and `playtest` fields (no new producer schema fields required).
+
+- **Visual target:** link an exact existing gameplay screenshot/frame and identify its crop and
+  reference dimensions. Annotate it with a region/key table in the document. If no suitable image
+  exists, author `docs/mockups/S01-ingame.svg` as a static documentation mock with the intended
+  palette, typography, gameplay composition, HUD, and controls. Open/render it for visual inspection.
+  A text description alone does not satisfy this requirement. The SVG is a design artifact, not
+  gameplay code or a production art asset; label proposed choices GIVEN/ASSUMPTION, never OBSERVED.
+- **Layout specification:** record major regions' bounds/anchors, spacing, font sizes, colors, and
+  the representative gameplay state. Define scaling/reflow/letterboxing and minimum legibility;
+  distinguish fixed HUD/control regions from the scalable playfield. Record permitted differences
+  from the target in the accepted-deviation table before implementation review.
+- **Viewport matrix:** name exact width × height in CSS pixels and safe-area insets for the design
+  viewport plus at least two different aspect ratios relevant to the supported orientation. Include
+  a short/wide case and a tall/narrow case, with a notched safe-area case. State how unsupported
+  orientation is handled; do not implicitly add support for another orientation.
+- **Evidence:** prescribe captures of representative gameplay and fail/result UI at every matrix
+  entry, plus comparison with the visual target at the design viewport. Name an evidence directory
+  and capture filenames in `playtest` (use the project's evidence convention; otherwise
+  `docs/evidence/S01/`). These are required outputs of implementation review, not of brief authoring.
+- **Pass/fail:** fail S01 for clipping, overlapping UI, cropped essential gameplay, unreadable text,
+  controls outside the safe area, touch targets below 44 × 44 CSS pixels, placeholder/debug UI, or
+  unexplained differences in composition, typography, palette, or controls. Specify project-specific
+  measurable layout tolerances and minimum text sizes; avoid a generic "looks close" criterion.
+  The reviewer records PASS/FAIL per viewport with capture paths and any accepted deviations.
+
+The brief author authors and inspects the visual target and writes the review contract. The implementation
+reviewer executes the runtime matrix; the brief author must not claim runtime checks have already passed.
+
 ## RELEASE_CHECKLIST.md
 
 Rows are product-level "done" criteria. Each row names the slice expected to close it; the
 release-polish slice sweeps whatever is left. Reviewer of the release slice runs **all** rows.
+Rows assigned to S01 below cover all screens and interactions in the S01 playable. Later slices
+must add checklist coverage for their new screens and interactions; the final review also reruns
+the S01 rows as regression checks. Do not defer initial S01 compliance to release-polish.
 
 ```markdown
 # RELEASE CHECKLIST — <game>
@@ -122,25 +170,26 @@ release-polish slice sweeps whatever is left. Reviewer of the release slice runs
 |----|------|---------------------|-----------|---------------|
 | RC-01 | lifecycle | Cold load shows loading/splash with progress; no white flash; no error if an asset is slow | S08 | throttle network in preview, reload |
 | RC-02 | lifecycle | Tab hidden → game + audio pause; return → no time/frame jump | S06 | switch tab 10 s |
-| RC-03 | lifecycle | Fail → result → restart in 1 tap; no dead-end screen | S03 | die ×3 |
+| RC-03 | lifecycle | Fail → result → restart in 1 tap; no dead-end screen | S01 | die ×3 |
 | RC-04 | lifecycle | Reload mid-run keeps a valid save; corrupted/empty localStorage does not crash | S06 | clear storage, inject junk JSON |
-| RC-05 | layout | Rotate / resize / notch: every UI element inside safe area (`cc.Widget` on all) | S08 | rotate, resize window |
-| RC-06 | input | Touch targets ≥ 44 px; no double-fire; browser scroll/zoom/long-press blocked | S08 | rapid taps, pinch |
-| RC-07 | input | Mouse + touch both work | S03 | desktop + device |
+| RC-05 | layout | S01 screens pass the viewport matrix; safe areas respected; unsupported orientation handled as specified | S01 | capture each viewport and safe-area case |
+| RC-06 | input | S01 touch targets ≥ 44 × 44 CSS px; no double-fire; browser scroll/zoom/long-press blocked during play | S01 | rapid taps, pinch, measure rendered targets |
+| RC-07 | input | Mouse + touch both work in S01 | S01 | desktop + device |
 | RC-08 | ux | First-run hint shown once, persisted | S07 | fresh storage, reload |
 | RC-09 | ux | Sound on/off setting, remembered | S06 | toggle, reload |
-| RC-10 | feel | Every row of the EXPECT feel/VFX table implemented and reviewed | S05, S08 | reviewer tick-list |
+| RC-10 | feel | Every S01 interaction's EXPECT feel/VFX row implemented and reviewed | S01 | reviewer tick-list |
 | RC-11 | audio | SFX on every interaction + 1 music loop; unlock after first gesture (iOS) | S05 | play on iOS Safari |
 | RC-12 | perf | fps ≥ 55 on a mid device across 3 min; no per-frame GC spikes (pools for spawned objects) | S08 | profiler / smoke fps probe |
 | RC-13 | perf | Bundle ≤ budget; textures atlased; no leak after restart ×20 (node count stable) | S08 | build size, node count probe |
 | RC-14 | quality | Zero console.error/warn during the full playtest script; tsc strict + lint clean | S08 | smoke-test |
 | RC-15 | quality | No debug code, cheats, logs, test scenes | S08 | grep |
 | RC-16 | branding | Icon 1024 + favicon + apple-touch-icon; title / meta / OG image; PWA manifest (optional) | S08 | view source |
-| RC-17 | assets | No placeholder art/text; fonts with fallback; strings not hardcoded in scene | S08 | walkthrough |
+| RC-17 | assets | S01 has no placeholder/debug UI or placeholder art/text; fonts with fallback; strings not hardcoded in scene | S01 | walkthrough and asset check |
 | RC-18 | assets | Every asset has its .meta pair; no orphan assets | S08 | integrator check |
 | RC-19 | ship | `build/build.sh --clean` release build serves without 404s | S08 | `--serve` |
 | RC-20 | ship | Preview deploy passes smoke test on the deployed URL; then prod if `release.deploy: prod` | S08 | ship skill |
 | RC-21 | ship | git tag `v1.0.0`; FOLLOWUPS.md trimmed to a v1.1 backlog | S08 | git tag |
+| RC-22 | visual | S01 matches its visual target and layout tolerances, with only documented accepted deviations | S01 | saved target comparison and PASS/FAIL per viewport |
 ```
 
 ## release-polish slice (always last)

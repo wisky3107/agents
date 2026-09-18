@@ -195,13 +195,23 @@ Do:
    for structural/identity work; one mutation contract per structural change; ensure_* so a retry
    cannot duplicate. Stay within allowed_scene_objects and max_nodes.
 6. Sync + reopen the scene; confirm no MissingScript, refs filled → editor-log.txt.
-7. evidence/diff-stat.txt after the task.
-8. editor-lock.js release --owner integrator.
+7. Prepare browser preview before reviewer handoff, while holding the editor lock:
+   follow the project's preview-interact-playbook §Automatic preview startup. Verify pinned
+   Funplay projectPath; discover get_preview_mode/run_project_preview (bridge if needed),
+   reuse a healthy URL or call run_project_preview({mode: "browser"}), verify the returned
+   URL/title and bounded readiness. For cc4 use its pinned CLI preview command instead.
+   Write evidence/preview-startup.json with projectPath, funplayUrl (or cc4 endpoint), previewUrl, status,
+   checkedAt, exact attempt/error details, and humanRequest (preserve any existing request).
+   This is startup evidence, not an independent playtest. Failure → report to coordinator;
+   do not ask the human directly or repeat an unchanged attempt.
+8. evidence/diff-stat.txt after the task.
+9. editor-lock.js release --owner integrator, including on startup failure.
 
-Never: review your own work; start the preview; edit TypeScript beyond what a ref rename forces
+Never: review your own work; edit TypeScript beyond what a ref rename forces
 (if more is needed, `ask` — it goes back to a code fix Task).
 Done: worker_done body = cocos-output-contract.md YAML with serialized_data_changed: true and
-editor_verification pointing at editor-log.txt including the scene-reopen check.
+editor_verification pointing at editor-log.txt including the scene-reopen check; include the
+preview-startup.json path and verified preview URL or exact startup blocker in the handoff.
 ```
 
 ## review (per locked `reviewer_agent`; default `claude --model opus`; FRESH terminal — never the implement/integrate handle)
@@ -228,10 +238,15 @@ Static (commit-guard gates 1–4, read-only):
 - STATIC: tsc + lint clean (read the tool output, do not assume).
 
 Runtime:
-1. Port-scan 7456..7465 and title-match "Cocos Creator - <project>" (preview-interact-playbook).
-   None → `orca orchestration ask --question "Start Project → Preview in the worktree Creator?"
-   --options "started,skip"` once. Still none → write evidence/runtime-state.json =
-   {"runtime_verification":"manual_required","reason":"..."} and never write "verified".
+1. Read evidence/preview-startup.json and validate the handed-off URL/title/readiness for this
+   checkout (preview-interact-playbook). Missing/stale/unreachable → request integrator recovery
+   through the coordinator; do not start preview, change preview mode, or ask the human directly.
+   Reuse the shared humanRequest across review attempts; never require "preview started" text.
+   If recovery is blocked, write evidence/runtime-state.json =
+   {"runtime_verification":"manual_required","reason":"<actual startup/connection error>"};
+   report the infrastructure blocker, complete independent static checks, and never write "verified".
+   Route preview infrastructure to owner scene (integrator), scoped to preview startup only;
+   do not invent a gameplay-code fix. The coordinator resumes runtime review when readiness is observed.
 2. Attach with the Orca browser (Orca first; Cursor Browser fallback). Play every
    PLAN.acceptance_criteria as written; run /smoke-test if checks exist.
 3. Feel/VFX criteria: judge them with the reference pack open side by side — Read the cited

@@ -8,7 +8,7 @@ description: >-
   release-polish slice run the ship skill (build → preview deploy → smoke → prod).
   Stops after v1_slice when release.goal is playable. Use when the director says
   "producer", "chạy hết slices", "end to end", "làm tới bản release", "run the
-  milestones", or after fable-game-brief finished and implement=yes.
+  milestones", or after game-brief finished and implement=yes.
 disable-model-invocation: true
 ---
 
@@ -29,7 +29,7 @@ touch the Editor, never hold the editor lock, never rewrite a slice file.
 | `RELEASE_CHECKLIST.md` | product "done" rows; release slice reviewer runs all of them |
 | `GAME_BRIEF`, `SCOPE`, `ARCHITECTURE`, `PLAYTEST`, `FOLLOWUPS`, `EXPECT_GAMEPLAY_VISUAL`, `ASSET_MANIFEST` | context for every lane prompt |
 
-Missing `MILESTONES.md` / `slices/` → stop: "run `fable-game-brief` first". Do not invent slices.
+Missing `MILESTONES.md` / `slices/` → stop: "run `game-brief` first". Do not invent slices.
 
 ## Policy (locked once at start, announce in one line)
 
@@ -53,7 +53,8 @@ Producer:
       b. release.current_slice = next; slices[next] = in_progress
       c. lane by size → spawn (fleet | single) with the slice prompt; wait for verdict
       d. APPROVED → commit (auto_commit) → merge + worktree rm (auto_merge) → slices[next] = merged
-         CHANGES_REQUESTED after lane's fix rounds / manual_required unanswered → slices[next] = blocked → `ask`
+         CHANGES_REQUESTED after lane's fix rounds → slices[next] = blocked → one `ask`
+         manual_required → slices[next] = blocked; reuse existing preview escalation (see Preview)
       e. append one entry to `## Notes — game-producer`
       f. goal=playable and next == v1_slice → break
 - [ ] 3. goal=end_to_end and release_slice merged → ship per release.deploy; record URLs; tag v1.0.0
@@ -128,15 +129,24 @@ same reference — a single lane still gets an independent review before you acc
 
 ### Preview (both lanes)
 
-- cc4 (`bootstrap.engine: cocos-cli`): start it yourself when asked —
+- cc4 (`bootstrap.engine: cocos-cli`): have the lane's integrator reuse/start preview —
   `cocos preview --project <checkout> --platform web-mobile --port <pinned> --no-open` in the lane's
   checkout (read `cocos-cli-mcp.config.json` → `preview_port`, or `node scripts/resolve-ports.mjs --shell`;
-  see `.cursor/skills/open-cocos-editor`), tell the lane the port.
-- 3.8 / Funplay: coordinators may not Funplay-start preview. Relay the request to the human once
-  (`ask`: "open Project → Preview in the Creator of <checkout>"). Unanswered → the lane records
-  `manual_required`; a slice with `manual_required` runtime checks is **not** APPROVED for you:
-  mark `blocked`, continue with independent slices, report at the end. Never mark a slice merged
-  on unverified evidence.
+  see `.cursor/skills/open-cocos-editor`). Verify readiness and record the URL in the same
+  preview-startup.json handoff used below.
+- 3.8 / Funplay: route startup/recovery to the lane's integrator (S/M: the single agent in its
+  integrator role). It verifies the pinned connection's projectPath, discovers the tools,
+  reuses a healthy browser preview or calls `run_project_preview({mode: "browser"})`, and
+  verifies the returned URL. It writes `evidence/preview-startup.json` and hands the URL to the
+  reviewer. Follow the project's `preview-interact-playbook.md` §Automatic preview startup.
+- Both lanes: automatic-start failure → read the recorded tool/error and `humanRequest` before
+  escalating. Reuse the coordinator's request, or relay it to the human once if not yet delivered;
+  store the human-facing request id/timestamp and blocker key in the shared startup record.
+  Never repeat "still waiting", require a literal "preview started" reply, or reset the request
+  for a new review number. Resume when readiness is observed after relevant new evidence/input.
+  Unavailable runtime remains `manual_required`: mark the slice `blocked`, continue independent
+  slices, and report the blocker. Do not launch repeated reviews for an unchanged startup failure,
+  or approve/merge a slice on unverified evidence.
 
 ## Step 2d — accept, commit, merge
 

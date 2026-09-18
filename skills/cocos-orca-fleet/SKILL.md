@@ -80,9 +80,15 @@ worker; this skill only assigns hats and wires the DAG.
   `cocos-asset-gen` routing (simple → Blender script, complex → 3D Gen Studio, studio down →
   Blender). Verify reads both the 4 iso contact sheet **and** the concept|model compare sheet.
   Integrator needs `CONCEPT: PASS` + `VERDICT: PASS` per mesh.
-- **Preview is director-started.** Reviewer reads the pinned `preview_port` (or scans
-  `7456..7489` + title match); if none, one `ask` to have the director run CLI preview on the
-  pin; if still none → `runtime-state.json` = `manual_required` and the word "verified" is banned.
+- **Integrator prepares preview before review.** For 3.8, verify the pinned Funplay
+  `projectPath`, discover the tools, reuse a healthy browser URL or call
+  `run_project_preview({mode: "browser"})`, then verify the returned URL/readiness. For cc4,
+  use the pinned CLI preview command. Record `evidence/preview-startup.json` and hand it to
+  the reviewer; details in the project's `preview-interact-playbook.md` §Automatic preview startup.
+  Reviewer stays read-only and requests recovery through the coordinator. Escalate to the human
+  only after a recorded automatic-start failure; share one request across review rounds and
+  producer/coordinator layers. An unchanged blocker must not trigger reminders or new reviewers.
+  Missing runtime evidence remains `manual_required` and blocks approval.
 - **Nested dispatch depth is 1.** Workers cannot dispatch. Reviewer findings come back to you;
   you create the fix Task.
 - **Fleet ends at "offer commit".** Commit, push, close Creator, merge, `worktree rm` are the
@@ -289,7 +295,7 @@ and the lifecycle instruction to report with `worker_done` / `ask` / `escalation
 | art-mesh-<stem> | art-concept-<stem> | recipe A (cursor) / **C** (antigravity · gpt-image-gen/codex) | `.glb` + generator; `contact-sheet` + `compare-sheet` + `VERDICT: PASS`; own manifest row `verify` set |
 | art-2d | art-manifest | recipe A (cursor) / **C** (antigravity · gpt-image-gen/codex) | 2D files ≤ budget; no 3D |
 | implement | scan, art-manifest | recipe A/B per `writer_agent` | tsc clean; `integration-notes.md`; output-contract YAML |
-| integrate | implement, all art-mesh-*, art-2d | reuse implement terminal | lock cycle; `.meta` pairs; preflight / editor-log / diff-stat |
+| integrate | implement, all art-mesh-*, art-2d | reuse implement terminal | lock cycle; `.meta` pairs; preflight / editor-log / diff-stat; preview-startup.json with verified URL or exact blocker |
 | review | integrate | recipe A/B per `reviewer_agent`, **fresh** | `review.md` ends `APPROVED` or `CHANGES_REQUESTED` |
 
 Start `art-manifest` + `implement` together when `scan` finishes. Start **all**
@@ -381,13 +387,20 @@ orca orchestration check --wait --types worker_done,escalation,question --timeou
 
 Pipe **stdout only** (keepalives go to stderr). Per Delivery:
 
-1. `question` → `orca orchestration reply --id <msg> --body <answer> --json`. Preview requests
-   are relayed to the director verbatim; never Funplay-start the preview yourself.
+1. `question` → `orca orchestration reply --id <msg> --body <answer> --json`. For preview
+   requests, read `evidence/preview-startup.json`: return its verified URL or route recovery to
+   the integrator (coordinator never takes the editor lock). Human fallback only after the
+   integrator records the attempted tool and actual error. Record/reuse `humanRequest` in that
+   shared file, including the blocker key and request id/timestamp; relay an existing request
+   through the producer once, not as a new question at every layer or review round. While the
+   blocker is unchanged, continue independent tasks and report it once; no repeated reminders.
 2. `worker_done` succeeded → decide the terminal's next owner **before** acking:
    implement → `worker-start --task <integrate> --terminal <handle> --worktree id:<wt>`;
    everything else → `worker-release --dispatch <id>` (recipe A) or `orca terminal close`
    (recipe B/C terminals, which `worker-release` leaves open).
-3. `worker_done` failed from review (`CHANGES_REQUESTED`) → read the `## fix_routing` table
+3. `worker_done` failed from review (`CHANGES_REQUESTED`) → if the only blocker is preview
+   infrastructure, route it to integrator recovery; do not consume a code-fix round or spawn
+   another reviewer until readiness is observed. Otherwise read the `## fix_routing` table
    at the end of `evidence/review.md` and create one `fix` Task **per owner row group by
    copying it** (finding ids, owner, scope paths, acceptance). Do not re-derive scope: the
    reviewer is the strong model, you are not. Owner → handle: `code` → implement handle;

@@ -12,7 +12,7 @@ node ~/.agents/skills/new-cocos-game/scripts/bootstrap.mjs agent-session \
 You are the game-producer for the Cocos project at <PROJECT>. Your shell cwd and Orca worktree
 MUST stay this project (or a child worktree you create from it).
 
-1. Assert pwd is <PROJECT>. Uncommitted contract files from fable-game-brief / setup-project are
+1. Assert pwd is <PROJECT>. Uncommitted contract files from game-brief / setup-project are
    expected; snapshot anything else into forbidden_changes.
 2. Read AGENT_NOTES.md. yaml release: is your policy (goal, auto_commit, auto_merge, deploy);
    yaml fleet: are the lane agents. Lock both at start; precedence: this prompt > file > defaults.

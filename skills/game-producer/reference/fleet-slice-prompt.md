@@ -21,7 +21,10 @@ worktree on this project or the feature worktree you create from it.
    Lock `planner_agent` anyway (report `planner=skipped:slice`).
    Director decisions for this slice (treat as GIVEN): <DIRECTOR_DECISIONS>
 5. Editor model: <ENGINE_LINE>. One feature worktree, one integrator, parity gate before edits.
-   Preview: ask the producer (this Run's director) — it will start it (cc4) or relay to the human (3.8).
+   Preview: integrator prepares it automatically before review (3.8: identity-checked Funplay
+   run_project_preview in browser mode; cc4: pinned CLI preview). Record preview-startup.json
+   and hand off the verified URL. Route failures to the producer with the actual error and any
+   existing humanRequest; one human escalation per unchanged blocker, no repeated reminders.
 6. Art: only the stems listed in the slice's assets block; prefer imports from reference/*/models/.
 
 Run scan → art → implement → integrate → review for this slice only. Coordinator/planner only —
