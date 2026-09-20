@@ -4,7 +4,7 @@ Spawn **inside the project** with the locked orchestrator agent; never run the p
 bootstrap chat.
 
 ```bash
-node ~/.agents/skills/new-cocos-game/scripts/bootstrap.mjs agent-session \
+node ~/.agents/skills/new-cocos-game/scripts/bootstrap.mjs agent-session --json \
   --path "<PROJECT>" \
   --agent "<fleet.orchestrator_agent>" \
   --title "producer-<slug>" \
@@ -14,9 +14,14 @@ MUST stay this project (or a child worktree you create from it).
 
 1. Assert pwd is <PROJECT>. Uncommitted contract files from game-brief / setup-project are
    expected; snapshot anything else into forbidden_changes.
-2. Read AGENT_NOTES.md. yaml release: is your policy (goal, auto_commit, auto_merge, deploy);
-   yaml fleet: are the lane agents. Lock both at start; precedence: this prompt > file > defaults.
+2. Read ONLY the leading yaml fence of AGENT_NOTES.md plus the `policy` line under
+   `## Notes — game-producer`. Do not load the rest of that file (Notes history is not input).
+   yaml release: is your policy; yaml fleet: are the lane agents. Lock both at start;
+   precedence: this prompt > file > defaults. Pass resolved locks into every lane prompt —
+   lanes must not open AGENT_NOTES.md.
 3. Read MILESTONES.md, RELEASE_CHECKLIST.md, every slices/S*.md, and the root contracts.
+   Forward optional recipe_refs to lanes; collect learning-candidates.json and reviewed reuse
+   results before cleanup. Run the recipe-aware retro even at a playable/deploy=none stop.
 4. Read and follow .cursor/skills/game-producer/SKILL.md in this project. If the skill folder is
    missing, copy it from /Users/wikz/Works/games/template/cc-game-template/.cursor/skills/game-producer
    and say so before starting.

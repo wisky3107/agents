@@ -9,7 +9,9 @@
  *   node bootstrap.mjs claude-trust --name <slug> | --path <abs>   (alias of trust)
  *   node bootstrap.mjs mcp-config --path <abs> [--port N]   pin a Funplay port for this checkout + write project-local MCP client configs
  *   node bootstrap.mjs wait-mcp --path <abs> [--timeout-ms 180000] [--port N]
- *   node bootstrap.mjs agent-session --path <abs> [--agent cursor|claude|codex|antigravity|"<spec>"] [--model m] [--effort e] [--title name] [--prompt "..."]
+ *   node bootstrap.mjs agent-session --path <abs> [--agent cursor|claude|codex|antigravity|"<spec>"] [--model m] [--effort e] [--title name] [--prompt "..."] [--json] [--boot|--no-boot]
+ *       --json: stdout = exactly one JSON object (progress → stderr). Boot turn is auto: skipped for
+ *       cursor/codex and for claude when the project has CLAUDE.md; --boot/--no-boot override.
  *   node bootstrap.mjs agent-cmd [--agent ...] [--model m] [--effort e]   dry preview of the launch command
  *
  * Port model: every checkout (main project or Orca worktree) owns ONE editor MCP
@@ -614,6 +616,28 @@ function resolveAgentLaunchCommand(agent, model, effort) {
 function isCursorAgent(agentId) {
   const { id } = parseAgentSpec(agentId);
   return id === 'cursor' || id === 'cursor-agent' || id === 'agent';
+}
+
+/**
+ * Does this agent load AGENTS.md by itself at launch (so the boot turn is redundant)?
+ * cursor: reads AGENTS.md natively. codex: reads AGENTS.md natively.
+ * claude: only via CLAUDE.md (the template ships one that imports AGENTS.md).
+ * Everything else (antigravity, unknown): no → keep the boot turn.
+ */
+function agentLoadsRulesNatively(agentId, projectPath) {
+  const { id } = parseAgentSpec(agentId);
+  if (isCursorAgent(agentId) || id === 'codex') return true;
+  if (id === 'claude') return fs.existsSync(path.join(projectPath, 'CLAUDE.md'));
+  return false;
+}
+
+/** stdout is reserved for the final JSON when --json is set; every progress line goes to stderr. */
+let JSON_MODE = false;
+let FORCE_BOOT = null; // null = auto, true = --boot, false = --no-boot
+function emitResult(obj) {
+  const text = JSON.stringify(obj, null, 2);
+  if (JSON_MODE) process.stdout.write(text + '\n');
+  else console.log(text);
 }
 
 function waitForTuiIdle(orcaBin, handle, timeoutMs = 90000) {
@@ -1263,7 +1287,13 @@ async function createAgentSession({ projectPath, agent, model, effort, title, pr
   let bootSend = null;
   let waited = null;
   let bootWaited = null;
-  const needsBoot = !isCursorAgent(agentId);
+  // Boot turn only for agents that cannot load AGENTS.md themselves (claude without CLAUDE.md,
+  // antigravity). --no-boot forces it off; --boot forces it on.
+  const needsBoot = FORCE_BOOT === true
+    ? true
+    : FORCE_BOOT === false
+      ? false
+      : !agentLoadsRulesNatively(agentId, projectPath);
   const toSend = [];
   if (needsBoot) toSend.push({ kind: 'boot', text: NON_CURSOR_BOOT_PROMPT });
   if (prompt) toSend.push({ kind: 'task', text: prompt });
@@ -1371,7 +1401,7 @@ function cmdResolve(values) {
     out.version = creator.version;
     out.creatorBinary = creator.binary;
   }
-  console.log(JSON.stringify(out, null, 2));
+  emitResult(out);
   if (out.exists) process.exit(2);
 }
 
@@ -1523,19 +1553,19 @@ async function cmdCreate(values, flags) {
       'if mode=fleet → orchestrator prompt uses cocos-orca-fleet; worktree MUST be this project',
     ],
   };
-  console.log(JSON.stringify(result, null, 2));
+  emitResult(result);
 }
 
 function cmdOrcaAdd(values) {
   const projectPath = resolveProjectPath(values);
   const orcaRepo = addToOrca(projectPath);
-  console.log(JSON.stringify({ ok: true, projectPath, orcaRepo }, null, 2));
+  emitResult({ ok: true, projectPath, orcaRepo });
 }
 
 function cmdTrust(values) {
   const projectPath = resolveProjectPath(values);
   const trust = ensureAgentWorkspacesTrusted(projectPath);
-  console.log(JSON.stringify({ ok: true, projectPath, trust }, null, 2));
+  emitResult({ ok: true, projectPath, trust });
 }
 
 /** Print the Creator binary for a checkout (package.json creator.version, else newest). Used by scripts/*.sh. */
@@ -1559,11 +1589,11 @@ async function cmdMcpConfig(values) {
   const projectPath = resolveProjectPath(values);
   if (isCc4Project(projectPath)) {
     const result = writeCocosCliMcpConfig(projectPath, values.port);
-    console.log(JSON.stringify({ ok: true, ...result, projectPath }, null, 2));
+    emitResult({ ok: true, ...result, projectPath });
     return;
   }
   const result = await configureFunplayMcp(projectPath, values.port);
-  console.log(JSON.stringify({ ok: true, ...result }, null, 2));
+  emitResult({ ok: true, ...result });
 }
 
 async function cmdWaitMcp(values) {
@@ -1577,7 +1607,7 @@ async function cmdWaitMcp(values) {
       port: values.port ? Number(values.port) : undefined,
       timeoutMs: Number(values['timeout-ms'] || 180000),
     });
-    console.log(JSON.stringify({ ok: mcp.ok, projectPath, mcp }, null, 2));
+    emitResult({ ok: mcp.ok, projectPath, mcp });
     if (!mcp.ok) process.exit(3);
     return;
   }
@@ -1590,7 +1620,7 @@ async function cmdWaitMcp(values) {
     port: values.port ? Number(values.port) : undefined,
     timeoutMs: Number(values['timeout-ms'] || 180000),
   });
-  console.log(JSON.stringify({ ok: mcp.ok, projectPath, mcp }, null, 2));
+  emitResult({ ok: mcp.ok, projectPath, mcp });
   if (!mcp.ok) process.exit(3);
 }
 
@@ -1608,34 +1638,38 @@ async function cmdAgentSession(values) {
     title: values.title,
     prompt: values.prompt,
   });
-  console.log(JSON.stringify({ ok: true, projectPath, session }, null, 2));
+  emitResult({ ok: true, projectPath, session });
 }
 
 /** Dry preview: what `agent-session` would launch for --agent/--model/--effort. */
 function cmdAgentCmd(values) {
   const agentId = values.agent || DEFAULT_AGENT;
   const spec = parseAgentSpec(agentId, values.model, values.effort);
-  console.log(
-    JSON.stringify(
-      {
-        ok: true,
-        agent: spec.id,
-        model: spec.model,
-        effort: spec.effort,
-        agentSpec: agentSpecString(spec),
-        command: resolveAgentLaunchCommand(agentId, values.model, values.effort),
-        needsBoot: !isCursorAgent(agentId),
-      },
-      null,
-      2,
-    ),
-  );
+  const projectPath = values.path ? path.resolve(values.path) : process.cwd();
+  emitResult({
+    ok: true,
+    agent: spec.id,
+    model: spec.model,
+    effort: spec.effort,
+    agentSpec: agentSpecString(spec),
+    command: resolveAgentLaunchCommand(agentId, values.model, values.effort),
+    needsBoot:
+      FORCE_BOOT === null ? !agentLoadsRulesNatively(agentId, projectPath) : FORCE_BOOT,
+  });
 }
 
 const { cmd, values, flags } = parseArgs(process.argv.slice(2));
 TEMPLATE_ROOT = resolveTemplateRoot(values.template);
 
 async function main() {
+  if (flags.has('json')) {
+    // Reserve stdout for the final JSON object; route every progress line to stderr so
+    // `bootstrap.mjs agent-session --json > out.json` is always parseable.
+    JSON_MODE = true;
+    console.log = (...args) => console.error(...args);
+  }
+  if (flags.has('boot')) FORCE_BOOT = true;
+  if (flags.has('no-boot')) FORCE_BOOT = false;
   if (cmd === 'resolve') cmdResolve(values);
   else if (cmd === 'create') await cmdCreate(values, flags);
   else if (cmd === 'orca-add') cmdOrcaAdd(values);

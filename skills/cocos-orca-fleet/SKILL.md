@@ -47,9 +47,11 @@ worker; this skill only assigns hats and wires the DAG.
    `/Users/wikz/Works/games/template/cc-game-template/` first and say so.
 4. The five root contracts exist (`GAME_BRIEF`, `SCOPE`, `ARCHITECTURE`, `FOLLOWUPS`, `PLAYTEST`).
    Missing → `/setup-project` before any fleet.
-5. Read `AGENT_NOTES.md` at the project root (shipped by the template; `/new-cocos-game` and
-   `/store-game-clone` fill it). Only the leading ```yaml block is machine-read; the per-skill
-   notes below it are context. It supplies the defaults for the locks in the next two sections.
+5. Extract only the leading yaml fence of `AGENT_NOTES.md` at the project root (shipped by the
+   template; `/new-cocos-game` and `/store-game-clone` fill it). Do not load Notes sections —
+   they are producer history and cost tokens. The yaml supplies the defaults for the locks in
+   the next two sections. When the producer already passed locks in the prompt, use those and
+   skip the file.
    **Precedence for every lock:** director's prompt override > `AGENT_NOTES.md` value >
    default in this SKILL. Missing file, missing key, or empty value (`""`, `0`) → that field
    is unset → default applies; say so in one line. The file is optional: a fleet started
@@ -211,7 +213,8 @@ lock that.
 ```
 Fleet Progress:
 - [ ] 0.1 First reply line: `Task size: L — <reason> → fleet`
-- [ ] 0.2 Read AGENT_NOTES.md yaml block; lock art_backend (antigravity | cursor | gpt-image-gen),
+- [ ] 0.2 Extract ONLY the leading yaml fence of AGENT_NOTES.md (python/sed — do not load
+          Notes sections). Lock art_backend (antigravity | cursor | gpt-image-gen),
           mesh_backend (auto | blender | 3dgenstudio), planner_agent, writer_agent,
           reviewer_agent once (prompt > AGENT_NOTES.md > default); if mesh_backend is
           auto/3dgenstudio and the PLAN has complex meshes, run
@@ -229,14 +232,21 @@ Fleet Progress:
           → record the exact `<repo-id>::<path>` worktree id
           → `cd <wt> && node .cursor/skills/vibe-game-director/scripts/probe.mjs --only funplay`
             must report `parity: true` before any Task starts (retry up to ~2 min while Creator boots)
+          → `cd <wt>` NOW and stay there: the PLAN, evidence and every file you write from here
+            live in the worktree, never in the main checkout (a PLAN left untracked in main
+            blocks the producer's merge later).
 - [ ] 0.5 Obtain docs/plans/<feature>.md by exactly ONE of three branches (never author it
           yourself from scratch — the coordinator is the cheap tier):
           A. PLAN given — prompt says `PLAN: docs/plans/<x>.md` (director wrote it in their
              own, stronger session). Copy nothing; run the PLAN validation below. Fail → one
              `ask` listing the violated rows; do not "fix" the PLAN.
           B. Slice given — prompt names `slices/S<nn>-*.md` (e.g. spawned by `game-producer`).
-             Mechanical copy per `../game-producer/reference/slice-to-plan.md`; never widen
-             paths, never drop rows; then validate. No judgment is needed → no plan worker.
+             Write the ≤20-line **pointer PLAN** from `../game-producer/reference/slice-to-plan.md`
+             (`plan_source: <slice file>` + locks + forbidden_changes + `lite`); do NOT copy the
+             front-matter — workers read the slice file. Validate through the mapping table.
+             `lite: true` when the slice's `assets` block is empty and `release.fleet_lite_when_no_assets`
+             is not `false`: skip `scan`, `art-manifest` and every `art-*` Task; `implement` reads
+             `docs/flows/docs-index.md` itself (that is what scan produced anyway).
           C. Neither — create Task `plan` and `worker-start` it on the locked `planner_agent`
              (recipe A/B by spec) with `evidence/specs/plan.md` from worker-prompts.md; it reads
              the contracts + code and writes the PLAN. On its `worker_done`: validate, then
@@ -256,15 +266,20 @@ Fleet Progress:
           (branch C creates the Run before the `plan` Task — the plan worker needs it;
           in that case 0.7 happens between 0.4 and 0.5 and 0.6's task_id is known up front)
 - [ ] 0.8 task-create for scan, art-manifest, art-concept-<stem>×N (if any meshes),
-          art-mesh-<stem>×N, art-2d (if any), implement, integrate, review (deps below)
-- [ ] 0.9 worker-start scan (and nothing else yet)
+          art-mesh-<stem>×N, art-2d (if any), implement, integrate, review (deps below).
+          `lite: true` → only implement, integrate, review (implement has no deps).
+- [ ] 0.9 worker-start scan (lite: worker-start implement) and nothing else yet
 ```
 
 ### PLAN validation (coordinator, all branches — mechanical, no rewriting)
 
-Check and report as a short pass/fail list; any fail → `ask` (A/B) or bounce to the plan worker (C):
+Check and report as a short pass/fail list; any fail → `ask` (A/B) or bounce to the plan worker (C).
+In branch B every key is read from the slice file through the slice-to-plan mapping table — the
+pointer PLAN itself only carries locks:
 
-- Every key of `plan-schema.md` is present; `task_size: L`.
+- Every key of `plan-schema.md` is present (B: resolvable via `plan_source`); `task_size: L`.
+- `change_budget` is understood as **code_only** (scene/prefab/index/meta/plan lines never count);
+  `budget_auto_bump_pct` resolved (AGENT_NOTES `release:` > SCOPE.md > 15) and written into the PLAN.
 - `allowed_paths` split into `code_paths` / `art_paths`; every path is under `SCOPE.md`'s
   allowed area and none is in `forbidden_changes`.
 - `acceptance_criteria` has ≥1 observation-phrased row **and** every matching feel row of
@@ -275,6 +290,10 @@ Check and report as a short pass/fail list; any fail → `ask` (A/B) or bounce t
 - Locks recorded: `planner_agent|given|slice`, `writer_agent`, `reviewer_agent`,
   `art_backend`, `mesh_backend`, `studio_available`.
 - 3D: every mesh stem in the PLAN has a `complexity` hint for `art-manifest`.
+- Optional `recipe_refs` resolve through the slice/PLAN (absent = []). Validate id, revision,
+  SHA-256 and readable path; pass only selected recipe pointers to relevant worker roles.
+  Candidate checks need current evidence. A mismatch returns to the planning owner; the
+  coordinator does not silently replace a recipe or extend the allowed scope.
 
 Write each worker spec to `evidence/specs/<role>.md` from
 [reference/worker-prompts.md](reference/worker-prompts.md) (plan / scan / implement / integrate /
@@ -304,7 +323,8 @@ Start `art-manifest` + `implement` together when `scan` finishes. Start **all**
 for other stems. N models ⇒ N concept agents + N mesh agents in flight.
 
 When the PLAN has **no** meshes, keep the legacy single `art` Task (2D-only) from the shared
-art contract — skip concept/mesh fan-out.
+art contract — skip concept/mesh fan-out. When the PLAN is `lite: true` (no assets at all), the
+DAG is `implement → integrate → review` only — no scan, no art Tasks, no manifest.
 
 ### Worker start recipes
 
@@ -330,12 +350,12 @@ orca orchestration worker-start --task <task_id> --worktree id:<wt> \
   --agent cursor --model auto --json
 ```
 
-**B — non-Cursor plan / implement / review — boot first, then attach.**
-`worker-start --agent X` creates the terminal *and* sends the spec in one step, so there is no
-slot for the AGENTS.md boot turn. Create the terminal yourself, boot it, then hand the live
-handle to `worker-start --terminal`. `--model` / `--effort` cannot be combined with
-`--terminal`, so they go on the launch command instead (the example uses the writer default;
-substitute the locked spec verbatim). **Never use recipe B for art Tasks** — use C.
+**B — non-Cursor plan / implement / review — create in the worktree, then attach (no boot turn).**
+`worker-start --agent X` would create the terminal outside your control of `--model`/`--effort`,
+so create it yourself and hand the live handle to `worker-start --terminal`. The rules load by
+themselves: the template's `CLAUDE.md` imports `AGENTS.md` for Claude and Codex reads `AGENTS.md`
+natively — do not send a boot prompt (legacy fallback for checkouts without `CLAUDE.md` is in
+worker-prompts.md). **Never use recipe B for art Tasks** — use C.
 
 ```bash
 # 1) terminal in the feature worktree, agent launched with its skip-permissions flag
@@ -346,11 +366,8 @@ H=$(orca terminal create --worktree id:<wt> --title "<role>" \
 #   codex:       --command "codex --ask-for-approval never"
 #   antigravity: --command "agy --dangerously-skip-permissions"
 
-# 2) wait for the TUI, send the boot prompt (worker-prompts.md → "implement" section), wait again
+# 2) wait for the TUI once
 orca terminal wait --terminal "$H" --for tui-idle --timeout-ms 90000 --json
-orca terminal send --terminal "$H" --text "<AGENTS.md boot prompt>" --enter --json
-orca terminal wait --terminal "$H" --for tui-idle --timeout-ms 90000 --json
-orca terminal read --terminal "$H" --json   # must end with the exact "AGENTS.md loaded — …" line
 
 # 3) attach the Task to that terminal; Orca injects the lifecycle preamble + spec
 orca orchestration worker-start --task <task_id> --terminal "$H" --worktree id:<wt> --json
@@ -372,7 +389,7 @@ orca orchestration worker-start --task <task_id> --terminal "$H" --worktree id:<
 
 Trust dialogs are pre-seeded by `setup-orca-worktree.sh` (Cursor `.workspace-trusted`, Claude
 `hasTrustDialogAccepted` + `enabledMcpjsonServers`, Codex `trust_level`). If `tui-idle` never
-arrives on recipe B, `orca terminal read` the handle — do not send the boot prompt blind.
+arrives on recipe B, `orca terminal read` the handle — do not attach blind.
 
 Terminals you created with `terminal create` are **not** closed by `worker-release` (it only
 closes worker-start-owned terminals). After such a Dispatch settles, close it yourself with
@@ -398,7 +415,16 @@ Pipe **stdout only** (keepalives go to stderr). Per Delivery:
    implement → `worker-start --task <integrate> --terminal <handle> --worktree id:<wt>`;
    everything else → `worker-release --dispatch <id>` (recipe A) or `orca terminal close`
    (recipe B/C terminals, which `worker-release` leaves open).
-3. `worker_done` failed from review (`CHANGES_REQUESTED`) → if the only blocker is preview
+3. `worker_done` failed from review with last line `INFRA_BLOCKED` → not a fix round. Read the
+   curl lines in `review.md`: coordinator's own `curl 127.0.0.1:<port>` → 200 means the
+   reviewer agent's sandbox cannot reach localhost → close that terminal and start the
+   **same** review Task on `cursor --model auto` (record `reviewer=<locked> → cursor auto
+   (localhost)` in the PLAN and final report — this is the one allowed lock change, it is a
+   fact about the sandbox, not a preference). Coordinator's curl also fails → integrator
+   recovery Task, then the same review on a fresh terminal once readiness is observed.
+   `worker_done` succeeded with a `budget_bump: <from>→<to>` line → patch `max_lines` in the
+   PLAN to `<to>` (a recorded fact), note it for the final report, continue as APPROVED.
+   `worker_done` failed from review (`CHANGES_REQUESTED`) → if the only blocker is preview
    infrastructure, route it to integrator recovery; do not consume a code-fix round or spawn
    another reviewer until readiness is observed. Otherwise read the `## fix_routing` table
    at the end of `evidence/review.md` and create one `fix` Task **per owner row group by
@@ -428,22 +454,30 @@ after a valid `worker_done`; never release on idle/heartbeat.
 ## Finish (coordinator)
 
 1. Assemble `evidence/final-report.md` (delta per `10-vibe-loop` REPORT) and `stats.json`.
+   Preserve `learning-candidates.json` when there are concrete reusable findings and recipe
+   results from review.md. Include successful patterns even without a fix round; producer
+   collects these once before checkout cleanup. Standalone fleet reports candidate paths for
+   later curation. Workers/coordinator do not promote the shared recipe library.
 2. Emit one `cocos-output-contract.md` YAML for the whole feature; every `*_verification`
    entry points at a file in the evidence dir.
 3. Completion audit: Tasks with valid `worker_done`, reviewer verdict, evidence files present,
    anything `manual_required` or unreviewed — labelled honestly.
 4. Confirm every terminal was released or transferred.
-5. If `AGENT_NOTES.md` exists in the main checkout, append one entry to
-   `## Notes — cocos-orca-fleet` (append-only): date, feature, plan path, plan source
-   (`given` | `slice` | `plan-worker:<agent>` + gate rounds), the worker/art locks actually
-   used, verdict, fix rounds, anything `manual_required`. Never edit the yaml block or
-   another skill's section from here. No file → skip; do not create one (the plan file already
-   records the locks).
-6. **Offer** a commit. On approval run `/commit-guard` in the worktree. Then hand the director
-   the `cocos-orca-worktree` finish sequence (close Creator → merge → `worktree rm --run-hooks`).
+5. If `AGENT_NOTES.md` exists in the main checkout, **rewrite** the one line for this feature
+   under `## Notes — cocos-orca-fleet` (never append a second line for the same feature):
+   `- <date> <feature> source=<given|slice|plan-worker> writer=<spec> reviewer=<spec> art=<backend> verdict=<APPROVED|CR> fix_rounds=<n> manual=<none|…>`.
+   Details stay in the evidence dir. Never edit the yaml block or another skill's section.
+   No file → skip; do not create one.
+6. **Offer** a commit: write `<evidence>/HANDOFF.json` `{"role":"coordinator","status":"offer_commit",
+   "detail":"<verdict> fix_rounds=<n> budget_bump=<…|null>","sha":null,"updatedAt":"<ISO>"}` —
+   the producer waits on this file, not on your terminal text. On approval run `/commit-guard`
+   in the worktree; **stage `.cursor/evidence/tasks/<task-id>/` with the slice commit** (JSON/MD
+   only — PNGs stay untracked) so `stats.json` survives `worktree rm`; then write HANDOFF.json
+   `status: committed, sha: <sha>`. Then hand the director the `cocos-orca-worktree` finish
+   sequence (close Creator → merge → `worktree rm --run-hooks`).
    When the director is `game-producer` (prompt names a slice file), wait for its
-   "approved — commit" reply, commit, report the sha + worktree path/branch, and stop — the
-   producer runs the finish sequence and updates `AGENT_NOTES.md` `release:` itself.
+   "approved — commit" reply, commit, update HANDOFF.json, report the sha + worktree path/branch,
+   and stop — the producer runs the finish sequence and updates `AGENT_NOTES.md` `release:` itself.
 
 ## Anti-patterns
 

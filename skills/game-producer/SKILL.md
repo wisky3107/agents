@@ -22,25 +22,31 @@ touch the Editor, never hold the editor lock, never rewrite a slice file.
 
 | File | Use |
 |------|-----|
-| `AGENT_NOTES.md` yaml `release:` | `goal`, `auto_commit`, `auto_merge`, `deploy`; you own `current_slice`, `slices`, `*_url` |
-| `AGENT_NOTES.md` yaml `fleet:` | orchestrator / planner / writer / reviewer / art locks passed through to each lane (the fleet lane never launches `planner_agent` from a slice — the slice front-matter *is* the plan) |
+| `AGENT_NOTES.md` leading yaml + `policy` line | `release:` / `fleet:` locks; you own `current_slice`, `slices`, `*_url`. Do not load Notes history. Pass resolved locks into lane prompts — lanes never open this file |
 | `MILESTONES.md` | `slices`, `dag`, `parallel_ok`, `v1_slice`, `release_slice`, `stop_when` |
 | `slices/S<nn>-*.md` | per-slice PLAN source (front-matter) — see [reference/slice-to-plan.md](reference/slice-to-plan.md) |
 | `RELEASE_CHECKLIST.md` | product "done" rows; release slice reviewer runs all of them |
 | `GAME_BRIEF`, `SCOPE`, `ARCHITECTURE`, `PLAYTEST`, `FOLLOWUPS`, `EXPECT_GAMEPLAY_VISUAL`, `ASSET_MANIFEST` | context for every lane prompt |
 
 Missing `MILESTONES.md` / `slices/` → stop: "run `game-brief` first". Do not invent slices.
+You create `.cursor/evidence/lessons.jsonl` (Step 2d) and `docs/retro.md` (Step 3.6); they are
+not start-gate files.
 
 ## Policy (locked once at start, announce in one line)
 
 ```
 Producer locks: goal=<end_to_end|playable> · auto_commit=<bool> · auto_merge=<bool> ·
-deploy=<none|preview|prod> · max_parallel=1 · lanes: L→fleet(<orchestrator_agent>), S/M→single(<writer_agent>)
+deploy=<none|preview|prod> · budget_auto_bump=<pct>% · lite_when_no_assets=<bool> · max_parallel=1 ·
+lanes: L→fleet(<orchestrator_agent>), L-no-assets→fleet lite, S/M→single(<writer_agent>) · reviewer=<reviewer_agent>
 ```
 
 Precedence: director prompt > `AGENT_NOTES.md` > defaults (`end_to_end`, `true`, `true`,
-`preview`, `max_parallel=1`). `max_parallel=2` only when the director asks **and** the pair is in
-`parallel_ok` (each fleet opens its own Creator + Funplay port; RAM is the limit).
+`preview`, `budget_auto_bump_pct=15`, `fleet_lite_when_no_assets=true`, `max_parallel=1`).
+`max_parallel=2` only when the director asks **and** the pair is in `parallel_ok` (each fleet
+opens its own Creator + Funplay port; RAM is the limit).
+`reviewer_agent` must reach `127.0.0.1` — a `codex` reviewer cannot (sandbox); if the notes lock
+codex, say `reviewer=codex → cursor auto (localhost)` in the lock line and use Cursor. Do not
+discover this per slice.
 
 ## Progress checklist
 
@@ -51,26 +57,84 @@ Producer:
 - [ ] 2. Loop until stop condition:
       a. next = first slice in MILESTONES.slices whose deps are merged and status ∉ {merged, shipped, blocked}
       b. release.current_slice = next; slices[next] = in_progress
-      c. lane by size → spawn (fleet | single) with the slice prompt; wait for verdict
-      d. APPROVED → commit (auto_commit) → merge + worktree rm (auto_merge) → slices[next] = merged
+      c. lane by size → spawn (fleet | fleet lite | single) with the slice prompt; wait on
+         <evidence>/HANDOFF.json (see Waiting), never on terminal text
+      d. APPROVED (incl. budget_bump ≤ pct) → commit (auto_commit) → harvest evidence → merge +
+         worktree rm (auto_merge) → slices[next] = merged
+         INFRA_BLOCKED → not a fix round: swap reviewer to cursor auto / integrator recovery, re-review
          CHANGES_REQUESTED after lane's fix rounds → slices[next] = blocked → one `ask`
          manual_required → slices[next] = blocked; reuse existing preview escalation (see Preview)
-      e. append one entry to `## Notes — game-producer`
+      e. rewrite the slice's ONE line in `## Notes — game-producer`; collect cost events,
+         learning candidates and reviewed recipe reuse once (see Notes discipline)
       f. goal=playable and next == v1_slice → break
 - [ ] 3. goal=end_to_end and release_slice merged → ship per release.deploy; record URLs; tag v1.0.0
       goal=playable → ship preview only if deploy != none (never prod)
-- [ ] 4. Final report: slice table with statuses, commits, URLs, blocked items; stop
+      then RETRO: lessons + candidates + stats → docs/retro.md, including deploy=none/playable
+- [ ] 4. Final report: slice table with statuses, commits, URLs, blocked items, retro path; stop
 ```
 
 ## Step 0 — start
 
 1. `pwd` must be the project root the director named (or an Orca child worktree). Dirty files
    other than the contract set → snapshot into `forbidden_changes` for every lane.
-2. Read every input. Build the runnable order from `MILESTONES.dag` (topological; ties by
-   `slices` order). Validate: every id has a file; `release_slice` is last; no `parallel_ok` pair
-   shares a path. A validation failure is a **Fable** problem — report it and stop; do not patch.
-3. Lock policy (above). Write `release.current_slice: ""` and every missing id into
-   `release.slices` as `planned`.
+2. Read the leading yaml fence of `AGENT_NOTES.md` plus the `policy` line (python/sed — not the
+   rest of the file), then `MILESTONES.md`, `slices/`, `RELEASE_CHECKLIST.md`, and the root
+   contracts. Build the runnable order from `MILESTONES.dag` (topological; ties by `slices`
+   order). Validate: every id has a file; `release_slice` is last; no `parallel_ok` pair shares
+   a path. A validation failure is a **Fable** problem — report it and stop; do not patch.
+3. Lock policy (above). Write the one `policy` line. Write `release.current_slice: ""` and every
+   missing id into `release.slices` as `planned`.
+4. **Resuming** (a previous producer hung, or the director says "resume from Sxx"): git is the
+   truth, the yaml is a cache. Before touching anything run
+   `git log --format='%h %s' -20` and `git worktree list`; a slice whose `feat(Sxx)` commit is an
+   ancestor of HEAD is `merged` regardless of the yaml; a live worktree `<slug>/Sxx-*` means that
+   slice is `in_progress` — reattach (read its `HANDOFF.json`, `orca terminal list` for its
+   handles), never re-dispatch. Correct the yaml to match, append one line to
+   `.cursor/evidence/tasks/T-<Sxx>/producer-log.md` with the evidence you used, then continue the
+   loop. Never re-run the director gate for decisions already in the `policy` line.
+
+## Notes discipline — AGENT_NOTES.md is state, not a log
+
+Keep shared startup state compact; cc-meowdoku's old producer history grew to 14 KB.
+Workers receive resolved locks and selected recipe references instead of loading Notes. Rules:
+
+| Where | What | Size |
+|---|---|---|
+| yaml `release:` | `current_slice`, `slices`, `*_url` — the resume state | fixed |
+| `## Notes — game-producer` | ONE `policy` line (locks + director-gate answers), ONE line per slice **rewritten in place** on each state change, ONE `ship` line | ≤ slices + 2 lines |
+| `.cursor/evidence/tasks/T-<Sxx>/producer-log.md` | spawned / handle / nudge / resume / review round timestamps — append freely | unbounded, read only when debugging |
+| `HANDOFF.json` | live status + terminal handle of the current lane | per slice |
+| `.cursor/evidence/lessons.jsonl` | cost events + deduplicated recipe candidates/reuse at Step 2d | producer/retro only |
+
+Slice line format (rewrite, do not append):
+`- S06 fleet merged fix_rounds=1 bump=650→680 commit=714d5b6 merged=y -`
+
+Cost events → `lessons.jsonl` (append one line when the slice ends, only if something cost time):
+
+```json
+{"slice":"S04","event":"infra_blocked","count":4,"cost":"4 review rounds, ~2.5h","cause":"codex sandbox cannot reach 127.0.0.1","fix_target":"template:AGENT_NOTES.md reviewer_agent","evidence":".cursor/evidence/tasks/T-S04/evidence/review.md","at":"2026-09-18T11:50:00Z"}
+```
+
+`event` ∈ `fix_round | infra_blocked | respawn | director_gate | budget_bump | script_fixed_by_hand |
+merge_conflict | evidence_lost | other`; `fix_target` ∈ `skill:<name> | template:<path> |
+contract:<Fable field> | none`. Facts only (what failed, what it cost, the file that proves it);
+no proposals here — those are the retro's job.
+
+### Recipe learning
+
+Optional library: `~/.agents/skills/cocos-playbook/SKILL.md` (fallback
+`/Users/wikz/Works/games/cocos-playbook/SKILL.md`). Read its `references/workflow.md` for
+candidate/reuse records. If unavailable, keep task-local findings and continue normally.
+Forward the slice's optional `recipe_refs` unchanged to both lanes (missing field = `[]`);
+the planning owner selects recipes, not the producer. Role cards explicitly permit reading
+these selected files. Workers never scan the library or producer lessons.
+
+Before accepting/removing a checkout, collect its `learning-candidates.json` and reviewed
+recipe outcomes into lessons, including successful patterns with no cost. Dedupe by
+`candidate_id`; retain archived project-relative evidence paths. Collect known cost events
+and incomplete learning evidence before returning a blocked/failed slice too. After a
+reviewed technical milestone, an interim retro may curate candidates within existing library
+authorization; otherwise propose them in the project. No new default or silent promotion.
 
 ## Step 1 — director gate
 
@@ -88,7 +152,7 @@ Spawn the fleet orchestrator in a **new terminal in this project** with the lock
 `fleet.orchestrator_agent`:
 
 ```bash
-node ~/.agents/skills/new-cocos-game/scripts/bootstrap.mjs agent-session \
+node ~/.agents/skills/new-cocos-game/scripts/bootstrap.mjs agent-session --json \
   --path "<PROJECT>" \
   --agent "<fleet.orchestrator_agent>" \
   --title "fleet-<slug>-<Sxx>" \
@@ -98,14 +162,34 @@ EOF
 )"
 ```
 
-The fleet builds its PLAN from the slice front-matter (mapping in
+The fleet writes a pointer PLAN to the slice file (mapping in
 [reference/slice-to-plan.md](reference/slice-to-plan.md); fleet Step 0.5 branch B — a cheap
 `orchestrator_agent` is fine because no planning judgment is needed), creates its own
 worktree, runs scan → art → implement → integrate → review, and ends at **"offer commit"**.
+**Fleet lite:** when the slice's `assets` block is empty (no 2d/3d/vfx/audio) and
+`fleet_lite_when_no_assets` is true, put `LITE: true` in the prompt — the fleet skips scan and
+every art Task (implement → integrate → review only). cc-meowdoku S06/S08 paid the full fleet
+boot for zero art.
 If the fleet `ask`s for a field the slice lacks, that is a Fable gap: answer only from the
-contracts, otherwise mark the slice `blocked` and report — never let the fleet improvise it. Monitor with
-`orca terminal wait <handle> --for tui-idle` in long slices; read the terminal tail and
-`<worktree>/.cursor/evidence/tasks/T-*/evidence/review.md` for the verdict.
+contracts, otherwise mark the slice `blocked` and report — never let the fleet improvise it.
+
+### Waiting (both lanes) — the status file, not the terminal
+
+Every lane writes `<checkout>/.cursor/evidence/tasks/T-<Sxx>/evidence/HANDOFF.json`
+(`status: working | blocked | ready_for_review | infra_blocked | approved | changes_requested |
+offer_commit | committed`). Wait like this and nothing else:
+
+```bash
+# block on the terminal going idle, then read the file; repeat. No `terminal read` polling,
+# no grepping for "READY FOR REVIEW" (it matches the prompt you sent — false READY on S07).
+orca terminal wait --terminal <handle> --for tui-idle --timeout-ms 900000 --json >/dev/null
+python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d["status"],d.get("detail",""),d.get("sha"))' <HANDOFF.json>
+```
+
+`working` after idle for two consecutive waits → one nudge naming the missing evidence files,
+then `terminal wait` again. Three idle waits with no file change → treat as hung: `terminal close`,
+spawn a resume lane (same evidence dir, "finish verify + evidence only"), note it. Read
+`review.md` only when the status says a verdict exists.
 
 Answer the fleet's questions as the director would: preview requests → see *Preview* below;
 scope questions → answer from the slice file / SCOPE.md; anything not answerable from contracts
@@ -116,13 +200,17 @@ scope questions → answer from the slice file / SCOPE.md; anything not answerab
 Spawn the locked `fleet.writer_agent` in the **main checkout** (main Creator is open there):
 
 ```bash
-node ~/.agents/skills/new-cocos-game/scripts/bootstrap.mjs agent-session \
+node ~/.agents/skills/new-cocos-game/scripts/bootstrap.mjs agent-session --json \
   --path "<PROJECT>" --agent "<fleet.writer_agent>" --title "slice-<slug>-<Sxx>" \
   --prompt "$(cat <<'EOF'
 …reference/single-slice-prompt.md filled for <Sxx>…
 EOF
 )"
 ```
+
+With `--json`, stdout is exactly one JSON object (`.session.handle`) and progress lines go to
+stderr — redirect stdout to a file and parse that; spawn exactly once (a failed parse on S07
+led to a second writer on the same evidence dir).
 
 Then spawn a **fresh** reviewer terminal (`fleet.reviewer_agent`) with the review section of the
 same reference — a single lane still gets an independent review before you accept it.
@@ -151,32 +239,62 @@ same reference — a single lane still gets an independent review before you acc
 ## Step 2d — accept, commit, merge
 
 APPROVED means: reviewer's `review.md` ends `APPROVED`, no `manual_required` in
-`runtime-state.json`, evidence files present, feel/VFX acceptance rows reviewed.
+`runtime-state.json`, evidence files present, feel/VFX acceptance rows reviewed. A
+`budget_bump: <from>→<to>` line above the verdict is still APPROVED when `<to>` ≤
+`<from> × (1 + budget_auto_bump_pct/100)` — record it in the notes entry, no gate. Above that
+→ `blocked`, one `ask` (`bump_lines_<n>` | `cut_to_<budget>`).
+
+`INFRA_BLOCKED` (review.md last line): not a fix round, no notes entry beyond one line. Your own
+`curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<port>/` → 200 ⇒ the reviewer agent
+cannot reach localhost: spawn the same review on `cursor --model auto` and lock that for the
+rest of the run. Non-200 ⇒ integrator recovery, then a fresh review.
 
 1. `auto_commit=true` → reply to the lane terminal: *"approved — commit"*; the lane runs
-   `/commit-guard` in its checkout. `false` → mark `approved`, `ask` the director, wait.
-2. `auto_merge=true` (fleet lane) → run the `cocos-orca-worktree` finish sequence yourself:
-   `scripts/close-editor.sh` in the worktree → `git -C <main> merge --no-ff <branch>` →
-   `orca worktree rm --worktree path:<wt> --run-hooks --json`. Conflict → stop, `ask`.
-   Single lane committed on main → nothing to merge.
-3. `release.slices[<Sxx>] = merged`, `current_slice = ""`, notes entry:
-   `- <date> <Sxx> <lane> <verdict> fix_rounds=<n> commit=<sha> merged=<y/n> <blockers>`.
-4. Release the lane terminal (`orca terminal close`) unless the director wants it kept.
+   `/commit-guard` in its checkout and sets HANDOFF `committed` + sha. `false` → mark
+   `approved`, `ask` the director, wait.
+2. **Harvest evidence before anything is removed** (fleet lane): if the slice commit did not
+   include `.cursor/evidence/tasks/T-<Sxx>/` (check `git show --stat <sha>`), copy it now:
+   `rsync -a --exclude '*.png' <wt>/.cursor/evidence/tasks/T-<Sxx>/ <main>/.cursor/evidence/tasks/T-<Sxx>/`.
+   cc-meowdoku lost T-S06 and T-S08 (`stats.json` included) to `worktree rm`.
+3. `auto_merge=true` (fleet lane) → run the `cocos-orca-worktree` finish sequence yourself:
+   `<wt>/scripts/close-editor.sh <wt>` (pass the path — cwd is main, and a cwd-based kill misses
+   the worktree's Creator) → confirm `probe.mjs --only funplay` in `<wt>` reports nothing
+   listening → `git -C <main> merge --no-ff <branch>` → `orca worktree rm --worktree path:<wt>
+   --run-hooks --json`. Untracked file in main that the merge would overwrite (usually a stray
+   `docs/plans/<Sxx>.md`) → `mv` it to `/tmp/<Sxx>-stash/`, merge, diff, drop it if identical.
+   Real conflict → stop, `ask`. Single lane committed on main → nothing to merge.
+4. `release.slices[<Sxx>] = merged`, `current_slice = ""`; rewrite the slice's line in the notes:
+   `- <Sxx> <lane> merged fix_rounds=<n> bump=<from→to|none> commit=<sha> merged=<y/n> <blocker|->`.
+   Reconcile harvested cost events, `learning-candidates.json` and reviewed recipe outcomes
+   into `lessons.jsonl` once — see Notes discipline. Successful patterns need no cost threshold.
+5. Release the lane terminal (`orca terminal close`) unless the director wants it kept.
 
-## Step 3 — ship (release slice merged, or playable + deploy != none)
+## Step 3 — release / playable completion and retro
 
 Follow `.cursor/skills/ship/SKILL.md` from the main checkout. No `ship` skill in this project
 (playable template) → treat `deploy` as `none`: run `build/build.sh` if present, otherwise report
-the merged state and stop.
+the merged state; still run the retro before the final report. A playable stop with deploy=none
+also runs retro without being marked shipped solely for completing the retro.
+For playable + deploy=none, go directly to step 6. With no ship skill, perform only the optional
+build just described and step 6; do not fall through into deployment, tagging or shipped-state
+updates. These branches still include the retro path in the final report.
 
 1. `build/build.sh --clean` — trust the script's verdict.
-2. `deploy != none` → `build/deploy.sh` (preview). Smoke the deployed URL via the Orca browser
-   (`.cursor/skills/smoke-test`): cold load, one full play → fail → restart, no console errors.
-   Record `release.last_preview_url`.
+2. `deploy != none` → `build/deploy.sh` (preview). Vercel preview URLs are usually behind
+   deployment protection (302 → login): check the served HTML with `npx vercel curl <url>` (or
+   `--` `-I`) from `build/web-mobile`, not plain `curl`. Smoke the deployed URL via the Orca
+   browser (`.cursor/skills/smoke-test`): cold load, one full play → fail → restart, no console
+   errors. Record `release.last_preview_url`.
 3. `deploy == prod` **and** goal == `end_to_end` **and** smoke passed → `build/deploy.sh --prod`;
    record `release.last_prod_url`. Never prod for `playable`.
 4. `git tag v1.0.0` (end_to_end) — do **not** push unless the director asked.
-5. `release.slices[release_slice] = shipped`; final notes entry with URLs and RC rows status.
+5. `release.slices[release_slice] = shipped`; the ONE `ship` notes line with URLs and RC rows status.
+6. **Retro**: reconcile lessons, surviving task candidates and stats per
+   [reference/retro.md](reference/retro.md); write `docs/retro.md` at release/playable completion
+   even without deployment. Preserve cost filtering for operational fixes; evaluate reusable
+   successful techniques separately. Missing lessons is not an early exit. Shared-library
+   curation requires existing authorization; recipe defaults and template/skill edits are
+   separate decisions. Report proposed recipe ids, evidence gaps and retro path.
 
 ## Stop conditions
 
@@ -195,7 +313,17 @@ the merged state and stop.
 - Marking `merged` when `runtime-state.json` says `manual_required`.
 - `deploy.sh --prod` without a passed preview smoke, or for `goal: playable`.
 - Re-asking locked policy; skipping the director gate for `needs_director_ok` slices.
-- Pushing, or `worktree rm` while Creator is open.
+- Pushing, or `worktree rm` while Creator is open — or before the evidence dir is in main.
+- Polling `orca terminal read` on a timer, or grepping the tail for "READY FOR REVIEW".
+- Opening a director gate for a `max_lines` overrun inside `budget_auto_bump_pct`.
+- Counting a preview-unreachable review as a fix round, or re-spawning the same sandboxed
+  reviewer agent after an `INFRA_BLOCKED`.
+- Parsing `bootstrap.mjs agent-session` output without `--json` (mixed logs broke the parse and
+  spawned a duplicate writer on S07).
+- Appending a progress paragraph to `## Notes — game-producer`, or telling a lane to "read
+  AGENT_NOTES.md". Rewrite the one slice line; put handles and timestamps in `HANDOFF.json` /
+  `producer-log.md`.
+- Writing lessons into `AGENT_NOTES.md` or asking a writer/reviewer to read `lessons.jsonl`.
 
 ## Resources
 
@@ -204,5 +332,6 @@ the merged state and stop.
 - [reference/fleet-slice-prompt.md](reference/fleet-slice-prompt.md) — orchestrator prompt per slice.
 - [reference/single-slice-prompt.md](reference/single-slice-prompt.md) — S/M writer + reviewer prompts.
 - [reference/slice-to-plan.md](reference/slice-to-plan.md) — slice front-matter → PLAN mapping.
+- [reference/retro.md](reference/retro.md) — ship-time `docs/retro.md` from `lessons.jsonl`.
 - `../cocos-orca-fleet/SKILL.md`, `../cocos-orca-worktree/SKILL.md`, `../ship/SKILL.md`,
   `../smoke-test/SKILL.md`, `../commit-guard/SKILL.md`.

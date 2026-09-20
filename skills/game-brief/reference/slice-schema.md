@@ -59,6 +59,21 @@ The example below illustrates the fail/restart portion of S01. A generated S01 m
 include its core gameplay, HUD, responsive layout, visual target, and all their dependencies;
 derive the full paths and change budget from that scope.
 
+### Calibrating `change_budget` (measured, not guessed)
+
+Field data (cc-meowdoku, 8 slices): every L slice landed 1.05–1.6× over the authored `lines`
+(1600→2516, 650→669, 500→590) and each overrun cost one review round plus one fix round or a
+director gate. Author budgets so the *expected* diff sits at ~70 % of the tripwire:
+
+- Estimate the hand-authored lines per file you list in `paths.code` (new file ≈ 80–160, edit ≈
+  20–60, test ≈ 40–80, `docs/flows` ≈ 30), sum, **multiply by 1.5, round up to the next 50**.
+- `lines` counts code/config/tests/`docs/flows` only — never `.scene`/`.prefab`/`.index.json`/
+  `.meta`/`docs/plans`/evidence. State this in SCOPE.md as `budget_count: code_only` (template default).
+- `files` = every path you list + 2; `nodes` = authored nodes at max population + 20 %.
+- If a previous project's `.cursor/evidence/tasks/*/stats.json` is available, use its
+  `diff_lines / max_lines` ratio instead of 1.5.
+- Add `budget_auto_bump_pct: 15` to SCOPE.md so a small overrun is recorded, not gated.
+
 ```markdown
 ---
 id: S01
@@ -68,6 +83,7 @@ size: L                            # L → fleet · S|M → single agent
 depends_on: []
 unlocks: [S02, S04]
 needs_director_ok: false           # true when ≥ 3 ASSUMPTION rows or a SCOPE-level choice is open
+recipe_refs: []                    # optional: pinned {id, revision, sha256, path}; absent = []
 player_outcome: "After this slice the player can: die → see result → play again"
 release_items: [RC-03, RC-05, RC-06, RC-07, RC-10, RC-17, RC-22]
 
@@ -124,6 +140,11 @@ expected mock screen using the visual contract below. Include the mock screen's 
 art/fonts in S01 `assets`; later slices cannot be prerequisites for a visually presentable S01.
 
 ## S01 visual target and review contract
+
+When selecting reusable recipes, read only matching files from cocos-playbook and put the
+resolved id/revision/SHA-256/path in `recipe_refs`. The slice's existing acceptance/playtest
+fields carry only relevant checks. Recipes never add mechanics, widen paths, or count as
+runtime evidence. For older projects this field remains optional.
 
 Put this contract in `EXPECT_GAMEPLAY_VISUAL.md`; carry its concrete checks into S01's existing
 `acceptance`, `runtime_checks`, and `playtest` fields (no new producer schema fields required).

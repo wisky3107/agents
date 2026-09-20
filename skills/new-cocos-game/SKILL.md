@@ -301,6 +301,12 @@ Continue to Step 7 only after its gate passes. Contracts stay uncommitted unless
 
 ## Step 7 — `/setup-project` with the brief
 
+Recipe handoff (both brief modes): resolve the optional `cocos-playbook` skill from
+`~/.agents/skills/cocos-playbook/SKILL.md` or `/Users/wikz/Works/games/cocos-playbook/SKILL.md`.
+Pass its path to setup and the implementation prompt. Reuse recipe_refs already selected by
+game-brief; inline setup selects compatible recipes and pins them in the ADR for later PLANs.
+Bootstrap does not apply a scene or copy source-game identities. Missing library is non-blocking.
+
 1. Read `<project>/.cursor/skills/setup-project/SKILL.md` and follow it.
 2. `inline`: seed `GAME_BRIEF.md` from the brief (template under
    `.cursor/skills/vibe-game-director/templates/`).

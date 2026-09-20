@@ -161,6 +161,13 @@ Never touch `bootstrap:`, `store_clone:`, `fleet:`, or other skills' notes.
 
 ## Step 3 — Launch the brief author
 
+Recipe context: when `~/.agents/skills/cocos-playbook/SKILL.md` is available (fallback
+`/Users/wikz/Works/games/cocos-playbook/SKILL.md`), pass that exact path to the brief author.
+It reads the small INDEX and only recipes matching engine, actual render mode, platform and
+task; it records selected pinned `recipe_refs` in slices and technical rationale in the ADR.
+Recipe-derived choices stay ASSUMPTION unless directed by the user; they are not observed
+mechanics or runtime proof. Missing library/no match → recipe_refs=[] and normal authoring.
+
 Fill placeholders in [reference/brief-prompt.md](reference/brief-prompt.md)
 (`<PROJECT>`, `<SLUG>`, `<SOURCE_BLOCK>`, `<RIP_BLOCK>`, `<GAMEPLAY_NOTES_BLOCK>`, `<ORIENTATION>`, `<DESIGN_RES>`,
 `<ENGINE_LINE>`, `<RELEASE_GOAL>`), pick the `<SOURCE_BLOCK>` variant for the mode, and paste
@@ -220,9 +227,13 @@ Also confirm:
   screens and regression checks. This gate checks the authored contract, not runtime completion.
 - `MILESTONES.md` yaml has `slices`, `dag`, `v1_slice`, `release_slice`; every id has a
   `slices/S<nn>-*.md` whose front-matter carries `size`, `paths`, `acceptance`, `runtime_checks`,
-  `change_budget` (the producer copies these straight into the PLAN).
+  `change_budget` (the producer copies these straight into the PLAN). Budgets follow
+  [slice-schema.md § Calibrating `change_budget`](reference/slice-schema.md) (estimate ×1.5,
+  code-only counting); `SCOPE.md` carries `budget_count: code_only` and `budget_auto_bump_pct`.
 - Last slice is `release-polish`; the union of all `release_items` covers every `RC-nn` row.
 - `parallel_ok` pairs have disjoint `paths`.
+- Optional `recipe_refs` carry id/revision/SHA-256/path; selected checks are in-scope, engine
+  compatibility is explicit, and candidate status has not been upgraded by contract authoring.
 - When gameplay notes exist, run the coverage gate in
   [reference/gameplay-notes.md](reference/gameplay-notes.md): all source statements indexed,
   every GP ID accounted for, included behaviors mapped into actual rules and slice scenarios,

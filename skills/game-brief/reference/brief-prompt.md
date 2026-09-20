@@ -22,6 +22,11 @@ You are the brief author in <PROJECT>.
 - Contract templates: .cursor/skills/vibe-game-director/templates/{GAME_BRIEF,SCOPE,ARCHITECTURE,FOLLOWUPS,PLAYTEST}.md
 - Slice / milestone / release-checklist format: docs/slice-schema.md (follow it exactly — the producer parses the yaml front-matter)
 - PLAN format the slices must map onto: .cursor/skills/vibe-game-director/reference/plan-schema.md
+- Optional recipes: read ~/.agents/skills/cocos-playbook/SKILL.md when available (fallback
+  /Users/wikz/Works/games/cocos-playbook/SKILL.md), its INDEX, then only matching recipes.
+  Resolve engine/render mode/platform from this project. Pin id/revision/sha256/path into
+  recipe_refs in relevant slices; add in-scope checks and ADR rationale. Missing/no match = [].
+  A candidate is guidance to validate, not observed product behavior; preserve GIVEN/ASSUMPTION.
 - Quality bar for depth: sibling briefs under /Users/wikz/orca-global/*-brief/ (structure only — never copy another game's mechanics)
 - Engine: <ENGINE_LINE>; TypeScript strict; web-mobile target
 - Release goal: <RELEASE_GOAL> (end_to_end = every slice then ship; playable = producer stops after v1_slice). In both modes S01 must be a polished, presentation-ready playable: complete core loop, own fail/restart, production-quality in-game UX/UI, responsive layout, and close correspondence to the expected mock screen. Never define S01 as gray boxes, debug UI, placeholder layout, or a minimal HUD.

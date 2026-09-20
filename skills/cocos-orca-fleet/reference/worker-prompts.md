@@ -8,12 +8,26 @@ Copy the block for each role into `.cursor/evidence/tasks/<TASK_ID>/specs/<role>
 Shared header — prepend to every spec:
 
 ```text
-Project rules are binding: AGENTS.md, .cursor/rules/*. Read docs/plans/<feature>.md (the PLAN)
-before anything. Task id <TASK_ID>. Evidence root .cursor/evidence/tasks/<TASK_ID>/.
+Project rules are binding: AGENTS.md, .cursor/rules/*. Read docs/plans/<feature>.md (the PLAN —
+a pointer; its `plan_source` slice file holds the real fields) before anything. Task id <TASK_ID>.
+Evidence root .cursor/evidence/tasks/<TASK_ID>/.
 Before your first edit: run `pwd` and `git status`; the cwd must be worktree <WORKTREE_PATH>.
 Preserve unrelated dirty files listed in PLAN.forbidden_changes. Ask via `orca orchestration ask`
 only at real decision gates (behavior, scope, dependency, destructive, identity). Report with
 `worker_done`; use `--outcome failed` for any failure, never prose alone.
+Context discipline (this spec is your role card and is complete): read ONLY the PLAN, its slice
+file, docs/flows/docs-index.md + the flow docs it names for your paths, and the files this spec
+lists. Do NOT open .cursor/skills/**/SKILL.md or reference/*.md unless this spec names the file
+and the step — the rules you need are already in AGENTS.md + .cursor/rules. Cap yourself: if the
+turn count passes ~35 without a written evidence file, write what you have and report.
+Status file: on every state change write <EVIDENCE_ROOT>/HANDOFF.json
+{"role":"<role>","status":"working|blocked|ready_for_review|infra_blocked|approved|changes_requested|offer_commit|committed","detail":"<one line>","sha":null,"updatedAt":"<ISO>"}
+— the coordinator and producer poll this file, not your terminal text.
+Optional recipe_refs in the PLAN/source slice are explicitly allowed reads: only assigned
+recipe files, after revision/hash validation against resolved metadata. Missing field = [].
+Use in-scope checks and record current results/deviations in existing integration/review
+evidence. Historical recipe evidence is not a current pass; do not read producer lessons or
+scan unrelated recipes. Shared library edits are outside worker ownership.
 ```
 
 ---
@@ -47,6 +61,9 @@ Do:
    code vs what you ASSUME.
 2. Write docs/plans/<FEATURE>.md in .cursor/skills/vibe-game-director/reference/plan-schema.md
    format, task_size: L, task_id: <TASK_ID>, with:
+   - recipe_refs: use existing contract refs, or select relevant recipes from the optional
+     ~/.agents/skills/cocos-playbook/SKILL.md + INDEX (fallback /Users/wikz/Works/games/cocos-playbook).
+     Resolve pinned id/revision/sha256/path and add only in-scope acceptance checks; no match = [].
    - allowed_paths split into code_paths / art_paths, each path justified by a line in
      plan-notes.md (which system owns it, why it must change); nothing outside SCOPE.md.
    - allowed_scene_objects as concrete node paths / prefab names that exist or are to be
@@ -119,26 +136,25 @@ Launch with the exact spec locked in `docs/plans/<feature>.md` → `writer_agent
 spec header line `writer_agent=<spec>` so the evidence shows who wrote the code.
 
 Every **non-Cursor** plan / implement / review worker is started with SKILL.md **recipe B**:
-`orca terminal create` → `terminal wait tui-idle` → send the boot prompt below →
-`terminal wait tui-idle` → confirm the reply is exactly
-`AGENTS.md loaded — workspace rules understood, existing changes preserved, ready for the next task.`
-→ `worker-start --task <id> --terminal <handle> --worktree id:<wt>`. Never merge the boot
-prompt into the spec; never `worker-start --agent claude|codex|antigravity` directly.
-A Cursor writer (`writer_agent: cursor --model auto`) uses **recipe A** and skips the boot
-prompt; the ROLE block below is still the spec.
+`orca terminal create` → `terminal wait tui-idle` → `worker-start --task <id> --terminal <handle>
+--worktree id:<wt>`. There is **no boot turn**: the template ships `CLAUDE.md` (imports
+`AGENTS.md`) so Claude loads the rules at launch, and Codex reads `AGENTS.md` natively — the old
+"AGENTS.md loaded — …" round trip cost ~3 min + one full rules read per worker for nothing.
+Never `worker-start --agent claude|codex|antigravity` directly (that bypasses the worktree
+terminal). A Cursor writer (`writer_agent: cursor --model auto`) uses **recipe A**; the ROLE
+block below is still the spec.
 
-**Art gen roles do not use this boot.** `art-concept-*` / `art-mesh-*` / `art-2d` / legacy `art`
-on non-Cursor use **recipe C** (terminal create → first `tui-idle` → `worker-start --terminal`
-with the art spec as the first turn). See `../cocos-asset-gen/reference/worker-prompts-art.md`.
+Legacy fallback — only when the checkout has **no** `CLAUDE.md` (pre-2026-09 projects) and the
+agent is Claude: send this once after the first `tui-idle`, wait for `tui-idle` again, then attach:
 
 ```text
-Before performing any task in this session:
-1. Find and read every AGENTS.md and .cursor/rules files that applies to the current workspace.
-2. Run git status once.
-3. Do not edit files, run side-effect commands, commit, or push during startup.
-When startup is complete, respond with only: AGENTS.md loaded — workspace rules understood, existing changes preserved, ready for the next task.
-Then stop and wait for my next task.
+Read AGENTS.md and .cursor/rules/*, run git status once, change nothing, then reply only:
+AGENTS.md loaded — workspace rules understood, existing changes preserved, ready for the next task.
 ```
+
+**Art gen roles never boot.** `art-concept-*` / `art-mesh-*` / `art-2d` / legacy `art` on
+non-Cursor use **recipe C** (terminal create → first `tui-idle` → `worker-start --terminal`
+with the art spec as the first turn). See `../cocos-asset-gen/reference/worker-prompts-art.md`.
 
 ```text
 ROLE: writer. Owns PLAN.code_paths only (TypeScript under assets/**).
@@ -156,12 +172,24 @@ Do:
 4. Write evidence/integration-notes.md: exact nodes/components/refs the integrator must create
    or wire, in `{Kind} - {label}` form with parent path, ensure_* semantics, and which manifest
    asset goes where.
-5. `tsc` clean; no console.log left behind; stay within change_budget (stop and `ask` if you
-   would exceed it — the budget is a tripwire, not a quota).
+5. Smoke checks are part of the code, not the review: for EVERY acceptance row that state can
+   answer (score, panel open, saved value, node count, no console error) add one
+   `scripts/smoke/checks/<Sxx>-<nn>-<id>.check.js` (≤30 lines, format in
+   .cursor/skills/smoke-test/SKILL.md §Check files; copy from its templates/). Feel rows (tween,
+   particle, shake) stay manual. The reviewer runs these first; a missing check for a
+   state-answerable row is a finding against you.
+6. `tsc` clean; no console.log left behind. Budget: run
+   `bash .cursor/skills/setup-pre-commit/check-change-budget.sh --report` (stage, report, unstage)
+   and paste the line into integration-notes.md — that number is the only one anyone quotes.
+   Over `max_lines` by ≤ budget_auto_bump_pct → continue and say so; over by more → stop and `ask`.
+7. If a reusable finding emerged, record evidence/learning-candidates.json as an array:
+   {id,kind:failure_fix|successful_pattern,topic,context:{engine,mode,platform},finding,reuse_value,
+   existing_recipe:null|id,evidence:[relative paths],limitations:[]}. Omit when empty; reviewer
+   supplies validation in review.md. This evidence file is an allowed handoff output.
 
 Never: Funplay, editor lock, .scene/.prefab/.meta, art_paths, refresh_assets, starting preview.
-Done: worker_done whose body is cocos-output-contract.md YAML with
-serialized_data_changed: false, files_changed listed, remaining_risks honest.
+Done: HANDOFF.json status ready_for_review, then worker_done whose body is cocos-output-contract.md
+YAML with serialized_data_changed: false, files_changed listed, remaining_risks honest.
 ```
 
 ## integrate (reuse the implement terminal via `worker-start --terminal <handle>`)
@@ -195,6 +223,8 @@ Do:
    for structural/identity work; one mutation contract per structural change; ensure_* so a retry
    cannot duplicate. Stay within allowed_scene_objects and max_nodes.
 6. Sync + reopen the scene; confirm no MissingScript, refs filled → editor-log.txt.
+   Record selected recipe checks/deviations and any scene-specific reusable finding in
+   evidence/learning-candidates.json (same schema as writer); retain existing candidate ids.
 7. Prepare browser preview before reviewer handoff, while holding the editor lock:
    follow the project's preview-interact-playbook §Automatic preview startup. Verify pinned
    Funplay projectPath; discover get_preview_mode/run_project_preview (bridge if needed),
@@ -204,12 +234,15 @@ Do:
    checkedAt, exact attempt/error details, and humanRequest (preserve any existing request).
    This is startup evidence, not an independent playtest. Failure → report to coordinator;
    do not ask the human directly or repeat an unchanged attempt.
-8. evidence/diff-stat.txt after the task.
+8. evidence/diff-stat.txt after the task, plus the `check-change-budget.sh --report` line.
 9. editor-lock.js release --owner integrator, including on startup failure.
+10. Screenshots: at most ONE editor screenshot (hierarchy/refs) and none of the preview — the
+    reviewer takes preview shots. Evidence is JSON/text first; PNGs are for visual questions only.
 
 Never: review your own work; edit TypeScript beyond what a ref rename forces
 (if more is needed, `ask` — it goes back to a code fix Task).
-Done: worker_done body = cocos-output-contract.md YAML with serialized_data_changed: true and
+Done: HANDOFF.json status ready_for_review (detail = preview URL or blocker), then worker_done
+body = cocos-output-contract.md YAML with serialized_data_changed: true and
 editor_verification pointing at editor-log.txt including the scene-reopen check; include the
 preview-startup.json path and verified preview URL or exact startup blocker in the handoff.
 ```
@@ -227,8 +260,27 @@ ROLE: reviewer. Read-only. No editor lock, no edits, no live-scene mutation.
 Inputs: PLAN, evidence/baseline/, full diff vs baseline, both output contracts,
 evidence/integration-notes.md, <ART_PATHS>/manifest.json.
 
+Step 0 — INFRA PREFLIGHT (first 60 seconds, before reading anything else):
+  read evidence/preview-startup.json → `curl -sS -o /dev/null -w '%{http_code}' --max-time 5
+  http://127.0.0.1:<port>/` three times, 5 s apart. Any 200 → continue. Three non-200 while the
+  file says ready → you are in a sandbox that cannot reach localhost (codex) or the preview is
+  down. Either way write evidence/review.md with the curl outputs and the single last line
+  INFRA_BLOCKED, HANDOFF.json status infra_blocked, worker_done --outcome failed, and stop.
+  INFRA_BLOCKED is not CHANGES_REQUESTED: it consumes no fix round and routes to the
+  integrator (preview) or to the coordinator (swap reviewer agent), never to the writer.
+
+Step 1 — SMOKE FIRST: `node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <port>`.
+  Its JSON is the verdict for every state-answerable acceptance row; do not re-play those by
+  hand. A row that has no check although state could answer it → finding (owner code, minor).
+  Then play ONLY the feel rows and the rows smoke cannot express, per the slice `playtest`.
+
 Static (commit-guard gates 1–4, read-only):
-- SCOPE: every changed path in allowed_paths / art_paths; budget respected.
+- SCOPE: every changed path in allowed_paths / art_paths. Budget: quote the writer's
+  `check-change-budget.sh --report` line (re-run it yourself only if missing); code_only rule —
+  scene/prefab/index/meta/plan lines are never counted. `max_lines` overrun ≤
+  budget_auto_bump_pct (PLAN field, default 15 %) with no other blocker/
+  major → APPROVED with a `budget_bump: <from>→<to>` line above the verdict (the coordinator
+  patches the PLAN; no fix round, no gate). Larger overrun → finding, owner code.
 - ARCHITECTURE: no upward deps, no cycles, events from the registry only.
 - ASSETS: every asset has a .meta pair; no raw-edited .scene/.prefab/.meta. Every 3D model
   has `CONCEPT: PASS` + `VERDICT: PASS`; open compare-sheet.png (concept|model rows) and
@@ -254,11 +306,16 @@ Runtime:
    what you see in the preview. A missing tween, particle, shake, or transition that the PLAN
    or EXPECT_GAMEPLAY_VISUAL.md lists is a finding (major by default), even when the mechanic
    itself works. "Plays dry vs reference" is a valid, reportable finding.
-4. evidence/preview.png per failure; evidence/runtime-state.json with real reads.
+4. evidence/runtime-state.json with real reads (smoke JSON + eval reads). Screenshots: one
+   evidence/preview.png at the end, plus at most one per blocker/major finding — never per step,
+   never per acceptance row. Batch state reads into one eval returning one object.
 
 Output evidence/review.md: severity-ranked findings (blocker / major / minor), each with an id
 (F1, F2, …), repro steps, expected vs actual, screenshot path, suspected owner
 (code | scene | concept | mesh).
+Include a recipe-results section when recipe_refs is nonempty: id/revision, checked behavior,
+PASS/FAIL/manual_required, current evidence and deviations. Validate any learning candidate
+claims relevant to this review; source-project evidence cannot replace this run's checks.
 
 When the verdict is CHANGES_REQUESTED, end the file with a `## fix_routing` table. The
 coordinator is a cheap mechanical agent and will copy each row group into a fix Task verbatim
@@ -275,9 +332,10 @@ one-line reason (the coordinator will ask the director). Mesh rows name the stem
 whether the concept or the model is at fault. Only blocker/major ids must appear; minors may be
 listed as `owner: followup`.
 
-Last line of review.md is exactly APPROVED or CHANGES_REQUESTED.
-Done: worker_done --outcome succeeded for APPROVED, --outcome failed for CHANGES_REQUESTED,
-body = the verdict line plus the review.md path (and "fix_routing: <n> rows" when failed).
+Last line of review.md is exactly APPROVED, CHANGES_REQUESTED, or INFRA_BLOCKED (Step 0 only).
+Done: HANDOFF.json status approved | changes_requested | infra_blocked, then worker_done
+--outcome succeeded for APPROVED, --outcome failed otherwise, body = the verdict line plus the
+review.md path (and "fix_routing: <n> rows" when CHANGES_REQUESTED, "budget_bump: …" when used).
 ```
 
 ## fix (round ≤ 2; scoped to review findings)
