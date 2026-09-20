@@ -4,7 +4,8 @@ description: >-
   Clone any Apple App Store game into a Cocos Creator project: crawl store
   metadata/screenshots/trailer into orca-global assets, optionally merge a
   unity-apk-rip output pack (ripped PNG/GLB/levels + rip briefs/guides) into the
-  same reference pack, bootstrap cc-<slug> via new-cocos-game, author
+  same reference pack, accept director gameplay notes, bootstrap a Cocos project via
+  new-cocos-game, author
   GAME_BRIEF/HOW_TO/EXPECT/ASSET_MANIFEST via the game-brief skill
   (source=store), then hand off game-producer (end_to_end by default, or playable)
   — or a single cocos-orca-fleet slice — inside the new project (art backend
@@ -15,9 +16,9 @@ description: >-
 
 # Store Game Clone
 
-End-to-end pipeline: **App Store URL (+ optional rip pack) → reference pack → Cocos project → Fable contracts (+ slices) → game-producer (fleet per slice → commit/merge → ship)**.
+End-to-end pipeline: **App Store URL (+ optional rip pack / director gameplay notes) → reference pack → Cocos project → Fable contracts (+ slices) → game-producer (fleet per slice → commit/merge → ship)**.
 
-Do **not** invent mechanics from marketing copy alone — OBSERVE screenshots/trailer (and rip assets / models if present). Mark ASSUMPTION vs OBSERVED in briefs.
+Do **not** invent mechanics from marketing copy alone — OBSERVE screenshots/trailer (and rip assets / models if present). Label director statements GIVEN, inspected evidence OBSERVED, and inferred details ASSUMPTION.
 
 A **rip pack** is the `output/` folder produced by `~/.agents/skills/unity-apk-rip` (`manifest.json`
 with `unity_version` + `counts`, de-atlased `images_ingame/`, `fonts/`, `meshes/`, `levels/`, `briefs/*.md`, `*_GUIDE.md`,
@@ -48,7 +49,7 @@ pack gives feel / HUD / marketing look, the rip gives exact in-game art, mesh to
 
 ```
 Store Game Clone:
-- [ ] 0. Intake (store URL, slug, orientation?, design res?, implement?, goal=end_to_end|playable, art backend?, fleet workers?, rip pack?)
+- [ ] 0. Intake (store URL, slug, orientation?, design res?, implement?, goal=end_to_end|playable, art backend?, fleet workers?, rip pack?, gameplay notes?)
 - [ ] 1. Crawl App Store → assets/<slug>/ (+ optional <slug>-brief/STORE_DATA.md)
 - [ ] 1b. Rip pack given → merge-rip-pack.mjs → assets/<slug>/rip/ + models/ (skip when none)
 - [ ] 2. Bootstrap cc-<slug> via new-cocos-game (MCP gate = projectName match)
@@ -62,6 +63,10 @@ Store Game Clone:
 ---
 
 ## Step 0 — Intake
+
+If the request only adds gameplay notes to an existing project's contracts, route to
+`game-brief`'s [late-notes flow](../game-brief/reference/gameplay-notes.md) immediately;
+no store URL or new bootstrap is needed for that amendment.
 
 Ask only what's missing:
 
@@ -90,6 +95,12 @@ Ask only what's missing:
    (obstacle/booster meshes as well), `--models-priority none` (2D-only game, skip GLB import).
    A folder that has media but no rip `manifest.json` is **not** a rip pack → treat it as extra
    media: rsync into `assets/<slug>/extra/` and tell Fable about it in Step 4; do not fake catalogs.
+9. **Gameplay notes** — accept supplied chat text or files describing firsthand play,
+   mechanics, edge cases, or desired changes. Optional; never ask for them when absent.
+   Follow [gameplay-notes.md](../game-brief/reference/gameplay-notes.md) for capture and IDs;
+   stage `GAMEPLAY_NOTES.md` in `<slug>-brief/` before Step 3. Keep source mode `store`.
+   For amendments to an existing project's contracts, route directly to `game-brief`'s
+   late-notes flow in that reference, without re-running crawl/bootstrap.
 
 Optional: existing models at `assets/<slug>/models/` (GLB + Blender script) — prefer import over regen.
 Step 1b fills `models/` from the rip catalog when a rip pack is given.
@@ -188,6 +199,10 @@ mkdir -p "$PROJECT/reference/<slug>-brief"
 rsync -a /Users/wikz/orca-global/<slug>-brief/ "$PROJECT/reference/<slug>-brief/" || true
 ```
 
+When notes were supplied, verify `reference/<slug>-brief/GAMEPLAY_NOTES.md` contains their
+source text and GP index; a failed/missing copy blocks the brief handoff. Record its project
+path in `## Notes — store-game-clone`. `game-brief` owns `brief.gameplay_notes_path`.
+
 Then fill `$PROJECT/AGENT_NOTES.md` (skeleton shipped by the template; `new-cocos-game`
 already wrote `bootstrap:` — do not touch it):
 
@@ -241,6 +256,9 @@ Read `~/.agents/skills/game-brief/SKILL.md` and follow it end-to-end with:
 
 - project = `$PROJECT`, slug = `<slug>`
 - **source mode = `store`** (`reference/<slug>/manifest.json` exists from Step 3)
+- **gameplay notes supplied** → pass `reference/<slug>-brief/GAMEPLAY_NOTES.md` to
+  `game-brief`; it fills the optional notes prompt block and checks GP coverage. These are
+  director input, separate from the research seed that the author rewrites.
 - `<STORE_URL>` filled in the `store` source block; orientation / design res from intake item 3
 - explicit brief agent from intake item 6, if given; otherwise let `game-brief` resolve the
   saved `brief.brief_agent` or its default `claude --model claude-fable-5-1`
@@ -249,12 +267,12 @@ Read `~/.agents/skills/game-brief/SKILL.md` and follow it end-to-end with:
   (ASSET_MANIFEST `import` vs `generate` column, level schema in HOW_TO when v1 loads levels).
   Do not paste rip paths into the prompt yourself — `game-brief` owns that block.
 
-That skill seeds nothing new for `store`, fills `AGENT_NOTES.md` `brief:`, launches the selected author through
+That skill reuses the store pack, prepares supplied notes when present, fills `AGENT_NOTES.md` `brief:`, launches the selected author through
 `bootstrap.mjs agent-session` in `$PROJECT`, and gates on the 8 root contracts + `CONTEXT.md` +
 `docs/adr/0001-tech-stack.md` + `MILESTONES.md` + `slices/` + `RELEASE_CHECKLIST.md`.
 
 **Done when:** its gate passes (Fable printed the 5-bullet v1 summary + slice table; files
-non-empty). Then update the `## Notes — store-game-clone` bullet with the file list Fable
+non-empty, plus gameplay-note coverage when supplied). Then update the `## Notes — store-game-clone` bullet with the file list Fable
 produced. Slices flagged `needs_director_ok: true` go into the report for the user — the
 producer will `ask` about them before dispatch.
 

@@ -7,7 +7,8 @@ description: >-
   existing Cocos Creator project by spawning a configurable agent (default Fable 5.1) via
   Orca. Works from any source: an App Store reference pack (store-game-clone, optionally
   with a merged unity-apk-rip pack under the project's reference rip folder), a user-supplied media
-  folder (screenshots / video / GDD / GLB), or a text-only idea.
+  folder (screenshots / video / GDD / GLB), or a text-only idea, with optional director
+  gameplay notes and amendments to existing contracts.
   Sits between store-game-clone / new-cocos-game and game-producer. Use when the
   user says "game-brief", "game brief", "fable brief", "brief sâu", "contracts",
   "HOW_TO/EXPECT", or wants deep contracts for a game that was NOT cloned from a store.
@@ -43,11 +44,11 @@ passed. This skill never creates or opens a project.
 
 ```
 Game Brief:
-- [ ] 0. Intake (project, slug, source mode, rip pack present?, orientation/design res, agent override?)
+- [ ] 0. Intake (project, slug, source mode, rip pack present?, gameplay notes?, orientation/design res, agent override?)
 - [ ] 1. Seed source (media → reference/<slug>/; idea → reference/<slug>-brief/IDEA.md; rip → already under reference/<slug>/rip/)
 - [ ] 2. Fill AGENT_NOTES.md brief: block (add block/section if skeleton is old)
-- [ ] 3. Launch the brief author in the project (agent-session) with the filled prompt (+ <RIP_BLOCK> when rip present)
-- [ ] 4. Gate: 8 root contracts + CONTEXT.md + ADR + MILESTONES.md + slices/ + RELEASE_CHECKLIST.md (+ rip rows)
+- [ ] 3. Launch the brief author in the project (agent-session) with the filled prompt (+ optional rip / gameplay-notes blocks)
+- [ ] 4. Gate: 8 root contracts + CONTEXT.md + ADR + MILESTONES.md + slices/ + RELEASE_CHECKLIST.md (+ rip rows / GP coverage)
 - [ ] 5. Update notes section; report file list + slice table; stop (no commit unless asked)
 ```
 
@@ -68,6 +69,11 @@ Ask only what's missing:
    --slug <slug> --assets-root "$PROJECT/reference"` so it lands at `reference/<slug>/rip/` with the
    same layout (that script also fills `reference/<slug>/models/`). `idea` + rip is not a thing —
    a rip pack is media, so the mode becomes `media`.
+2c. **Gameplay notes** (optional, all source modes) — accept supplied chat text/files or
+   detect `brief.gameplay_notes_path` / `reference/<slug>-brief/GAMEPLAY_NOTES.md`.
+   Read [reference/gameplay-notes.md](reference/gameplay-notes.md) when present; it owns
+   capture, evidence precedence, coverage, and late amendments. Absence requires no question.
+   Existing contracts + new notes → use its late-notes flow before revising affected files.
 3. **Orientation / design res** — default from media aspect if any; else portrait `720×1280`. Landscape → `1280×720`.
 4. **Engine line** — from `AGENT_NOTES.md` `bootstrap:`: `Creator <creator_version>` (3.8 templates) or `COCOS 4 CLI <engine_version>` (cc4).
 5. **Brief agent** — resolve in this order: explicit user/caller launch spec → existing
@@ -86,14 +92,16 @@ Ask only what's missing:
    expected mock screen based on the strongest screenshot evidence or the director brief.
    `playable` must never mean gray boxes, debug UI, placeholder layout, or a minimal HUD.
 
-Never invent mechanics. `store` / `media` → the brief author must OBSERVE files. `idea` → the brief author labels
-user statements `GIVEN` and its own fills `ASSUMPTION`; nothing may be marked `OBSERVED`.
+Never invent mechanics. `store` / `media` → the brief author must OBSERVE files and label
+director statements GIVEN. In every mode its own fills are ASSUMPTION. `idea` has no
+inspected media, so nothing may be marked OBSERVED.
 
 Rip pack evidence rules (when present): files under `rip/images_ingame/`, `rip/meshes/`,
 `rip/levels/`, and the `*_catalog.json` `how_to_use` fields are **OBSERVED** sources (cite the
 path). `rip/briefs/*.md` and `*_GUIDE.md` prose are **research seeds** — the brief author may quote them
 as `SEED (rip/briefs/GAMEPLAY_BRIEF.md §…)` but must re-derive v1 decisions itself; a rip brief
-describing the shipped Unity meta (arena, store, live-ops) never widens v1 scope.
+describing the shipped Unity meta (arena, store, live-ops) never widens v1 scope by itself;
+explicit director requirements receive the scope decision defined in gameplay-notes.md.
 
 ## Step 1 — Seed the source into the project
 
@@ -101,7 +109,7 @@ describing the shipped Unity meta (arena, store, live-ops) never widens v1 scope
 PROJECT=/Users/wikz/Works/games/CocosCreator/cc-<slug>
 ```
 
-- `store`: nothing to do (`store-game-clone` Step 3 already seeded `reference/<slug>/`).
+- `store`: reuse `reference/<slug>/` seeded by `store-game-clone` Step 3.
 - `media`:
   ```bash
   mkdir -p "$PROJECT/reference/<slug>"
@@ -111,6 +119,11 @@ PROJECT=/Users/wikz/Works/games/CocosCreator/cc-<slug>
   `ffmpeg -i <video> -vf fps=1/3 "$PROJECT/reference/<slug>/video/frames/t%02d.jpg"` (skip if ffmpeg missing; note it).
 - `idea`: write the user's text **verbatim** to `$PROJECT/reference/<slug>-brief/IDEA.md`
   (heading `# IDEA — <slug>`, then the text). The brief author reads this file, not the chat.
+
+When gameplay notes exist, capture/reuse them per [gameplay-notes.md](reference/gameplay-notes.md)
+and copy that reference to `$PROJECT/docs/gameplay-notes-contract.md` for the brief author.
+Verify the notes source and GP index are readable before launch. Keep IDEA.md as the base
+idea; gameplay amendments belong in GAMEPLAY_NOTES.md without duplicating the whole idea.
 
 Read at least the key images / frames yourself with the Read tool before Step 3 so you can
 judge the brief author's OBSERVED claims at the gate. With a rip pack also read `rip/README.md`,
@@ -129,6 +142,7 @@ brief:
   source: store | media | idea
   reference_path: reference/<slug>/      # "" for idea
   rip_path: reference/<slug>/rip/        # "" when no rip pack (intake 2b)
+  gameplay_notes_path: reference/<slug>-brief/GAMEPLAY_NOTES.md  # "" when none
   orientation: landscape 1280x720        # or portrait 720x1280
   authored_at: ""                        # fill after Step 4 (ISO date)
 ```
@@ -136,6 +150,10 @@ brief:
 Old skeleton without `brief:` → append the block at the end of the leading yaml and add an
 empty `## Notes — game-brief` section after `## Notes — store-game-clone`; say so.
 Skeleton with `brief:` but no `rip_path` → add the key; say so.
+`gameplay_notes_path` is optional for older projects: absent means detect the conventional
+path, then record it if found. Preserve a valid saved project-relative path; copy new
+external/chat input into the project. A configured but unreadable path is an input error,
+not absence. Do not clear existing notes when a later invocation supplies no new notes.
 For an existing project, rename `## Notes — fable-game-brief` to `## Notes — game-brief`,
 preserving its contents. If both sections exist, preserve both and append new notes only to the
 new section. Retain the existing `brief:` schema; the skill rename does not reset saved settings.
@@ -144,12 +162,17 @@ Never touch `bootstrap:`, `store_clone:`, `fleet:`, or other skills' notes.
 ## Step 3 — Launch the brief author
 
 Fill placeholders in [reference/brief-prompt.md](reference/brief-prompt.md)
-(`<PROJECT>`, `<SLUG>`, `<SOURCE_BLOCK>`, `<RIP_BLOCK>`, `<ORIENTATION>`, `<DESIGN_RES>`,
+(`<PROJECT>`, `<SLUG>`, `<SOURCE_BLOCK>`, `<RIP_BLOCK>`, `<GAMEPLAY_NOTES_BLOCK>`, `<ORIENTATION>`, `<DESIGN_RES>`,
 `<ENGINE_LINE>`, `<RELEASE_GOAL>`), pick the `<SOURCE_BLOCK>` variant for the mode, and paste
 the `<RIP_BLOCK>` variant when intake 2b found a rip pack (delete the placeholder line
 otherwise — never leave the literal `<RIP_BLOCK>` in the prompt). Copy
 [reference/slice-schema.md](reference/slice-schema.md) to
 `$PROJECT/docs/slice-schema.md` first so the brief author can read it inside the worktree. Then:
+
+Fill `<GAMEPLAY_NOTES_BLOCK>` from the prompt reference only when notes exist, substituting
+`<GAMEPLAY_NOTES_PATH>` with `brief.gameplay_notes_path`; otherwise remove the block placeholder.
+For late amendments, include the affected paths/release state and revision scope from the
+late-notes flow; its targeted revision rules override the prompt's initial full-authoring task.
 
 Set `BRIEF_AGENT` to the resolved canonical spec from intake; the default assignment below is
 only for projects with no override. Keep the prompt provider-neutral for every model.
@@ -200,6 +223,11 @@ Also confirm:
   `change_budget` (the producer copies these straight into the PLAN).
 - Last slice is `release-polish`; the union of all `release_items` covers every `RC-nn` row.
 - `parallel_ok` pairs have disjoint `paths`.
+- When gameplay notes exist, run the coverage gate in
+  [reference/gameplay-notes.md](reference/gameplay-notes.md): all source statements indexed,
+  every GP ID accounted for, included behaviors mapped into actual rules and slice scenarios,
+  and unresolved decisions represented by affected slice risks/gates. Report outstanding
+  decisions before handoff; an authored coverage table is not proof of implemented behavior.
 
 Extra rows when a rip pack is present (`brief.rip_path` non-empty):
 
@@ -215,7 +243,8 @@ grep -c 'SEED (' GAME_BRIEF.md HOW_TO.md                                        
   cite the PNG filename, not a packed `sactx-*` page. Nothing from a P3 catalog entry appears as P0.
 - When v1 loads levels: `HOW_TO.md` has a level-schema section citing `reference/<slug>/rip/levels/<file>.json`
   keys actually used (OBSERVED) and names the sample level(s) v1 ships.
-- `SCOPE.md` / `CONTEXT.md` `_Avoid_` list the rip-brief meta systems (arena, store, live-ops, …) as out of v1.
+- `SCOPE.md` / `CONTEXT.md` `_Avoid_` list rip-brief meta systems as out of v1 unless explicitly
+  included by the director; verify any requested scope change is reflected across contracts.
 
 | Result | Action |
 |--------|--------|
@@ -226,6 +255,7 @@ grep -c 'SEED (' GAME_BRIEF.md HOW_TO.md                                        
 | The brief author stuck after nudge | Write the remaining files in this chat under the same prompt rules; note it |
 | `CONTEXT.md` / ADR missing | Write minimal versions here (domain terms + `_Avoid_`; engine, TS strict, web-mobile, design res, physics off unless the brief needs it) |
 | `OBSERVED` in idea mode | Tell the brief author to relabel to `GIVEN` / `ASSUMPTION` |
+| Gameplay notes missing coverage, mislabelled as OBSERVED, or contradicted by slice acceptance | Nudge the brief author with the GP IDs and conflicting rows; recheck before handoff |
 | Slice missing a PLAN field / RC rows uncovered / parallel pair overlaps | Nudge the brief author with the exact ids; do not patch slices yourself (they are the brief author's contract) |
 
 ## Step 5 — Notes + report
@@ -234,6 +264,8 @@ grep -c 'SEED (' GAME_BRIEF.md HOW_TO.md                                        
 - `## Notes — game-brief` → 3–5 bullets: source mode, what was OBSERVED vs ASSUMED (or
   GIVEN vs ASSUMED), media that could not be read, files written here instead of by the brief author; with a
   rip pack: how many `import` vs `generate` rows, and which rip-brief systems were kept out of v1.
+- With gameplay notes, include their path and coverage counts by decision; for amendments,
+  report changed GP IDs/files/slices and required fresh review scenarios for the current owner.
 - Report the file list, the brief author's v1 summary, the slice table from `MILESTONES.md`
   (id · size · one-liner · `needs_director_ok`), and the terminal handle. Slices flagged
   `needs_director_ok: true` are the director's review list before `game-producer` starts.

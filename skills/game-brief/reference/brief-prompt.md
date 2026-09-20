@@ -3,10 +3,12 @@
 Send via `bootstrap.mjs agent-session --agent "$BRIEF_AGENT"` using the resolved agent/model.
 This prompt applies equally to all supported providers; default is Fable 5.1.
 
-Replace `<PROJECT>`, `<SLUG>`, `<SOURCE_BLOCK>`, `<RIP_BLOCK>`, `<ORIENTATION>`, `<DESIGN_RES>`,
+Replace `<PROJECT>`, `<SLUG>`, `<SOURCE_BLOCK>`, `<RIP_BLOCK>`, `<GAMEPLAY_NOTES_BLOCK>`, `<ORIENTATION>`, `<DESIGN_RES>`,
 `<ENGINE_LINE>`, `<RELEASE_GOAL>` (`end_to_end` | `playable`, from `AGENT_NOTES.md` `release.goal`).
 Pick exactly one `<SOURCE_BLOCK>` variant below and paste it in place. Paste the `<RIP_BLOCK>`
 variant only when `reference/<SLUG>/rip/RIP_PACK.json` exists; otherwise delete that line.
+Insert `<GAMEPLAY_NOTES_BLOCK>` only when notes exist, replacing `<GAMEPLAY_NOTES_PATH>`
+with the saved project-relative path; otherwise delete the placeholder line.
 `docs/slice-schema.md` must already be copied into the project (skill Step 3).
 
 ```text
@@ -16,6 +18,7 @@ You are the brief author in <PROJECT>.
 ## Sources (read thoroughly before writing)
 <SOURCE_BLOCK>
 <RIP_BLOCK>
+<GAMEPLAY_NOTES_BLOCK>
 - Contract templates: .cursor/skills/vibe-game-director/templates/{GAME_BRIEF,SCOPE,ARCHITECTURE,FOLLOWUPS,PLAYTEST}.md
 - Slice / milestone / release-checklist format: docs/slice-schema.md (follow it exactly — the producer parses the yaml front-matter)
 - PLAN format the slices must map onto: .cursor/skills/vibe-game-director/reference/plan-schema.md
@@ -63,15 +66,24 @@ J. RELEASE_CHECKLIST.md — product-level "done" rows RC-nn per docs/slice-schem
 
 ## Labels (mandatory on every HOW_TO / EXPECT row)
 - OBSERVED (<file>) — seen in a reference file; cite the exact path (reference/<SLUG>/iphone/03.jpg, reference/<SLUG>/video/frames/t12.jpg, reference/<SLUG>/rip/levels/t160-level-1.json, reference/<SLUG>/rip/images_ingame/<file>.png, …)
-- GIVEN (IDEA §n) — stated by the director in the idea text
-- SEED (reference/<SLUG>/rip/briefs/<file>.md §n) — only when a rip pack exists: a claim taken from the rip briefs / guides; never the sole evidence for a v1 mechanic — pair it with OBSERVED or downgrade to ASSUMPTION
+- GIVEN (IDEA §n) or GIVEN (GAMEPLAY_NOTES GP-nn) — stated by the director; reported play is testimony, not agent-observed evidence. Preserve uncertainty in tentative statements.
+- SEED (reference/<SLUG>/rip/briefs/<file>.md §n) — only when a rip pack exists: a claim taken from the rip briefs / guides; never the sole evidence for a v1 mechanic — corroborate with OBSERVED or a definite GIVEN statement, otherwise downgrade to ASSUMPTION
 - ASSUMPTION — your fill; keep these few and call them out in the summary
 
 ## Rules
 - Do not invent mechanics. Observe media when you have it; otherwise stay inside GIVEN + minimal ASSUMPTION.
 - Do not implement gameplay, do not open Creator, do not commit, do not push.
 - Slice files are contracts: no status fields, no TODOs; anything undecided goes to `risks` and flips `needs_director_ok: true`.
-- When done: file list + 5-bullet v1 slice summary + the slice table (id · size · one-liner · needs_director_ok) + count of ASSUMPTION rows (+ import/generate row counts when a rip pack exists), then stop.
+- When done: file list + 5-bullet v1 slice summary + the slice table (id · size · one-liner · needs_director_ok) + count of ASSUMPTION rows (+ import/generate row counts when a rip pack exists; GP coverage counts and unresolved conflicts when gameplay notes exist), then stop.
+```
+
+## `<GAMEPLAY_NOTES_BLOCK>` (optional, every source mode)
+
+```text
+- Director gameplay notes: <GAMEPLAY_NOTES_PATH> — read Source text and Requirement index in full; this is director input, not a research seed to rewrite.
+- Notes contract: docs/gameplay-notes-contract.md — follow Evidence and decisions + Coverage; validate stable GP IDs against the source. Cite GIVEN (GAMEPLAY_NOTES GP-nn).
+- Add Gameplay notes coverage to HOW_TO.md and carry included rules/scenarios into the owning slices so writer and reviewer use the same requirements. Explicit requested changes override inferred store/rip behavior; record intended deviations. Report unresolved material conflicts without silently selecting a rule.
+- For amendments to existing contracts, also follow Notes arriving after contracts exist in the notes contract and the caller's affected-path/release-state handoff. Revise the affected set, preserving existing slice IDs and completed contracts; the initial full-release authoring/count rules do not require regenerating the release.
 ```
 
 ## `<RIP_BLOCK>` (paste only when `reference/<SLUG>/rip/RIP_PACK.json` exists; else delete the line)
@@ -82,8 +94,8 @@ J. RELEASE_CHECKLIST.md — product-level "done" rows RC-nn per docs/slice-schem
   - Exact in-game art: rip/images_ingame/ + rip/IMAGES_INGAME_GUIDE.md + rip/images_ingame_catalog.json (`priority`, `category`, `maps_to`, `how_to_use` per file). Sprites are de-atlased (one PNG per Unity Sprite); `maps_to` is the SpriteAtlas family. Prefer `*_New` over `*_Old`. Fonts: rip/fonts/ (.ttf/.otf) when present — SDF atlas PNGs are not in images/.
   - Mesh topology: reference/<SLUG>/models/*.glb (catalog P0 already copied there) + rip/MESHES_GUIDE.md + rip/meshes_catalog.json. Most GLBs are uGUI prefab dumps (P3) — never list *PopUp*/Toolbar*/*Leaderboard* as art. If the guide says the game is 2.5D/sprite-based, plan sprites and use meshes only for shape data.
   - Level data: rip/levels/*.json (+ schema keys in rip/README.md and rip/briefs/GAMEPLAY_BRIEF.md). If v1 loads levels, HOW_TO.md gets a level-schema section that cites the exact keys v1 reads (OBSERVED) and names the sample level file(s) v1 ships; do not ship all levels in S01.
-  - Rip briefs: rip/briefs/{GAME,GAMEPLAY,2D_ART,3D_ART}_BRIEF.md — research seeds about the shipped Unity game (label SEED). Re-derive v1 yourself; meta systems they describe (arena, store, live-ops, collections, leaderboards, IAP) go to NOT-in-v1 / _Avoid_, never into the v1 slice.
-  - Store pack stays the source for feel / HUD layout / marketing look; the rip is the source for exact sprites, colors (color enum × neutral art — never per-color assets), shapes, and level schema. When they disagree, EXPECT follows the store screenshots/trailer and notes the rip variant in the accepted-deviation table.
+  - Rip briefs: rip/briefs/{GAME,GAMEPLAY,2D_ART,3D_ART}_BRIEF.md — research seeds about the shipped Unity game (label SEED). Re-derive v1 yourself; meta systems they describe go to NOT-in-v1 / _Avoid_ unless explicitly requested and scoped by the director. Rip prose alone never expands v1.
+  - Store pack stays the source for feel / HUD layout / marketing look; the rip is the source for exact sprites, colors (color enum × neutral art — never per-color assets), shapes, and level schema. Unless an explicit director requirement determines the design, EXPECT follows store screenshots/trailer when store and rip disagree, noting the rip variant in the accepted-deviation table. Conflicts with reported play follow the gameplay-notes contract.
   - ASSET_MANIFEST.md rows: Source column `import` (exact rip/models path + slice region) or `generate`; default import when a P0/P1 catalog file covers the need.
 ```
 
@@ -94,22 +106,22 @@ J. RELEASE_CHECKLIST.md — product-level "done" rows RC-nn per docs/slice-schem
 ```text
 - Store page: <STORE_URL>
 - Reference pack: reference/<SLUG>/ (iphone/, ipad/, video/preview.mp4, video/frames/, icon-1024.png, manifest.json; models/ if present) — READ the screenshots and frames, not just the manifest
-- Research seed if present: reference/<SLUG>-brief/ (rewrite — do not rubber-stamp)
-- Allowed labels: OBSERVED, ASSUMPTION
+- Research seed if present: reference/<SLUG>-brief/ (rewrite research briefs — do not rubber-stamp; preserve director source text in GAMEPLAY_NOTES.md / IDEA.md)
+- Allowed labels: OBSERVED, GIVEN (only supplied director statements), ASSUMPTION; SEED when the rip block is present
 ```
 
 ### media (user-supplied folder, not a store crawl)
 
 ```text
-- Reference media: reference/<SLUG>/ (screenshots, video + video/frames/, GDD / notes, models/*.glb if present) — READ every image and frame; treat any .md inside as director statements
+- Reference media: reference/<SLUG>/ (screenshots, video + video/frames/, GDD / notes, models/*.glb if present) — READ every image and frame; user-authored GDD/notes are director statements; rip research prose follows SEED rules
 - Director notes (if any): reference/<SLUG>-brief/IDEA.md
-- Allowed labels: OBSERVED, GIVEN, ASSUMPTION
+- Allowed labels: OBSERVED, GIVEN, ASSUMPTION; SEED when the rip block is present
 ```
 
 ### idea (text only)
 
 ```text
-- Director idea: reference/<SLUG>-brief/IDEA.md — this is the whole source; quote it by section (§n)
-- No media exists. NEVER write OBSERVED. Every row is GIVEN (IDEA §n) or ASSUMPTION.
+- Director idea: reference/<SLUG>-brief/IDEA.md — base source; quote it by section (§n); supplied gameplay notes supplement it when present
+- No media exists. NEVER write OBSERVED. Every row is GIVEN (IDEA §n / GAMEPLAY_NOTES GP-nn) or ASSUMPTION.
 - For the feel table, propose concrete values (easing, ms, shake yes/no) and label them ASSUMPTION; the director will tune them in review.
 ```
