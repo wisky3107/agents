@@ -66,8 +66,16 @@ Treat results as evidence, not authority.
 
 ## Agent and Orca policy
 
-Start integrations in `shadow` mode: log the recommendation while the existing router makes
-the decision. Promote only measured low-risk decisions to `active` mode.
+In a project whose `AGENT_NOTES.md` has `typesafe.enabled: true` and
+`typesafe.auto_route: true`, routing skills call
+`scripts/route.mjs --config AGENT_NOTES.md --preset game-routing` once at their decision
+boundary without waiting for the user to mention TypeSafe. Pass a minimized JSON state on stdin;
+never put the API key or sensitive state in CLI arguments. Missing keys, API failures, and
+uncertainty return a structured fallback and must not block the workflow or trigger repeated
+calls in the same turn.
+
+Start automatic integrations in `shadow` mode: log the recommendation while the existing router
+makes the decision. Promote only measured low-risk decisions to `active` mode.
 
 Precedence is always:
 
@@ -87,6 +95,14 @@ TypeSafe may suggest a skill, lane, provider/model tier, or evidence category. I
 For skill suggestion, shortlist from name plus description, then re-evaluate the top few with
 their full descriptions. The agent still applies skill trigger rules and reads the selected
 `SKILL.md` before acting.
+
+Example dry run, which does not call the service:
+
+```bash
+printf '%s' '{"request":"Add inventory UI and save state"}' |
+  node .cursor/skills/typesafe-ai/scripts/route.mjs \
+    --config AGENT_NOTES.md --preset game-routing --dry-run
+```
 
 ## Data handling
 

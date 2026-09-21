@@ -38,11 +38,14 @@ worker; this skill only assigns hats and wires the DAG.
 | `S`, `M` code-only, `BUG` | Do **not** orchestrate; run the normal `10-vibe-loop` single-agent |
 | Director says "hand off" / "give this to another agent" | Full handoff via `orca-cli`, not this skill |
 
-An enabled TypeSafe classifier may advise task kind, lane, or evidence triage under the
-`typesafe-ai` skill. In `shadow` mode it is telemetry only. In `active` mode it may assist only
-where the table leaves a genuine low-risk choice; it cannot downgrade an L task, override the
-director, alter the approved PLAN/DAG, relax ownership or editor locks, skip runtime evidence,
-or replace the independent reviewer. Failure or low confidence falls back to this table.
+When `typesafe.enabled: true` and `typesafe.auto_route: true`, read the `typesafe-ai` skill and
+run its `game-routing` adapter once after PLAN validation only when no producer/upstream handoff
+already carries a result for this task. This is automatic and does not require a prompt mention.
+In `shadow` mode it is telemetry only. In `active` mode it may assist only where the table leaves
+a genuine low-risk choice; it cannot downgrade an L task, override the director, alter the
+approved PLAN/DAG, relax ownership or editor locks, skip runtime evidence, or replace the
+independent reviewer. Missing key, failure, or low confidence falls back to this table without a
+retry in the same run.
 
 ## Preconditions
 

@@ -37,12 +37,14 @@ Discover facts locally before asking. Ask only when an unresolved answer changes
 
 Use a fleet when the work benefits from independent slices, parallelism, isolation, specialist roles, or independent review. Stay in the current agent for a small sequential task whose coordination overhead exceeds its value.
 
-When a project has an enabled TypeSafe routing policy, it may provide an advisory task kind,
-complexity, lane, or provider tier. Read the `typesafe-ai` skill before using that signal.
-During `shadow` mode, log the recommendation but keep this skill's router authoritative. In
-`active` mode, accept only low-risk suggestions that agree with explicit user choices,
-authorization boundaries, repository policy, and the hard topology rules below. API failure or
-low confidence falls back to this skill without blocking the fleet.
+When project config has `typesafe.enabled: true` and `typesafe.auto_route: true`, read the
+`typesafe-ai` skill and run its `game-routing` adapter once while deciding whether to orchestrate,
+unless an upstream handoff already carries a result for the same task. This is automatic; the
+user does not need to name TypeSafe. During `shadow` mode, log the recommendation but keep this
+skill's router authoritative. In `active` mode, accept only low-risk suggestions that agree with
+explicit user choices, authorization boundaries, repository policy, and the hard topology rules
+below. Missing key, API failure, or low confidence falls back to this skill without retrying or
+blocking the fleet.
 
 If orchestration is justified, create a bounded Task for every independently verifiable outcome. Define exact dependencies, ownership, verification, reviewer relationships, and non-goals. If the user requests one-time approval, present the full executable plan once and do not ask again unless new material risk appears.
 
