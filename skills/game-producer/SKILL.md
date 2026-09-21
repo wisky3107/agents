@@ -48,6 +48,13 @@ opens its own Creator + Funplay port; RAM is the limit).
 codex, say `reviewer=codex → cursor auto (localhost)` in the lock line and use Cursor. Do not
 discover this per slice.
 
+If `AGENT_NOTES.md` enables TypeSafe, treat its lane/model/evidence classifications as advisory
+under the `typesafe-ai` skill. `shadow` mode records recommendations without changing a lane.
+`active` mode may refine a low-risk S/M choice only when it agrees with the slice contract and
+the deterministic rules above. It never overrides an explicit director choice, L/fleet rules,
+localhost constraints, reviewer verdicts, release policy, or any director/human gate. API
+failure or uncertainty falls back to this policy and never blocks production.
+
 ## Progress checklist
 
 ```
