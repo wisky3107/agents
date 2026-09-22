@@ -4,7 +4,8 @@ Send via `bootstrap.mjs agent-session --agent "$BRIEF_AGENT"` using the resolved
 This prompt applies equally to all supported providers; default is Fable 5.1.
 
 Replace `<PROJECT>`, `<SLUG>`, `<SOURCE_BLOCK>`, `<RIP_BLOCK>`, `<GAMEPLAY_NOTES_BLOCK>`, `<ORIENTATION>`, `<DESIGN_RES>`,
-`<ENGINE_LINE>`, `<RELEASE_GOAL>` (`end_to_end` | `playable`, from `AGENT_NOTES.md` `release.goal`).
+`<ENGINE_LINE>`, `<RELEASE_GOAL>` (`end_to_end` | `playable`, from `AGENT_NOTES.md` `release.goal`),
+`<BRIEF_TOOLS>` (absolute skill scripts directory), `<BRIEF_RUN_ID>` and `<CONTRACT_DEPTH>`.
 Pick exactly one `<SOURCE_BLOCK>` variant below and paste it in place. Paste the `<RIP_BLOCK>`
 variant only when `reference/<SLUG>/rip/RIP_PACK.json` exists; otherwise delete that line.
 Insert `<GAMEPLAY_NOTES_BLOCK>` only when notes exist, replacing `<GAMEPLAY_NOTES_PATH>`
@@ -15,10 +16,11 @@ with the saved project-relative path; otherwise delete the placeholder line.
 Task: author the project contracts for the game in <PROJECT>.
 You are the brief author in <PROJECT>.
 
-## Sources (read thoroughly before writing)
+## Sources (shortlist first; full director source)
 <SOURCE_BLOCK>
 <RIP_BLOCK>
 <GAMEPLAY_NOTES_BLOCK>
+- Read `docs/brief-input-index.json` first. Inspect its shortlist and full director source; query `docs/brief-asset-candidates.json` only for a specific needed asset. Record extra research with `node <BRIEF_TOOLS>/brief-progress.mjs --project <PROJECT> --run-id <BRIEF_RUN_ID> --read <path> --reason <decision>`. Use bounded targeted lookups; no default full-pack contact sheet. Counts/metadata are not proof of visual inspection.
 - Contract templates: .cursor/skills/vibe-game-director/templates/{GAME_BRIEF,SCOPE,ARCHITECTURE,FOLLOWUPS,PLAYTEST}.md
 - Slice / milestone / release-checklist format: docs/slice-schema.md (follow it exactly — the producer parses the yaml front-matter)
 - PLAN format the slices must map onto: .cursor/skills/vibe-game-director/reference/plan-schema.md
@@ -27,7 +29,8 @@ You are the brief author in <PROJECT>.
   Resolve engine/render mode/platform from this project. Pin id/revision/sha256/path into
   recipe_refs in relevant slices; add in-scope checks and ADR rationale. Missing/no match = [].
   A candidate is guidance to validate, not observed product behavior; preserve GIVEN/ASSUMPTION.
-- Quality bar for depth: sibling briefs under /Users/wikz/orca-global/*-brief/ (structure only — never copy another game's mechanics)
+- Quality bar for depth: consult at most one sibling brief under /Users/wikz/orca-global/*-brief/ only if templates leave a structural question; never copy mechanics.
+- Contract depth: <CONTRACT_DEPTH>. Follow docs/brief-workflow.md. With playable depth, S01 remains complete; later slices are outlines that cannot dispatch until expanded. Preserve full GP coverage and release ownership in either mode.
 - Engine: <ENGINE_LINE>; TypeScript strict; web-mobile target
 - Release goal: <RELEASE_GOAL> (end_to_end = every slice then ship; playable = producer stops after v1_slice). In both modes S01 must be a polished, presentation-ready playable: complete core loop, own fail/restart, production-quality in-game UX/UI, responsive layout, and close correspondence to the expected mock screen. Never define S01 as gray boxes, debug UI, placeholder layout, or a minimal HUD.
 
@@ -80,6 +83,7 @@ J. RELEASE_CHECKLIST.md — product-level "done" rows RC-nn per docs/slice-schem
 - Do not implement gameplay, do not open Creator, do not commit, do not push.
 - Slice files are contracts: no status fields, no TODOs; anything undecided goes to `risks` and flips `needs_director_ok: true`.
 - When done: file list + 5-bullet v1 slice summary + the slice table (id · size · one-liner · needs_director_ok) + count of ASSUMPTION rows (+ import/generate row counts when a rip pack exists; GP coverage counts and unresolved conflicts when gameplay notes exist), then stop.
+- Write GAME_BRIEF.md once core evidence and source requirements are understood, then HOW_TO/EXPECT/ASSET_MANIFEST, supporting contracts and slices. Save completed sections incrementally. Use `node <BRIEF_TOOLS>/brief-progress.mjs --project <PROJECT> --run-id <BRIEF_RUN_ID> --phase <phase> --file <file>` after each group. Record opened images with `--evidence <path>`. Author stops at contracts_written; coordinator owns semantic review and done. Repeated heartbeat writes do not count as progress.
 ```
 
 ## `<GAMEPLAY_NOTES_BLOCK>` (optional, every source mode)
@@ -118,7 +122,7 @@ J. RELEASE_CHECKLIST.md — product-level "done" rows RC-nn per docs/slice-schem
 ### media (user-supplied folder, not a store crawl)
 
 ```text
-- Reference media: reference/<SLUG>/ (screenshots, video + video/frames/, GDD / notes, models/*.glb if present) — READ every image and frame; user-authored GDD/notes are director statements; rip research prose follows SEED rules
+- Reference media: reference/<SLUG>/ (screenshots, video + video/frames/, GDD / notes, models/*.glb if present) — inspect the index shortlist, then extra media only for an identified evidence gap; user-authored GDD/notes are director statements and must be read fully; rip research prose follows SEED rules
 - Director notes (if any): reference/<SLUG>-brief/IDEA.md
 - Allowed labels: OBSERVED, GIVEN, ASSUMPTION; SEED when the rip block is present
 ```

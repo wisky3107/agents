@@ -29,6 +29,16 @@ touch the Editor, never hold the editor lock, never rewrite a slice file.
 | `GAME_BRIEF`, `SCOPE`, `ARCHITECTURE`, `PLAYTEST`, `FOLLOWUPS`, `EXPECT_GAMEPLAY_VISUAL`, `ASSET_MANIFEST` | context for every lane prompt |
 
 Missing `MILESTONES.md` / `slices/` → stop: "run `game-brief` first". Do not invent slices.
+`brief.contract_depth` absent means `full`. If it is `playable`, only `v1_slice` may dispatch,
+and only for `release.goal=playable`. Before a later slice or end_to_end run, route a targeted
+game-brief expansion, preserving merged slices; require depth=full and fresh contract gates.
+For projects using `docs/brief-progress.json`, require phase=done and a current contract hash
+(`node ~/.agents/skills/game-brief/scripts/brief-progress.mjs --project <project> --watch` → done)
+before initial dispatch or accepting a brief amendment. Implementation-owned updates to PLAYTEST
+or FOLLOWUPS after a slice starts are reviewed by the normal lane gate; do not misclassify those
+as a new brief amendment or restart authoring solely because that content changed.
+Do not use an outline or a stale marker as a runnable PLAN. Legacy projects without this marker
+continue through the existing Step 0 checks.
 You create `.cursor/evidence/lessons.jsonl` (Step 2d) and `docs/retro.md` (Step 3.6); they are
 not start-gate files.
 

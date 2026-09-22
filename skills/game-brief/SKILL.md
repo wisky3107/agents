@@ -17,8 +17,9 @@ description: >-
 # Game Brief
 
 Turn a source (store pack, media folder, or plain idea) into the project contracts the
-producer and fleet read — including **every slice up front** so `game-producer` can run the
-whole release without re-planning. S01 must be a presentation-ready playable: complete core
+producer and fleet read — including **every slice up front**. Full depth prepares the whole
+release; opt-in playable depth requires expansion before later slices can dispatch. S01 must
+be a presentation-ready playable: complete core
 loop plus polished in-game UX/UI, responsive layout, and close visual correspondence to the
 expected mock screen derived from screenshots or the brief. The brief author **only writes docs**: no
 gameplay code, no Creator, no commit, no push.
@@ -39,6 +40,7 @@ passed. This skill never creates or opens a project.
 | Contract templates | `<project>/.cursor/skills/vibe-game-director/templates/*.md` |
 | Depth exemplars | `/Users/wikz/orca-global/*-brief/` (structure only) |
 | Handoff file | `<project>/AGENT_NOTES.md` — this skill owns yaml `brief:` + `## Notes — game-brief` |
+| Optimization tools | `scripts/index-source.mjs`, `scripts/brief-progress.mjs`, `scripts/validate-contracts.mjs`, `scripts/validate-gameplay-coverage.mjs` |
 
 ## Progress checklist
 
@@ -48,7 +50,7 @@ Game Brief:
 - [ ] 1. Seed source (media → reference/<slug>/; idea → reference/<slug>-brief/IDEA.md; rip → already under reference/<slug>/rip/)
 - [ ] 2. Fill AGENT_NOTES.md brief: block (add block/section if skeleton is old)
 - [ ] 3. Launch the brief author in the project (agent-session) with the filled prompt (+ optional rip / gameplay-notes blocks)
-- [ ] 4. Gate: 8 root contracts + CONTEXT.md + ADR + MILESTONES.md + slices/ + RELEASE_CHECKLIST.md (+ rip rows / GP coverage)
+- [ ] 4. Gate: run the deterministic contract and gameplay coverage validators, then inspect the remaining visual evidence (+ rip rows / GP coverage)
 - [ ] 5. Update notes section; report file list + slice table; stop (no commit unless asked)
 ```
 
@@ -86,8 +88,10 @@ Ask only what's missing:
    and record the canonical spec actually honored by the launcher. Do not silently fall back to
    a different model if validation or launch fails; report the exact failure.
 6. **Release goal** — read `AGENT_NOTES.md` `release.goal` (`end_to_end` default | `playable`).
-   The brief author always writes **all** slices either way; the goal only tells the producer where to
-   stop. In either goal, S01 is self-sufficient and visually presentable: its own fail/restart,
+   The brief author always writes **all** slice files. `brief.contract_depth` defaults to `full`;
+   opt-in `playable` keeps S01 fully detailed and later slices as non-dispatchable outlines under
+   [bounded-authoring.md](reference/bounded-authoring.md). It is valid only for goal=playable.
+   In either depth, S01 is self-sufficient and visually presentable: its own fail/restart,
    production-quality in-game HUD and controls, responsive safe-area layout, and an explicit
    expected mock screen based on the strongest screenshot evidence or the director brief.
    `playable` must never mean gray boxes, debug UI, placeholder layout, or a minimal HUD.
@@ -102,6 +106,16 @@ path). `rip/briefs/*.md` and `*_GUIDE.md` prose are **research seeds** — the b
 as `SEED (rip/briefs/GAMEPLAY_BRIEF.md §…)` but must re-derive v1 decisions itself; a rip brief
 describing the shipped Unity meta (arena, store, live-ops) never widens v1 scope by itself;
 explicit director requirements receive the scope decision defined in gameplay-notes.md.
+
+## Bounded research and progress
+
+Read [bounded-authoring.md](reference/bounded-authoring.md) before launch. It owns dependency
+setup, source indexing, optional safe scaffolding, progress commands, recovery ownership and
+the opt-in playable-depth contract. These tools live in this skill, not in the game project's
+`scripts/` directory. Pass their absolute paths and the active run ID in the author prompt.
+Use a shortlist first and targeted extra reads tied to unresolved decisions. Full director
+source reading and S01 visual inspection remain required. An indexed asset is not visually
+inspected evidence. Do not make a full-pack contact sheet by default.
 
 ## Step 1 — Seed the source into the project
 
@@ -143,6 +157,7 @@ brief:
   reference_path: reference/<slug>/      # "" for idea
   rip_path: reference/<slug>/rip/        # "" when no rip pack (intake 2b)
   gameplay_notes_path: reference/<slug>-brief/GAMEPLAY_NOTES.md  # "" when none
+  contract_depth: full                  # full (default) | playable (opt-in; later slices need expansion)
   orientation: landscape 1280x720        # or portrait 720x1280
   authored_at: ""                        # fill after Step 4 (ISO date)
 ```
@@ -196,14 +211,25 @@ EOF
 )"
 ```
 
-`agent-session` sends the AGENTS.md boot prompt first, waits `tui-idle`, then the task. If the
-JSON says `promptSent: false`, re-send with `orca terminal send <handle> --enter` (without
+`agent-session` skips a separate boot turn for agents that load workspace rules natively;
+other agents get the boot prompt first. It waits for TUI readiness before sending the task.
+If the JSON says `promptSent: false`, re-send with `orca terminal send --terminal <handle> --enter` (without
 `--enter` the text stays in draft). Record the terminal handle.
 
 ## Step 4 — Gate
 
-Wait for the brief author to print the 5-bullet v1 summary and go idle
-(`orca terminal wait <handle> --for tui-idle --timeout-ms 900000`), then check:
+Monitor progress per bounded-authoring.md with short waits (≤60 seconds), not terminal-text
+polling or a single 15-minute wait. When contracts_written appears, run:
+
+```bash
+node ~/.agents/skills/game-brief/scripts/validate-contracts.mjs --project "$PROJECT"
+node ~/.agents/skills/game-brief/scripts/validate-gameplay-coverage.mjs --project "$PROJECT"
+```
+
+Both return JSON and nonzero exit on errors. Give exact failures to the current author.
+Mechanical PASS does not replace the semantic/visual checks below. The coordinator records
+their result and uses the progress tool to mark done only against the reviewed contract hash.
+For a quick missing-file diagnostic:
 
 ```bash
 cd "$PROJECT" && for f in GAME_BRIEF.md HOW_TO.md EXPECT_GAMEPLAY_VISUAL.md ASSET_MANIFEST.md \
@@ -263,8 +289,8 @@ grep -c 'SEED (' GAME_BRIEF.md HOW_TO.md                                        
 | S01 target missing/unreadable, review criteria incomplete, or S01 UI checks deferred to later slices | Nudge the brief author with the exact gaps and the S01 visual contract; recheck before marking the brief complete |
 | Rip present but `ASSET_MANIFEST.md` has no `import` rows / no `rip/` paths | Nudge the brief author with `reference/<slug>/rip/IMAGES_INGAME_GUIDE.md` + `MESHES_GUIDE.md` P0 tables; do not add rows yourself |
 | An `import` path does not exist | Nudge with the exact row; the brief author must fix or flip it to `generate` |
-| The brief author stuck after nudge | Write the remaining files in this chat under the same prompt rules; note it |
-| `CONTEXT.md` / ADR missing | Write minimal versions here (domain terms + `_Avoid_`; engine, TS strict, web-mobile, design res, physics off unless the brief needs it) |
+| No evidence/contract change for 8 minutes after an acknowledged nudge | Check the tool/job or provider state; transfer recovery only after confirming the previous writer and background jobs stopped. Reuse its index and drafts; apply the same gates. A STOP message alone is not cessation proof. |
+| `CONTEXT.md` / ADR missing | Nudge the current author; after verified ownership transfer, recovery may write minimal versions (domain terms + `_Avoid_`; engine, TS strict, web-mobile, design res, physics only if needed). |
 | `OBSERVED` in idea mode | Tell the brief author to relabel to `GIVEN` / `ASSUMPTION` |
 | Gameplay notes missing coverage, mislabelled as OBSERVED, or contradicted by slice acceptance | Nudge the brief author with the GP IDs and conflicting rows; recheck before handoff |
 | Slice missing a PLAN field / RC rows uncovered / parallel pair overlaps | Nudge the brief author with the exact ids; do not patch slices yourself (they are the brief author's contract) |

@@ -7,6 +7,12 @@ them; progress lives in `AGENT_NOTES.md` `release:`.
 
 ## Cutting rules
 
+`brief.contract_depth` defaults to `full`. Opt-in `playable` follows the bounded-authoring
+reference (project copy: `docs/brief-workflow.md`): full S01, all later slice files/fields present as
+non-dispatchable outlines until expanded. Keep concrete outcomes, scope, dependency, paths,
+budgets, evidence-labeled acceptance, RC ownership and GP scenarios in both depths. This changes
+authoring depth only; the S01 visual contract below is unchanged.
+
 - **Vertical slices only** — each slice is playable, previewable, and reviewable on its own.
   No "engine-only" or "refactor" slice.
 - `S01` = the v1 playable slice `GAME_BRIEF.md` describes. It is presentation-ready, not a

@@ -1,0 +1,159 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { indexSource } from '../scripts/index-source.mjs';
+import { update, watch } from '../scripts/brief-progress.mjs';
+import { validate, overlap } from '../scripts/validate-contracts.mjs';
+import { validate as coverage } from '../scripts/validate-gameplay-coverage.mjs';
+import { scaffold } from '../scripts/scaffold-contracts.mjs';
+import { stringify } from 'yaml';
+import { ROOTS, reviewHash, local, ids } from '../scripts/lib.mjs';
+
+const put = (p,f,s) => { fs.mkdirSync(path.dirname(path.join(p,f)),{recursive:true}); fs.writeFileSync(path.join(p,f),s); };
+function validProject() {
+  const p = project();
+  for(const f of ROOTS) if(f !== 'MILESTONES.md') put(p,f,`# ${f}\nAuthored content\n`);
+  const m = {slices:['S01','S02'],dag:{S02:['S01']},parallel_ok:[],v1_slice:'S01',release_slice:'S02',stop_when:'RC pass'};
+  put(p,'MILESTONES.md','```yaml\n'+stringify(m)+'```\n');
+  for(const id of m.slices) {
+    const s = {id,name:id==='S01'?'polished-playable':'release-polish',one_liner:'Clear board',size:'M',depends_on:m.dag[id]||[],needs_director_ok:false,scope:{in:['clear'],out:['shop']},paths:{code:[`assets/${id}.ts`],art:[],scene_objects:[]},assets:{'2d':[],'3d':[],vfx:[],audio:[]},acceptance:[{text:'Tap clears board',evidence:'ASSUMPTION'}],feel_rows:[],runtime_checks:['no errors'],playtest:['tap then clear'],change_budget:{files:1,lines:100,nodes:1,assets:0,tripo_credits:0},risks:[],release_items:id==='S01'?['RC-01']:['RC-02']};
+    put(p,`slices/${id}-slice.md`,'---\n'+stringify(s)+'---\n');
+  }
+  put(p,'RELEASE_CHECKLIST.md','| id | area | check | closed_by | how to verify |\n|---|---|---|---|---|\n| RC-01 | input | tap | S01 | tap |\n| RC-02 | ship | build | S02 | build |\n');
+  put(p,'EXPECT_GAMEPLAY_VISUAL.md','# S01 visual target\n[screen](reference/demo/iphone/01.jpg)\n## Game feel / VFX table\n');
+  put(p,'ASSET_MANIFEST.md','| Stem | Source | Priority | Path |\n|---|---|---|---|\n| impact | import | P0 | reference/demo/rip/images_ingame/Fx.png |\n');
+  put(p,'SCOPE.md','budget_count: code_only\nbudget_auto_bump_pct: 15\n');
+  return p;
+}
+
+function project() {
+  const p = fs.mkdtempSync(path.join(os.tmpdir(), 'game-brief-'));
+  fs.mkdirSync(path.join(p, 'reference/demo/rip/levels'), { recursive: true });
+  fs.mkdirSync(path.join(p, 'reference/demo/rip/images_ingame'), { recursive: true });
+  fs.mkdirSync(path.join(p, 'reference/demo/models'), { recursive: true });
+  fs.mkdirSync(path.join(p, 'reference/demo/iphone'), { recursive: true });
+  fs.writeFileSync(path.join(p, 'AGENT_NOTES.md'), `---\nbrief:\n  source: store\n  reference_path: reference/demo\n  rip_path: reference/demo/rip\n  orientation: portrait 720x1280\nrelease:\n  goal: playable\n---\n`);
+  fs.writeFileSync(path.join(p, 'reference/demo/rip/RIP_PACK.json'), '{}');
+  fs.writeFileSync(path.join(p, 'reference/demo/rip/images_ingame_catalog.json'), JSON.stringify({ entries: [{ file: 'Fx.png', priority: 'P0', category: 'fx' }, { file: 'Old.png', priority: 'P3' }] }));
+  fs.writeFileSync(path.join(p, 'reference/demo/rip/meshes_catalog.json'), JSON.stringify({ entries: [{ file: 'Prop.glb', priority: 'P0', category: 'prop' }] }));
+  fs.writeFileSync(path.join(p, 'reference/demo/rip/images_ingame/Fx.png'), 'x');
+  fs.writeFileSync(path.join(p, 'reference/demo/models/Prop.glb'), 'x');
+  fs.writeFileSync(path.join(p, 'reference/demo/rip/levels/one.json'), JSON.stringify({ Tables: [{ Placements: [{ PropId: 'can' }] }] }));
+  fs.writeFileSync(path.join(p, 'reference/demo/iphone/01.jpg'), 'x');
+  return p;
+}
+test('index-source selects bounded candidates and records schema keys', () => {
+  const p = project(), r = indexSource(p);
+  assert.equal(r.ok, true); assert.equal(r.index.contractDepth, 'full');
+  assert.equal(r.index.sampleMeshes[0].path, 'reference/demo/models/Prop.glb');
+  assert.ok(r.index.levels[0].keys.some(k => k.includes('Tables')));
+  assert.ok(fs.existsSync(path.join(p, 'docs/brief-input-index.json')));
+});
+test('progress updates fingerprints and detects stale work', () => {
+  const p = project(); indexSource(p);
+  const start = Date.now(), id = update(p,{init:true},start).progress.runId;
+  update(p,{'run-id':id,phase:'indexed'}, start);
+  watch(p,{},start);
+  update(p,{'run-id':id,phase:'indexed'}, start+11*60000);
+  assert.equal(watch(p,{},start+11*60000).action,'nudge_first_contract');
+  update(p,{'run-id':id,'ack-nudge':'write core'},start+11*60000);
+  assert.equal(watch(p,{},start+12*60000).action,'wait_after_nudge');
+  assert.equal(watch(p,{},start+19*60000).action,'recovery_candidate');
+  put(p,'GAME_BRIEF.md','A real authored core loop');
+  assert.equal(watch(p,{},start+20*60000).action,'continue');
+  assert.throws(()=>update(p,{init:true}),/Unfinished/);
+  assert.throws(()=>update(p,{'run-id':'stale',phase:'indexed'}),/stale/);
+});
+test('idea, media and rip indexing; cache invalidation and missing inputs',()=>{
+  const p=project(); const r=indexSource(p); assert.equal(indexSource(p).cached,true);
+  put(p,'reference/demo/rip/images_ingame_catalog.json',JSON.stringify({entries:[]}));
+  assert.notEqual(indexSource(p).index.inputFingerprint,r.index.inputFingerprint);
+  put(p,'AGENT_NOTES.md','```yaml\nbrief:\n  source: idea\nrelease:\n  goal: playable\n```\n');
+  put(p,'reference/demo-brief/IDEA.md','Tap to clear');
+  assert.equal(indexSource(p,{slug:'demo'}).index.source,'idea');
+  assert.throws(()=>indexSource(p,{slug:'missing'}),/Missing idea/);
+  put(p,'AGENT_NOTES.md','```yaml\nbrief:\n  source: media\n  reference_path: reference/demo\nrelease:\n  goal: playable\n```\n');
+  assert.equal(indexSource(p).index.source,'media');
+});
+test('scaffolding preserves authored files and cannot pass the gate',()=>{
+  const p=project(); put(p,'GAME_BRIEF.md','Do not overwrite');
+  scaffold(p,{slices:6}); assert.equal(fs.readFileSync(path.join(p,'GAME_BRIEF.md'),'utf8'),'Do not overwrite');
+  assert.ok(validate(p).errors.some(e=>e.code==='unfinished_scaffold'));
+  assert.equal(scaffold(p,{slices:6}).written.length,0);
+});
+test('valid full contract passes, malformed YAML and DAG cycles fail',()=>{
+  const p=validProject(); assert.deepEqual(validate(p).errors,[]);
+  const f='MILESTONES.md'; put(p,f,'```yaml\nslices: [S01, S02]\nslices: [S01]\n```');
+  assert.ok(validate(p).errors.some(e=>e.code==='invalid_yaml'));
+  put(p,f,'```yaml\n'+stringify({slices:['S01','S02'],dag:{S01:['S02'],S02:['S01']},parallel_ok:[],v1_slice:'S01',release_slice:'S02',stop_when:'done'})+'```');
+  assert.ok(validate(p).errors.some(e=>e.code==='dag_cycle'));
+});
+test('import paths and RC ownership are checked even when Source is not first',()=>{
+  const p=validProject();
+  put(p,'ASSET_MANIFEST.md','| Stem | Source | Priority | Path |\n|---|---|---|---|\n| impact | import | P0 | reference/demo/missing.png |\n');
+  put(p,'RELEASE_CHECKLIST.md','| id | area | check | closed_by | how to verify |\n|---|---|---|---|---|\n| RC-01 | input | tap | S02 | tap |\n');
+  const r=validate(p); assert.ok(r.errors.some(e=>e.code==='missing_import_path')); assert.ok(r.errors.some(e=>e.code==='uncovered_release_item'));
+});
+test('playable depth is opt-in and cannot run end_to_end',()=>{
+  const p=validProject(); let n=fs.readFileSync(path.join(p,'AGENT_NOTES.md'),'utf8');
+  put(p,'AGENT_NOTES.md',n.replace('brief:\n','brief:\n  contract_depth: playable\n'));
+  assert.deepEqual(validate(p).dispatchableSlices,['S01']);
+  put(p,'AGENT_NOTES.md',fs.readFileSync(path.join(p,'AGENT_NOTES.md'),'utf8').replace('goal: playable','goal: end_to_end'));
+  assert.ok(validate(p).errors.some(e=>e.code==='depth_requires_expansion'));
+});
+test('GP coverage requires concrete links, not just a coverage row',()=>{
+  const p=validProject();
+  put(p,'reference/demo-brief/GAMEPLAY_NOTES.md','## Source text\nTap clears board\n\n## Requirement index\n| ID | Kind | Source passage | Notes |\n|---|---|---|---|\n| GP-01 | Requested change | Tap clears board | |\n');
+  const row='| GP ID | Kind | Decision / reason | Contract section | Slice | Acceptance / playtest |\n|---|---|---|---|---|---|\n| GP-01 | Requested | included | HOW_TO rule | S01 | tap → clear |\n';
+  put(p,'HOW_TO.md',row);
+  assert.ok(coverage(p).errors.some(e=>e.code==='gp_missing_scenario'));
+  put(p,'HOW_TO.md','Rule: tap clears board GIVEN (GAMEPLAY_NOTES GP-01)\n\n'+row);
+  put(p,'PLAYTEST.md','GP-01: tap then verify clear');
+  const f='slices/S01-slice.md'; put(p,f,fs.readFileSync(path.join(p,f),'utf8').replace('Tap clears board','Tap clears board GP-01'));
+  assert.equal(coverage(p).ok,true);
+});
+test('done requires semantic review bound to current hashes; post-review edits stale it',()=>{
+  const p=validProject(), id=update(p,{init:true}).progress.runId;
+  assert.throws(()=>update(p,{'run-id':id,phase:'done'}),/review/);
+  put(p,'docs/brief-review.json',JSON.stringify({runId:id,contractHash:reviewHash(p),visualTargetInspected:true,evidenceLabelsChecked:true,sourceCoverageChecked:true,gameplaySemanticsChecked:true}));
+  assert.equal(update(p,{'run-id':id,phase:'done',review:'docs/brief-review.json'}).ok,true);
+  assert.equal(watch(p).action,'done');
+  put(p,'GAME_BRIEF.md','Changed scope'); assert.equal(watch(p).action,'gate_stale');
+});
+test('wildcard and parent scene paths cannot be declared parallel',()=>{
+  assert.equal(overlap('assets/ui/**','assets/ui/Fail.ts'),true);
+  assert.equal(overlap('Canvas/HUD','Canvas/HUD/Score'),true);
+  assert.equal(overlap('assets/A.ts','assets/B.ts'),false);
+  assert.equal(overlap('assets/{ui,vfx}/**','assets/ui/Panel.ts'),true);
+});
+test('extra research requires a reason and drafts do not count as first contract',()=>{
+  const p=project(), now=Date.now(), id=update(p,{init:true},now).progress.runId;
+  assert.throws(()=>update(p,{'run-id':id,read:'rip/file'}),/reason/);
+  indexSource(p); put(p,'GAME_BRIEF.md','BRIEF_DRAFT');
+  assert.equal(watch(p,{},now+11*60000).action,'nudge_first_contract');
+});
+test('completion fails on stale source policy; producer state alone does not stale review',()=>{
+  const p=validProject(), old=reviewHash(p);
+  const n=fs.readFileSync(path.join(p,'AGENT_NOTES.md'),'utf8');
+  put(p,'AGENT_NOTES.md',n.replace('goal: playable','goal: playable\n  current_slice: S01'));
+  assert.equal(reviewHash(p),old);
+  put(p,'AGENT_NOTES.md',n.replace('goal: playable','goal: end_to_end'));
+  assert.notEqual(reviewHash(p),old);
+});
+test('unknown project paths and escaping symlink parents are rejected',()=>{
+  const p=project(); assert.throws(()=>local(p,'../outside'),/escapes/);
+  const outside=fs.mkdtempSync(path.join(os.tmpdir(),'gb-outside-'));
+  fs.symlinkSync(outside,path.join(p,'docs'));
+  assert.throws(()=>local(p,'docs/new.json'),/Symlink escapes/);
+});
+test('legacy GP spellings and bounded ranges normalize without dropping coverage',()=>{
+  assert.deepEqual(ids('GP01..GP03'),['GP-01','GP-03','GP-02']);
+  assert.deepEqual(ids('H10–12','H'),['H-10','H-11','H-12']);
+  assert.ok(ids('GP-01–GP-18').includes('GP-15'));
+});
+test('contract validator catches missing root contracts', () => {
+  const p = project(), r = validate(p);
+  assert.equal(r.ok, false); assert.ok(r.errors.some(e => e.code === 'missing_root_contract'));
+});
