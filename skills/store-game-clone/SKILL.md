@@ -42,7 +42,7 @@ pack gives feel / HUD / marketing look, the rip gives exact in-game art, mesh to
 | Fleet | `<project>/.cursor/skills/cocos-orca-fleet` (one slice only, when the user asks for just that) |
 | Art backend default | `antigravity` |
 | Orchestrator default | `cursor --model auto` (`cursor-agent --yolo --model auto`); user may name agent + model, e.g. `claude --model opus` → stored in `AGENT_NOTES.md` `fleet.orchestrator_agent`, passed to `agent-session --agent` |
-| Fleet workers default | `planner_agent: claude --model opus --effort high`, `writer_agent: claude --model opus --effort high`, `reviewer_agent: claude --model opus` (from the `AGENT_NOTES.md` skeleton; override only if user names one) |
+| Fleet workers default | `scanner_agent: cursor --model auto`, `planner_agent: claude --model opus --effort high`, `writer_agent: claude --model opus --effort high`, `reviewer_agent: claude --model opus` (from the `AGENT_NOTES.md` skeleton; override only if user names one) |
 | Agent handoff file | `<project>/AGENT_NOTES.md` — this skill fills `store_clone:` + `fleet:` overrides in the yaml block and `## Notes — store-game-clone`; `game-brief` fills `brief:`; the fleet reads `fleet:` (prompt > file > skill default) |
 
 ## Progress checklist
@@ -82,8 +82,8 @@ Ask only what's missing:
 6. **Brief agent** — pass any explicit override to `game-brief`; otherwise use its saved-agent
    resolution and Fable 5.1 default. Honor explicit override
 7. **Fleet workers** — never ask. Only when the user names an agent for the fleet's
-   writer / reviewer / "workers" ("fleet chạy cursor agent", "reviewer dùng opus", …):
-   record `writer_agent` / `reviewer_agent` / `planner_agent` as launch specs (`cursor agent` → `cursor --model auto`;
+   scanner / writer / reviewer / "workers" ("fleet chạy cursor agent", "reviewer dùng opus", …):
+   record `scanner_agent` / `writer_agent` / `reviewer_agent` / `planner_agent` as launch specs (`cursor agent` → `cursor --model auto`;
    bare `claude` → `claude --model opus`). Unnamed → keep the `AGENT_NOTES.md` skeleton defaults
    (`claude --model opus …`). Note that the orchestrator (item in Step 6, default `cursor`) is a
    different knob from the workers.
@@ -211,7 +211,7 @@ already wrote `bootstrap:` — do not touch it):
   (both `""` otherwise). Old skeleton without `rip_path` / `rip_source` → add the two keys under
   `store_clone:` and say so. (`brief_agent` / `orientation` live in the `brief:` block, written
   by `game-brief` in Step 4.)
-- yaml `fleet:` → set `art_backend` from intake item 5, and `writer_agent` / `reviewer_agent` /
+- yaml `fleet:` → set `art_backend` from intake item 5, and `scanner_agent` / `writer_agent` / `reviewer_agent` /
   `planner_agent` **only** if intake item 7 named them; otherwise leave the skeleton defaults untouched.
   `orchestrator_agent` stays whatever `new-cocos-game` wrote unless the user named one — then
   write it as a launch spec (`claude --model opus`, `cursor --model gpt-5 --effort high`); Step 6
@@ -330,7 +330,7 @@ skip-permissions flag. Compare the result's `session.agentSpec` with the yaml; f
 they differ.
 
 The prompt points the orchestrator at `AGENT_NOTES.md` `fleet:` for `art_backend`,
-`writer_agent`, `reviewer_agent`. Because `AGENT_NOTES.md` already carries the intake values,
+`scanner_agent`, `writer_agent`, `reviewer_agent`. Because `AGENT_NOTES.md` already carries the intake values,
 the prompt's override line is only for something the user changed *after* Step 3; otherwise
 delete that line. Before handoff, re-read the yaml block once and confirm it matches intake
 (`art_backend`, workers) — the file is the source the fleet will trust.

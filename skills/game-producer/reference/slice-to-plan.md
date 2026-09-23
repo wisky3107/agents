@@ -13,6 +13,7 @@ task_size: <size from slice>
 plan_source: slices/<Sxx>-<name>.md      # every plan-schema key resolves through the table below
 status: pending
 # locks (facts, not planning — set by the coordinator / single agent at Step 0.2)
+scanner_agent: <spec>
 planner_agent: slice
 writer_agent: <spec>
 reviewer_agent: <spec>

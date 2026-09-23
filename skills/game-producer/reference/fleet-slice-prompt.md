@@ -13,7 +13,7 @@ worktree on this project or the feature worktree you create from it.
 
 1. Assert pwd is <PROJECT>. Uncommitted contract files (root *.md, slices/, docs/) are expected;
    snapshot anything else into forbidden_changes.
-2. Locks already resolved (do not open AGENT_NOTES.md): <FLEET_LOCKS>
+2. Locks already resolved (do not open AGENT_NOTES.md): <FLEET_LOCKS>, including `scanner_agent`.
    Read SCOPE.md, <SLICE_FILE>, and the EXPECT_GAMEPLAY_VISUAL.md feel rows it names. Workers
    read the rest themselves; do not paste contracts into specs.
 3. Follow .cursor/skills/cocos-orca-fleet/SKILL.md. Task size is L (from the slice) → fleet.

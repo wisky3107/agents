@@ -98,10 +98,10 @@ notes require; report the diff of changed keys". Max 2 rounds.
 
 ---
 
-## scan (cursor --model auto)
+## scan (per locked `scanner_agent`; default `cursor --model auto`)
 
 ```text
-ROLE: discover (read-only). You may write only under the evidence root.
+ROLE: discover (read-only). scanner_agent=<SPEC>. You may write only under the evidence root.
 
 Do:
 1. docs/flows/docs-index.md and the flow docs for every system named in the PLAN — if the
@@ -137,11 +137,11 @@ Launch with the exact spec locked in `docs/plans/<feature>.md` → `writer_agent
 (resolved from prompt > `AGENT_NOTES.md` `fleet.writer_agent` > default). Write it into the
 spec header line `writer_agent=<spec>` so the evidence shows who wrote the code.
 
-Use SKILL.md recipe B for non-Cursor plan / implement / review and recipe A for Cursor.
+Use SKILL.md recipe B for non-Cursor scan / plan / implement / review and recipe A for Cursor.
 Managed `worker-start --agent` supports model/effort for Claude/Codex/Cursor; custom commands
 must come from the shared `bootstrap.mjs agent-cmd` resolver to preserve Orca permissions.
 Codex/Cursor load rules natively; Claude/Teams use the template's `CLAUDE.md` import.
-For code/plan/review only, when `agent-cmd --path <checkout>` reports `needsBoot: true`, send
+For scan/code/plan/review only, when `agent-cmd --path <checkout>` reports `needsBoot: true`, send
 this once after the first `tui-idle`, wait again, then attach the Task:
 
 ```text

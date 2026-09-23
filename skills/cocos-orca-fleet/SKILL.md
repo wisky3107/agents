@@ -4,11 +4,11 @@ description: >-
   Run one Cocos Creator L-lane feature as a supervised Orca orchestration fleet:
   cheap mechanical coordinator, planner (PLAN given by the director > copied from a
   slice file > authored by a `plan` worker on planner_agent, default claude opus, then
-  director-gated once), scanner (cursor auto), writer (default claude opus),
+  director-gated once), scanner (default cursor auto), writer (default claude opus),
   integrator (editor lock + Funplay), art per the cocos-asset-gen contract
   (antigravity | cursor | gpt-image-gen; meshes via Blender or 3D Gen Studio), and an
   independent reviewer (default claude opus) that playtests via the Orca
-  browser. Writer/reviewer agents and art backend are locked once at task start
+  browser. Scanner/writer/reviewer agents and art backend are locked once at task start
   from prompt > AGENT_NOTES.md > default, planner_agent likewise. Maps every role onto the AGENTS.md role table,
   plan-schema.md, cocos-output-contract.md, and the per-task evidence bundle.
   Use when the director asks for a fleet, team, multi-agent, parallel agents,
@@ -176,12 +176,10 @@ disk; reviewer opens the **compare-sheet** and may overturn. Blender missing →
 
 ## Worker agents (choose once)
 
-Resolve `planner_agent`, `writer_agent` and `reviewer_agent` **once**, together with
-`art_backend`, before any Task starts (prompt > `AGENT_NOTES.md` `fleet.planner_agent` /
-`fleet.writer_agent` / `fleet.reviewer_agent` > default). Record all three in
-`docs/plans/<feature>.md` (`planner_agent:`, `writer_agent:`, `reviewer_agent:`) and in
-`evidence/specs/plan.md` / `implement.md` / `review.md`. Never re-ask or switch mid-fleet.
-`scan` is always `cursor --model auto` and is not configurable.
+Resolve `scanner_agent`, `planner_agent`, `writer_agent` and `reviewer_agent` **once**, together
+with `art_backend`, before any Task starts (prompt > the matching `AGENT_NOTES.md` `fleet.*`
+key > default). Record all four in `docs/plans/<feature>.md` and in the matching evidence specs.
+Never re-ask or switch mid-fleet.
 
 | Field | Default | Accepted values (launch spec) | Start recipe |
 |---|---|---|---|
@@ -203,12 +201,13 @@ when `reviewer_agent` equals `writer_agent`. If the resolved CLI is not on PATH
 lock that.
 
 ## Role map
+| `scanner_agent` | `cursor --model auto` | `cursor --model <m>` · `claude --model <m> [--effort <e>]` · `codex` · `antigravity` | `cursor` → **A**; anything else → **B** |
 
 | Fleet role | AGENTS.md hat | Agent | Owns | Never |
 |---|---|---|---|---|
 | coordinator | planner hat, **validation only** (AGENTS.md has no separate coordinator row; the "produce a PLAN" right is delegated to `plan` / the director / the slice) | this session — default spawn is `cursor --model auto` when the director did not name an agent (`/new-cocos-game` / `agent-session`; `AGENT_NOTES.md` `fleet.orchestrator_agent`) | Run, Tasks, DAG, gates, PLAN **validation**, final-report | files, Editor, lock, authoring a PLAN from scratch, re-deriving fix scope |
 | plan (branch C only) | planner | per locked `planner_agent` (default `claude --model opus --effort high`) | `docs/plans/<feature>.md`, `evidence/specs/plan-notes.md` | any other file, Editor, lock, Funplay |
-| scan | discover | `cursor --model auto` | `evidence/discovery.md`, `evidence/baseline/` | writes outside evidence dir |
+| scan | discover | per locked `scanner_agent` (default `cursor --model auto`) | `evidence/discovery.md`, `evidence/baseline/` | writes outside evidence dir |
 | art-manifest | writer (assets) | `cursor --model auto` | `art_paths/manifest.json` skeleton | concepts, meshes |
 | art-concept-<stem> | writer (assets) | **always antigravity** | `concepts/<stem>/**`, concept-check block | meshes, other stems |
 | art-mesh-<stem> | writer (assets) | locked `art_backend` (default antigravity); route per `mesh_backend` (Blender script ∣ 3D Gen Studio ∣ fallback Blender) | generator or `gen3d/<stem>/**` + `.glb` for stem, iso/compare evidence, model-check block | other stems, Creator |
@@ -224,8 +223,8 @@ Fleet Progress:
 - [ ] 0.1 First reply line: `Task size: L — <reason> → fleet`
 - [ ] 0.2 Extract ONLY the leading yaml fence of AGENT_NOTES.md (python/sed — do not load
           Notes sections). Lock art_backend (antigravity | cursor | gpt-image-gen),
-          mesh_backend (auto | blender | 3dgenstudio), planner_agent, writer_agent,
-          reviewer_agent once (prompt > AGENT_NOTES.md > default); if mesh_backend is
+          mesh_backend (auto | blender | 3dgenstudio), scanner_agent, planner_agent,
+          writer_agent, reviewer_agent once (prompt > AGENT_NOTES.md > default); if mesh_backend is
           auto/3dgenstudio and the PLAN has complex meshes, run
           `python3 .cursor/skills/cocos-asset-gen/scripts/gen3d_studio.py --check`
           → studio_available; announce all locks in one line; never re-ask later
@@ -265,7 +264,7 @@ Fleet Progress:
              new `plan` Task on the same handle (max 2 rounds), then a new gate. Only an
              approved PLAN unblocks 0.6.
           In every branch the PLAN must carry: art_backend, mesh_backend, studio_available,
-          planner_agent (or `given`/`slice`), writer_agent, reviewer_agent; allowed_paths split
+          scanner_agent, planner_agent (or `given`/`slice`), writer_agent, reviewer_agent; allowed_paths split
           into code_paths / art_paths; allowed_scene_objects; acceptance_criteria as
           observations — including feel/VFX observations (e.g. "merge pops with particles +
           scale tween ≤200ms"), lifted from EXPECT_GAMEPLAY_VISUAL.md's feel table when the
@@ -296,7 +295,7 @@ pointer PLAN itself only carries locks:
 - `runtime_checks` non-empty (or an explicit line saying why runtime cannot be affected).
 - `change_budget.{max_files,max_lines,max_nodes,max_assets}` set; `tripo_credits` when > ~5
   studio-route meshes.
-- Locks recorded: `planner_agent|given|slice`, `writer_agent`, `reviewer_agent`,
+- Locks recorded: `scanner_agent`, `planner_agent|given|slice`, `writer_agent`, `reviewer_agent`,
   `art_backend`, `mesh_backend`, `studio_available`.
 - 3D: every mesh stem in the PLAN has a `complexity` hint for `art-manifest`.
 - Optional `recipe_refs` resolve through the slice/PLAN (absent = []). Validate id, revision,
@@ -317,7 +316,7 @@ and the lifecycle instruction to report with `worker_done` / `ask` / `escalation
 | Task | Deps | Start with | Done when |
 |---|---|---|---|
 | plan (branch C only) | — | recipe A/B per `planner_agent` | PLAN on disk, passes validation, director gate approved; terminal closed (recipe B) or released (A) |
-| scan | plan (C) / — (A, B) | recipe **A**: cursor auto | `discovery.md` + `baseline/`; `status` to implement + art-manifest |
+| scan | plan (C) / — (A, B) | recipe A/B per `scanner_agent` | `discovery.md` + `baseline/`; `status` to implement + art-manifest |
 | art-manifest | scan | recipe **A** | `manifest.json` skeleton with every mesh/2D row; `status` to concept + mesh + implement handles |
 | art-concept-<stem> | art-manifest | recipe **C** **antigravity only** (no AGENTS.md boot) | concept PNGs on disk; `CONCEPT: PASS` in `concept-check.md`; `status` to matching mesh handle |
 | art-mesh-<stem> | art-concept-<stem> | recipe A (cursor) / **C** (antigravity · gpt-image-gen/codex) | `.glb` + generator; `contact-sheet` + `compare-sheet` + `VERDICT: PASS`; own manifest row `verify` set |
@@ -346,7 +345,7 @@ Pick the recipe by **role**, then by launch spec:
 | every art gen role (`art-concept-*`, `art-mesh-*`, `art-2d`, legacy `art`) on non-Cursor | **C** (no AGENTS.md boot) |
 | art gen on `cursor` | **A** |
 
-The AGENTS.md startup prompt is for code/plan/review sessions only. Art workers follow
+The AGENTS.md startup prompt is for scan/code/plan/review sessions only. Art workers follow
 `cocos-asset-gen` + their art spec; do **not** send them the boot turn.
 
 **A — Cursor worker (no boot turn needed).** `cursor-agent` reads `AGENTS.md` on its own and
@@ -359,7 +358,7 @@ orca orchestration worker-start --task <task_id> --worktree id:<wt> \
   --agent cursor --model auto --json
 ```
 
-**B — non-Cursor plan / implement / review — create in the worktree, then attach (conditional boot).**
+**B — non-Cursor scan / plan / implement / review — create in the worktree, then attach (conditional boot).**
 Current Orca supports `worker-start --agent claude|codex|cursor --model ... --effort ...`.
 Use that managed path when its launch permissions match the user's Orca settings. Model/effort
 alone is not a reason to create a custom terminal. For an explicit command matching the settings
@@ -377,7 +376,7 @@ orca orchestration worker-start --task <task_id> --terminal "$H" --worktree id:<
 Codex uses `--dangerously-bypass-approvals-and-sandbox`, Cursor `--yolo`, Claude
 `--dangerously-skip-permissions`; never append a Claude-only flag to another provider.
 Claude Teams must retain the Orca `claude-teams` wrapper. Inspect `agent-cmd`'s `needsBoot`
-with `--path <checkout>`: code/plan/review agents without native rules loading need the
+with `--path <checkout>`: scan/code/plan/review agents without native rules loading need the
 legacy startup turn from worker-prompts.md before task attachment. Art always skips it.
 
 **C — non-Cursor art gen (antigravity / codex for gpt-image-gen) — no AGENTS.md boot.**
@@ -497,7 +496,7 @@ after a valid `worker_done`; never release on idle/heartbeat.
   approval, or dropping provider/model/effort when creating a custom terminal.
 - Sending the AGENTS.md boot prompt to `art-concept-*` / `art-mesh-*` / `art-2d` / legacy `art`.
 - Art or writer calling Funplay, `refresh_assets`, or creating `.meta`.
-- Re-asking or switching `art_backend`, `mesh_backend`, `writer_agent`, or `reviewer_agent`
+- Re-asking or switching `art_backend`, `mesh_backend`, `scanner_agent`, `writer_agent`, or `reviewer_agent`
   after the first lock; opening a choice gate when the prompt, `AGENT_NOTES.md`, or the default
   already resolves the value.
 - Routing a simple prop to 3D Gen Studio, or shipping a raw Tripo high-poly as the asset — the

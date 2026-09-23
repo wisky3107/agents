@@ -123,9 +123,9 @@ Ask only what's missing:
    "cursor gpt-5 high" → `--agent cursor --model gpt-5 --effort high`). Preview the
    resulting command with `bootstrap.mjs agent-cmd --agent … --model …` when unsure.
 7. **Fleet workers** (only if mode=`producer` or `fleet`, never ask): if the user names an agent
-   for the *workers* / *writer* / *reviewer* / *planner* ("fleet dùng cursor agent", "reviewer
+   for the *workers* / *scanner* / *writer* / *reviewer* / *planner* ("fleet dùng cursor agent", "reviewer
    claude opus", "planner codex", …) record it for `AGENT_NOTES.md` `fleet.writer_agent` /
-   `fleet.reviewer_agent` / `fleet.planner_agent`; a bare "cursor agent" → `cursor --model auto`.
+   `fleet.reviewer_agent` / `fleet.planner_agent` / `fleet.scanner_agent`; a bare "cursor agent" → `cursor --model auto`.
    If they name nothing, leave the skeleton defaults (`claude --model opus …`) untouched.
    Same for `art_backend` (default `antigravity`).
 
@@ -236,7 +236,7 @@ JSON result, edit **only** these parts:
   `funplay_port` from the pin. For cc4: `engine: cocos-cli`, `mcp_port` / `preview_port` from the pin.
 - yaml `fleet:` → `orchestrator_agent` as a launch spec from intake item 6 (`cursor --model auto`,
   `claude --model opus`, …; `agent-cmd` / `agent-session` print it as `agentSpec`);
-  `writer_agent` / `reviewer_agent` / `planner_agent` / `art_backend` **only** when intake
+  `scanner_agent` / `writer_agent` / `reviewer_agent` / `planner_agent` / `art_backend` **only** when intake
   item 7 named one — otherwise leave the skeleton defaults.
 - yaml `release:` → `goal` and `deploy` from intake item 3c (`end_to_end` / `preview` unless
   the user said otherwise). Leave `auto_commit` / `auto_merge` at skeleton defaults unless the
@@ -418,7 +418,7 @@ child worktree you create from it). Do not operate from any other folder.
 2. Read GAME_BRIEF.md, SCOPE.md, ARCHITECTURE.md, PLAYTEST.md, FOLLOWUPS.md, and AGENT_NOTES.md
    (plus HOW_TO.md, EXPECT_GAMEPLAY_VISUAL.md, ASSET_MANIFEST.md when present — the
    EXPECT feel-table rows are blocking acceptance criteria).
-   The yaml `fleet:` block in AGENT_NOTES.md is your worker config (writer_agent, reviewer_agent,
+   The yaml `fleet:` block in AGENT_NOTES.md is your worker config (scanner_agent, writer_agent, reviewer_agent,
    art_backend). Lock those values at Step 0.2 unless this prompt overrides one below; do not
    fall back to the SKILL defaults when the file sets a value.
 3. Read and follow .cursor/skills/cocos-orca-fleet/SKILL.md in this project
@@ -440,7 +440,7 @@ child worktree you create from it). Do not operate from any other folder.
      cocos-orca-worktree (`scripts/open-mcp.sh`); never Funplay or Creator 3.8 GUI --nologin.
 
 Overrides (only lines the director asked for; otherwise delete this block and AGENT_NOTES.md rules):
-planner_agent: <spec> · writer_agent: <spec> · reviewer_agent: <spec> · art_backend: <value>
+scanner_agent: <spec> · planner_agent: <spec> · writer_agent: <spec> · reviewer_agent: <spec> · art_backend: <value>
 
 Brief:
 <user brief>

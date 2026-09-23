@@ -47,7 +47,7 @@ not start-gate files.
 ```
 Producer locks: goal=<end_to_end|playable> · auto_commit=<bool> · auto_merge=<bool> ·
 deploy=<none|preview|prod> · budget_auto_bump=<pct>% · lite_when_no_assets=<bool> · max_parallel=1 ·
-lanes: L→fleet(<orchestrator_agent>), L-no-assets→fleet lite, S/M→single(<writer_agent>) · reviewer=<reviewer_agent>
+lanes: L→fleet(<orchestrator_agent>, scanner=<scanner_agent>), L-no-assets→fleet lite, S/M→single(<writer_agent>) · reviewer=<reviewer_agent>
 ```
 
 Precedence: director prompt > `AGENT_NOTES.md` > defaults (`end_to_end`, `true`, `true`,
