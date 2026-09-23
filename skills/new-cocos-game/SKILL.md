@@ -346,23 +346,37 @@ worktree via `scripts/setup-orca-worktree.sh`), makes sure the project-local MCP
 client configs exist (runs `mcp-config` if the checkout has no pin yet), waits
 `tui-idle`, then sends prompts. Launch flags skip the interactive trust/approval gate.
 
-**Non-cursor implement / orchestrator / planner / reviewer boot:** `--agent claude|codex|antigravity`
-always sends this startup prompt first when launched via `agent-session` (or fleet recipe B).
-The agent must reply with only
-`AGENTS.md loaded — workspace rules understood, existing changes preserved, ready for the next task.`
-then stop. If `--prompt` is also set, it is sent only after that boot turn goes idle.
-`--prompt` is optional for non-cursor (boot-only). Cursor still requires `--prompt`.
+**Boot is conditional:** Cursor and Codex load rules natively. Claude and Claude Agent
+Teams skip the separate boot when `CLAUDE.md` exists (verify it imports `AGENTS.md` in the
+template); otherwise they receive the startup prompt. Other agents receive it by default.
+`--boot` / `--no-boot` override this choice. Wait for TUI readiness before any prompt.
 
 **Art gen agents do not get this boot.** Fleet art Tasks (`art-concept-*`, `art-mesh-*`,
 `art-2d`) use `cocos-orca-fleet` recipe **C** and start on their art spec. Do not route art
 workers through `agent-session` just to force a boot.
 
-| `--agent` | Launch command | Trust seed |
+| `--agent` | Orca settings command | Trust seed |
 |-----------|----------------|------------|
-| `cursor` (default) | `cursor-agent --trust --model <m|auto> [--effort e]` (never `cursor` IDE; `--effort` dropped when model is `auto`) | `~/.cursor/projects/<slug>/.workspace-trusted` |
+| `cursor` (default) | `cursor-agent --yolo --model <m|auto> [--effort e]` (never `cursor` IDE; `--effort` dropped when model is `auto`) | `~/.cursor/projects/<slug>/.workspace-trusted` |
 | `claude` | `claude [--model m] [--effort e] --dangerously-skip-permissions` | `~/.claude.json` `hasTrustDialogAccepted` |
-| `codex` | `codex --ask-for-approval never [--model m] [-c model_reasoning_effort=e]` | `~/.codex/config.toml` `[projects."path"] trust_level = "trusted"` |
-| `antigravity` | `agy --dangerously-skip-permissions` (model/effort ignored) | no project-trust file; flag auto-approves tools |
+| `codex` | `codex --dangerously-bypass-approvals-and-sandbox [--model m] [-c model_reasoning_effort=e]` | `~/.codex/config.toml` `[projects."path"] trust_level = "trusted"` |
+| `antigravity` | `agy --dangerously-skip-permissions` (model/effort ignored) | `~/.gemini/trustedFolders.json` + Antigravity trusted workspaces |
+| `claude-agent-teams` | `orca claude-teams --dangerously-skip-permissions` | Claude trust seed |
+| `gemini` | `gemini --yolo` | provider CLI |
+| `opencode` | `opencode` | provider CLI |
+
+Launch permissions follow the Orca settings baseline confirmed by the user. Trust seeding
+only accepts the workspace; it does not grant tool approval or disable a sandbox. Custom
+`terminal create --command` uses the supplied command; do not assume it inherits settings.
+Use `bootstrap.mjs agent-cmd --agent "<locked spec>" --json` to resolve/inspect custom commands.
+The additional supported providers are `claude-agent-teams` → selected Orca executable +
+`claude-teams --dangerously-skip-permissions`, `gemini` → `gemini --yolo`, and `opencode` →
+`opencode`. Teams keeps its provider identity. Gemini/OpenCode currently reject model/effort
+rather than silently dropping them. This mapping is a baseline, not a live settings sync;
+if the user changes Orca settings, reconcile the launcher before dispatch.
+After `agent-session`, require `ok=true` and `session.promptSent=true` when a task was supplied.
+Failure retains the handle for diagnosis/recovery; do not blindly rerun and create a duplicate.
+Existing sessions keep their original permissions until replaced after work has stopped.
 
 ### Mode `producer` (default when brief_author=`fable`) — spawn in project
 

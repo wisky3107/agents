@@ -1,3 +1,5 @@
+Launch recovery: before switching a reviewer provider for localhost failure, verify the actual command matches Orca settings. Correct an old restricted launch once using the same locked provider/model, after confirming its old process and jobs have stopped; retry the preflight. Provider identity alone does not prove a sandbox failure. The fallback below applies only to a remaining observed failure.
+
 # Fleet orchestrator prompt per slice (producer → `agent-session --json --title fleet-<slug>-<Sxx>`)
 
 Replace `<PROJECT>`, `<Sxx>`, `<SLICE_FILE>`, `<ENGINE_LINE>`, `<DIRECTOR_DECISIONS>`, `<LITE>`
@@ -33,7 +35,7 @@ worktree on this project or the feature worktree you create from it.
    escalation per unchanged blocker, no repeated reminders.
 6. Art: only the stems listed in the slice's assets block; prefer imports from reference/*/models/.
 7. Review outcomes: INFRA_BLOCKED → not a fix round; curl the port yourself — 200 means the
-   reviewer's sandbox cannot reach localhost → same review Task on `cursor --model auto`.
+   reviewer environment cannot reach localhost → same review Task on `cursor --model auto`.
    `budget_bump` ≤ <BUMP_PCT>% with no other finding → patch max_lines in the PLAN, treat as APPROVED.
 8. Status: write .cursor/evidence/tasks/T-<Sxx>/evidence/HANDOFF.json at every fleet state change
    (working | changes_requested | infra_blocked | approved | offer_commit | committed + sha). I wait

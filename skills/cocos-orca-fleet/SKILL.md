@@ -342,7 +342,7 @@ Pick the recipe by **role**, then by launch spec:
 | Role | Recipe |
 |---|---|
 | `scan`, `art-manifest`, Cursor `writer` / `reviewer` / `planner` | **A** |
-| `plan`, `implement`, `review` on non-Cursor (`claude` / `codex` / `antigravity`) | **B** (AGENTS.md boot) |
+| `plan`, `implement`, `review` on non-Cursor (`claude` / `codex` / `antigravity`) | **B** (conditional boot) |
 | every art gen role (`art-concept-*`, `art-mesh-*`, `art-2d`, legacy `art`) on non-Cursor | **C** (no AGENTS.md boot) |
 | art gen on `cursor` | **A** |
 
@@ -359,28 +359,26 @@ orca orchestration worker-start --task <task_id> --worktree id:<wt> \
   --agent cursor --model auto --json
 ```
 
-**B — non-Cursor plan / implement / review — create in the worktree, then attach (no boot turn).**
-`worker-start --agent X` would create the terminal outside your control of `--model`/`--effort`,
-so create it yourself and hand the live handle to `worker-start --terminal`. The rules load by
-themselves: the template's `CLAUDE.md` imports `AGENTS.md` for Claude and Codex reads `AGENTS.md`
-natively — do not send a boot prompt (legacy fallback for checkouts without `CLAUDE.md` is in
-worker-prompts.md). **Never use recipe B for art Tasks** — use C.
+**B — non-Cursor plan / implement / review — create in the worktree, then attach (conditional boot).**
+Current Orca supports `worker-start --agent claude|codex|cursor --model ... --effort ...`.
+Use that managed path when its launch permissions match the user's Orca settings. Model/effort
+alone is not a reason to create a custom terminal. For an explicit command matching the settings
+baseline, resolve it through the shared launcher, preserving the provider and all locked options:
 
 ```bash
-# 1) terminal in the feature worktree, agent launched with its skip-permissions flag
+CMD=$(node ~/.agents/skills/new-cocos-game/scripts/bootstrap.mjs agent-cmd \
+  --agent "<locked spec>" --json | jq -er '.command')
 H=$(orca terminal create --worktree id:<wt> --title "<role>" \
-  --command "<locked spec, e.g. claude --model opus --effort high> --dangerously-skip-permissions" --json \
-  | jq -r '.result.handle // .result.terminal.handle')
-#   claude:      --command "claude --model <m> [--effort <e>] --dangerously-skip-permissions"
-#   codex:       --command "codex --ask-for-approval never"
-#   antigravity: --command "agy --dangerously-skip-permissions"
-
-# 2) wait for the TUI once
+  --command "$CMD" --json | jq -er '.result.handle // .result.terminal.handle')
 orca terminal wait --terminal "$H" --for tui-idle --timeout-ms 90000 --json
-
-# 3) attach the Task to that terminal; Orca injects the lifecycle preamble + spec
 orca orchestration worker-start --task <task_id> --terminal "$H" --worktree id:<wt> --json
 ```
+
+Codex uses `--dangerously-bypass-approvals-and-sandbox`, Cursor `--yolo`, Claude
+`--dangerously-skip-permissions`; never append a Claude-only flag to another provider.
+Claude Teams must retain the Orca `claude-teams` wrapper. Inspect `agent-cmd`'s `needsBoot`
+with `--path <checkout>`: code/plan/review agents without native rules loading need the
+legacy startup turn from worker-prompts.md before task attachment. Art always skips it.
 
 **C — non-Cursor art gen (antigravity / codex for gpt-image-gen) — no AGENTS.md boot.**
 Same terminal create as B, but after the first `tui-idle` attach the Task immediately. Do not
@@ -389,7 +387,7 @@ send the boot prompt; do not wait for `AGENTS.md loaded — …`. The art spec f
 
 ```bash
 H=$(orca terminal create --worktree id:<wt> --title "<art-role>" \
-  --command "<locked art launch, e.g. agy --dangerously-skip-permissions>" --json \
+  --command "<command resolved by bootstrap.mjs agent-cmd for the locked art spec>" --json \
   | jq -r '.result.handle // .result.terminal.handle')
 orca terminal wait --terminal "$H" --for tui-idle --timeout-ms 90000 --json
 # NO boot prompt here
@@ -404,6 +402,8 @@ Terminals you created with `terminal create` are **not** closed by `worker-relea
 closes worker-start-owned terminals). After such a Dispatch settles, close it yourself with
 `orca terminal close --terminal "$H" --json` unless you are transferring it (implement →
 integrate). Recipe C art terminals are always closed after `worker_done` (never transferred).
+
+Launch recovery: before switching a reviewer provider for localhost failure, verify the actual command matches Orca settings. Correct an old restricted launch once using the same locked provider/model, after confirming its old process and jobs have stopped; retry the preflight. Provider identity alone does not prove a sandbox failure. The fallback below applies only to a remaining observed failure.
 
 ## Coordinator loop
 
@@ -426,10 +426,10 @@ Pipe **stdout only** (keepalives go to stderr). Per Delivery:
    (recipe B/C terminals, which `worker-release` leaves open).
 3. `worker_done` failed from review with last line `INFRA_BLOCKED` → not a fix round. Read the
    curl lines in `review.md`: coordinator's own `curl 127.0.0.1:<port>` → 200 means the
-   reviewer agent's sandbox cannot reach localhost → close that terminal and start the
+   reviewer environment cannot reach localhost → close that terminal and start the
    **same** review Task on `cursor --model auto` (record `reviewer=<locked> → cursor auto
    (localhost)` in the PLAN and final report — this is the one allowed lock change, it is a
-   fact about the sandbox, not a preference). Coordinator's curl also fails → integrator
+   observed environment failure, not a provider assumption). Coordinator's curl also fails → integrator
    recovery Task, then the same review on a fresh terminal once readiness is observed.
    `worker_done` succeeded with a `budget_bump: <from>→<to>` line → patch `max_lines` in the
    PLAN to `<to>` (a recorded fact), note it for the final report, continue as APPROVED.
@@ -493,9 +493,8 @@ after a valid `worker_done`; never release on idle/heartbeat.
 - Editing through two Creators in one fleet (main + worktree). Two Creators may be *open*;
   only the worktree's is the fleet's mutation target, proven by `probe.mjs` `parity: true`.
 - Assuming Funplay is on 8765. The port is whatever this checkout pinned.
-- `worker-start --agent claude|codex|antigravity` directly for plan/implement/review (skips the
-  AGENTS.md boot turn); use recipe B. For art gen roles use recipe C instead (also no direct
-  `worker-start --agent`, and no AGENTS.md boot).
+- Hardcoding launch commands that differ from Orca settings, treating workspace trust as tool
+  approval, or dropping provider/model/effort when creating a custom terminal.
 - Sending the AGENTS.md boot prompt to `art-concept-*` / `art-mesh-*` / `art-2d` / legacy `art`.
 - Art or writer calling Funplay, `refresh_assets`, or creating `.meta`.
 - Re-asking or switching `art_backend`, `mesh_backend`, `writer_agent`, or `reviewer_agent`

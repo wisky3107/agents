@@ -54,9 +54,12 @@ Precedence: director prompt > `AGENT_NOTES.md` > defaults (`end_to_end`, `true`,
 `preview`, `budget_auto_bump_pct=15`, `fleet_lite_when_no_assets=true`, `max_parallel=1`).
 `max_parallel=2` only when the director asks **and** the pair is in `parallel_ok` (each fleet
 opens its own Creator + Funplay port; RAM is the limit).
-`reviewer_agent` must reach `127.0.0.1` — a `codex` reviewer cannot (sandbox); if the notes lock
-codex, say `reviewer=codex → cursor auto (localhost)` in the lock line and use Cursor. Do not
-discover this per slice.
+`reviewer_agent` must reach `127.0.0.1`. Keep the locked provider, including Codex:
+its corrected launcher bypasses approvals and sandbox as configured in Orca. Check actual
+preview connectivity; do not infer failure from provider identity. Before a provider fallback,
+inspect the actual launch command and correct a stale restricted launch once, after confirming
+the old reviewer has stopped. Only use the existing infrastructure fallback for an observed
+failure that remains after launch settings are corrected.
 
 If `AGENT_NOTES.md` has `typesafe.enabled: true` and `typesafe.auto_route: true`, read the
 `typesafe-ai` skill and call its `game-routing` adapter once for each slice at the lane decision,
@@ -254,6 +257,8 @@ same reference — a single lane still gets an independent review before you acc
   Unavailable runtime remains `manual_required`: mark the slice `blocked`, continue independent
   slices, and report the blocker. Do not launch repeated reviews for an unchanged startup failure,
   or approve/merge a slice on unverified evidence.
+
+Launch recovery: before switching a reviewer provider for localhost failure, verify the actual command matches Orca settings. Correct an old restricted launch once using the same locked provider/model, after confirming its old process and jobs have stopped; retry the preflight. Provider identity alone does not prove a sandbox failure. The fallback below applies only to a remaining observed failure.
 
 ## Step 2d — accept, commit, merge
 

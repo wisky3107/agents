@@ -1,3 +1,5 @@
+Launch recovery: before switching a reviewer provider for localhost failure, verify the actual command matches Orca settings. Correct an old restricted launch once using the same locked provider/model, after confirming its old process and jobs have stopped; retry the preflight. Provider identity alone does not prove a sandbox failure. The fallback below applies only to a remaining observed failure.
+
 # Single-lane prompts for S / M slices (producer → `agent-session --json`)
 
 Replace `<PROJECT>`, `<Sxx>`, `<SLICE_FILE>`, `<DIRECTOR_DECISIONS>`, `<EVIDENCE_DIR>`, `<PORT>`,
@@ -88,7 +90,7 @@ evidence only; do not edit game files. Then stop.
 
 On `CHANGES_REQUESTED` the producer re-prompts the writer terminal with the `fix_routing` rows
 (max 2 fix rounds), then spawns a **new** reviewer terminal. `INFRA_BLOCKED` is not a fix round:
-producer curls the port itself — 200 ⇒ the reviewer agent's sandbox cannot reach localhost, respawn
+producer curls the port itself — 200 ⇒ the reviewer environment cannot reach localhost, respawn
 the review on `cursor --model auto`; non-200 ⇒ writer refreshes preview-startup.json, then a fresh
 review. After APPROVED and "approved — commit", the writer runs `/commit-guard` on the main
 checkout (reusing the review's BEHAVIOR evidence per that skill), sets HANDOFF `committed` + sha.

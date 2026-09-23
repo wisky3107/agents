@@ -1,3 +1,5 @@
+Launch recovery: before switching a reviewer provider for localhost failure, verify the actual command matches Orca settings. Correct an old restricted launch once using the same locked provider/model, after confirming its old process and jobs have stopped; retry the preflight. Provider identity alone does not prove a sandbox failure. The fallback below applies only to a remaining observed failure.
+
 # Worker dispatch specs
 
 Copy the block for each role into `.cursor/evidence/tasks/<TASK_ID>/specs/<role>.md`, fill the
@@ -135,17 +137,12 @@ Launch with the exact spec locked in `docs/plans/<feature>.md` → `writer_agent
 (resolved from prompt > `AGENT_NOTES.md` `fleet.writer_agent` > default). Write it into the
 spec header line `writer_agent=<spec>` so the evidence shows who wrote the code.
 
-Every **non-Cursor** plan / implement / review worker is started with SKILL.md **recipe B**:
-`orca terminal create` → `terminal wait tui-idle` → `worker-start --task <id> --terminal <handle>
---worktree id:<wt>`. There is **no boot turn**: the template ships `CLAUDE.md` (imports
-`AGENTS.md`) so Claude loads the rules at launch, and Codex reads `AGENTS.md` natively — the old
-"AGENTS.md loaded — …" round trip cost ~3 min + one full rules read per worker for nothing.
-Never `worker-start --agent claude|codex|antigravity` directly (that bypasses the worktree
-terminal). A Cursor writer (`writer_agent: cursor --model auto`) uses **recipe A**; the ROLE
-block below is still the spec.
-
-Legacy fallback — only when the checkout has **no** `CLAUDE.md` (pre-2026-09 projects) and the
-agent is Claude: send this once after the first `tui-idle`, wait for `tui-idle` again, then attach:
+Use SKILL.md recipe B for non-Cursor plan / implement / review and recipe A for Cursor.
+Managed `worker-start --agent` supports model/effort for Claude/Codex/Cursor; custom commands
+must come from the shared `bootstrap.mjs agent-cmd` resolver to preserve Orca permissions.
+Codex/Cursor load rules natively; Claude/Teams use the template's `CLAUDE.md` import.
+For code/plan/review only, when `agent-cmd --path <checkout>` reports `needsBoot: true`, send
+this once after the first `tui-idle`, wait again, then attach the Task:
 
 ```text
 Read AGENTS.md and .cursor/rules/*, run git status once, change nothing, then reply only:
@@ -263,7 +260,7 @@ evidence/integration-notes.md, <ART_PATHS>/manifest.json.
 Step 0 — INFRA PREFLIGHT (first 60 seconds, before reading anything else):
   read evidence/preview-startup.json → `curl -sS -o /dev/null -w '%{http_code}' --max-time 5
   http://127.0.0.1:<port>/` three times, 5 s apart. Any 200 → continue. Three non-200 while the
-  file says ready → you are in a sandbox that cannot reach localhost (codex) or the preview is
+  file says ready → the reviewer environment cannot reach localhost or the preview is
   down. Either way write evidence/review.md with the curl outputs and the single last line
   INFRA_BLOCKED, HANDOFF.json status infra_blocked, worker_done --outcome failed, and stop.
   INFRA_BLOCKED is not CHANGES_REQUESTED: it consumes no fix round and routes to the

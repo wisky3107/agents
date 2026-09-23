@@ -86,6 +86,14 @@ Only create a new worktree when the user requested one or a concrete checkout/fi
 
 Create or bind the Run, create the Task, and attach a worker using the preferred composition from the installed orchestration guide. Pass the selected provider as `--agent`.
 
+Launch permissions and model selection are separate. Custom `terminal create --command`
+does not automatically inherit Orca settings. For the Cocos workflow, resolve custom commands
+with `~/.agents/skills/new-cocos-game/scripts/bootstrap.mjs agent-cmd --agent "<spec>" --json`.
+The user's confirmed settings baseline is Claude/Teams/Antigravity skip-permissions, Codex
+`--dangerously-bypass-approvals-and-sandbox`, Cursor/Gemini `--yolo`, OpenCode unchanged.
+Workspace trust and Codex `--ask-for-approval never` do not disable a sandbox. Verify effective
+launch options before dispatch; do not switch providers based on assumed sandbox behavior.
+
 Prefer `worker-start` for supervised launches. `--model` and `--effort` apply to fresh Claude, Codex, and Cursor terminals only:
 
 ```text

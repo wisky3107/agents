@@ -9,7 +9,7 @@
  *   node bootstrap.mjs claude-trust --name <slug> | --path <abs>   (alias of trust)
  *   node bootstrap.mjs mcp-config --path <abs> [--port N]   pin a Funplay port for this checkout + write project-local MCP client configs
  *   node bootstrap.mjs wait-mcp --path <abs> [--timeout-ms 180000] [--port N]
- *   node bootstrap.mjs agent-session --path <abs> [--agent cursor|claude|codex|antigravity|"<spec>"] [--model m] [--effort e] [--title name] [--prompt "..."] [--json] [--boot|--no-boot]
+ *   node bootstrap.mjs agent-session --path <abs> [--agent cursor|claude|claude-agent-teams|codex|gemini|opencode|antigravity|"<spec>"] [--model m] [--effort e] [--title name] [--prompt "..."] [--json] [--boot|--no-boot]
  *       --json: stdout = exactly one JSON object (progress → stderr). Boot turn is auto: skipped for
  *       cursor/codex and for claude when the project has CLAUDE.md; --boot/--no-boot override.
  *   node bootstrap.mjs agent-cmd [--agent ...] [--model m] [--effort e]   dry preview of the launch command
@@ -289,8 +289,9 @@ function which(cmd) {
 
 function resolveOrcaBin() {
   if (process.env.ORCA_CLI_COMMAND) return process.env.ORCA_CLI_COMMAND;
-  const bin = which('orca');
-  if (!bin) die('`orca` CLI not found on PATH');
+  const selected = process.env.ORCA_DEV_REPO_ROOT ? 'orca-dev' : process.platform === 'linux' ? 'orca-ide' : 'orca';
+  const bin = which(selected);
+  if (!bin) die(`Orca CLI ${selected} not found on PATH`);
   return bin;
 }
 
@@ -539,9 +540,13 @@ function parseAgentSpec(agent, model, effort) {
   for (let i = 1; i < tokens.length; i++) {
     if (tokens[i] === '--model' && tokens[i + 1]) specModel = tokens[++i];
     else if (tokens[i] === '--effort' && tokens[i + 1]) specEffort = tokens[++i];
+    else die(`Unsupported launch-spec option: ${tokens[i]}; use provider id plus --model/--effort`);
   }
   let m = (model || specModel || '').trim() || null;
   let e = (effort || specEffort || '').trim() || null;
+  for (const value of [id, m, e]) {
+    if (value && !/^[a-zA-Z0-9_./:+-]+$/.test(value)) die(`Invalid launch token: ${value}`);
+  }
   // Normalize to what the launch command will actually honor, so the canonical
   // spec written to AGENT_NOTES.md never claims a model/effort that was dropped.
   if (id === 'antigravity' || id === 'agy') {
@@ -560,9 +565,7 @@ function agentSpecString({ id, model, effort }) {
       ? 'cursor'
       : id === 'agy'
         ? 'antigravity'
-        : id === 'claude-agent-teams'
-          ? 'claude'
-          : id;
+        : id;
   let s = canonical;
   if (model) s += ` --model ${model}`;
   if (effort) s += ` --effort ${effort}`;
@@ -573,7 +576,7 @@ function resolveAgentLaunchCommand(agent, model, effort) {
   const spec = parseAgentSpec(agent, model, effort);
   const { id } = spec;
   if (id === 'claude' || id === 'claude-agent-teams') {
-    let cmd = 'claude';
+    let cmd = id === 'claude-agent-teams' ? `${resolveOrcaBin()} claude-teams` : 'claude';
     if (spec.model) cmd += ` --model ${spec.model}`;
     if (spec.effort) cmd += ` --effort ${spec.effort}`;
     return `${cmd} --dangerously-skip-permissions`;
@@ -589,13 +592,13 @@ function resolveAgentLaunchCommand(agent, model, effort) {
     // Default model auto: orchestrator / implementer default when the user did
     // not name a model. `auto` has no effort level, so --effort is dropped there.
     const m = spec.model || 'auto';
-    let cmd = `${bin} --trust --model ${m}`;
+    let cmd = `${bin} --yolo --model ${m}`;
     if (spec.effort && m !== 'auto') cmd += ` --effort ${spec.effort}`;
     return cmd;
   }
   if (id === 'codex') {
     if (!which('codex')) die('`codex` CLI not found on PATH');
-    let cmd = 'codex --ask-for-approval never';
+    let cmd = 'codex --dangerously-bypass-approvals-and-sandbox';
     if (spec.model) cmd += ` --model ${spec.model}`;
     if (spec.effort) cmd += ` -c model_reasoning_effort="${spec.effort}"`;
     return cmd;
@@ -607,10 +610,12 @@ function resolveAgentLaunchCommand(agent, model, effort) {
     }
     return 'agy --dangerously-skip-permissions';
   }
-  console.error(
-    `new-cocos-game: warning: unknown agent id "${id}" — launching verbatim without skip-permissions flags`,
-  );
-  return String(agent).trim();
+  if (id === 'gemini' || id === 'opencode') {
+    if (spec.model || spec.effort) die(`${id}: model/effort mapping is not supported by this launcher; do not silently drop options`);
+    if (!which(id)) die(`${id} CLI not found on PATH`);
+    return id === 'gemini' ? 'gemini --yolo' : 'opencode';
+  }
+  die(`Unsupported agent id: ${id}; add an explicit launch mapping matching Orca settings before launching`);
 }
 
 function isCursorAgent(agentId) {
@@ -627,7 +632,7 @@ function isCursorAgent(agentId) {
 function agentLoadsRulesNatively(agentId, projectPath) {
   const { id } = parseAgentSpec(agentId);
   if (isCursorAgent(agentId) || id === 'codex') return true;
-  if (id === 'claude') return fs.existsSync(path.join(projectPath, 'CLAUDE.md'));
+  if (id === 'claude' || id === 'claude-agent-teams') return fs.existsSync(path.join(projectPath, 'CLAUDE.md'));
   return false;
 }
 
@@ -1298,7 +1303,7 @@ async function createAgentSession({ projectPath, agent, model, effort, title, pr
   if (needsBoot) toSend.push({ kind: 'boot', text: NON_CURSOR_BOOT_PROMPT });
   if (prompt) toSend.push({ kind: 'task', text: prompt });
 
-  if (toSend.length) {
+  {
     if (!handle) {
       console.error(
         'new-cocos-game: warning: no terminal handle; prompt not sent. Paste it manually.',
@@ -1347,6 +1352,7 @@ async function createAgentSession({ projectPath, agent, model, effort, title, pr
   }
 
   return {
+    ready: Boolean(handle && waited?.status === 0 && waited.parsed?.ok === true && (!needsBoot || bootSend)),
     worktree,
     agent: agentSpec.id,
     model: agentSpec.model,
@@ -1638,7 +1644,9 @@ async function cmdAgentSession(values) {
     title: values.title,
     prompt: values.prompt,
   });
-  emitResult({ ok: true, projectPath, session });
+  const ok = Boolean(session.ready && (!values.prompt || session.promptSent));
+  emitResult({ ok, projectPath, session });
+  if (!ok) process.exitCode = 1;
 }
 
 /** Dry preview: what `agent-session` would launch for --agent/--model/--effort. */
@@ -1688,12 +1696,12 @@ async function main() {
         '  orca-add / trust / claude-trust / mcp-config / wait-mcp: --name <slug> | --path <abs>\n' +
         '  mcp-config: Funplay pin (3.8) or cocos-cli pin+mcp.json (cc4; MCP 9527..9559, preview 7456..7489)\n' +
         '  wait-mcp: Funplay /health projectName gate (3.8) or cocos-cli initialize on pinned port (cc4)\n' +
-        '  agent-session: --path <abs> [--prompt "..."] [--agent cursor|claude|codex|antigravity|"<spec>"] [--model m] [--effort e] [--title name]\n' +
+        '  agent-session: --path <abs> [--prompt "..."] [--agent cursor|claude|claude-agent-teams|codex|gemini|opencode|antigravity|"<spec>"] [--model m] [--effort e] [--title name]\n' +
         '    --agent also accepts an AGENT_NOTES.md launch spec ("claude --model opus --effort high"); explicit --model/--effort win\n' +
-        '    cursor → cursor-agent --trust --model <m|auto> [--effort e] (default when user names no agent; requires --prompt)\n' +
-        '    non-cursor → boot AGENTS.md prompt first, then optional --prompt\n' +
+        '    cursor → cursor-agent --yolo --model <m|auto> [--effort e] (default when user names no agent; requires --prompt)\n' +
+        '    boot only when rules are not loaded natively; --boot/--no-boot override\n' +
         '    claude → claude [--model m] [--effort e] --dangerously-skip-permissions\n' +
-        '    codex → codex --ask-for-approval never [--model m] [-c model_reasoning_effort=e]\n' +
+        '    codex → codex --dangerously-bypass-approvals-and-sandbox [--model m] [-c model_reasoning_effort=e]\n' +
         '    antigravity → agy --dangerously-skip-permissions (model/effort ignored)\n' +
         '  agent-cmd: [--agent ...] [--model m] [--effort e] → print the launch command + canonical agentSpec, no side effects',
     );

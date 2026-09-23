@@ -41,7 +41,7 @@ pack gives feel / HUD / marketing look, the rip gives exact in-game art, mesh to
 | Producer | `<project>/.cursor/skills/game-producer` (default handoff; runs slices per `AGENT_NOTES.md` `release.goal`) |
 | Fleet | `<project>/.cursor/skills/cocos-orca-fleet` (one slice only, when the user asks for just that) |
 | Art backend default | `antigravity` |
-| Orchestrator default | `cursor --model auto` (`cursor-agent --trust --model auto`); user may name agent + model, e.g. `claude --model opus` → stored in `AGENT_NOTES.md` `fleet.orchestrator_agent`, passed to `agent-session --agent` |
+| Orchestrator default | `cursor --model auto` (`cursor-agent --yolo --model auto`); user may name agent + model, e.g. `claude --model opus` → stored in `AGENT_NOTES.md` `fleet.orchestrator_agent`, passed to `agent-session --agent` |
 | Fleet workers default | `planner_agent: claude --model opus --effort high`, `writer_agent: claude --model opus --effort high`, `reviewer_agent: claude --model opus` (from the `AGENT_NOTES.md` skeleton; override only if user names one) |
 | Agent handoff file | `<project>/AGENT_NOTES.md` — this skill fills `store_clone:` + `fleet:` overrides in the yaml block and `## Notes — store-game-clone`; `game-brief` fills `brief:`; the fleet reads `fleet:` (prompt > file > skill default) |
 
