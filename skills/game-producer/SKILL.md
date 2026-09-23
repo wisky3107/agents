@@ -275,13 +275,19 @@ rest of the run. Non-200 ⇒ integrator recovery, then a fresh review.
    include `.cursor/evidence/tasks/T-<Sxx>/` (check `git show --stat <sha>`), copy it now:
    `rsync -a --exclude '*.png' <wt>/.cursor/evidence/tasks/T-<Sxx>/ <main>/.cursor/evidence/tasks/T-<Sxx>/`.
    cc-meowdoku lost T-S06 and T-S08 (`stats.json` included) to `worktree rm`.
-3. `auto_merge=true` (fleet lane) → run the `cocos-orca-worktree` finish sequence yourself:
-   `<wt>/scripts/close-editor.sh <wt>` (pass the path — cwd is main, and a cwd-based kill misses
-   the worktree's Creator) → confirm `probe.mjs --only funplay` in `<wt>` reports nothing
-   listening → `git -C <main> merge --no-ff <branch>` → `orca worktree rm --worktree path:<wt>
-   --run-hooks --json`. Untracked file in main that the merge would overwrite (usually a stray
-   `docs/plans/<Sxx>.md`) → `mv` it to `/tmp/<Sxx>-stash/`, merge, diff, drop it if identical.
-   Real conflict → stop, `ask`. Single lane committed on main → nothing to merge.
+3. `auto_merge=true` (fleet lane) → run the `cocos-orca-worktree` finish sequence yourself.
+   Close **both** Creators before merge: first `<wt>/scripts/close-editor.sh <wt>`, then
+   `<main>/scripts/close-editor.sh <main>`. Confirm each checkout's
+   `probe.mjs --only funplay` reports nothing listening; if primary shutdown cannot be confirmed,
+   do not merge. With both Editors closed, run `git -C <main> merge --no-ff <branch>`, then
+   `orca worktree rm --worktree path:<wt> --run-hooks --json`. Reopen the primary Editor with
+   `<main>/scripts/open-editor.sh <main>`, wait for primary Funplay parity, and perform the
+   primary-checkout integration/runtime verification before marking the slice merged. When
+   Feature Cropping changed, verify each active config's `includeModules` contains both the
+   parent feature and selected backend (for example `physics` + `physics-ammo`). An untracked
+   file in main that the merge would overwrite (usually a stray `docs/plans/<Sxx>.md`) → `mv`
+   it to `/tmp/<Sxx>-stash/`, merge, diff, drop it if identical. Real conflict → stop, `ask`.
+   Single lane committed on main → nothing to merge.
 4. `release.slices[<Sxx>] = merged`, `current_slice = ""`; rewrite the slice's line in the notes:
    `- <Sxx> <lane> merged fix_rounds=<n> bump=<from→to|none> commit=<sha> merged=<y/n> <blocker|->`.
    Reconcile harvested cost events, `learning-candidates.json` and reviewed recipe outcomes
@@ -332,7 +338,8 @@ updates. These branches still include the retro path in the final report.
 - Marking `merged` when `runtime-state.json` says `manual_required`.
 - `deploy.sh --prod` without a passed preview smoke, or for `goal: playable`.
 - Re-asking locked policy; skipping the director gate for `needs_director_ok` slices.
-- Pushing, or `worktree rm` while Creator is open — or before the evidence dir is in main.
+- Pushing, merging while either the worktree or primary Creator is open, or `worktree rm` before
+  the evidence dir is in main.
 - Polling `orca terminal read` on a timer, or grepping the tail for "READY FOR REVIEW".
 - Opening a director gate for a `max_lines` overrun inside `budget_auto_bump_pct`.
 - Counting a preview-unreachable review as a fix round, or re-spawning the same sandboxed
