@@ -32,6 +32,10 @@ export function update(p, a = {}, now = Date.now()) {
   }
   if (a.phase === 'indexed' && !exists(local(p, 'docs/brief-input-index.json'))) throw Error('Generate input index before indexed phase');
   if (a.phase === 'game_brief_written' && !exists(local(p, 'GAME_BRIEF.md'))) throw Error('GAME_BRIEF.md missing');
+  if (a.phase === 'contracts_written') {   // author self-check: fix every code before handing to the coordinator
+    const c = contracts(p), g = coverage(p);
+    if (!c.ok || !g.ok) return { ok: false, error: 'Fix these validator errors, then set contracts_written again', contracts: c.errors, coverage: g.errors };
+  }
   if (a.phase === 'done') {
     const c = contracts(p), g = coverage(p);
     if (!c.ok || !g.ok) return { ok: false, error: 'Mechanical gate failed', contracts: c, coverage: g };

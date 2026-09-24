@@ -20,11 +20,11 @@ function validProject() {
   const m = {slices:['S01','S02'],dag:{S02:['S01']},parallel_ok:[],v1_slice:'S01',release_slice:'S02',stop_when:'RC pass'};
   put(p,'MILESTONES.md','```yaml\n'+stringify(m)+'```\n');
   for(const id of m.slices) {
-    const s = {id,name:id==='S01'?'polished-playable':'release-polish',one_liner:'Clear board',size:'M',depends_on:m.dag[id]||[],needs_director_ok:false,scope:{in:['clear'],out:['shop']},paths:{code:[`assets/${id}.ts`],art:[],scene_objects:[]},assets:{'2d':[],'3d':[],vfx:[],audio:[]},acceptance:[{text:'Tap clears board',evidence:'ASSUMPTION'}],feel_rows:[],runtime_checks:['no errors'],playtest:['tap then clear'],change_budget:{files:1,lines:100,nodes:1,assets:0,tripo_credits:0},risks:[],release_items:id==='S01'?['RC-01']:['RC-02']};
+    const s = {id,name:id==='S01'?'polished-playable':'release-polish',one_liner:'Clear board',size:'M',depends_on:m.dag[id]||[],unlocks:id==='S01'?['S02']:[],needs_director_ok:false,player_outcome:'Player clears the board',scope:{in:['clear'],out:['shop']},paths:{code:[`assets/${id}.ts`],art:[],scene_objects:[]},assets:{'2d':[],'3d':[],vfx:[],audio:[]},acceptance:[{text:'Tap clears board',evidence:'ASSUMPTION'}],feel_rows:[],runtime_checks:['no errors'],playtest:['tap then clear'],change_budget:{files:1,lines:100,nodes:1,assets:0,tripo_credits:0},risks:[],release_items:id==='S01'?['RC-01']:['RC-02']};
     put(p,`slices/${id}-slice.md`,'---\n'+stringify(s)+'---\n\n## Port evidence\nreference/demo/rip-port\n'+sha256(path.join(p,'reference/demo/rip-port/RIP_PORT_MANIFEST.json'))+'\nRP-001\n');
   }
   put(p,'RELEASE_CHECKLIST.md','| id | area | check | closed_by | how to verify |\n|---|---|---|---|---|\n| RC-01 | input | tap | S01 | tap |\n| RC-02 | ship | build | S02 | build |\n');
-  put(p,'EXPECT_GAMEPLAY_VISUAL.md','# S01 visual target\n[screen](reference/demo/iphone/01.jpg)\n## Game feel / VFX table\n');
+  put(p,'EXPECT_GAMEPLAY_VISUAL.md','# S01 visual target\n[screen](reference/demo/iphone/01.jpg)\n## Game feel / VFX table\n\n| ID / interaction | VFX |\n|---|---|\n| tap | ring |\n');
   put(p,'ASSET_MANIFEST.md','| Stem | Source | Priority | Path |\n|---|---|---|---|\n| impact | import | P0 | reference/demo/rip/images_ingame/Fx.png |\n');
   put(p,'SCOPE.md','budget_count: code_only\nbudget_auto_bump_pct: 15\n');
   put(p,'HOW_TO.md','RP-001: port zero-count win behavior, S01 scenario.');
@@ -158,6 +158,13 @@ test('done requires semantic review bound to current hashes; post-review edits s
   assert.equal(watch(p).action,'done');
   put(p,'GAME_BRIEF.md','Changed scope'); assert.equal(watch(p).action,'gate_stale');
 });
+test('contracts_written refuses until both validators pass',()=>{
+  const p=validProject(), id=update(p,{init:true}).progress.runId, f='slices/S01-slice.md', ok=fs.readFileSync(path.join(p,f),'utf8');
+  put(p,f,ok.replace(/player_outcome:.*/,'player_outcome: ""'));
+  const r=update(p,{'run-id':id,phase:'contracts_written'});
+  assert.equal(r.ok,false); assert.ok(r.contracts.some(e=>e.code==='missing_player_outcome'));
+  put(p,f,ok); assert.equal(update(p,{'run-id':id,phase:'contracts_written'}).progress.phase,'contracts_written');
+});
 test('wildcard and parent scene paths cannot be declared parallel',()=>{
   assert.equal(overlap('assets/ui/**','assets/ui/Fail.ts'),true);
   assert.equal(overlap('Canvas/HUD','Canvas/HUD/Score'),true);
@@ -189,7 +196,44 @@ test('legacy GP spellings and bounded ranges normalize without dropping coverage
   assert.deepEqual(ids('H10–12','H'),['H-10','H-11','H-12']);
   assert.ok(ids('GP-01–GP-18').includes('GP-15'));
 });
+test('slices need player_outcome, real unlocks edges and known feel rows',()=>{
+  const p=validProject(),f='slices/S01-slice.md',t=fs.readFileSync(path.join(p,f),'utf8');
+  put(p,f,t.replace("feel_rows: []","feel_rows:\n  - tap").replace('player_outcome: Player clears the board','player_outcome: ""'));
+  let codes=validate(p).errors.map(e=>e.code);
+  assert.ok(codes.includes('missing_player_outcome')); assert.ok(!codes.includes('unknown_feel_row'));
+  put(p,f,t.replace("feel_rows: []","feel_rows:\n  - explode").replace(/unlocks:\n  - S02/,'unlocks:\n  - S03'));
+  codes=validate(p).errors.map(e=>e.code);
+  assert.ok(codes.includes('unknown_feel_row')); assert.ok(codes.includes('unlocks_mismatch'));
+});
+test('a later slice adding a screen needs its own visual target',()=>{
+  const p=validProject(),m={slices:['S01','S02','S03'],dag:{S02:['S01'],S03:['S01','S02']},parallel_ok:[],v1_slice:'S01',release_slice:'S03',stop_when:'RC pass'};
+  put(p,'MILESTONES.md','```yaml\n'+stringify(m)+'```\n');
+  fs.renameSync(path.join(p,'slices/S02-slice.md'),path.join(p,'slices/S03-slice.md'));
+  const s3=path.join(p,'slices/S03-slice.md'); put(p,'slices/S03-slice.md',fs.readFileSync(s3,'utf8').replace('id: S02','id: S03').replace(/depends_on:\n  - S01/,'depends_on:\n  - S01\n  - S02'));
+  const s1=fs.readFileSync(path.join(p,'slices/S01-slice.md'),'utf8').replace(/unlocks:\n  - S02/,'unlocks: []');
+  put(p,'slices/S01-slice.md',s1);
+  put(p,'slices/S02-slice.md',s1.replace('id: S01','id: S02').replace('name: polished-playable','name: settings').replace('depends_on: []','depends_on:\n  - S01').replace('scene_objects: []','scene_objects:\n  - Canvas/Panels/Settings').replace('- RC-01','[]').replace('release_items:\n  []','release_items: []'));
+  assert.ok(validate(p).errors.some(e=>e.code==='missing_screen_target'));
+  put(p,'docs/mockups/S02-settings.svg','<svg/>');
+  assert.ok(!validate(p).errors.some(e=>e.code==='missing_screen_target'));
+});
 test('contract validator catches missing root contracts', () => {
   const p = project(), r = validate(p);
   assert.equal(r.ok, false); assert.ok(r.errors.some(e => e.code === 'missing_root_contract'));
+});
+test('prepare renders every prompt block and refuses unfilled placeholders',async()=>{
+  const { promptBlocks, fill, prepare } = await import('../scripts/prepare.mjs');
+  const blocks = promptBlocks(fs.readFileSync(new URL('../reference/brief-prompt.md', import.meta.url),'utf8'));
+  for (const k of ['main','SOURCE_BLOCK:store','SOURCE_BLOCK:media','SOURCE_BLOCK:idea','RIP_BLOCK','RIP_PORT_BLOCK','GAMEPLAY_NOTES_BLOCK']) assert.ok(blocks[k], k);
+  assert.throws(()=>fill('a <SLUG>\n<RIP_BLOCK>',{RIP_BLOCK:null},{}),/SLUG/);
+  assert.equal(fill('a <SLUG>\n<RIP_BLOCK>',{},{SLUG:'x'}),'a x');
+  const p=fs.mkdtempSync(path.join(os.tmpdir(),'gb-prep-'));
+  put(p,'AGENT_NOTES.md','---\nbootstrap:\n  creator_version: "3.8.8"\nbrief:\n  source: idea\n  reference_path: ""\n  orientation: landscape 1280x720\nrelease:\n  goal: playable\n---\n');
+  put(p,`reference/${path.basename(p)}-brief/IDEA.md`,'# IDEA\nTap to clear');
+  const r=prepare(fs.realpathSync(p),{});
+  const prompt=fs.readFileSync(path.join(p,r.promptPath),'utf8');
+  assert.match(prompt,/NEVER write OBSERVED/); assert.match(prompt,/Orient landscape, design res 1280x720/);
+  assert.match(prompt,new RegExp(r.runId)); assert.doesNotMatch(prompt,/<[A-Z][A-Z_]+>/);
+  for (const f of ['docs/slice-schema.md','docs/brief-workflow.md','docs/brief-input-index.json']) assert.ok(fs.existsSync(path.join(p,f)),f);
+  assert.equal(prepare(fs.realpathSync(p),{}).runId,r.runId);   // rerun resumes, never resets
 });

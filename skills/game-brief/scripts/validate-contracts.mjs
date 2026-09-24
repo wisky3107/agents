@@ -13,6 +13,21 @@ export function overlap(a, b) {
   return (x !== a || y !== b) && (x.startsWith(y) || y.startsWith(x));
 }
 const list = x => Array.isArray(x) ? x : [];
+const IMAGE = /(?:reference|docs\/mockups)\/[^\s)`'"|<>,]+\.(?:png|jpe?g|svg|webp)/gi;
+const SCREEN = /(?:Panel|Screen|Menu|Popup|Dialog|Overlay|Modal)s?(?:\/|$)/i;
+// Feel-table IDs are the leading identifier of the first cell in tables under a "feel" heading.
+export function feelIds(expect) {
+  const out = new Set();
+  for (const section of expect.split(/\n(?=#{1,6} )/)) {
+    if (!/^#{1,6} [^\n]*feel/i.test(section)) continue;
+    for (const t of tables(section)) for (const r of t.slice(2)) {
+      const id = r[0].replace(/[`*]/g, '').trim().toLowerCase().match(/^[a-z0-9_]+/)?.[0];
+      if (id) out.add(id);
+    }
+  }
+  return out;
+}
+const done = (n, id) => { const st = n.release?.slices?.[id]; return ['merged','shipped'].includes(typeof st === 'string' ? st : st?.status); };
 export function validate(p, options = {}) {
   const errors = [], warnings = [], texts = {};
   const fail = (code, file, message) => errors.push({ code, file, message });
@@ -64,9 +79,29 @@ export function validate(p, options = {}) {
   const walk = id => { if (visiting.has(id)) { fail('dag_cycle', 'MILESTONES.md', `Cycle at ${id}`); return; } if (visited.has(id)) return; visiting.add(id); for (const d of list(dag?.[id])) walk(d); visiting.delete(id); visited.add(id); };
   planned.forEach(walk);
   const manifest = texts['ASSET_MANIFEST.md'] || '';
+  const expectText = texts['EXPECT_GAMEPLAY_VISUAL.md'] || '', feel = feelIds(expectText);
+  const unlockedBy = id => Object.entries(dag || {}).filter(([, deps]) => list(deps).includes(id)).map(([k]) => k).sort();
+  const seenScenes = [];
+  for (const id of planned) {
+    const s = byId.get(id); if (!s?.data) continue;
+    const x = s.data, scenes = list(x.paths?.scene_objects).filter(o => typeof o === 'string');
+    // A later full slice that adds a screen needs its own visual target, like S01 does.
+    if (fullSlices.includes(id) && id !== m.v1_slice && id !== m.release_slice && !done(n, id)) {
+      const added = scenes.filter(o => SCREEN.test(o) && !seenScenes.some(q => overlap(o, q)));
+      const refs = [...s.text.matchAll(IMAGE), ...expectText.split('\n').filter(l => new RegExp(`\\b${id}\\b`).test(l)).flatMap(l => [...l.matchAll(IMAGE)])].map(r => r[0]);
+      const mock = files(p, 'docs/mockups').some(f => new RegExp(`^docs/mockups/${id}-`).test(f));
+      if (added.length && !mock && !refs.some(f => exists(local(p, f)))) fail('missing_screen_target', s.file, `New screen ${added.join(', ')} needs an existing reference image or docs/mockups/${id}-*.svg cited in the slice or an EXPECT line naming ${id}`);
+    }
+    seenScenes.push(...scenes);
+  }
   for (const [id, s] of byId) {
     const x = s.data;
-    for (const k of ['id','name','one_liner','size','depends_on','needs_director_ok','scope','paths','assets','acceptance','feel_rows','runtime_checks','playtest','change_budget','risks','release_items']) if (!(k in x)) fail('slice_missing_plan_field', s.file, `Missing ${k}`);
+    for (const k of ['id','name','one_liner','size','depends_on','unlocks','needs_director_ok','player_outcome','scope','paths','assets','acceptance','feel_rows','runtime_checks','playtest','change_budget','risks','release_items']) if (!(k in x)) fail('slice_missing_plan_field', s.file, `Missing ${k}`);
+    if ('player_outcome' in x && (typeof x.player_outcome !== 'string' || !x.player_outcome.trim())) fail('missing_player_outcome', s.file, 'player_outcome maps to PLAN.user_visible_behavior and must be a non-empty string');
+    // unlocks may omit dependents (e.g. release-polish) but must not claim edges the dag lacks.
+    const extra = list(x.unlocks).filter(u => !unlockedBy(id).includes(u));
+    if (!done(n, id) && (!Array.isArray(x.unlocks ?? []) || extra.length)) fail('unlocks_mismatch', s.file, `unlocks ${extra.join(', ')} do not depend on ${id} in MILESTONES.dag`);
+    if (!done(n, id)) for (const r of list(x.feel_rows)) if (typeof r !== 'string' || !feel.has(r.toLowerCase())) fail('unknown_feel_row', s.file, `feel_rows ${r} is not a row ID of the EXPECT Game feel / VFX table`);
     if (!['S','M','L'].includes(x.size) || typeof x.needs_director_ok !== 'boolean') fail('invalid_slice_type', s.file, 'size and needs_director_ok types invalid');
     if (!x.name || !x.one_liner || !list(x.scope?.in).length || !list(x.acceptance).length) fail('missing_slice_outcome', s.file, 'Every slice, including an outline, needs a name, outcome, scope.in and acceptance');
     for (const k of ['depends_on','acceptance','feel_rows','runtime_checks','playtest','risks','release_items']) if (!Array.isArray(x[k])) fail('invalid_slice_list', s.file, `${k} must be a list`);
@@ -97,7 +132,7 @@ export function validate(p, options = {}) {
   if (new Set(rc.map(r=>r.id)).size !== rc.length) fail('duplicate_release_item', 'RELEASE_CHECKLIST.md', 'RC IDs must be unique');
   for (const r of rc) if (!list(byId.get(r.owner)?.data.release_items).includes(r.id)) fail('uncovered_release_item', 'RELEASE_CHECKLIST.md', `${r.id} not owned by ${r.owner}`);
   for (const s of slices) for (const id of list(s.data?.release_items)) if (!rc.some(r => r.id === id)) fail('unknown_release_item', s.file, `${id} absent from checklist`);
-  const expect = texts['EXPECT_GAMEPLAY_VISUAL.md'] || '';
+  const expect = expectText;
   const targets = [...expect.matchAll(/(?:\]\(|`)((?:reference|docs\/mockups)\/[^)`\n]+\.(?:png|jpe?g|svg|webp))(?:\)|`)/gi)].map(m => m[1]);
   if (!targets.length || !targets.some(f => exists(local(p, f)))) fail('missing_visual_target', 'EXPECT_GAMEPLAY_VISUAL.md', 'Link an existing image/SVG; text alone is insufficient');
   if (!/game feel[^\n]*vfx/i.test(expect)) fail('missing_vfx_table', 'EXPECT_GAMEPLAY_VISUAL.md', 'Game feel / VFX table required');

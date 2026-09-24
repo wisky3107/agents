@@ -40,8 +40,9 @@ passed. This skill never creates or opens a project.
 | Rip pack (optional add-on) | `<project>/reference/<slug>/rip/` — `unity-apk-rip` output merged by `store-game-clone` Step 1b (`RIP_PACK.json`, `README.md`, `images_ingame/` de-atlased sprites, `fonts/`, `meshes/`, `levels/`, `briefs/`, `*_GUIDE.md`, `*_catalog.json`); P0 GLBs already copied to `reference/<slug>/models/` |
 | Port forensic maps | `<project>/reference/<slug>/rip-port/` — reviewed `RIP_PORT_MANIFEST.json` plus logic/state/level/asset/gap reports from `rip-port-analysis`; behavior source for a rip-backed port |
 | Contract templates | `<project>/.cursor/skills/vibe-game-director/templates/*.md` |
-| Depth exemplars | `/Users/wikz/orca-global/*-brief/` (structure only) |
+| Depth exemplar | `/Users/wikz/Works/games/CocosCreator/cc-monopoly-go/` — passing store+rip+port+GP set: `MILESTONES.md`, `slices/S01-polished-playable.md`, `slices/S03-chance-chain.md` (later slice), `slices/S07-release-polish.md`, `EXPECT_GAMEPLAY_VISUAL.md`. Format only; never copy mechanics. (`/Users/wikz/orca-global/*-brief/` hold research seeds, not contracts.) |
 | Handoff file | `<project>/AGENT_NOTES.md` — this skill owns yaml `brief:` + `## Notes — game-brief` |
+| Launch prep | `scripts/prepare.mjs` — deps, docs copies, index, progress run, filled prompt (`docs/brief-author-prompt.md`), launch command |
 | Optimization tools | `scripts/index-source.mjs`, `scripts/brief-progress.mjs`, `scripts/validate-contracts.mjs`, `scripts/validate-gameplay-coverage.mjs` |
 
 ## Progress checklist
@@ -52,7 +53,8 @@ Game Brief:
 - [ ] 1. Seed source (media → reference/<slug>/; idea → reference/<slug>-brief/IDEA.md; rip → already under reference/<slug>/rip/)
 - [ ] 1b. Any rip pack/project → run or reuse reviewed rip-port-analysis before brief launch
 - [ ] 2. Fill AGENT_NOTES.md brief: block (add block/section if skeleton is old)
-- [ ] 3. Launch the brief author in the project (agent-session) with the filled prompt (+ optional rip / rip-port / gameplay-notes blocks)
+- [ ] 2b. `node ~/.agents/skills/game-brief/scripts/prepare.mjs --project "$PROJECT"` → exit 0, keep `runId`, `promptPath`, `launch`
+- [ ] 3. Validate the agent spec, run the `launch` command from 2b, record the terminal handle
 - [ ] 4. Gate: run the deterministic contract and gameplay coverage validators, then inspect the remaining visual evidence (+ rip rows / GP coverage)
 - [ ] 5. Update notes section; report file list + slice table; stop (no commit unless asked)
 ```
@@ -206,20 +208,21 @@ task; it records selected pinned `recipe_refs` in slices and technical rationale
 Recipe-derived choices stay ASSUMPTION unless directed by the user; they are not observed
 mechanics or runtime proof. Missing library/no match → recipe_refs=[] and normal authoring.
 
-Fill placeholders in [reference/brief-prompt.md](reference/brief-prompt.md)
-(`<PROJECT>`, `<SLUG>`, `<SOURCE_BLOCK>`, `<RIP_BLOCK>`, `<RIP_PORT_BLOCK>`, `<GAMEPLAY_NOTES_BLOCK>`, `<ORIENTATION>`, `<DESIGN_RES>`,
-`<ENGINE_LINE>`, `<RELEASE_GOAL>`), pick the `<SOURCE_BLOCK>` variant for the mode, and paste
-the `<RIP_BLOCK>` variant when intake 2b found a rip pack (delete the placeholder line
-otherwise — never leave the literal `<RIP_BLOCK>` in the prompt). Include `<RIP_PORT_BLOCK>`
-for every port with its actual `<RIP_PORT_PATH>` and validated `<RIP_PORT_HASH>`, even when
-there is no RIP_PACK.json; remove it when no rip input exists. Copy
-[reference/slice-schema.md](reference/slice-schema.md) to
-`$PROJECT/docs/slice-schema.md` first so the brief author can read it inside the worktree. Then:
+Do not fill [reference/brief-prompt.md](reference/brief-prompt.md) by hand. After Step 2 run:
 
-Fill `<GAMEPLAY_NOTES_BLOCK>` from the prompt reference only when notes exist, substituting
-`<GAMEPLAY_NOTES_PATH>` with `brief.gameplay_notes_path`; otherwise remove the block placeholder.
-For late amendments, include the affected paths/release state and revision scope from the
-late-notes flow; its targeted revision rules override the prompt's initial full-authoring task.
+```bash
+node ~/.agents/skills/game-brief/scripts/prepare.mjs --project "$PROJECT"   # add --scaffold --slices <n> for a new set
+```
+
+It installs the pinned deps if missing, copies `docs/slice-schema.md`, `docs/brief-workflow.md`
+(+ `docs/gameplay-notes-contract.md` / `docs/rip-port-contract.md` when needed), runs
+`index-source`, creates or resumes the progress run, picks the source/rip/port/notes blocks from
+AGENT_NOTES, and writes `docs/brief-author-prompt.md`. It exits nonzero on a missing input or
+any unfilled `<PLACEHOLDER>` — fix the named AGENT_NOTES key and rerun; never edit the prompt to
+silence it. `--dry-run` prints the prompt without writing. The JSON gives `runId` and `launch`.
+For late amendments (`existing_contracts` warning) append the affected paths/release state and
+revision scope from the late-notes flow to the prompt file before launch; those targeted revision
+rules override the prompt's initial full-authoring task.
 
 Set `BRIEF_AGENT` to the resolved canonical spec from intake; the default assignment below is
 only for projects with no override. Keep the prompt provider-neutral for every model.
@@ -230,10 +233,7 @@ node ~/.agents/skills/new-cocos-game/scripts/bootstrap.mjs agent-session \
   --path "$PROJECT" \
   --agent "$BRIEF_AGENT" \
   --title "brief-<slug>" \
-  --prompt "$(cat <<'EOF'
-<filled prompt>
-EOF
-)"
+  --prompt "$(cat "$PROJECT/docs/brief-author-prompt.md")"
 ```
 
 `agent-session` skips a separate boot turn for agents that load workspace rules natively;
@@ -244,7 +244,8 @@ If the JSON says `promptSent: false`, re-send with `orca terminal send --termina
 ## Step 4 — Gate
 
 Monitor progress per bounded-authoring.md with short waits (≤60 seconds), not terminal-text
-polling or a single 15-minute wait. When contracts_written appears, run:
+polling or a single 15-minute wait. The progress tool only accepts contracts_written after both
+validators pass, but files can change afterward, so when contracts_written appears, rerun:
 
 ```bash
 node ~/.agents/skills/game-brief/scripts/validate-contracts.mjs --project "$PROJECT"

@@ -7,6 +7,9 @@ directory. No service, API key or model is needed for these tools.
 
 ## Prepare and launch
 
+`scripts/prepare.mjs --project <project>` performs steps 2–4 below (plus the docs copies and the
+filled prompt) in one call; the steps stay documented for recovery and amendments.
+
 1. Preserve existing contracts. For amendments, follow gameplay-notes.md before touching affected
    files; never scaffold over an authored release. Read the configured depth (`full` by default).
 2. Run `node ~/.agents/skills/game-brief/scripts/index-source.mjs --project <project>` in all

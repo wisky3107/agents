@@ -1,11 +1,14 @@
 # Game brief author prompt
 
+Rendered by `scripts/prepare.mjs` into `<project>/docs/brief-author-prompt.md`; do not fill by hand.
+The placeholder rules below document what that script does.
 Send via `bootstrap.mjs agent-session --agent "$BRIEF_AGENT"` using the resolved agent/model.
 This prompt applies equally to all supported providers; default is Fable 5.1.
 
 Replace `<PROJECT>`, `<SLUG>`, `<SOURCE_BLOCK>`, `<RIP_BLOCK>`, `<RIP_PORT_BLOCK>`, `<GAMEPLAY_NOTES_BLOCK>`, `<ORIENTATION>`, `<DESIGN_RES>`,
 `<ENGINE_LINE>`, `<RELEASE_GOAL>` (`end_to_end` | `playable`, from `AGENT_NOTES.md` `release.goal`),
-`<BRIEF_TOOLS>` (absolute skill scripts directory), `<BRIEF_RUN_ID>` and `<CONTRACT_DEPTH>`.
+`<BRIEF_TOOLS>` (absolute skill scripts directory), `<BRIEF_RUN_ID>`, `<CONTRACT_DEPTH>` and `<PROGRESS>`
+(the full `node <BRIEF_TOOLS>/brief-progress.mjs --project <PROJECT> --run-id <BRIEF_RUN_ID>` command).
 Pick exactly one `<SOURCE_BLOCK>` variant below and paste it in place. Paste the `<RIP_BLOCK>`
 variant only when `reference/<SLUG>/rip/RIP_PACK.json` exists; otherwise delete that line.
 Include RIP_PORT_BLOCK whenever rip input exists, with actual RIP_PORT_PATH and validated
@@ -23,7 +26,7 @@ You are the brief author in <PROJECT>.
 <RIP_BLOCK>
 <RIP_PORT_BLOCK>
 <GAMEPLAY_NOTES_BLOCK>
-- Read `docs/brief-input-index.json` first. Inspect its shortlist and full director source; query `docs/brief-asset-candidates.json` only for a specific needed asset. Record extra research with `node <BRIEF_TOOLS>/brief-progress.mjs --project <PROJECT> --run-id <BRIEF_RUN_ID> --read <path> --reason <decision>`. Use bounded targeted lookups; no default full-pack contact sheet. Counts/metadata are not proof of visual inspection.
+- Read `docs/brief-input-index.json` first. Open every file in its shortlist and read the director source (IDEA / GDD / GAMEPLAY_NOTES) in full. Look up `docs/brief-asset-candidates.json` only when a specific ASSET_MANIFEST row needs a file. Open anything beyond the shortlist only to answer a named question (e.g. "what does the fail screen look like?") and log it: `<PROGRESS> --read <path> --reason "<question>"`. Do not open every file in a folder or build a contact sheet. A filename, count or catalog entry is not OBSERVED — only a file you opened is.
 - Contract templates: .cursor/skills/vibe-game-director/templates/{GAME_BRIEF,SCOPE,ARCHITECTURE,FOLLOWUPS,PLAYTEST}.md
 - Slice / milestone / release-checklist format: docs/slice-schema.md (follow it exactly — the producer parses the yaml front-matter)
 - PLAN format the slices must map onto: .cursor/skills/vibe-game-director/reference/plan-schema.md
@@ -32,7 +35,7 @@ You are the brief author in <PROJECT>.
   Resolve engine/render mode/platform from this project. Pin id/revision/sha256/path into
   recipe_refs in relevant slices; add in-scope checks and ADR rationale. Missing/no match = [].
   A candidate is guidance to validate, not observed product behavior; preserve GIVEN/ASSUMPTION.
-- Quality bar for depth: consult at most one sibling brief under /Users/wikz/orca-global/*-brief/ only if templates leave a structural question; never copy mechanics.
+- Worked example of a passing contract set (store + rip + port + gameplay notes): /Users/wikz/Works/games/CocosCreator/cc-monopoly-go/ — MILESTONES.md, slices/S01-polished-playable.md (v1), slices/S03-chance-chain.md (later M slice), slices/S07-release-polish.md, EXPECT_GAMEPLAY_VISUAL.md (visual target + feel table). Read these for format and level of detail when unsure; never copy its mechanics, numbers or assets. Skip if the path is missing.
 - Contract depth: <CONTRACT_DEPTH>. Follow docs/brief-workflow.md. With playable depth, S01 remains complete; later slices are outlines that cannot dispatch until expanded. Preserve full GP coverage and release ownership in either mode.
 - Engine: <ENGINE_LINE>; TypeScript strict; web-mobile target
 - Release goal: <RELEASE_GOAL> (end_to_end = every slice then ship; playable = producer stops after v1_slice). In both modes S01 must be a polished, presentation-ready playable: complete core loop, own fail/restart, production-quality in-game UX/UI, responsive layout, and close correspondence to the expected mock screen. Never define S01 as gray boxes, debug UI, placeholder layout, or a minimal HUD.
@@ -47,7 +50,7 @@ C. EXPECT_GAMEPLAY_VISUAL.md — reviewer tick-list of what must be SEEN/FELT, e
    exists. This static documentation mock is within the docs-only scope. Brief-derived choices are
    GIVEN/ASSUMPTION. Include layout metrics, responsive rules, exact CSS viewport sizes and safe-area
    insets, measurable tolerances, and accepted deviations. Text alone is insufficient.
-   MUST include a **Game feel / VFX table** — one row per interaction (tap, move, merge/match,
+   MUST include a **Game feel / VFX table** whose first column is `ID / interaction` and whose cells start with the ID slices cite in `feel_rows` — one row per interaction (tap, move, merge/match,
    score gain, combo, fail/death, level transition, idle): VFX (particles, flash, trail, glow),
    tween easing + duration, screen shake / hit-stop yes-no, evidence label. These rows are v1
    acceptance criteria, not polish-later notes.
@@ -59,11 +62,11 @@ D. ASSET_MANIFEST.md — P0 raw art for the art worker (antigravity by default).
    — sprites are already de-atlased; cite the PNG name, never a packed `sactx-*` page) or `generate`
    (prompt for the art worker). Fonts: reference/<SLUG>/rip/fonts/ when present. Default
    to `import` whenever the catalog has a P0/P1 file for the need; never import a P3 / meta / uGUI entry.
-E. SCOPE.md, ARCHITECTURE.md, FOLLOWUPS.md, PLAYTEST.md from the templates (TS strict, event bus, web-mobile, core/systems/entities/ui). Tight change budget.
+E. SCOPE.md, ARCHITECTURE.md, FOLLOWUPS.md, PLAYTEST.md from the templates (TS strict, event bus, web-mobile, core/systems/entities/ui). SCOPE.md carries `budget_count: code_only` and `budget_auto_bump_pct: 15`; size every slice `change_budget` with docs/slice-schema.md § Calibrating `change_budget` (sum per-file estimates, ×1.5, round up to 50).
 F. CONTEXT.md — game-specific domain terms only (Coin, Level, Core loop, system names), 1–2 sentence definitions, an `_Avoid_` list naming out-of-v1 modes.
 G. docs/adr/0001-tech-stack.md — <ENGINE_LINE>, TS strict, web-mobile, <DESIGN_RES>, physics only if the core loop needs it, localStorage behind SaveSystem.
 H. MILESTONES.md — every slice of the release, cut per docs/slice-schema.md: yaml block (slices, dag, parallel_ok, v1_slice, release_slice, stop_when) + table. 6–9 vertical slices; S01 == the v1 slice of GAME_BRIEF.md; last slice == release-polish.
-I. slices/S<nn>-<name>.md — one file per slice with the full yaml front-matter (id, size, depends_on, needs_director_ok, scope in/out, paths code/art/scene_objects, assets 2d/3d/vfx/audio, acceptance with evidence labels, feel_rows, runtime_checks, playtest, change_budget, risks). Fields map 1:1 onto plan-schema.md; paths of parallel_ok pairs must be disjoint.
+I. slices/S<nn>-<name>.md — one file per slice with the full yaml front-matter (id, name, one_liner, size, depends_on, unlocks, needs_director_ok, player_outcome, release_items, scope in/out, paths code/art/scene_objects, assets 2d/3d/vfx/audio, acceptance with evidence labels, feel_rows, runtime_checks, playtest, change_budget, risks). Fields map 1:1 onto plan-schema.md; paths of parallel_ok pairs must be disjoint.
    S01 must own the complete in-game UX/UI visible during the playable loop and every P0 art/font
    dependency needed to match the expected mock screen. Its acceptance and playtest must include
    visual comparison at <DESIGN_RES> plus at least two materially different viewport shapes,
@@ -71,6 +74,10 @@ I. slices/S<nn>-<name>.md — one file per slice with the full yaml front-matter
    Specify capture paths and PASS/FAIL criteria per viewport using the visual review contract.
    Runtime captures are produced later by the implementation reviewer; do not claim them as done.
    Later HUD/juice slices may extend or refine S01, but must not be required to make S01 presentable.
+   Every slice has a non-empty `player_outcome`; `unlocks` names only slices that depend on it in the dag.
+   Every later slice that adds a screen (menu, settings, result, shop, onboarding overlay) gets its own
+   visual target — an existing reference image or `docs/mockups/S<nn>-<screen>.svg` you open and inspect —
+   linked in the slice or an EXPECT line naming its id, with layout metrics and PASS/FAIL checks.
 J. RELEASE_CHECKLIST.md — product-level "done" rows RC-nn per docs/slice-schema.md (lifecycle, layout, input, ux, feel, audio, perf, quality, branding, assets, ship), each with closed_by = a slice id. Union of all slices' release_items must cover every row.
    Assign initial in-game layout, input, fail/restart, feel, asset completeness, and visual fidelity
    checks to S01; later slices add coverage for new screens, and release-polish reruns all checks.
@@ -82,11 +89,19 @@ J. RELEASE_CHECKLIST.md — product-level "done" rows RC-nn per docs/slice-schem
 - ASSUMPTION — your fill; keep these few and call them out in the summary
 
 ## Rules
-- Do not invent mechanics. Observe media when you have it; otherwise stay inside GIVEN + minimal ASSUMPTION.
+- Do not invent mechanics. Every rule row in HOW_TO needs a label. If no opened file and no director sentence supports it, label it ASSUMPTION and add a matching `risks` entry to the owning slice.
 - Do not implement gameplay, do not open Creator, do not commit, do not push.
 - Slice files are contracts: no status fields, no TODOs; anything undecided goes to `risks` and flips `needs_director_ok: true`.
-- When done: file list + 5-bullet v1 slice summary + the slice table (id · size · one-liner · needs_director_ok) + count of ASSUMPTION rows (+ import/generate row counts when a rip pack exists; GP coverage counts and unresolved conflicts when gameplay notes exist), then stop.
-- Write GAME_BRIEF.md once core evidence and source requirements are understood, then HOW_TO/EXPECT/ASSET_MANIFEST, supporting contracts and slices. Save completed sections incrementally. Use `node <BRIEF_TOOLS>/brief-progress.mjs --project <PROJECT> --run-id <BRIEF_RUN_ID> --phase <phase> --file <file>` after each group. Record opened images with `--evidence <path>`. Author stops at contracts_written; coordinator owns semantic review and done. Repeated heartbeat writes do not count as progress.
+- Progress commands only record work; running one without writing a file is not progress.
+
+## Work order (do the steps in order; each command must print "ok": true)
+1. Evidence: open the shortlist and director source. After opening each image/frame/level file run `<PROGRESS> --evidence <path>`. Then `<PROGRESS> --phase evidence_ready`.
+2. Write GAME_BRIEF.md, then `<PROGRESS> --phase game_brief_written --file GAME_BRIEF.md`.
+3. Write HOW_TO.md, EXPECT_GAMEPLAY_VISUAL.md (+ any docs/mockups/*.svg, opened after writing), ASSET_MANIFEST.md. Run `<PROGRESS> --file <path>` once per file.
+4. Write SCOPE.md, ARCHITECTURE.md, FOLLOWUPS.md, PLAYTEST.md, CONTEXT.md, docs/adr/0001-tech-stack.md. `<PROGRESS> --file <path>` per file.
+5. Write RELEASE_CHECKLIST.md, MILESTONES.md, then every slices/S<nn>-<name>.md. `<PROGRESS> --file <path>` per file.
+6. Self-check: run `node <BRIEF_TOOLS>/validate-contracts.mjs --project <PROJECT>` and `node <BRIEF_TOOLS>/validate-gameplay-coverage.mjs --project <PROJECT>`. Exit 1 → fix each listed `code`/`file` and rerun until both print "ok": true. Exit 2 → a tool/input error; report it and stop, do not work around it.
+7. `<PROGRESS> --phase contracts_written` (it reruns both validators and refuses while errors remain). Then print: file list, 5-bullet v1 slice summary, slice table (id · size · one-liner · needs_director_ok), ASSUMPTION row count (+ import/generate row counts when a rip pack exists; GP coverage counts and unresolved conflicts when gameplay notes exist). Stop. The coordinator owns semantic review and `done`.
 ```
 
 ## `<GAMEPLAY_NOTES_BLOCK>` (optional, every source mode)

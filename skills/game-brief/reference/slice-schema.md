@@ -27,6 +27,14 @@ authoring depth only; the S01 visual contract below is unchanged.
 - `paths` of two slices listed in `parallel_ok` must be disjoint (code, art, scene objects).
 - Every acceptance row carries an evidence label: `OBSERVED (<file>)`, `GIVEN (IDEA §n)`,
   `ASSUMPTION`. A slice with ≥ 3 `ASSUMPTION` rows is flagged `needs_director_ok: true`.
+- `player_outcome` is required (→ PLAN `user_visible_behavior`). `unlocks` lists only slices whose
+  `dag` entry contains this id (it may omit release-polish).
+- `feel_rows` values must be row IDs in the first column of the EXPECT Game feel / VFX table
+  (`tap`, `move`, `score_gain`, …); name that column `ID / interaction` and start each cell with the ID.
+- A later slice that adds a screen (`scene_objects` *Panel/Screen/Menu/Popup/Dialog/Overlay/Modal*
+  not owned by an earlier slice) needs its own visual target: an existing reference image, or
+  `docs/mockups/S<nn>-<screen>.svg`, linked in the slice or in an EXPECT line naming the slice id,
+  plus layout metrics and PASS/FAIL checks in its acceptance/playtest. Its writer must not guess layout.
 - `size` decides the lane: `L` → `cocos-orca-fleet`; `S` / `M` → single agent
   (`vibe-game-director`). Prefer `L` for anything with new art + scene + code.
 
@@ -144,6 +152,98 @@ One paragraph tying the slice to GAME_BRIEF §n / HOW_TO rows.
 For S01 specifically, acceptance and playtest must compare the running game against the S01
 expected mock screen using the visual contract below. Include the mock screen's required UI
 art/fonts in S01 `assets`; later slices cannot be prerequisites for a visually presentable S01.
+
+### Worked example — a later slice (not S01)
+
+A later slice builds on a presentable S01. It names only the files it adds or edits, owns its own
+new screen, reuses S01 viewports as regression checks, and cites existing feel-table IDs. Copy the
+shape, not the game. A real passing set: `/Users/wikz/Works/games/CocosCreator/cc-monopoly-go/slices/S03-chance-chain.md`.
+
+```markdown
+---
+id: S05
+name: settings-save
+one_liner: Player can mute sound and resume the last level after a reload
+size: M                            # new screen + 2 systems, no new 3D → single agent
+depends_on: [S04]                  # must equal MILESTONES dag.S05
+unlocks: [S06]                     # only ids whose dag entry contains S05 (release-polish may be omitted)
+needs_director_ok: true            # 3 ASSUMPTION rows below
+recipe_refs: []
+player_outcome: "After this slice the player can: open Settings, mute, reload the page and continue the same level muted"
+release_items: [RC-04, RC-09]      # RC rows this slice closes; release-polish takes the rest
+
+scope:
+  in:  [SettingsPanel open/close, sound toggle, SaveSystem schema v1, resume last level, corrupt-save fallback]
+  out: [cloud save, account, music volume slider, language picker]
+
+paths:                             # only what S05 touches; S01/S03 files it edits are listed too
+  code:
+    - assets/scripts/systems/SaveSystem.ts        # new  ~120
+    - assets/scripts/ui/SettingsPanel.ts          # new  ~140
+    - assets/scripts/systems/AudioSystem.ts       # edit ~30
+    - assets/scripts/ui/HudView.ts                # edit ~25 (gear button)
+    - assets/scripts/GameController.ts            # edit ~40 (resume on boot)
+    - tests/save-system.spec.ts                   # new  ~70
+  art: [assets/art/ui/settings/**]
+  scene_objects: [Canvas/Panels/SettingsPanel, Canvas/HUD/GearButton]   # new screen → needs a visual target
+
+assets:
+  2d:    [{stem: settings_panel_bg, p: P0}, {stem: toggle_on, p: P0}, {stem: toggle_off, p: P0}, {stem: icon_gear, p: P0}]
+  3d:    []
+  vfx:   []
+  audio: [{stem: sfx_toggle, p: P1}]
+
+acceptance:
+  - text: "Visual target docs/mockups/S05-settings.svg (EXPECT § S05 Settings): panel 560×640 centred at 720×1280, 48 px side margins, toggle rows 96 px tall, title 36 px, labels ≥ 24 px"
+    evidence: ASSUMPTION
+  - text: "Gear (HUD top-right, inside safe area) → panel scales 0.9→1 in 180 ms ease-out; tap outside or ✕ closes; gameplay paused while open"
+    evidence: OBSERVED (reference/<slug>/iphone/05.jpg)
+  - text: "Sound off → no SFX or music until turned on; setting survives reload"
+    evidence: GIVEN (IDEA §6)
+  - text: "Reload mid-level → same level index and score as the last completed move; no replayed rewards"
+    evidence: ASSUMPTION
+  - text: "Empty, junk-JSON or older-schema localStorage → fresh save, no console error, S01 flow unchanged"
+    evidence: ASSUMPTION
+
+feel_rows: [tap, panel_open]       # IDs from the EXPECT feel table; add panel_open there if missing
+
+runtime_checks:
+  - Same S01 viewport matrix: V1 720×1280 insets 0; V2 320×568 insets 0; V3 390×844 insets 47,0,34,0
+  - FAIL panel clipped at any viewport, toggle target < 44×44 CSS px, text < 14 CSS px, gear under the notch
+  - localStorage key `<slug>.save.v1` only; no other keys written
+  - zero console errors across open/close ×10 and reload ×3
+
+playtest:
+  - Open Settings at V1/V2/V3; capture docs/evidence/S05/V1-settings.png, V2-settings.png, V3-settings.png; compare V1 with docs/mockups/S05-settings.svg
+  - Mute → play 3 moves → reload → confirm muted and same level/score
+  - Inject `{"broken":` into localStorage → reload → fresh game, no error
+  - Regression: rerun the S01 core loop playtest at V1
+
+change_budget: {files: 9, lines: 650, nodes: 12, assets: 5, tripo_credits: 0}
+# lines: 120+140+30+25+40+70 = 425 × 1.5 = 637.5 → 650 · files: 6 code + art dir + 2 = 9
+# nodes: panel, title, close, 2 rows × (label, toggle, bg) = 9 + gear = 10 × 1.2 → 12 · assets: 4 × 2d + 1 audio = 5
+risks:
+  - "Resume granularity (last move vs level start) is ASSUMPTION — director to confirm"
+---
+
+## Why here
+S03 adds levels, so there is now progress worth saving (HOW_TO H-12); S04 adds the audio this slice mutes.
+
+## Accepted deviations
+| Reference | Allowed deviation | Reason |
+|-----------|-------------------|--------|
+| iphone/05.jpg shows a language row | omitted | out of v1 scope (SCOPE.md) |
+```
+
+Self-check for any later slice before you save it:
+
+1. `depends_on` equals its `dag` entry; every `unlocks` id lists this slice in its own `dag` entry.
+2. Every `paths.code` file has a line estimate; `lines` = sum × 1.5 rounded up to 50.
+3. A new `Panel/Screen/Menu/Popup/Dialog/Overlay/Modal` in `scene_objects` → a visual target file
+   exists, is cited in acceptance, and playtest names its capture paths.
+4. Every `feel_rows` ID appears in the first column of the EXPECT feel table.
+5. Count ASSUMPTION rows: ≥ 3 → `needs_director_ok: true` and each open choice is in `risks`.
+6. `release_items` are real `RC-nn` rows whose `closed_by` is this slice.
 
 ## S01 visual target and review contract
 
