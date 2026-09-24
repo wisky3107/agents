@@ -21,6 +21,11 @@ EXPECT_GAMEPLAY_VISUAL.md feel table rows named in feel_rows. AGENTS.md and .cur
 already loaded; do not open .cursor/skills/** unless a step below names the file.
 Task size is <S|M>. Touch only paths.code / paths.art / paths.scene_objects. Every acceptance
 row and feel_row is a verifiable observation you must meet.
+For a port slice, its Port evidence reports and exact cited Unity source files are permitted
+reads; verify the pinned analysis manifest hash. Read ASSET_MANIFEST for import destinations.
+Implement RP-linked behavior/level mappings and declared deviations, import existing assets,
+and exercise the state → input → expected result scenarios. Source trees are read-only.
+Missing/stale analysis is a handoff gap; report it instead of inferring rules from screenshots.
 Director decisions (GIVEN): <DIRECTOR_DECISIONS>
 
 Recipe context: optional slice recipe_refs (missing = []). Read only those recipe files;
@@ -71,6 +76,9 @@ Then read <SLICE_FILE>, the feel_rows of EXPECT_GAMEPLAY_VISUAL.md, and the evid
 <EVIDENCE_DIR>, plus only the recipe files pinned in slice recipe_refs (missing = []).
 Confirm selected recipe checks with current evidence; record pass/fail/manual_required and
 deviations in review.md. Historical source evidence is not proof this implementation passes.
+Port evidence reports and their cited source files are permitted reads. Verify the pinned
+analysis hash, RP-linked core/reset/win/lose scenarios and explicit deviations with current
+Cocos runtime evidence. Report unverified parity; do not equate a source map with runtime PASS.
 Do not open unrelated .cursor/skills/** reference files or producer lessons.
 1. `node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT>` — its JSON is the verdict
    for every state-answerable acceptance row; do not replay them by hand. A row with no check

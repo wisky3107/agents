@@ -33,7 +33,12 @@ worktree on this project or the feature worktree you create from it.
    Preview: integrator prepares it automatically before review and records preview-startup.json.
    Route failures to me with the actual error and any existing humanRequest; one human
    escalation per unchanged blocker, no repeated reminders.
-6. Art: only the stems listed in the slice's assets block; prefer imports from reference/*/models/.
+6. Port evidence: if the slice names an analysis manifest, verify its pinned SHA-256 and pass
+   the selected reports, RP IDs and cited source read paths to writer and reviewer. Preserve
+   core behavior, level readers, reset/win/lose scenarios and declared deviations. Analysis
+   docs are not runtime PASS evidence. A stale pin goes back to the producer.
+   Art: obey ASSET_MANIFEST Source=import/generate for all listed stems (2D/font/mesh/VFX).
+   Import existing suitable rip assets; generated concepts/meshes are only for generate rows.
 7. Review outcomes: INFRA_BLOCKED → not a fix round; curl the port yourself — 200 means the
    reviewer environment cannot reach localhost → same review Task on `cursor --model auto`.
    `budget_bump` ≤ <BUMP_PCT>% with no other finding → patch max_lines in the PLAN, treat as APPROVED.

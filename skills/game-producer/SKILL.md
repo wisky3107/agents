@@ -29,6 +29,15 @@ touch the Editor, never hold the editor lock, never rewrite a slice file.
 | `GAME_BRIEF`, `SCOPE`, `ARCHITECTURE`, `PLAYTEST`, `FOLLOWUPS`, `EXPECT_GAMEPLAY_VISUAL`, `ASSET_MANIFEST` | context for every lane prompt |
 
 Missing `MILESTONES.md` / `slices/` → stop: "run `game-brief` first". Do not invent slices.
+For any rip input (rip_port, brief/store_clone rip paths, or a merged RIP_PACK.json), resolve
+the analysis path from `rip_port.analysis_path` → `brief.rip_port_path` → reference/<slug>/rip-port, and run
+`node ~/.agents/skills/rip-port-analysis/scripts/validate-rip-port.mjs <project> --analysis-path <resolved path>`
+before initial dispatch; run game-brief's contract validator to verify slice analysis pins.
+Carry the resolved analysis path/hash into lane handoffs. Workers may read the slice's
+`Port evidence` reports and the exact source files cited there; source trees remain read-only.
+Missing/stale analysis returns to rip-port-analysis then targeted game-brief amendment, not
+screenshot-led replanning. Keep unaffected completed slices intact; material parity gaps use
+the existing director decision gate. Review requires RP-linked scenarios, not only visual match.
 `brief.contract_depth` absent means `full`. If it is `playable`, only `v1_slice` may dispatch,
 and only for `release.goal=playable`. Before a later slice or end_to_end run, route a targeted
 game-brief expansion, preserving merged slices; require depth=full and fresh contract gates.

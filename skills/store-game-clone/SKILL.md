@@ -4,7 +4,8 @@ description: >-
   Clone any Apple App Store game into a Cocos Creator project: crawl store
   metadata/screenshots/trailer into orca-global assets, optionally merge a
   unity-apk-rip output pack (ripped PNG/GLB/levels + rip briefs/guides) into the
-  same reference pack, accept director gameplay notes, bootstrap a Cocos project via
+  same reference pack, automatically use rip-port-analysis for a rip-backed port,
+  accept director gameplay notes, bootstrap a Cocos project via
   new-cocos-game, author
   GAME_BRIEF/HOW_TO/EXPECT/ASSET_MANIFEST via the game-brief skill
   (source=store), then hand off game-producer (end_to_end by default, or playable)
@@ -16,14 +17,17 @@ description: >-
 
 # Store Game Clone
 
-End-to-end pipeline: **App Store URL (+ optional rip pack / director gameplay notes) → reference pack → Cocos project → Fable contracts (+ slices) → game-producer (fleet per slice → commit/merge → ship)**.
+End-to-end pipeline: **App Store URL (+ optional rip sources / director notes) → reference pack → Cocos project → rip-port-analysis when rip exists → Fable port/clone contracts (+ slices) → game-producer (fleet per slice → commit/merge → ship)**.
 
 Do **not** invent mechanics from marketing copy alone — OBSERVE screenshots/trailer (and rip assets / models if present). Label director statements GIVEN, inspected evidence OBSERVED, and inferred details ASSUMPTION.
 
 A **rip pack** is the `output/` folder produced by `~/.agents/skills/unity-apk-rip` (`manifest.json`
 with `unity_version` + `counts`, de-atlased `images_ingame/`, `fonts/`, `meshes/`, `levels/`, `briefs/*.md`, `*_GUIDE.md`,
-`*_catalog.json`, `de_atlas_*.json`, `README.md`). It is **additive** to the store crawl, never a replacement: the store
-pack gives feel / HUD / marketing look, the rip gives exact in-game art, mesh topology, and level schema.
+`*_catalog.json`, `de_atlas_*.json`, `README.md`). **Any supplied rip pack/project selects the
+port flow**, including when invoked as `store-game-clone` or "store clone". Run the mid-tier
+forensic analyst before contracts. Readable code and serialized data supply behavior evidence;
+store media supplies visual validation. Asset-only exports still take the analysis gate, with
+explicitly limited coverage. User-requested crawl-only stops at collection as before.
 
 ## Constants
 
@@ -54,6 +58,7 @@ Store Game Clone:
 - [ ] 1b. Rip pack given → merge-rip-pack.mjs → assets/<slug>/rip/ + models/ (skip when none)
 - [ ] 2. Bootstrap cc-<slug> via new-cocos-game (MCP gate = projectName match)
 - [ ] 3. Seed reference/<slug>/ into the project; fill AGENT_NOTES.md; initial commit if not done
+- [ ] 3b. Rip supplied → rip-port-analysis on one or more source projects; validate reports
 - [ ] 4. game-brief (source=store) authors GAME_BRIEF + HOW_TO + EXPECT + ASSET_MANIFEST + contracts
 - [ ] 5. Verify CONTEXT.md + docs/adr/0001-tech-stack.md (game-brief gate normally writes them)
 - [ ] 6. Hand off game-producer IN the project (default) — or cocos-orca-fleet for one slice
@@ -70,7 +75,8 @@ no store URL or new bootstrap is needed for that amendment.
 
 Ask only what's missing:
 
-1. **App Store URL** (or numeric id) — required
+1. **App Store URL** (or numeric id) — required for store crawl; rip-only requests use the
+   media branch below without asking for an unnecessary store URL.
 2. **Slug** — default from store name (`nitelore` → assets + `cc-nitelore`)
 3. **Orientation / design res** — default landscape `1280×720` if store shots are landscape; else portrait `720×1280`
 4. **Implement?** — default **yes + producer** when user asked to clone/build; **crawl-only** if they only want assets/brief; **one fleet slice** only when they say "1 slice" / "fleet thôi"
@@ -87,14 +93,23 @@ Ask only what's missing:
    bare `claude` → `claude --model opus`). Unnamed → keep the `AGENT_NOTES.md` skeleton defaults
    (`claude --model opus …`). Note that the orchestrator (item in Step 6, default `cursor`) is a
    different knob from the workers.
-8. **Rip pack** — never ask. Accept when the user gives a folder path and says "assets rip",
+8. **Rip pack/project** — never ask when absent. Accept when the user gives a folder path and says "assets rip",
    "ripped assets", "unity-apk-rip output", "xài thêm assets rip", or the path ends in `/output`
    and contains `manifest.json` + one of `images_ingame/` `meshes/` `levels/` `briefs/`.
-   Record the absolute path for Step 1b. Sub-options (only if the user says so):
+   Accept a workdir, `output/`, `ripped/`, or recovered UnityProject as well. Resolve sources
+   using [rip-port-analysis](../rip-port-analysis/SKILL.md) intake; retain both output and Unity
+   roots. For a workdir use its `output/` for Step 1b, never pass the full workdir to the merge
+   script. Recover sibling `ripped/` from the original output path/manifest, not the copied
+   reference pack. A recognized Unity tree without output still selects port analysis; skip
+   merge until the analyst maps usable assets. Sub-options (only if the user says so):
    `--include-full-images` (they want the 200 MB+ `images/` dump too), `--models-priority P1`
    (obstacle/booster meshes as well), `--models-priority none` (2D-only game, skip GLB import).
-   A folder that has media but no rip `manifest.json` is **not** a rip pack → treat it as extra
+   A folder that has media but neither rip metadata nor a recovered Unity tree is extra
    media: rsync into `assets/<slug>/extra/` and tell Fable about it in Step 4; do not fake catalogs.
+   Multiple rip projects: retain separate source IDs and version identity; merge the canonical
+   output through Step 1b and stage other outputs under `reference/<slug>/rip-sources/<id>/`.
+   Never flatten competing versions into the same `rip/` or `models/` files. Pass all sources
+   and any analyst-agent override to Step 3b. Analyst default is `cursor --model auto`.
 9. **Gameplay notes** — accept supplied chat text or files describing firsthand play,
    mechanics, edge cases, or desired changes. Optional; never ask for them when absent.
    Follow [gameplay-notes.md](../game-brief/reference/gameplay-notes.md) for capture and IDs;
@@ -208,9 +223,16 @@ already wrote `bootstrap:` — do not touch it):
 
 - yaml `store_clone:` → `store_url`, `slug`, `reference_path: reference/<slug>/`, and
   `rip_path: reference/<slug>/rip/` + `rip_source: <absolute rip output path>` when Step 1b ran
-  (both `""` otherwise). Old skeleton without `rip_path` / `rip_source` → add the two keys under
+  (both `""` otherwise). Add `rip_project_source: <absolute .../ripped>` when the recovered
+  Unity tree exists, otherwise `""`. Old skeleton without `rip_path` / `rip_source` /
+  `rip_project_source` → add the keys under
   `store_clone:` and say so. (`brief_agent` / `orientation` live in the `brief:` block, written
   by `game-brief` in Step 4.)
+- For any rip source initialize `rip_port.enabled: true`,
+  `rip_port.analysis_path: reference/<slug>/rip-port/`, `rip_port.status: pending`,
+  `rip_port.analyst_agent` from explicit override → saved value → `cursor --model auto`, and
+  `rip_port.sources` per the analysis skill. It owns subsequent analysis status/coverage.
+  Keep original absolute Unity paths in that block; do not copy the large `ripped/` tree.
 - yaml `fleet:` → set `art_backend` from intake item 5, and `scanner_agent` / `writer_agent` / `reviewer_agent` /
   `planner_agent` **only** if intake item 7 named them; otherwise leave the skeleton defaults untouched.
   `orchestrator_agent` stays whatever `new-cocos-game` wrote unless the user named one — then
@@ -250,6 +272,15 @@ user asked for `--include-full-images` (200 MB+), say so before committing.)
 
 ---
 
+## Step 3b — Rip analysis before contracts
+
+For any rip pack/project, read and run `~/.agents/skills/rip-port-analysis/SKILL.md` in the
+new project. Supply all resolved source IDs, original output/Unity paths, staged asset paths,
+and the analyst override. This is a supervised analysis phase: wait for reports and validate
+them before starting Fable. Reuse an existing analysis only after its source/evidence gate
+passes. Missing code or stubs lower coverage; they do not bypass this phase or prove behavior.
+Report the actual analyst spec, coverage, unresolved core rules, and analysis path in Notes.
+
 ## Step 4 — Fable contracts (via `game-brief`)
 
 Read `~/.agents/skills/game-brief/SKILL.md` and follow it end-to-end with:
@@ -266,6 +297,10 @@ Read `~/.agents/skills/game-brief/SKILL.md` and follow it end-to-end with:
   `store_clone.rip_path`, fills `<RIP_BLOCK>` in the Fable prompt, and adds the rip gate rows
   (ASSET_MANIFEST `import` vs `generate` column, level schema in HOW_TO when v1 loads levels).
   Do not paste rip paths into the prompt yourself — `game-brief` owns that block.
+- **rip port enabled** → pass the validated `rip_port.analysis_path`; game-brief includes its
+  port block even when a raw Unity tree has no `RIP_PACK.json`. Behavior/level/asset mappings
+  come from the forensic reports and cited evidence, with explicit deviations and unknowns.
+  Source mode stays `store`; it does not disable port mode or restore screenshot-led logic.
 
 That skill reuses the store pack, prepares supplied notes when present, fills `AGENT_NOTES.md` `brief:`, launches the selected author through
 `bootstrap.mjs agent-session` in `$PROJECT`, and gates on the 8 root contracts + `CONTEXT.md` +
@@ -348,8 +383,8 @@ Name `slices/S01-*.md` in the prompt so the fleet copies its PLAN from it.
 | User ask | Stop after |
 |----------|------------|
 | Crawl / screenshots / trailer only | Step 1 (+ 1b if a rip pack was given) |
-| Brief docs only (no Cocos) | Step 1 (+ 1b) + write into `<slug>-brief/` without bootstrap |
-| Rip pack only, no store URL | Not this skill — use `game-brief` mode `media` with the rip `output/` as the media folder |
+| Brief docs only (no Cocos) | Step 1 (+ 1b), run rip-port-analysis in the research workspace when rip exists, then write docs into `<slug>-brief/`; no editor/bootstrap |
+| Rip pack/project only, no store URL | Bootstrap through new-cocos-game if needed, then game-brief mode `media` with its mandatory rip-port-analysis gate |
 | Project + contracts, no implement | Through Step 5 |
 | Playable first | Through Step 6 with `release.goal: playable` (producer stops after `v1_slice`) |
 | One slice via fleet | Through Step 6, one-slice fleet branch |
@@ -390,4 +425,5 @@ Name `slices/S01-*.md` in the prompt so the fleet copies its PLAN from it.
 - Producer prompt: `<project>/.cursor/skills/game-producer/reference/producer-prompt.md`
 - Fable prompt: `~/.agents/skills/game-brief/reference/brief-prompt.md` (`<RIP_BLOCK>` variant for rip packs)
 - Rip pack format: `~/.agents/skills/unity-apk-rip/reference/output-readme-template.md`
+- Port analysis and source resolution: `~/.agents/skills/rip-port-analysis/SKILL.md`
 - Sibling skills: `new-cocos-game`, `game-brief`, `game-producer`, `cocos-orca-fleet`, `unity-apk-rip`, `orca-cli`

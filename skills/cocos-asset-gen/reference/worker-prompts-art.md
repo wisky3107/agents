@@ -10,16 +10,23 @@ never creates `.meta`, never opens Creator, never touches `.scene`/`.prefab`, ne
 Funplay / `refresh_assets`. Evidence stays under the evidence root.
 
 **Import rows (rip pack present).** When `ASSET_MANIFEST.md` has a `Source` column, rows marked
-`import` name a file under `reference/<slug>/rip/images_ingame/`, `reference/<slug>/models/` or
-`reference/<slug>/rip/meshes/`. For those rows the art Task **copies** (2D) / **imports** (GLB)
-that file into its `art_paths` destination — cropping the named region when the source is a
-`sactx-*` atlas page — and generates nothing; `manifest.json` row gets `"source": "import",
+`import` name exact staged files under reference (including rip/images_ingame, fonts, meshes,
+models, and isolated rip-sources/<id> packs). For those rows the art Task **copies/converts**
+raw files into its `art_paths` destination; the integrator owns editor import. Sprites are
+already de-atlased; a legacy packed atlas goes back to the rip de-atlas pipeline. The Task
+generates nothing; `manifest.json` row gets `"source": "import",
 "source_path": "<reference path>"`. `art-concept-*` is skipped for imported meshes (no concept
 pack needed). Only rows marked `generate` (or rows without a `Source` column) go through the
 backend blocks below. Never import a file the rip catalogs mark P3 / uGUI / meta.
+Imported meshes use `art-import-<stem>` on the locked writer agent, without a
+generation provider. Inspect source comparison, topology, pivot/scale/axis, materials and
+budget; record route=import with model-check.md and VERDICT. The integrator requires that
+check, not CONCEPT: PASS. Reuse inspected rig/clips for imported animated rows; char-anim is
+only for missing clips/rig work explicitly scoped in the slice.
 
 When the PLAN has **no** meshes, use the single legacy `art` Task at the bottom. When it lists
-meshes, fan out to `art-manifest` + `art-concept-<stem>`×N + `art-mesh-<stem>`×N (+ `art-2d`).
+generated meshes, fan out to `art-manifest` + `art-concept-<stem>`×N + `art-mesh-<stem>`×N;
+imported meshes use a copy/conversion role and skip concept/mesh generation (+ `art-2d`).
 
 ---
 
@@ -31,6 +38,8 @@ Owns: <ART_PATHS>/manifest.json
 
 Do:
 1. Write manifest.json listing every planned asset row from PLAN (meshes + 2D). Mesh rows include
+   source=import/generate from ASSET_MANIFEST. Imported rows preserve source format, existing
+   rig/clip inventory and exact source_path; the generated FBX defaults below do not rewrite them.
    file, format, expect_dims [x,y,z] in Blender/export order, pivot, forward, intended_node,
    notes, tri_budget, "complexity": "simple" | "complex" (cocos-asset-gen SKILL.md routing table;
    ties → simple), "concepts": [], "verify": null. Do not invent assets beyond change_budget.
@@ -42,6 +51,26 @@ Never: write concept PNGs, generators, or .glb files; edit evidence/art except l
 ```
 
 ---
+
+## art-import-<stem> (locked writer_agent, recipe A/B)
+
+```text
+ROLE: writer (raw assets). Own only this stem's planned runtime asset files and
+evidence/art/<STEM>/. Sources under reference/ and original Unity trees remain read-only.
+Read ASSET_MANIFEST and the slice's selected RIP_ASSET_MAP/Port evidence rows.
+1. Verify exact source path/hash; copy the existing asset and referenced dependencies into
+   the allowlisted destination. Perform only conversions required by the contract and record
+   the reproducible command. No generation provider, concept art, or manual atlas cropping.
+2. Inspect sprite alpha/size, font identity, or mesh topology/scale/pivot/axis/material/texture
+   and budget as applicable. Compare to the cited source; capture suitable visual evidence.
+3. Write model-check.md (meshes) or import-check.md (other assets): route=import, source/hash,
+   destination, conversion, checks and VERDICT: PASS|FAIL. For existing rig/clip imports also
+   write anim-check.md with clip names/duration/loop and ANIM: PASS|FAIL; missing required clips
+   go to the coordinator instead of fabricating a pass or generating an unscoped replacement.
+4. Update only this manifest row's source/source_path/verify (anim_verify when relevant).
+   Report artifacts with worker_done. The integrator refreshes/imports and validates runtime
+   rendering/playback; this task never creates .meta, opens Creator, or claims runtime PASS.
+```
 
 ## art-concept-<stem> (ALWAYS antigravity — recipe C, no AGENTS.md boot)
 

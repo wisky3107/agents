@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { parseDocument } from 'yaml';
+import { analysisPathFor } from '../../rip-port-analysis/scripts/validate-rip-port.mjs';
 
 export const ROOTS = ['GAME_BRIEF.md', 'HOW_TO.md', 'EXPECT_GAMEPLAY_VISUAL.md', 'ASSET_MANIFEST.md', 'SCOPE.md', 'ARCHITECTURE.md', 'FOLLOWUPS.md', 'PLAYTEST.md', 'CONTEXT.md', 'docs/adr/0001-tech-stack.md', 'MILESTONES.md', 'RELEASE_CHECKLIST.md'];
 export const read = p => fs.readFileSync(p, 'utf8');
@@ -80,6 +81,8 @@ export function reviewHash(p) {
   const ref = (b.reference_path || n.store_clone?.reference_path || '').replace(/\/$/,'');
   const slug = path.basename(ref || p).replace(/^cc4?-/, '');
   const sourcePaths = [b.gameplay_notes_path || `reference/${slug}-brief/GAMEPLAY_NOTES.md`, `reference/${slug}-brief/IDEA.md`];
+  const port = analysisPathFor(p,n);
+  if (port) sourcePaths.push(...files(p,port.replace(/\/$/, '')).filter(f => /\/RIP_.*\.(md|json)$/.test(f)));
   return hash(JSON.stringify({ contracts: fingerprints(p), source: fingerprints(p,sourcePaths), policy: { depth:b.contract_depth || 'full', source:b.source, reference:ref, rip:b.rip_path || n.store_clone?.rip_path, orientation:b.orientation, goal:n.release?.goal } }));
 }
 export function tableRows(text) {

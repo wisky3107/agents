@@ -34,7 +34,19 @@ Synonyms at first resolve only: `agy` → `antigravity`; `gpt image` / `chatgpt 
 switch mid-task. `gpt-image-gen` without the `orca-gpt-image-gen` skill installed → one `ask`
 to pick `antigravity` or `cursor`.
 
-## 3D pipeline (per stem, parallel across stems)
+## Existing assets and port imports
+
+Resolve ASSET_MANIFEST Source before selecting a generation backend. Source=import means
+copy/convert the exact referenced raw asset into its allowlisted runtime destination, record
+source path/hash and conversion, and inspect it. This applies to sprites, fonts, meshes,
+VFX and existing animation clips. Integrator owns editor import and .meta generation.
+Imported meshes bypass concept creation, Tripo/Blender generation and studio availability
+probes; verify scale/pivot/axis, topology, materials/textures, budget and reference appearance.
+Use source asset/store evidence for comparison and record route=import with VERDICT PASS/FAIL.
+Use de-atlased PNGs; a packed legacy atlas needs the rip de-atlas pipeline, not manual cropping.
+Only missing/inadequate assets explicitly marked generate follow the pipeline below.
+
+## 3D generation pipeline (per stem, parallel across stems)
 
 ```
 art-manifest → art-concept-<stem> (ALWAYS antigravity) ──CONCEPT: PASS──▶ art-mesh-<stem>

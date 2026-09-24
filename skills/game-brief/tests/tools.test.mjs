@@ -10,6 +10,8 @@ import { validate as coverage } from '../scripts/validate-gameplay-coverage.mjs'
 import { scaffold } from '../scripts/scaffold-contracts.mjs';
 import { stringify } from 'yaml';
 import { ROOTS, reviewHash, local, ids } from '../scripts/lib.mjs';
+import { writeBundle } from '../../rip-port-analysis/tests/fixture.mjs';
+import { sha256 } from '../../rip-port-analysis/scripts/validate-rip-port.mjs';
 
 const put = (p,f,s) => { fs.mkdirSync(path.dirname(path.join(p,f)),{recursive:true}); fs.writeFileSync(path.join(p,f),s); };
 function validProject() {
@@ -19,12 +21,14 @@ function validProject() {
   put(p,'MILESTONES.md','```yaml\n'+stringify(m)+'```\n');
   for(const id of m.slices) {
     const s = {id,name:id==='S01'?'polished-playable':'release-polish',one_liner:'Clear board',size:'M',depends_on:m.dag[id]||[],needs_director_ok:false,scope:{in:['clear'],out:['shop']},paths:{code:[`assets/${id}.ts`],art:[],scene_objects:[]},assets:{'2d':[],'3d':[],vfx:[],audio:[]},acceptance:[{text:'Tap clears board',evidence:'ASSUMPTION'}],feel_rows:[],runtime_checks:['no errors'],playtest:['tap then clear'],change_budget:{files:1,lines:100,nodes:1,assets:0,tripo_credits:0},risks:[],release_items:id==='S01'?['RC-01']:['RC-02']};
-    put(p,`slices/${id}-slice.md`,'---\n'+stringify(s)+'---\n');
+    put(p,`slices/${id}-slice.md`,'---\n'+stringify(s)+'---\n\n## Port evidence\nreference/demo/rip-port\n'+sha256(path.join(p,'reference/demo/rip-port/RIP_PORT_MANIFEST.json'))+'\nRP-001\n');
   }
   put(p,'RELEASE_CHECKLIST.md','| id | area | check | closed_by | how to verify |\n|---|---|---|---|---|\n| RC-01 | input | tap | S01 | tap |\n| RC-02 | ship | build | S02 | build |\n');
   put(p,'EXPECT_GAMEPLAY_VISUAL.md','# S01 visual target\n[screen](reference/demo/iphone/01.jpg)\n## Game feel / VFX table\n');
   put(p,'ASSET_MANIFEST.md','| Stem | Source | Priority | Path |\n|---|---|---|---|\n| impact | import | P0 | reference/demo/rip/images_ingame/Fx.png |\n');
   put(p,'SCOPE.md','budget_count: code_only\nbudget_auto_bump_pct: 15\n');
+  put(p,'HOW_TO.md','RP-001: port zero-count win behavior, S01 scenario.');
+  put(p,'ARCHITECTURE.md','RP-001: Board.Won maps to WinEvaluator.');
   return p;
 }
 
@@ -42,6 +46,7 @@ function project() {
   fs.writeFileSync(path.join(p, 'reference/demo/models/Prop.glb'), 'x');
   fs.writeFileSync(path.join(p, 'reference/demo/rip/levels/one.json'), JSON.stringify({ Tables: [{ Placements: [{ PropId: 'can' }] }] }));
   fs.writeFileSync(path.join(p, 'reference/demo/iphone/01.jpg'), 'x');
+  writeBundle(p);
   return p;
 }
 test('index-source selects bounded candidates and records schema keys', () => {
@@ -50,6 +55,37 @@ test('index-source selects bounded candidates and records schema keys', () => {
   assert.equal(r.index.sampleMeshes[0].path, 'reference/demo/models/Prop.glb');
   assert.ok(r.index.levels[0].keys.some(k => k.includes('Tables')));
   assert.ok(fs.existsSync(path.join(p, 'docs/brief-input-index.json')));
+});
+test('store clone with rip cannot index or pass contracts without analysis, even with flag omitted',()=>{
+  const p=validProject();
+  fs.unlinkSync(path.join(p,'reference/demo/rip-port/RIP_PORT_MANIFEST.json'));
+  assert.throws(()=>indexSource(p),/rip-port-analysis/);
+  assert.ok(validate(p).errors.some(e=>e.code==='rip_analysis_missing'));
+});
+test('port source drift blocks contracts and unpinned slices are rejected',()=>{
+  const p=validProject(),f='slices/S01-slice.md';
+  put(p,f,fs.readFileSync(path.join(p,f),'utf8').replace(/\b[a-f0-9]{64}\b/,'old-pin'));
+  assert.ok(validate(p).errors.some(e=>e.code==='rip_slice_unpinned'));
+  fs.appendFileSync(path.join(p,'fixture-source/Board.cs'),'// source changed');
+  assert.ok(validate(p).errors.some(e=>e.code==='rip_evidence_stale'));
+});
+test('forensic report changes invalidate brief review hash',()=>{
+  const p=validProject(),before=reviewHash(p);
+  fs.appendFileSync(path.join(p,'reference/demo/rip-port/RIP_PORT_GAPS.md'),'New unknown');
+  assert.notEqual(reviewHash(p),before);
+});
+test('explicit custom rip path is preserved during port indexing',()=>{
+  const p=project();
+  fs.renameSync(path.join(p,'reference/demo/rip'),path.join(p,'reference/demo/custom-rip'));
+  const notes=fs.readFileSync(path.join(p,'AGENT_NOTES.md'),'utf8');
+  put(p,'AGENT_NOTES.md',notes.replace('rip_path: reference/demo/rip','rip_path: reference/demo/custom-rip'));
+  assert.equal(indexSource(p).index.ripPath,'reference/demo/custom-rip');
+});
+test('merged slices retain historical analysis pins after a reviewed amendment',()=>{
+  const p=validProject(),f='slices/S01-slice.md';
+  put(p,f,fs.readFileSync(path.join(p,f),'utf8').replace(/\b[a-f0-9]{64}\b/,'historical-analysis-hash'));
+  put(p,'AGENT_NOTES.md',fs.readFileSync(path.join(p,'AGENT_NOTES.md'),'utf8').replace('release:\n','release:\n  slices:\n    S01: merged\n'));
+  assert.deepEqual(validate(p).errors,[]);
 });
 test('progress updates fingerprints and detects stale work', () => {
   const p = project(); indexSource(p);

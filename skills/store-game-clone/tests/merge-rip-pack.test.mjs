@@ -1,0 +1,26 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+const script=fileURLToPath(new URL('../scripts/merge-rip-pack.mjs',import.meta.url));
+test('merge preserves original Unity source pointers and port routing without copying Unity export',t=>{
+  const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'rip-merge-test-'));t.after(()=>fs.rmSync(tmp,{recursive:true,force:true}));
+  const output=path.join(tmp,'work/output'),ripped=path.join(tmp,'work/ripped'),dest=path.join(tmp,'assets');
+  fs.mkdirSync(path.join(output,'images_ingame'),{recursive:true});fs.mkdirSync(path.join(ripped,'UnityProject'),{recursive:true});
+  fs.mkdirSync(path.join(dest,'demo'),{recursive:true});
+  fs.writeFileSync(path.join(dest,'demo/manifest.json'),JSON.stringify({title:'Demo'}));
+  fs.writeFileSync(path.join(output,'manifest.json'),JSON.stringify({unity_version:'2022',counts:{images:1},source_paths:{ripped},scripting_backend:'IL2CPP',code_availability:'unassessed'}));
+  fs.writeFileSync(path.join(output,'images_ingame/piece.png'),'fixture');
+  const summary=JSON.parse(execFileSync(process.execPath,[script,'--rip',output,'--slug','demo','--assets-root',dest],{encoding:'utf8'}));
+  assert.equal(summary.ok,true);assert.equal(summary.workflow,'rip-port');assert.equal(summary.source_paths.ripped,ripped);
+  const manifest=JSON.parse(fs.readFileSync(path.join(dest,'demo/manifest.json')));
+  assert.equal(manifest.title,'Demo');assert.equal(manifest.rip.workflow,'rip-port');assert.equal(manifest.rip.source_paths.ripped,ripped);
+  assert.ok(fs.existsSync(path.join(dest,'demo/rip/images_ingame/piece.png')));
+  assert.equal(fs.existsSync(path.join(dest,'demo/rip/ripped')),false);
+  fs.writeFileSync(path.join(output,'manifest.json'),JSON.stringify({unity_version:'2022',counts:{images:1}}));
+  const legacy=JSON.parse(execFileSync(process.execPath,[script,'--rip',output,'--slug','legacy','--assets-root',dest],{encoding:'utf8'}));
+  assert.equal(legacy.source_paths.ripped,ripped);assert.equal(legacy.code_availability,'unassessed');
+});

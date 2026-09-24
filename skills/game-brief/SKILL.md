@@ -6,7 +6,8 @@ description: >-
   release plan (MILESTONES.md, numbered slice files, RELEASE_CHECKLIST.md) for an
   existing Cocos Creator project by spawning a configurable agent (default Fable 5.1) via
   Orca. Works from any source: an App Store reference pack (store-game-clone, optionally
-  with a merged unity-apk-rip pack under the project's reference rip folder), a user-supplied media
+  with a merged unity-apk-rip pack and mandatory rip-port-analysis forensic maps for rip-backed
+  ports), a user-supplied media
   folder (screenshots / video / GDD / GLB), or a text-only idea, with optional director
   gameplay notes and amendments to existing contracts.
   Sits between store-game-clone / new-cocos-game and game-producer. Use when the
@@ -37,6 +38,7 @@ passed. This skill never creates or opens a project.
 | Slice schema | [reference/slice-schema.md](reference/slice-schema.md) — MILESTONES / slices / RELEASE_CHECKLIST format, cutting rules, release-polish content |
 | Reference root in project | `<project>/reference/<slug>/` (`media` / `store`), absent for `idea` |
 | Rip pack (optional add-on) | `<project>/reference/<slug>/rip/` — `unity-apk-rip` output merged by `store-game-clone` Step 1b (`RIP_PACK.json`, `README.md`, `images_ingame/` de-atlased sprites, `fonts/`, `meshes/`, `levels/`, `briefs/`, `*_GUIDE.md`, `*_catalog.json`); P0 GLBs already copied to `reference/<slug>/models/` |
+| Port forensic maps | `<project>/reference/<slug>/rip-port/` — reviewed `RIP_PORT_MANIFEST.json` plus logic/state/level/asset/gap reports from `rip-port-analysis`; behavior source for a rip-backed port |
 | Contract templates | `<project>/.cursor/skills/vibe-game-director/templates/*.md` |
 | Depth exemplars | `/Users/wikz/orca-global/*-brief/` (structure only) |
 | Handoff file | `<project>/AGENT_NOTES.md` — this skill owns yaml `brief:` + `## Notes — game-brief` |
@@ -48,8 +50,9 @@ passed. This skill never creates or opens a project.
 Game Brief:
 - [ ] 0. Intake (project, slug, source mode, rip pack present?, gameplay notes?, orientation/design res, agent override?)
 - [ ] 1. Seed source (media → reference/<slug>/; idea → reference/<slug>-brief/IDEA.md; rip → already under reference/<slug>/rip/)
+- [ ] 1b. Any rip pack/project → run or reuse reviewed rip-port-analysis before brief launch
 - [ ] 2. Fill AGENT_NOTES.md brief: block (add block/section if skeleton is old)
-- [ ] 3. Launch the brief author in the project (agent-session) with the filled prompt (+ optional rip / gameplay-notes blocks)
+- [ ] 3. Launch the brief author in the project (agent-session) with the filled prompt (+ optional rip / rip-port / gameplay-notes blocks)
 - [ ] 4. Gate: run the deterministic contract and gameplay coverage validators, then inspect the remaining visual evidence (+ rip rows / GP coverage)
 - [ ] 5. Update notes section; report file list + slice table; stop (no commit unless asked)
 ```
@@ -71,7 +74,20 @@ Ask only what's missing:
    --slug <slug> --assets-root "$PROJECT/reference"` so it lands at `reference/<slug>/rip/` with the
    same layout (that script also fills `reference/<slug>/models/`). `idea` + rip is not a thing —
    a rip pack is media, so the mode becomes `media`.
-2c. **Gameplay notes** (optional, all source modes) — accept supplied chat text/files or
+   A raw recovered Unity/workdir input also selects port mode even without output/manifest.
+   Resolve it with `~/.agents/skills/rip-port-analysis/SKILL.md`; skip the output merge when
+   none exists. Use `source=media` when no store evidence exists.
+2c. **Rip analysis gate** — any rip input requires `rip_port.enabled: true` and reviewed
+   analysis at `rip_port.analysis_path` (default `reference/<slug>/rip-port/`). Read and run
+   `~/.agents/skills/rip-port-analysis/SKILL.md` before source indexing/brief launch if missing
+   or stale; this coordinator owns that nested phase, the brief author does not. Reuse only
+   after its validator and source-list check pass. Output-only packs use the same phase with
+   assets_only coverage. Direct game-brief invocation has the same gate as store-game-clone.
+   Preserve source mode `store|media`; it is independent of port mode. The analysis skill owns
+   `rip_port:` while this skill owns `brief:`. Read all reports and targeted critical evidence.
+   When no Unity tree exists, analysis must use `logicCoverage: assets_only`; do not convert
+   asset names, catalog priorities, or rip prose into recovered gameplay rules.
+2d. **Gameplay notes** (optional, all source modes) — accept supplied chat text/files or
    detect `brief.gameplay_notes_path` / `reference/<slug>-brief/GAMEPLAY_NOTES.md`.
    Read [reference/gameplay-notes.md](reference/gameplay-notes.md) when present; it owns
    capture, evidence precedence, coverage, and late amendments. Absence requires no question.
@@ -100,9 +116,10 @@ Never invent mechanics. `store` / `media` → the brief author must OBSERVE file
 director statements GIVEN. In every mode its own fills are ASSUMPTION. `idea` has no
 inspected media, so nothing may be marked OBSERVED.
 
-Rip pack evidence rules (when present): files under `rip/images_ingame/`, `rip/meshes/`,
-`rip/levels/`, and the `*_catalog.json` `how_to_use` fields are **OBSERVED** sources (cite the
-path). `rip/briefs/*.md` and `*_GUIDE.md` prose are **research seeds** — the brief author may quote them
+Rip pack evidence rules (when present): inspected files under `rip/images_ingame/`, `rip/meshes/`,
+`rip/levels/`, readable source code and serialized data can support **OBSERVED** claims (cite
+source ID, path, symbol/key). Catalog `how_to_use`, `rip/briefs/*.md` and `*_GUIDE.md` prose are
+**research seeds** — the brief author may quote them
 as `SEED (rip/briefs/GAMEPLAY_BRIEF.md §…)` but must re-derive v1 decisions itself; a rip brief
 describing the shipped Unity meta (arena, store, live-ops) never widens v1 scope by itself;
 explicit director requirements receive the scope decision defined in gameplay-notes.md.
@@ -125,6 +142,8 @@ PROJECT=/Users/wikz/Works/games/CocosCreator/cc-<slug>
 
 - `store`: reuse `reference/<slug>/` seeded by `store-game-clone` Step 3.
 - `media`:
+  For rip input use the analysis skill's source/staging rules, not the generic rsync below;
+  preserve the external Unity tree and stage only selected output packs/evidence.
   ```bash
   mkdir -p "$PROJECT/reference/<slug>"
   rsync -a --exclude '.DS_Store' <user media folder>/ "$PROJECT/reference/<slug>/"
@@ -145,6 +164,9 @@ judge the brief author's OBSERVED claims at the gate. With a rip pack also read 
 `rip/IMAGES_INGAME_GUIDE.md` + `rip/MESHES_GUIDE.md`, and open 2–3 P0 PNGs (named de-atlased
 sprites from Gameplay/HUD families — do not expect `sactx-*` pages under `rip/images_ingame/`;
 also note `rip/fonts/` when text is in scope) so you know what "import" rows should look like.
+Read the port reports and `~/.agents/skills/rip-port-analysis/references/port-contract.md`
+when rip input exists; copy that contract to `docs/rip-port-contract.md` for the brief author.
+Missing optional legacy rip briefs/guides are reported, not fabricated; analysis can use raw evidence.
 
 ## Step 2 — AGENT_NOTES.md
 
@@ -156,6 +178,7 @@ brief:
   source: store | media | idea
   reference_path: reference/<slug>/      # "" for idea
   rip_path: reference/<slug>/rip/        # "" when no rip pack (intake 2b)
+  rip_port_path: reference/<slug>/rip-port/ # from rip_port.analysis_path; "" when no rip input
   gameplay_notes_path: reference/<slug>-brief/GAMEPLAY_NOTES.md  # "" when none
   contract_depth: full                  # full (default) | playable (opt-in; later slices need expansion)
   orientation: landscape 1280x720        # or portrait 720x1280
@@ -184,10 +207,12 @@ Recipe-derived choices stay ASSUMPTION unless directed by the user; they are not
 mechanics or runtime proof. Missing library/no match → recipe_refs=[] and normal authoring.
 
 Fill placeholders in [reference/brief-prompt.md](reference/brief-prompt.md)
-(`<PROJECT>`, `<SLUG>`, `<SOURCE_BLOCK>`, `<RIP_BLOCK>`, `<GAMEPLAY_NOTES_BLOCK>`, `<ORIENTATION>`, `<DESIGN_RES>`,
+(`<PROJECT>`, `<SLUG>`, `<SOURCE_BLOCK>`, `<RIP_BLOCK>`, `<RIP_PORT_BLOCK>`, `<GAMEPLAY_NOTES_BLOCK>`, `<ORIENTATION>`, `<DESIGN_RES>`,
 `<ENGINE_LINE>`, `<RELEASE_GOAL>`), pick the `<SOURCE_BLOCK>` variant for the mode, and paste
 the `<RIP_BLOCK>` variant when intake 2b found a rip pack (delete the placeholder line
-otherwise — never leave the literal `<RIP_BLOCK>` in the prompt). Copy
+otherwise — never leave the literal `<RIP_BLOCK>` in the prompt). Include `<RIP_PORT_BLOCK>`
+for every port with its actual `<RIP_PORT_PATH>` and validated `<RIP_PORT_HASH>`, even when
+there is no RIP_PACK.json; remove it when no rip input exists. Copy
 [reference/slice-schema.md](reference/slice-schema.md) to
 `$PROJECT/docs/slice-schema.md` first so the brief author can read it inside the worktree. Then:
 
@@ -268,6 +293,11 @@ Also confirm:
 
 Extra rows when a rip pack is present (`brief.rip_path` non-empty):
 
+For every port, the contract validator also requires fresh reviewed analysis. The semantic
+gate applies `docs/rip-port-contract.md`: HOW_TO port coverage, ARCHITECTURE mappings,
+slice RP scenarios and explicit Port evidence/hash pointers. Check that code/data-backed
+rules survive the handoff; material unknowns are risks, never silently promoted to OBSERVED.
+
 ```bash
 cd "$PROJECT" && grep -c 'reference/<slug>/rip/' ASSET_MANIFEST.md HOW_TO.md EXPECT_GAMEPLAY_VISUAL.md   # ASSET_MANIFEST must be > 0
 grep -cE '\| *import *\|' ASSET_MANIFEST.md                                                        # ≥ 1 import row
@@ -301,6 +331,7 @@ grep -c 'SEED (' GAME_BRIEF.md HOW_TO.md                                        
 - `## Notes — game-brief` → 3–5 bullets: source mode, what was OBSERVED vs ASSUMED (or
   GIVEN vs ASSUMED), media that could not be read, files written here instead of by the brief author; with a
   rip pack: how many `import` vs `generate` rows, and which rip-brief systems were kept out of v1.
+  With port analysis include actual analyst, coverage, manifest hash and unresolved core rules.
 - With gameplay notes, include their path and coverage counts by decision; for amendments,
   report changed GP IDs/files/slices and required fresh review scenarios for the current owner.
 - Report the file list, the brief author's v1 summary, the slice table from `MILESTONES.md`

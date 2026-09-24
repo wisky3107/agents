@@ -68,6 +68,16 @@ retry in the same run.
 
 ## Hard constraints that shape the fleet
 
+For rip-backed ports, use the slice's `Port evidence` path/hash and RP acceptance scenarios.
+Validate the analysis manifest before dispatch and forward only selected reports and cited
+source read paths to the worker role cards. Raw Unity sources are read-only. Source=import
+rows in ASSET_MANIFEST bypass generation/concept tasks; the art worker copies/converts raw
+assets under its allowlist, then the integrator imports and verifies them in Cocos. Imported
+meshes need source comparison/scale/pivot/material checks, not a newly generated concept.
+For an imported rig/animation, reuse existing clips after inspection; only missing clips
+explicitly scoped by the slice use generation/retargeting. The generation rules below apply
+to Source=generate. Review checks behavior parity scenarios as well as EXPECT visuals.
+
 - **One editor channel per checkout, one port pin per checkout.** Every checkout (main project or
   Orca worktree) pins its own MCP (+ preview for cc4) and carries project-local MCP client configs
   (`.cursor/mcp.json`, `.mcp.json`, `.codex/config.toml`) that point at it — written by
@@ -85,7 +95,7 @@ retry in the same run.
   wiring, and asset import belong to the **integrator** Task.
 - **`.meta` is generated, never authored.** Art produces raw files only; the integrator imports
   them (`refresh_assets`) and verifies every pair.
-- **3D pipeline is fan-out, concept always Antigravity, route per mesh.** Coordinator creates
+- **Generated 3D pipeline is fan-out, concept always Antigravity, route per generated mesh.** Coordinator creates
   parallel `art-concept-<stem>` (always `agy`) and `art-mesh-<stem>` Tasks with disjoint path
   allowlists. Mesh work starts only after that stem's `CONCEPT: PASS`; the mesh worker follows
   `cocos-asset-gen` routing (simple → Blender script, complex → 3D Gen Studio, studio down →
@@ -126,7 +136,7 @@ one line together with the worker locks.
 
 `mesh_backend` does not change the agent — the `art-mesh-<stem>` worker (locked `art_backend`)
 runs whichever route the contract selects. When `mesh_backend` resolves to `3dgenstudio` or
-`auto` **and** the PLAN has complex meshes, the coordinator runs
+`auto` **and** the PLAN has complex Source=generate meshes, the coordinator runs
 `python3 .cursor/skills/cocos-asset-gen/scripts/gen3d_studio.py --check` once at Step 0.2 and
 records the result in the PLAN (`studio_available: true|false`) so mesh workers do not each
 discover the outage; `false` under `auto` → say `mesh=auto (studio down → blender)`.
@@ -135,6 +145,9 @@ discover the outage; `false` under `auto` → say `mesh=auto (studio down → bl
 
 Whenever `manifest.json` lists one or more meshes (`.glb` / `.gltf` / `.fbx` / `.obj`), the
 coordinator **splits art into parallel Tasks** — workers never dispatch (nested depth stays 1).
+First partition import vs generate. The concept/mesh/anim DAG below covers generated stems;
+imported stems get disjoint art-import-<stem> tasks using the locked writer spec and feed the
+same integrate gate with route=import verification. They do not trigger generation probes.
 
 ```
 scan
@@ -169,10 +182,12 @@ integrate ← all art-mesh + art-2d + implement
 - Studio-route meshes may run in parallel (Tripo tasks are independent); the local mesh-tools
   service serialises bake/collision, so expect those steps to queue.
 
-**Gates the fleet enforces downstream:** integrator imports a mesh only with
+**Gates the fleet enforces downstream:** a generated mesh imports only with
 `evidence/art/<stem>/concept-check.md` → `CONCEPT: PASS`, `evidence/art/<stem>/model-check.md`
 → `VERDICT: PASS` (with `route:` line), and both `contact-sheet.png` + `compare-sheet.png` on
-disk; reviewer opens the **compare-sheet** and may overturn. Blender missing → one `ask`.
+disk; an imported mesh instead requires route=import, source/hash, conversion and
+source-comparison evidence with `VERDICT: PASS`; it has no concept gate. Reviewer opens the
+comparison evidence and may overturn. Blender missing → one `ask`.
 
 ## Worker agents (choose once)
 
@@ -225,7 +240,7 @@ Fleet Progress:
           Notes sections). Lock art_backend (antigravity | cursor | gpt-image-gen),
           mesh_backend (auto | blender | 3dgenstudio), scanner_agent, planner_agent,
           writer_agent, reviewer_agent once (prompt > AGENT_NOTES.md > default); if mesh_backend is
-          auto/3dgenstudio and the PLAN has complex meshes, run
+          auto/3dgenstudio and the PLAN has complex Source=generate meshes, run
           `python3 .cursor/skills/cocos-asset-gen/scripts/gen3d_studio.py --check`
           → studio_available; announce all locks in one line; never re-ask later
           Also detect the PLAN source now (see 0.5): `PLAN: <path>` in the prompt → A;
@@ -318,14 +333,17 @@ and the lifecycle instruction to report with `worker_done` / `ask` / `escalation
 | plan (branch C only) | — | recipe A/B per `planner_agent` | PLAN on disk, passes validation, director gate approved; terminal closed (recipe B) or released (A) |
 | scan | plan (C) / — (A, B) | recipe A/B per `scanner_agent` | `discovery.md` + `baseline/`; `status` to implement + art-manifest |
 | art-manifest | scan | recipe **A** | `manifest.json` skeleton with every mesh/2D row; `status` to concept + mesh + implement handles |
+| art-import-<stem> (Source=import) | art-manifest | recipe A/B per writer_agent | copied/converted files, route=import check with source/hash + VERDICT PASS; anim-check when applicable |
 | art-concept-<stem> | art-manifest | recipe **C** **antigravity only** (no AGENTS.md boot) | concept PNGs on disk; `CONCEPT: PASS` in `concept-check.md`; `status` to matching mesh handle |
 | art-mesh-<stem> | art-concept-<stem> | recipe A (cursor) / **C** (antigravity · gpt-image-gen/codex) | `.glb` + generator; `contact-sheet` + `compare-sheet` + `VERDICT: PASS`; own manifest row `verify` set |
 | art-2d | art-manifest | recipe A (cursor) / **C** (antigravity · gpt-image-gen/codex) | 2D files ≤ budget; no 3D |
 | implement | scan, art-manifest | recipe A/B per `writer_agent` | tsc clean; `integration-notes.md`; output-contract YAML |
-| integrate | implement, all art-mesh-*, art-2d | reuse implement terminal | lock cycle; `.meta` pairs; preflight / editor-log / diff-stat; preview-startup.json with verified URL or exact blocker |
+| integrate | implement, all art-import-*, all art-mesh-*, art-2d | reuse implement terminal | lock cycle; `.meta` pairs; preflight / editor-log / diff-stat; preview-startup.json with verified URL or exact blocker |
 | review | integrate | recipe A/B per `reviewer_agent`, **fresh** | `review.md` ends `APPROVED` or `CHANGES_REQUESTED` |
 
 Start `art-manifest` + `implement` together when `scan` finishes. Start **all**
+`art-import-*` once art-manifest finishes; concept/mesh/anim generation below applies only
+to Source=generate stems. Start **all**
 `art-concept-*` (and `art-2d`) together when `art-manifest` finishes. Start each
 `art-mesh-<stem>` as soon as **that** stem's concept reports `CONCEPT: PASS` — do not wait
 for other stems. N models ⇒ N concept agents + N mesh agents in flight.
@@ -511,7 +529,7 @@ after a valid `worker_done`; never release on idle/heartbeat.
   `fix_routing` table, or merging rows with different owners into one Task.
 - `gpt-image-gen` art inventing final pixels without `orca-gpt-image-gen` (or skipping the
   style-library pass when that skill is installed).
-- Shipping a 3D model without a PASSed Antigravity concept pack, or without Reading both
+- Shipping a generated 3D model without a PASSed Antigravity concept pack, or without Reading both
   `contact-sheet.png` and `compare-sheet.png` before `VERDICT: PASS`.
 - Giving 3D concepts to `orca-gpt-image-gen` / ChatGPT when the gate requires Antigravity.
 - One monolithic art Task that serializes every stem while other stems could run in parallel.

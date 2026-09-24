@@ -18,6 +18,12 @@ Output: `<workdir>/output/` with `images/` (de-atlased sprites), `images_ingame/
 `meshes/`, `levels/`, `briefs/`, per-file catalogs (`*_catalog.json`), agent guides (`*_GUIDE.md`),
 `de_atlas_*.json`, `README.md`, `manifest.json`.
 
+The output manifest retains `source_paths` for the original UnityProject/PrimaryContent
+trees and `code_availability: unassessed`. Report these paths with the output path. A clone
+or port caller routes through `rip-port-analysis` before game-brief, even when invoked as
+store-game-clone. Extraction alone does not launch a port. Preserve `ripped/` for the
+mid-tier analyst; distinguish readable bodies from stubs before making logic claims.
+
 ## Constants
 
 | Key | Value |

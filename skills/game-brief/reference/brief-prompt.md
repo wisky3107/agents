@@ -3,11 +3,13 @@
 Send via `bootstrap.mjs agent-session --agent "$BRIEF_AGENT"` using the resolved agent/model.
 This prompt applies equally to all supported providers; default is Fable 5.1.
 
-Replace `<PROJECT>`, `<SLUG>`, `<SOURCE_BLOCK>`, `<RIP_BLOCK>`, `<GAMEPLAY_NOTES_BLOCK>`, `<ORIENTATION>`, `<DESIGN_RES>`,
+Replace `<PROJECT>`, `<SLUG>`, `<SOURCE_BLOCK>`, `<RIP_BLOCK>`, `<RIP_PORT_BLOCK>`, `<GAMEPLAY_NOTES_BLOCK>`, `<ORIENTATION>`, `<DESIGN_RES>`,
 `<ENGINE_LINE>`, `<RELEASE_GOAL>` (`end_to_end` | `playable`, from `AGENT_NOTES.md` `release.goal`),
 `<BRIEF_TOOLS>` (absolute skill scripts directory), `<BRIEF_RUN_ID>` and `<CONTRACT_DEPTH>`.
 Pick exactly one `<SOURCE_BLOCK>` variant below and paste it in place. Paste the `<RIP_BLOCK>`
 variant only when `reference/<SLUG>/rip/RIP_PACK.json` exists; otherwise delete that line.
+Include RIP_PORT_BLOCK whenever rip input exists, with actual RIP_PORT_PATH and validated
+RIP_PORT_HASH; its presence does not require RIP_PACK.json. Remove it for non-port tasks.
 Insert `<GAMEPLAY_NOTES_BLOCK>` only when notes exist, replacing `<GAMEPLAY_NOTES_PATH>`
 with the saved project-relative path; otherwise delete the placeholder line.
 `docs/slice-schema.md` must already be copied into the project (skill Step 3).
@@ -19,6 +21,7 @@ You are the brief author in <PROJECT>.
 ## Sources (shortlist first; full director source)
 <SOURCE_BLOCK>
 <RIP_BLOCK>
+<RIP_PORT_BLOCK>
 <GAMEPLAY_NOTES_BLOCK>
 - Read `docs/brief-input-index.json` first. Inspect its shortlist and full director source; query `docs/brief-asset-candidates.json` only for a specific needed asset. Record extra research with `node <BRIEF_TOOLS>/brief-progress.mjs --project <PROJECT> --run-id <BRIEF_RUN_ID> --read <path> --reason <decision>`. Use bounded targeted lookups; no default full-pack contact sheet. Counts/metadata are not proof of visual inspection.
 - Contract templates: .cursor/skills/vibe-game-director/templates/{GAME_BRIEF,SCOPE,ARCHITECTURE,FOLLOWUPS,PLAYTEST}.md
@@ -104,8 +107,27 @@ J. RELEASE_CHECKLIST.md — product-level "done" rows RC-nn per docs/slice-schem
   - Mesh topology: reference/<SLUG>/models/*.glb (catalog P0 already copied there) + rip/MESHES_GUIDE.md + rip/meshes_catalog.json. Most GLBs are uGUI prefab dumps (P3) — never list *PopUp*/Toolbar*/*Leaderboard* as art. If the guide says the game is 2.5D/sprite-based, plan sprites and use meshes only for shape data.
   - Level data: rip/levels/*.json (+ schema keys in rip/README.md and rip/briefs/GAMEPLAY_BRIEF.md). If v1 loads levels, HOW_TO.md gets a level-schema section that cites the exact keys v1 reads (OBSERVED) and names the sample level file(s) v1 ships; do not ship all levels in S01.
   - Rip briefs: rip/briefs/{GAME,GAMEPLAY,2D_ART,3D_ART}_BRIEF.md — research seeds about the shipped Unity game (label SEED). Re-derive v1 yourself; meta systems they describe go to NOT-in-v1 / _Avoid_ unless explicitly requested and scoped by the director. Rip prose alone never expands v1.
-  - Store pack stays the source for feel / HUD layout / marketing look; the rip is the source for exact sprites, colors (color enum × neutral art — never per-color assets), shapes, and level schema. Unless an explicit director requirement determines the design, EXPECT follows store screenshots/trailer when store and rip disagree, noting the rip variant in the accepted-deviation table. Conflicts with reported play follow the gameplay-notes contract.
+  - Store pack validates visible HUD/layout/look. Port behavior comes from reviewed code/data evidence in RIP_PORT_BLOCK; source-version conflicts and deliberate deviations are recorded, not silently resolved in favor of marketing screenshots. Use color enum × neutral art when observed, not invented per-color assets. Conflicts with director-reported play follow the gameplay-notes contract.
   - ASSET_MANIFEST.md rows: Source column `import` (exact rip/models path + slice region) or `generate`; default import when a P0/P1 catalog file covers the need.
+```
+
+## `<RIP_PORT_BLOCK>` (every rip-backed port, independent of store/media source mode)
+
+```text
+- Port analysis: <RIP_PORT_PATH>/RIP_PORT_MANIFEST.json; validated SHA-256: <RIP_PORT_HASH>.
+- Read its five reports and docs/rip-port-contract.md before deciding core rules. Follow the
+  contract's Contracts and implementation handoff section. Use source IDs and RP claim IDs;
+  open critical cited input/resolution/win/lose/reset and level-reader evidence as needed.
+  The mid-tier analyst already did broad source investigation; use targeted follow-ups.
+- HOW_TO needs port coverage; ARCHITECTURE needs behavior-to-Cocos mappings. Slices include
+  Port evidence with this analysis path and pinned manifest hash, RP-linked acceptance and
+  initial state → input → expected result scenarios. Preserve deferred/unknown dispositions.
+- Forensic INFERRED/PORT_DECISION becomes ASSUMPTION in contract evidence fields. UNKNOWN
+  remains a risk; source stubs/names do not prove behavior. Explicit director changes are GIVEN.
+- Existing suitable assets default to import. List staged source, runtime destination and
+  required conversion. Generate only uncovered needs with a reason. Raw Unity-only inputs
+  require staging selected assets before exact import paths can pass the contract gate.
+- The analyst's source coverage is not proof of runtime parity or permission to expand v1.
 ```
 
 ## `<SOURCE_BLOCK>` variants

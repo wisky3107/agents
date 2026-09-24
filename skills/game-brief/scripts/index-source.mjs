@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { analysisPathFor, validateRipPort } from '../../rip-port-analysis/scripts/validate-rip-port.mjs';
 import { args, project, local, exists, read, json, hash, notes, files, tableRows, ids, writeJson, run } from './lib.mjs';
 
 function dimensions(file) {
@@ -37,8 +38,14 @@ function shape(x, prefix = '', result = new Set(), depth = 0) {
 }
 export function indexSource(p, a = {}) {
   const n = notes(p), brief = n.brief || {}, warnings = [];
+  const port = analysisPathFor(p,n);
+  if (port !== null) {
+    const result = validateRipPort(p,port,{expectedSources:n.rip_port?.sources});
+    if (!result.ok) throw Error(`Run rip-port-analysis before brief authoring: ${result.errors.map(e=>e.code).join(', ')}`);
+  }
   const ref = (a.reference || brief.reference_path || n.store_clone?.reference_path || '').replace(/\/$/, '');
-  const rip = (brief.rip_path || n.store_clone?.rip_path || (ref && exists(local(p, `${ref}/rip/RIP_PACK.json`)) ? `${ref}/rip` : '')).replace(/\/$/, '');
+  const detectedRip = ref && exists(local(p, `${ref}/rip/RIP_PACK.json`)) ? `${ref}/rip` : '';
+  const rip = (brief.rip_path || n.store_clone?.rip_path || detectedRip).replace(/\/$/, '');
   const source = brief.source || (ref ? 'media' : 'idea');
   if (!['idea','media','store'].includes(source)) throw Error(`Unknown source mode: ${source}`);
   const depth = a.depth || brief.contract_depth || 'full';
@@ -85,6 +92,7 @@ export function indexSource(p, a = {}) {
     if (!requirements.length && ids(text).length) warnings.push('GP IDs found but no supported Requirement index table; inspect manually');
   }
   const requiredReads = ref ? [`${ref}/manifest.json`, ...files(p,ref).filter(f => /\.(md|txt|pdf|docx)$/i.test(f)), ...(rip ? ['RIP_PACK.json','README.md','IMAGES_INGAME_GUIDE.md','MESHES_GUIDE.md','briefs/GAME_BRIEF.md','briefs/GAMEPLAY_BRIEF.md'].map(f => `${rip}/${f}`) : [])] : [`reference/${slug}-brief/IDEA.md`];
+  if (port) requiredReads.push(...files(p,port.replace(/\/$/, '')).filter(f => /\/RIP_.*\.(md|json)$/.test(f)));
   if (source === 'idea' && !exists(local(p,requiredReads[0]))) throw Error(`Missing idea source: ${requiredReads[0]}; supply --slug when folder naming differs`);
   const inputPaths = [...new Set([...touched, ...media, ...requiredReads, ...catalogs.filter(c => c.exists).map(c => c.path)])];
   const fingerprint = hash(JSON.stringify(inputPaths.map(f => { const q = local(p, f); return exists(q) ? [f, fs.statSync(q).size, fs.statSync(q).mtimeMs, /\.(json|md)$/.test(f) ? hash(read(q)) : null] : [f, null]; })) + depth);

@@ -1,4 +1,5 @@
 import { args, project, local, exists, read, front, fence, ROOTS, tables, files, notes, run } from './lib.mjs';
+import { analysisPathFor, validateRipPort } from '../../rip-port-analysis/scripts/validate-rip-port.mjs';
 
 export function loadSlices(p) {
   return files(p, 'slices').filter(f => /^slices\/S\d+-.+\.md$/.test(f)).map(file => ({ file, text: read(local(p, file)), data: front(read(local(p, file)), file) }));
@@ -23,6 +24,20 @@ export function validate(p, options = {}) {
   let n, m, slices;
   try { n = notes(p); m = fence(texts['MILESTONES.md'] || '', 'MILESTONES.md'); slices = loadSlices(p); }
   catch (e) { fail('invalid_yaml', 'contracts', e.message); return { ok: false, errors, warnings }; }
+  const portPath = analysisPathFor(p,n);
+  if (portPath !== null) {
+    const port = validateRipPort(p, portPath, { expectedSources:n.rip_port?.sources });
+    for (const e of port.errors) fail(e.code, portPath || 'AGENT_NOTES.md', e.message);
+    if (port.ok) {
+      for (const f of ['HOW_TO.md','ARCHITECTURE.md']) if (!/\bRP-\d+\b/.test(texts[f] || '')) fail('rip_contract_unlinked',f,'Port contracts must cite RP claims');
+      // Completed slices retain historical pins; new/amended work uses current analysis.
+      for (const s of slices) {
+        const state = n.release?.slices?.[s.data?.id];
+        if (['merged','shipped'].includes(typeof state === 'string' ? state : state?.status)) continue;
+        if (!s.text.includes(portPath.replace(/\/$/, '')) || !s.text.includes(port.manifestHash)) fail('rip_slice_unpinned',s.file,'Port evidence needs analysis path and current manifest SHA-256');
+      }
+    }
+  }
   if (!m || typeof m !== 'object' || Array.isArray(m)) { fail('invalid_milestones', 'MILESTONES.md', 'Expected YAML mapping'); return { ok: false, errors, warnings }; }
   const depth = options.depth || n.brief?.contract_depth || 'full';
   if (!['full', 'playable'].includes(depth)) fail('invalid_depth', 'AGENT_NOTES.md', 'contract_depth must be full or playable');
@@ -91,7 +106,7 @@ export function validate(p, options = {}) {
   const importRows = tables(manifest).flatMap(t => { const col = t[0].findIndex(c => /^source$/i.test(c)); return col >= 0 ? t.slice(2).filter(r => /\bimport\b/i.test(r[col])) : []; });
   if ((n.brief?.rip_path || n.store_clone?.rip_path) && !importRows.length) fail('missing_import_rows', 'ASSET_MANIFEST.md', 'Rip input requires Source=import rows');
   for (const row of importRows) {
-    const paths = [...row.join(' ').matchAll(/reference\/[^\s|`)<>,]+\.(?:png|jpe?g|webp|glb|gltf|ttf|otf|fnt|json)\b/gi)].map(m => m[0]);
+    const paths = [...row.join(' ').matchAll(/reference\/[^\s|`)<>,]+\.(?:png|jpe?g|webp|glb|gltf|fbx|obj|ttf|otf|fnt|json|asset|prefab|anim|wav|mp3|ogg)\b/gi)].map(m => m[0]);
     if (!paths.length) fail('missing_import_path', 'ASSET_MANIFEST.md', `Import row needs an exact file: ${row[0]}`);
     for (const f of paths) if (!exists(local(p, f))) fail('missing_import_path', 'ASSET_MANIFEST.md', f);
   }

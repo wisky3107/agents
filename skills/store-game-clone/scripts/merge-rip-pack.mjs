@@ -190,6 +190,13 @@ function main() {
     catalogs: info.catalogs,
     briefs: info.briefs,
     unity_version: info.manifest?.unity_version ?? null,
+    scripting_backend: info.manifest?.scripting_backend ?? null,
+    source_paths: info.manifest?.source_paths ?? {
+      ripped: isDir(path.join(path.dirname(rip), 'ripped'))
+        ? path.join(path.dirname(rip), 'ripped') : null,
+    },
+    code_availability: info.manifest?.code_availability ?? 'unassessed',
+    workflow: 'rip-port',
     models: {
       dest: modelsDest,
       rule: models.reason,
@@ -210,6 +217,8 @@ function main() {
         source: rip,
         format: info.format,
         unity_version: summary.unity_version,
+        source_paths: summary.source_paths,
+        workflow: 'rip-port',
         dirs: summary.copied_dirs,
         excluded_dirs: summary.excluded_dirs,
         models_from_rip: copied.length + skippedExisting.length,

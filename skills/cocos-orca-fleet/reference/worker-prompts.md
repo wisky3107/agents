@@ -30,6 +30,12 @@ recipe files, after revision/hash validation against resolved metadata. Missing 
 Use in-scope checks and record current results/deviations in existing integration/review
 evidence. Historical recipe evidence is not a current pass; do not read producer lessons or
 scan unrelated recipes. Shared library edits are outside worker ownership.
+Port evidence in the PLAN/source slice is also an explicit read allowlist: selected analysis
+reports, pinned manifest and exact source files cited by its RP/E IDs. Verify the manifest
+SHA-256 before using it; raw Unity sources are read-only. Writer ports the mapped rules and
+declared deviations; reviewer exercises RP-linked scenarios including reset/win/lose using
+current runtime evidence. Art obeys ASSET_MANIFEST import/generate rows. A stale/missing map
+returns to the coordinator, not an ad hoc redesign from screenshots.
 ```
 
 ---
@@ -210,6 +216,9 @@ Do:
 3. Probe just-in-time: node .cursor/skills/vibe-game-director/scripts/probe.mjs --only <channel>
    --name <project> --task <TASK_ID> before each channel's first use → evidence/preflight.json.
 4. Before refresh_assets: for every 3D model in <ART_PATHS>/manifest.json, confirm
+   Source=import rows have route=import, source/hash, conversion and source-comparison
+   evidence in model-check.md ending VERDICT: PASS; they skip the concept gate below.
+   For Source=generate rows confirm
    evidence/art/<stem>/concept-check.md has `CONCEPT: PASS`, evidence/art/<stem>/model-check.md
    ends in `VERDICT: PASS`, and the cited concept-front, contact-sheet.png, AND compare-sheet.png
    all exist. Missing or FAIL → do not import; `ask` (concept fail → art-concept Task; mesh/

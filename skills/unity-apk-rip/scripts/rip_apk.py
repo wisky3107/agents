@@ -456,6 +456,13 @@ def main() -> None:
         "workdir": str(work),
         "unity_version": read_unity_version(ar_log, base_dir),
         "scripting_backend": read_backend(ar_log, base_dir),
+        "source_paths": {
+            "ripped": str(ripped.resolve()),
+            "unity_project": str(project.resolve()),
+            "primary_content": str(primary.resolve()),
+        },
+        # Backend/type metadata alone does not establish readable gameplay method bodies.
+        "code_availability": "unassessed",
         "assetripper_bin": str(args.bin),
         "images_method": images_method,
         "counts": {
