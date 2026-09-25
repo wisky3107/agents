@@ -232,7 +232,8 @@ already wrote `bootstrap:` — do not touch it):
   `rip_port.analysis_path: reference/<slug>/rip-port/`, `rip_port.status: pending`,
   `rip_port.analyst_agent` from explicit override → saved value → `cursor --model auto`, and
   `rip_port.sources` per the analysis skill. It owns subsequent analysis status/coverage.
-  Keep original absolute Unity paths in that block; do not copy the large `ripped/` tree.
+  Keep original absolute Unity paths in that block (`unity_project` = `.../ripped/UnityProject/ExportedProject`,
+  `primary_content` = `.../ripped/PrimaryContent`, never bare `ripped/`); do not copy the large `ripped/` tree.
 - yaml `fleet:` → set `art_backend` from intake item 5, and `scanner_agent` / `writer_agent` / `reviewer_agent` /
   `planner_agent` **only** if intake item 7 named them; otherwise leave the skeleton defaults untouched.
   `orchestrator_agent` stays whatever `new-cocos-game` wrote unless the user named one — then

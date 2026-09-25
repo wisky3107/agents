@@ -89,7 +89,8 @@ Exit ≠ 0 → read `<workdir>/assetripper.log`; rerun with `--skip-rip` if expo
 Read, in this order (skip what is missing):
 
 - `output/manifest.json`
-- `ripped/PrimaryContent/Scripts/<GameAssembly>/` — look for `*Model`, `*Core`, `*Sim`, `*LevelDef`, `*StateType`, color/kind enums, `*Manager`
+- `ripped/UnityProject/ExportedProject/Assets/Scripts/<GameAssembly>/` — look for `*Model`, `*Core`, `*Sim`, `*LevelDef`, `*StateType`, color/kind enums, `*Manager` (PrimaryContent has no scripts). If `assetripper.log` shows a Cpp2IL metadata failure, every script is a `Dummy class`: names/fields only
+- Serialized MonoBehaviour `.asset` files under `ExportedProject/Assets/**` (e.g. `assetstobundle/`) — tuning/config values; `rip-port-analysis/scripts/inventory-rip.mjs` lists them
 - 2–3 files in `output/levels/` + any config dir (`Resources/*config*`)
 - `ls output/images | sed 's/[-_].*//' | sort | uniq -c | sort -rn | head` — prefixes reveal art kits
 - `python3 $S/filter_ingame_images.py --workdir "<workdir>" --list-atlases` — sprite count per SpriteAtlas family (from `de_atlas_lookup.json`)

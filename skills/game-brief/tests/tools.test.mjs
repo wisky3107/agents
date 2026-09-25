@@ -66,7 +66,7 @@ test('port source drift blocks contracts and unpinned slices are rejected',()=>{
   const p=validProject(),f='slices/S01-slice.md';
   put(p,f,fs.readFileSync(path.join(p,f),'utf8').replace(/\b[a-f0-9]{64}\b/,'old-pin'));
   assert.ok(validate(p).errors.some(e=>e.code==='rip_slice_unpinned'));
-  fs.appendFileSync(path.join(p,'fixture-source/Board.cs'),'// source changed');
+  fs.appendFileSync(path.join(p,'fixture-rip/ripped/UnityProject/ExportedProject/Assets/Scripts/Game/Board.cs'),'// source changed');
   assert.ok(validate(p).errors.some(e=>e.code==='rip_evidence_stale'));
 });
 test('forensic report changes invalidate brief review hash',()=>{

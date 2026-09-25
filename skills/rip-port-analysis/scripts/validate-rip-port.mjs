@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { INVENTORY, CATEGORIES, buildInventory } from './inventory-rip.mjs';
 
 export const REPORTS = [
   'RIP_LOGIC_MAP.md',
@@ -32,7 +33,9 @@ function within(root, relative) {
   if (!file.startsWith(base + path.sep)) throw Error('Path escapes source root');
   return file;
 }
-export function validateRipPort(project, analysisPath, { allowAnalyzed = false, expectedSources } = {}) {
+// Evidence may cite the analysis tree (root = UnityProject/ExportedProject), PrimaryContent (GLB lookup only) or output (SEED only).
+const TREES = { root: null, primaryContent: ['asset'], output: ['seed'] };
+export function validateRipPort(project, analysisPath, { allowAnalyzed = false, expectedSources, recheckInventory = false } = {}) {
   const errors = [], fail = (code, message) => errors.push({ code, message });
   let root, m;
   try {
@@ -40,7 +43,8 @@ export function validateRipPort(project, analysisPath, { allowAnalyzed = false, 
     m = JSON.parse(fs.readFileSync(path.join(root, 'RIP_PORT_MANIFEST.json'), 'utf8'));
     if (!m || typeof m !== 'object' || Array.isArray(m)) throw Error('Expected manifest object');
   } catch(e) { return { ok:false, errors:[{code:'rip_analysis_missing', message:e.message}] }; }
-  if (m.schemaVersion !== 1) fail('rip_schema', 'Expected schemaVersion=1');
+  if (m.schemaVersion === 1) fail('rip_schema_legacy', 'schemaVersion 1 predates RIP_INVENTORY coverage; re-run the analysis');
+  else if (m.schemaVersion !== 2) fail('rip_schema', 'Expected schemaVersion=2');
   if (!(allowAnalyzed ? ['reviewed','analyzed'] : ['reviewed']).includes(m.status)) fail('rip_unreviewed', 'Coordinator must review the analysis');
   if (!['readable_logic','partial','assets_only'].includes(m.logicCoverage)) fail('rip_coverage', 'Unknown logicCoverage');
   if (!m.analystAgent || typeof m.analystAgent !== 'string') fail('rip_agent', 'Record actual analyst launch spec');
@@ -50,8 +54,30 @@ export function validateRipPort(project, analysisPath, { allowAnalyzed = false, 
   for (const s of list(m.sources)) {
     if (typeof s?.id !== 'string' || !s.id || sources.has(s.id) || typeof s.root !== 'string' || !path.isAbsolute(s.root) || !['readable','stubs','none','mixed'].includes(s.codeAvailability)) { fail('rip_source', 'Invalid/duplicate source metadata'); continue; }
     sources.set(s.id,s);
-    if (!fs.existsSync(s.root) || !fs.statSync(s.root).isDirectory()) fail('rip_source_missing', s.root);
+    for (const t of Object.keys(TREES)) if (s[t] !== undefined && s[t] !== '' && (typeof s[t] !== 'string' || !path.isAbsolute(s[t]) || !fs.existsSync(s[t]) || !fs.statSync(s[t]).isDirectory())) fail('rip_source_missing', `${s.id}.${t}: ${s[t]}`);
+    if (fs.existsSync(s.root) && !fs.existsSync(path.join(s.root, 'Assets')) && s.codeAvailability !== 'none') fail('rip_source_root', `${s.id}: root must be UnityProject/ExportedProject (has Assets/), not ripped/ or PrimaryContent`);
   }
+  // Whole-tree inventory: hashed, one entry per source, drives coverage floor and category dispositions.
+  let inv;
+  try {
+    const p = within(root, m.inventory?.path || INVENTORY);
+    inv = JSON.parse(fs.readFileSync(p, 'utf8'));
+    if (sha256(p) !== m.inventory?.sha256) fail('rip_inventory_stale', 'Inventory hash differs from manifest');
+  } catch(e) { fail('rip_inventory_missing', `Run scripts/inventory-rip.mjs: ${e.message}`); }
+  const totals = Object.fromEntries(CATEGORIES.map(c => [c, 0]));
+  if (inv) for (const [id, s] of sources) {
+    const i = inv.sources?.[id];
+    if (!i) { fail('rip_inventory_source', `No inventory for source ${id}`); continue; }
+    if (path.resolve(i.paths?.unityProject || '') !== path.resolve(s.root)) fail('rip_inventory_source', `${id}: inventory unityProject differs from source root`);
+    for (const c of CATEGORIES) totals[c] += i.counts?.[c] || 0;
+    if (i.codeAvailability && i.codeAvailability !== s.codeAvailability) fail('rip_code_availability', `${id}: inventory says ${i.codeAvailability}, manifest says ${s.codeAvailability}`);
+    if (i.metadataFailure && !(typeof m.codeRecovery === 'string' && m.codeRecovery.trim())) fail('rip_code_recovery', `${id}: assetripper.log shows IL2CPP metadata failure; record cause and recovery in codeRecovery`);
+    if (recheckInventory) {
+      const fresh = buildInventory(i.paths || {});
+      for (const c of CATEGORIES) if ((fresh.counts[c] || 0) !== (i.counts?.[c] || 0)) fail('rip_inventory_drift', `${id}.${c}: ${i.counts?.[c]} recorded, ${fresh.counts[c]} now`);
+    }
+  }
+  if (m.logicCoverage === 'assets_only' && (totals.scripts || totals.serializedData)) fail('rip_coverage_floor', `assets_only but inventory has ${totals.scripts} scripts and ${totals.serializedData} serialized MonoBehaviours; use partial`);
   if (expectedSources !== undefined) {
     if (!Array.isArray(expectedSources) || expectedSources.length !== sources.size) fail('rip_source_set', 'Analysis source list differs from requested sources');
     for (const s of list(expectedSources)) if (!sources.has(s?.id) || path.resolve(s.root || '.') !== path.resolve(sources.get(s.id).root)) fail('rip_source_set', `Source changed: ${s?.id}`);
@@ -63,7 +89,10 @@ export function validateRipPort(project, analysisPath, { allowAnalyzed = false, 
     evidence.set(e.id,e);
     if (!['code','data','asset','prefab','scene','metadata','seed'].includes(e.kind)) fail('rip_evidence_kind', e.id);
     try {
-      const file = within(sources.get(e.source).root,e.path);
+      const tree = e.tree || 'root', base = sources.get(e.source)[tree];
+      if (!(tree in TREES) || !base) throw Error(`Unknown evidence tree ${tree}`);
+      if (TREES[tree] && !TREES[tree].includes(e.kind)) fail('rip_evidence_tree', `${e.id}: ${tree} evidence must be ${TREES[tree].join('/')}`);
+      const file = within(base,e.path);
       if (!fs.statSync(file).isFile() || sha256(file) !== e.sha256) fail('rip_evidence_stale', `${e.id}: ${e.path}`);
     } catch(e2) { fail('rip_evidence_missing', `${e.id}: ${e2.message}`); }
   }
@@ -74,6 +103,14 @@ export function validateRipPort(project, analysisPath, { allowAnalyzed = false, 
     if (!Array.isArray(c.evidence) || list(c.evidence).some(id => !evidence.has(id))) fail('rip_claim_citation', c.id);
     if (['OBSERVED','INFERRED'].includes(c.label) && !list(c.evidence).some(id => evidence.has(id) && evidence.get(id).kind !== 'seed')) fail('rip_seed_only', c.id);
   }
+  const disposed = new Map();
+  for (const d of list(m.inventoryCoverage)) {
+    if (!CATEGORIES.includes(d?.category) || disposed.has(d.category) || !['mapped','excluded'].includes(d.status)) { fail('rip_inventory_disposition', `Invalid/duplicate: ${d?.category}`); continue; }
+    disposed.set(d.category, d);
+    if (d.status === 'mapped' && (!list(d.claims).length || list(d.claims).some(id => !claims.has(id)))) fail('rip_inventory_disposition', `${d.category}: mapped needs existing claim IDs`);
+    if (d.status === 'excluded' && !(typeof d.reason === 'string' && d.reason.trim())) fail('rip_inventory_disposition', `${d.category}: excluded needs a reason`);
+  }
+  if (inv) for (const c of CATEGORIES) if (totals[c] && !disposed.has(c)) fail('rip_inventory_unmapped', `${c}: ${totals[c]} items in inventory, no mapped/excluded disposition`);
   const reportTexts = [];
   for (const file of REPORTS) {
     if (!list(m.files).includes(file)) fail('rip_report_list', file);
@@ -92,6 +129,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const argv = process.argv.slice(2), project = path.resolve(argv[0] || '.');
   const at = argv.indexOf('--analysis-path');
   const analysisPath = at >= 0 ? argv[at+1] : argv[1] && !argv[1].startsWith('--') ? `reference/${argv[1]}/rip-port` : '';
-  if (!analysisPath) { console.error('usage: validate-rip-port.mjs <project> <slug> | --analysis-path <relative path> [--allow-analyzed]'); process.exitCode=2; }
-  else { const result=validateRipPort(project,analysisPath,{allowAnalyzed:argv.includes('--allow-analyzed')}); console.log(JSON.stringify(result,null,2)); process.exitCode=result.ok?0:1; }
+  if (!analysisPath) { console.error('usage: validate-rip-port.mjs <project> <slug> | --analysis-path <relative path> [--allow-analyzed] [--recheck-inventory]'); process.exitCode=2; }
+  else { const result=validateRipPort(project,analysisPath,{allowAnalyzed:argv.includes('--allow-analyzed'),recheckInventory:argv.includes('--recheck-inventory')}); console.log(JSON.stringify(result,null,2)); process.exitCode=result.ok?0:1; }
 }

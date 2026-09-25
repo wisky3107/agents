@@ -55,6 +55,10 @@ art-manifest → art-concept-<stem> (ALWAYS antigravity) ──CONCEPT: PASS─�
                                                     render_model_iso.py → model-check.md → VERDICT
 ```
 
+An **animated / rigged character** (skinned FBX clips or frame-by-frame sprites) is a `char-anim`
+chain: an A-pose rig-ready concept, this studio mesh route, then char-anim-pipeline. See
+`~/.agents/skills/char-anim/SKILL.md`.
+
 Concept pack: `concept-front.png`, `concept-threequarter.png`, `concept-back.png`
 (`concept-turnaround.png` optional) authored **only** with Antigravity's own image tools, then
 `evidence/art/<stem>/concept-check.md` ending `CONCEPT: PASS|FAIL` (max 2 rounds). No PASS →

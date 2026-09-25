@@ -57,7 +57,7 @@ game files, no Editor, no lock, no Funplay, no `orca orchestration` sub-dispatch
 
 Director's request (verbatim): <REQUEST>
 Locks already decided by the coordinator — copy them into the PLAN, never change them:
-art_backend=<ART_BACKEND> mesh_backend=<MESH_BACKEND> studio_available=<BOOL>
+art_backend=<ART_BACKEND> mesh_backend=<MESH_BACKEND> studio_available=<BOOL> char_anim_home=<PATH|n/a>
 planner_agent=<SPEC> writer_agent=<SPEC> reviewer_agent=<SPEC>
 Dirty-worktree snapshot (goes into forbidden_changes verbatim): <DIRTY_FILES>
 
@@ -85,7 +85,9 @@ Do:
      editor_checks per plan-schema defaults.
    - change_budget from task size and SCOPE.md; tripo_credits when > ~5 studio-route meshes.
    - 3D assets: one row per mesh stem with a complexity hint (simple | complex) and its
-     target name, so art-manifest can skeleton it without guessing.
+     target name, so art-manifest can skeleton it without guessing. A character that moves
+     gets `animated: {clips: [...], mocap: {clip: take}, export: fbx|fbf|both}`; authored
+     clips are idle/run/jump/attack, any other clip needs a mocap take or a gate question.
 3. Write <EVIDENCE_ROOT>/specs/plan-notes.md: OBSERVED vs ASSUMPTION list, the 3–5 riskiest
    decisions (with the alternative you rejected), and any question that changes product
    behavior — phrase each as a yes/no the director can answer at the gate.
@@ -130,9 +132,10 @@ Done: worker_done listing both artifact paths.
 ## art-* roles → `cocos-asset-gen`
 
 Every art spec (`art-manifest`, `art-concept-<stem>`, `art-mesh-<stem>` with its Blender /
-3D Gen Studio route, `art-2d`, legacy single `art`, and the art variant of `fix`) lives in
+3D Gen Studio route, `art-anim-<stem>`, the **animated addenda** for concept and mesh, `art-2d`,
+legacy single `art`, and the art variant of `fix`) lives in
 `../../cocos-asset-gen/reference/worker-prompts-art.md`. Prepend the shared header above, fill
-`<MESH_BACKEND>` / `<PROJECT_SLUG>` / `studio_available` from the PLAN, and keep the ownership
+`<MESH_BACKEND>` / `<PROJECT_SLUG>` / `studio_available` / `<CHAR_ANIM_HOME>` from the PLAN, and keep the ownership
 rows disjoint per stem exactly as that file states.
 
 ---
@@ -155,7 +158,7 @@ Read AGENTS.md and .cursor/rules/*, run git status once, change nothing, then re
 AGENTS.md loaded — workspace rules understood, existing changes preserved, ready for the next task.
 ```
 
-**Art gen roles never boot.** `art-concept-*` / `art-mesh-*` / `art-2d` / legacy `art` on
+**Art gen roles never boot.** `art-concept-*` / `art-mesh-*` / `art-anim-*` / `art-2d` / legacy `art` on
 non-Cursor use **recipe C** (terminal create → first `tui-idle` → `worker-start --terminal`
 with the art spec as the first turn). See `../cocos-asset-gen/reference/worker-prompts-art.md`.
 
@@ -223,8 +226,12 @@ Do:
    For Source=generate rows confirm
    evidence/art/<stem>/concept-check.md has `CONCEPT: PASS`, evidence/art/<stem>/model-check.md
    ends in `VERDICT: PASS`, and the cited concept-front, contact-sheet.png, AND compare-sheet.png
-   all exist. Missing or FAIL → do not import; `ask` (concept fail → art-concept Task; mesh/
-   compare fail → art-mesh Task). Then refresh_assets → verify every file in the manifest has a
+   all exist. Animated rows (manifest `animated`) also need evidence/art/<stem>/anim-check.md
+   ending `ANIM: PASS` and the row's `anim_verify`; the model import is the rigged <stem>.fbx
+   (one take per clip → AnimationClips; use `anim_verify.clips` for seconds / loop / events) and/or
+   the FBF atlas + animations.json under the row's fbf_dir. Missing or FAIL → do not import; `ask`
+   (concept fail → art-concept Task; mesh/compare fail → art-mesh Task; anim fail → art-anim
+   Task). Then refresh_assets → verify every file in the manifest has a
    .meta pair and no import errors (editor-log.txt via get_recent_logs); for meshes also confirm
    the imported prefab/mesh sub-assets appear and the model shows at the manifest's scale.
 5. Apply evidence/integration-notes.md: scene-tool first for identity-preserving edits; Funplay
@@ -297,7 +304,11 @@ Static (commit-guard gates 1–4, read-only):
   has `CONCEPT: PASS` + `VERDICT: PASS`; open compare-sheet.png (concept|model rows) and
   contact-sheet.png together — missing either sheet is a blocker (owner asset). Overturn when
   any compare row diverges (cite front / threequarter / back) or iso views show holes/hollow/
-  flipped faces (cite ne/nw/sw/se).
+  flipped faces (cite ne/nw/sw/se). Every animated row (manifest `animated`) also has
+  `ANIM: PASS` in evidence/art/<stem>/anim-check.md and a filled `anim_verify`; open the clip
+  contact sheets in evidence/art/<stem>/anim/ — a missing anim-check or sheet is a blocker
+  (owner anim). In preview, play every clip listed in `anim_verify`: wrong clip, broken loop,
+  sliding/floating feet or a missing event is a finding (owner anim).
 - STATIC: tsc + lint clean (read the tool output, do not assume).
 
 Runtime:
@@ -323,7 +334,7 @@ Runtime:
 
 Output evidence/review.md: severity-ranked findings (blocker / major / minor), each with an id
 (F1, F2, …), repro steps, expected vs actual, screenshot path, suspected owner
-(code | scene | concept | mesh).
+(code | scene | concept | mesh | anim).
 Include a recipe-results section when recipe_refs is nonempty: id/revision, checked behavior,
 PASS/FAIL/manual_required, current evidence and deviations. Validate any learning candidate
 claims relevant to this review; source-project evidence cannot replace this run's checks.
@@ -340,7 +351,8 @@ coordinator is a cheap mechanical agent and will copy each row group into a fix 
 Rules for the table: one row per (owner, coherent change); never mix owners in a row; `scope
 paths` must already be inside the PLAN — a fix that needs a new path is `owner: unclear` with a
 one-line reason (the coordinator will ask the director). Mesh rows name the stem and say
-whether the concept or the model is at fault. Only blocker/major ids must appear; minors may be
+whether the concept or the model is at fault; anim rows name the stem and the clips (a rig
+failure caused by the model is a mesh or concept row, not anim). Only blocker/major ids must appear; minors may be
 listed as `owner: followup`.
 
 Last line of review.md is exactly APPROVED, CHANGES_REQUESTED, or INFRA_BLOCKED (Step 0 only).

@@ -27,6 +27,9 @@ only for missing clips/rig work explicitly scoped in the slice.
 When the PLAN has **no** meshes, use the single legacy `art` Task at the bottom. When it lists
 generated meshes, fan out to `art-manifest` + `art-concept-<stem>`×N + `art-mesh-<stem>`×N;
 imported meshes use a copy/conversion role and skip concept/mesh generation (+ `art-2d`).
+Each **animated** row (a rigged character with clips or FBF sprites; manifest `animated` set) also gets
+`art-anim-<stem>` after its mesh. Its concept and mesh follow the animated addenda below; the
+pipeline side is the `char-anim` skill (`~/.agents/skills/char-anim/SKILL.md`).
 
 ---
 
@@ -43,8 +46,15 @@ Do:
    file, format, expect_dims [x,y,z] in Blender/export order, pivot, forward, intended_node,
    notes, tri_budget, "complexity": "simple" | "complex" (cocos-asset-gen SKILL.md routing table;
    ties → simple), "concepts": [], "verify": null. Do not invent assets beyond change_budget.
-2. `orca orchestration send --type status` to every art-concept / art-mesh / art-2d / implement
-   handle with the manifest path.
+   A character that must move (PLAN lists clips / sprite animation for it) is an **animated** row:
+     "complexity": "complex", "tri_budget": 30000, "file": "<Stem>.fbx" (or null when export is fbf only),
+     "animated": {"clips": ["idle","run",...], "mocap": {"<clip>": "<take path>"},
+                  "export": ["fbx"] | ["fbf"] | ["fbx","fbf"], "fbf_dir": "anim/<stem>/"},
+     "anim_verify": null
+   Authored clips are idle, run, jump, attack; every other clip needs a mocap take (FBX/BVH).
+   A clip with neither → list it under notes and `ask`; never drop it silently.
+2. `orca orchestration send --type status` to every art-concept / art-mesh / art-anim / art-2d /
+   implement handle with the manifest path.
 3. worker_done.
 
 Never: write concept PNGs, generators, or .glb files; edit evidence/art except listing the path.
@@ -104,6 +114,17 @@ Do:
    --body "<concepts dir>"` then worker_done listing the PNGs.
 
 Never: write .glb / generators; edit other stems; edit manifest.json; open Creator.
+```
+
+**Animated addendum** (append to the spec when the row has `animated`):
+
+```text
+This concept feeds an auto-rig. Build every prompt from
+~/.agents/skills/char-anim/reference/concept-prompt.md: A-pose (arms 35–45° down with a gap to
+the torso, legs apart, feet forward), normal proportions, no cape / long skirt / loose sleeves /
+props / base, EXACTLY ONE FIGURE PER IMAGE (never a multi-view sheet). Add that file's rig lines
+(single figure, a-pose, hands, proportions, rig-hostile parts, background) to concept-check.md.
+On PASS, send status to the art-mesh handle; art-anim waits on the mesh.
 ```
 
 ---
@@ -172,6 +193,77 @@ Never: touch other stems; create .meta; open Creator; skip --concepts; PASS with
 compare-sheet.png; ship the Tripo high-poly as the asset; pick 3dgenstudio for a simple prop.
 ```
 
+**Animated addendum** (append when the row has `animated`):
+
+```text
+Route is always 3dgenstudio (a Blender primitive figure cannot be rigged). Studio down → ask;
+no Blender fallback. Use --target-tris 30000 --lod-ratios 0.5 --collision none.
+Do NOT cp the glb to <MODEL_FILE>: the static mesh stays in gen3d/<STEM>/, and art-anim ships
+the rigged file.
+Studio glbs face +X; render_model_iso's front camera expects -Y. Render a turned copy:
+  <CHAR_ANIM_HOME>/anim normalize <ART_PATHS>/gen3d/<STEM>/<STEM>.glb \
+    --out <EVIDENCE_ROOT>/art/<STEM>/review/<STEM>-front.glb --face=-Y
+and pass that copy as --input (omit --expect-dims; normalize scales to 1.7 m).
+model-check.md adds: rig readiness: PASS|FAIL — one humanoid, arms clear of the torso, two
+separate legs down to the feet, hands present, no fused props.
+PASS → send status "mesh ready" to the art-anim handle, with body <ART_PATHS>/gen3d/<STEM>/<STEM>.glb.
+```
+
+---
+
+## art-anim-<stem> (locked art_backend; char-anim-pipeline)
+
+Launch: like art-mesh (`cursor` → recipe **A**; antigravity / codex → recipe **C**). The worker
+needs local Blender, and write access to `<CHAR_ANIM_HOME>` (PLAN `char_anim_home`, default
+`/Users/wikz/Works/agent/char-anim-pipeline`), which lives outside the worktree.
+
+```text
+ROLE: writer (assets) — rig + animate one character. Depends on art-mesh-<STEM> VERDICT: PASS.
+Pipeline: <CHAR_ANIM_HOME> (read its CLAUDE.md first). Pipeline id: <ANIM_ID> = <project-slug>-<stem>,
+lowercase [a-z0-9_-], unique across games because the pipeline dir is shared.
+Owns ONLY: the <ANIM_ID> files in <CHAR_ANIM_HOME> (characters/<ANIM_ID>/, jobs/<ANIM_ID>-core.json,
+mocap/<ANIM_ID>-*, out/<ANIM_ID>-core/, build/<ANIM_ID>-core/, build/rig/<ANIM_ID>*),
+<ART_PATHS>/<MODEL_FILE>, <ART_PATHS>/<fbf_dir>/**, evidence/art/<STEM>/anim/**,
+evidence/art/<STEM>/anim-check.md, and a read-modify-write of THAT ROW ONLY in manifest.json
+(anim_verify).
+
+Do:
+1. Confirm model-check.md ends VERDICT: PASS. Read the manifest row's `animated`.
+2. From the worktree root (the mesh path resolves from cwd):
+     <CHAR_ANIM_HOME>/anim character <ART_PATHS>/gen3d/<STEM>/<STEM>.glb --id <ANIM_ID> --name <Stem> \
+       --clips <authored clips> --export <export joined by ,> --run
+   RIG_REPORT must show pose "A", normalize.scale sane (≈1.7 for a studio glb),
+   empty_bone_groups [] and unweighted_vertices 0. A rig failure or pose T/other means the concept
+   is wrong → escalation with the RIG_REPORT line (the coordinator reopens art-concept). Never
+   hand-edit the mesh.
+3. Mocap clips: copy each take to <CHAR_ANIM_HOME>/mocap/<ANIM_ID>-<clip>.<ext>, then run
+   `anim inspect` on it. Add the clip with a "source" block (<CHAR_ANIM_HOME>/mocap/README.md §4)
+   to jobs/<ANIM_ID>-core.json, then run `anim run jobs/<ANIM_ID>-core.json --clips <clip>`.
+   Don't use `anim mocap`: it writes a shared jobs/<clip>.json.
+4. Check out/<ANIM_ID>-core/qa.json (verdict pass) and open every
+   out/<ANIM_ID>-core/evidence/<clip>-contact-sheet.png. Write evidence/art/<STEM>/anim-check.md:
+     ## <STEM> — anim round <n>
+     rig: pose <A>, scale <s>, empty groups <[]>, unweighted <0>
+     <clip>: QA <pass|fail> — <what the contact sheet shows>   (one line per clip)
+     deliverables: <paths>
+     ANIM: PASS | ANIM: FAIL — <clip>: <reason>
+   Pose / timing fixes → edit that clip in jobs/<ANIM_ID>-core.json, then rerun with --clips <clip>
+   (max 2 rounds per clip).
+5. Ship. Cocos imports everything under assets/, so copy engine files only:
+     fbx → out/<ANIM_ID>-core/fbx/<Stem>.fbx to <ART_PATHS>/<MODEL_FILE> (one take per clip)
+     fbf → out/<ANIM_ID>-core/fbf/atlas_*.png + animations.json to <ART_PATHS>/<fbf_dir>
+           (NOT animations.js: it would import as a script; NOT frames/)
+     evidence → player.html, qa.json, manifest.json, evidence/*.png to evidence/art/<STEM>/anim/
+6. Patch only this manifest row:
+     "anim_verify": {"status":"PASS","qa":"evidence/art/<STEM>/anim/qa.json",
+       "clips": {"<clip>": {"seconds": s, "loop": b, "events": [...]}},   (from the pipeline manifest.json)
+       "fbx_axes": "faces +Z, Y up", "round": n}
+7. worker_done --files-modified, with the clip table for the implement/integrate handles.
+
+Never: create .meta; open Creator; touch other characters' files in <CHAR_ANIM_HOME>; edit
+pipeline code (pipeline bugs go in an escalation); ship with any clip QA fail.
+```
+
 ---
 
 ## art / art-2d (locked art_backend — 2D only, parallel with concepts)
@@ -235,4 +327,8 @@ Mesh / compare-sheet findings → art-mesh-<stem>: Blender route re-exports; 3dg
 reruns gen3d_studio.py --source-glb <stem>_high.glb (finishing) or regenerates once when the
 silhouette is the finding; both re-run render_model_iso.py with --concepts into round-<n+1>.
 Closed only by new CONCEPT: PASS (when needed) + VERDICT: PASS with both sheets on disk.
+Animation findings (pose, timing, events, clipping) → art-anim-<stem>: edit the clip in
+jobs/<ANIM_ID>-core.json, then `anim run --clips <clip>`, re-ship, and write a new anim-check round.
+A new mesh or concept invalidates the rig: rerun the full art-anim (`anim character ... --run`
+rebuilds the rig). Closed only by ANIM: PASS.
 ```
