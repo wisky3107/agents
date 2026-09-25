@@ -441,10 +441,20 @@ Launch recovery: before switching a reviewer provider for localhost failure, ver
 ## Coordinator loop
 
 ```bash
-orca orchestration check --wait --types worker_done,escalation,question --timeout-ms 900000 --json
+# first wait; every later wait acks the Delivery you just handled (step 5)
+orca orchestration check --wait --types worker_done,escalation,question --timeout-ms 540000 --json 2>/dev/null
 ```
 
-Pipe **stdout only** (keepalives go to stderr). Per Delivery:
+Run the wait **in the foreground** with `--timeout-ms` under your shell tool's hard cap (Claude
+Code Bash max is 600000 → `timeout: 600000` + `--timeout-ms 540000`), and re-enter it after
+every timeout — never end your turn while a Dispatch is live. A busy terminal is how the
+producer knows you are healthy; an idle one with live Dispatches reads as stalled. Never
+`nohup` / `&` / `disown` / `setsid` / `> file` / background-task the wait: the shell returns at
+once, nothing wakes you, and the result lands in a file nobody reads (S08 stalled ~3 h this
+way). Pipe **stdout only** (keepalives go to stderr). Orca's injected `You have N
+orchestration message(s). Run … check` is a wake-up, not the loop: run `check --ack <last
+handled delivery_id>` (bare `check` when nothing is unacked), handle the whole batch, then ack
+and wait again. Per Delivery:
 
 1. `question` → `orca orchestration reply --id <msg> --body <answer> --json`. For preview
    requests, read `evidence/preview-startup.json`: return its verified URL or route recovery to
@@ -472,7 +482,9 @@ Pipe **stdout only** (keepalives go to stderr). Per Delivery:
    infrastructure, route it to integrator recovery; do not consume a code-fix round or spawn
    another reviewer until readiness is observed. Otherwise read the `## fix_routing` table
    at the end of `evidence/review.md` and create one `fix` Task **per owner row group by
-   copying it** (finding ids, owner, scope paths, acceptance). Do not re-derive scope: the
+   copying it** (finding ids, owner, scope paths, acceptance) — **all rows in the same pass**,
+   ordered with `--deps` (`scene` depends on `code`), never "create it once code lands": a
+   row that exists only in your head dies with your turn. Do not re-derive scope: the
    reviewer is the strong model, you are not. Owner → handle: `code` → implement handle;
    `scene` → integrate handle (it re-acquires the lock); `concept` → new
    `art-concept-<stem>` (antigravity); `mesh` → `art-mesh-<stem>` (must re-run render with
@@ -482,7 +494,9 @@ Pipe **stdout only** (keepalives go to stderr). Per Delivery:
    Then a **new** review Task on a **fresh** reviewer terminal.
    Max 2 fix rounds; then `gate-create` for the director.
 4. `escalation` → surface to the director; never silently do the worker's job.
-5. `check --ack <delivery_id> --wait ...` and continue until every Dispatch settles.
+5. `check --ack <delivery_id> --wait ...` and continue until every Dispatch settles. Ack
+   **every** Delivery you handled, heartbeat/status-only ones included: `check` replays the
+   oldest unacked batch forever, so one unacked heartbeat hides every `worker_done` behind it.
 
 Timeouts and `{count:0}` are checkpoints, not failures. Never `task-update --status completed`
 after a valid `worker_done`; never release on idle/heartbeat.
@@ -560,6 +574,11 @@ after a valid `worker_done`; never release on idle/heartbeat.
   fine in Creator" — Creator's viewport is not the gate; the evidence is.
 - Reviewer on the implement/integrate terminal (self-review dressed as independent).
 - Coordinator editing files "to speed things up".
+- Detaching the coordinator wait (`nohup … &`, output redirected to a file), a `--timeout-ms`
+  above the shell tool's cap, or a bare `check` without `--ack` after a handled Delivery
+  ("just a heartbeat") — each leaves `worker_done` unread while the terminal looks idle.
+- Keeping a `fix_routing` row "for later" (scene after code) instead of creating its Task now
+  with `--deps`.
 - Reporting "verified" while `runtime-state.json` says `manual_required`.
 - Reporting done when mechanics run but the feel/VFX acceptance rows (tween, particles,
   transitions per EXPECT/PLAN) were never implemented or reviewed — "works but plays dry"

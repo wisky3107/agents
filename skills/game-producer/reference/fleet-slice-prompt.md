@@ -48,8 +48,12 @@ worktree on this project or the feature worktree you create from it.
    on that file, not on your terminal text.
 
 Run the DAG for this slice only. Coordinator only — never edit game files, never hold the editor
-lock. End at "offer commit" (HANDOFF status offer_commit) and wait for my reply; on
-"approved — commit" run /commit-guard in the worktree, stage .cursor/evidence/tasks/T-<Sxx>/
-(JSON/MD, no PNG) with the slice commit, write HANDOFF committed + sha, report the sha and the
-worktree path/branch, and stop (I run the close → merge → remove sequence).
+lock. Wait loop: foreground `check --wait --timeout-ms 540000` (never nohup/&/background), ack
+every Delivery you handled (heartbeats too), never end your turn while a Dispatch is live, and
+create every fix_routing row's Task in one pass with --deps. Decisions from me arrive as plain
+text; you resolve your own gates. End at "offer commit" (HANDOFF status offer_commit) and wait
+for my reply; on "approved — commit" run /commit-guard in the worktree, stage
+.cursor/evidence/tasks/T-<Sxx>/ (JSON/MD, no PNG) with the slice commit, write HANDOFF
+committed + sha, report the sha and the worktree path/branch, and stop (I run the close →
+merge → remove sequence).
 ```

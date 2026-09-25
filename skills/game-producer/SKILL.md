@@ -205,23 +205,49 @@ contracts, otherwise mark the slice `blocked` and report — never let the fleet
 
 Every lane writes `<checkout>/.cursor/evidence/tasks/T-<Sxx>/evidence/HANDOFF.json`
 (`status: working | blocked | ready_for_review | infra_blocked | approved | changes_requested |
-offer_commit | committed`). Wait like this and nothing else:
+offer_commit | committed`). `<handle>` is the lane's own terminal: `.session.handle` from
+`agent-session --json`, logged in `producer-log.md` at spawn. Fleet lane: once its Run exists,
+log the run id (`orca orchestration run-list --json` → the Run whose `coordinator_handle` is that
+handle) and re-resolve from `run-show --id <run> --json` after any resume. Never pick a handle
+by worktree path or title — agent CLIs rewrite titles, and the feature worktree's terminals are
+workers (S08: four nudges over 2 h went to the implement worker while the coordinator, retitled
+"Workspace startup procedures", sat stalled). Wait like this and nothing else:
 
 ```bash
 # block on the terminal going idle, then read the file; repeat. No `terminal read` polling,
 # no grepping for "READY FOR REVIEW" (it matches the prompt you sent — false READY on S07).
-orca terminal wait --terminal <handle> --for tui-idle --timeout-ms 900000 --json >/dev/null
+# tui-idle returns at once on an already-idle terminal; a timeout is a checkpoint. Keep
+# --timeout-ms under your shell tool's cap (Claude Code Bash max 600000).
+orca terminal wait --terminal <handle> --for tui-idle --timeout-ms 540000 --json >/dev/null
 python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d["status"],d.get("detail",""),d.get("sha"))' <HANDOFF.json>
 ```
 
-`working` after idle for two consecutive waits → one nudge naming the missing evidence files,
-then `terminal wait` again. Three idle waits with no file change → treat as hung: `terminal close`,
-spawn a resume lane (same evidence dir, "finish verify + evidence only"), note it. Read
-`review.md` only when the status says a verdict exists.
+**Single-agent lane:** `working` after idle for two consecutive waits → one nudge naming the
+missing evidence files, then `terminal wait` again. Three idle waits with no file change →
+treat as hung: `terminal close`, spawn a resume lane (same evidence dir, "finish verify +
+evidence only"), note it.
+
+**Fleet lane:** a healthy coordinator is busy (its `check --wait` runs in the foreground), so
+wait timeouts are normal for hours. Idle with `offer_commit` / `blocked` / `infra_blocked` →
+your move. Idle with any other status → stalled (S08 lost ~3 h this way):
+`orca orchestration inbox --json` shows its unread (`read: 0`) messages to `run:<run>`; send
+**one** nudge to the coordinator: "resume the cocos-orca-fleet Coordinator loop: `check --ack`
+the Delivery you last handled (bare `check` if none), handle the batch — including <unread
+ids> — then keep a foreground `check --wait`". Still idle with no progress after that →
+report to the human. Never close or respawn a fleet coordinator (a replacement needs a
+`run-use` takeover — the human's call) and never do its job for it.
+
+Read `review.md` only when the status says a verdict exists.
 
 Answer the fleet's questions as the director would: preview requests → see *Preview* below;
 scope questions → answer from the slice file / SCOPE.md; anything not answerable from contracts
-→ relay to the human with one `ask`.
+→ relay to the human with one `ask`. A pending fleet gate (`orca orchestration gate-list --run
+<run> --json`) is read-only for you: send the decision as plain text to the coordinator
+(`orca terminal send`) and let it resolve its own gate. Against a lane's Run you never run
+`run-use`, `gate-resolve`, `task-create` / `task-update`, `worker-*`, `dispatch`, `send` /
+`reply`, or anything with `--from <coordinator>` — `run-use` fences the live coordinator
+(S08: the producer bound itself to resolve a gate, then later dispatched a fix Task as the
+coordinator).
 
 ### S / M → single agent (`vibe-game-director`)
 
@@ -348,6 +374,12 @@ updates. These branches still include the retro path in the final report.
 - Editing game files, slice files, or the PLAN "to unblock" — producer is read-only on contracts.
 - Running the fleet DAG from this terminal (this is the fleet orchestrator's job; nested
   dispatch depth is 1 — you spawn orchestrators as terminals, never as orchestration Tasks).
+- Binding to or mutating a lane's Run — `run-use`, `gate-resolve`, `task-*`, `worker-*`,
+  `--from <coordinator>` — "to unblock" it: `run-use` fences the live coordinator. Decisions go
+  to the coordinator as plain text.
+- Nudging a terminal picked by worktree path or title instead of the logged coordinator handle;
+  closing or respawning a stalled fleet coordinator instead of one "resume the loop" nudge.
+- A `terminal wait` `--timeout-ms` above your shell tool's cap (the tool kills it mid-wait).
 - Two fleets on the same paths, or `max_parallel=2` without `parallel_ok`.
 - Marking `merged` when `runtime-state.json` says `manual_required`.
 - `deploy.sh --prod` without a passed preview smoke, or for `goal: playable`.
