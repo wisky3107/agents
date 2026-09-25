@@ -66,16 +66,25 @@ Treat results as evidence, not authority.
 
 ## Agent and Orca policy
 
-In a project whose `AGENT_NOTES.md` has `typesafe.enabled: true` and
-`typesafe.auto_route: true`, routing skills call
-`scripts/route.mjs --config AGENT_NOTES.md --preset game-routing` once at their decision
-boundary without waiting for the user to mention TypeSafe. Pass a minimized JSON state on stdin;
-never put the API key or sensitive state in CLI arguments. Missing keys, API failures, and
-uncertainty return a structured fallback and must not block the workflow or trigger repeated
-calls in the same turn.
+TypeSafe is **opt-in only**; no Orca/game skill calls it automatically. Lane, task-size, and
+human-gate routing were piloted in shadow mode (cc-tiki-smash, 2026-09) and removed: those
+answers are already fixed by the slice contract (`size`, `needs_director_ok`) and deterministic
+lane rules, so Jev only echoed its input or answered below `min_confidence`.
 
-Start automatic integrations in `shadow` mode: log the recommendation while the existing router
-makes the decision. Promote only measured low-risk decisions to `active` mode.
+Before wiring TypeSafe into a workflow again, it must pass an offline backtest:
+
+1. Pick a fuzzy, high-volume judgment that code cannot derive and that has observable ground
+   truth (e.g. reviewer-finding triage: real bug / infra / out-of-scope / nit; test failure:
+   `INFRA_BLOCKED` vs code bug).
+2. Replay historical cases from project evidence against Jev, a rule baseline, and a cheap LLM.
+3. Integrate only if Jev clearly beats both baselines at the precision the consequence needs,
+   then run `shadow` with every `(prediction, confidence, outcome)` logged before `active`.
+
+When a user explicitly asks for it, `scripts/route.mjs --config AGENT_NOTES.md --preset
+game-routing` still works for a project whose `AGENT_NOTES.md` sets `typesafe.enabled: true` and
+`typesafe.auto_route: true` (both default to `false`). Pass a minimized JSON state on stdin;
+never put the API key or sensitive state in CLI arguments. Missing keys, API failures, and
+uncertainty return a structured fallback and must not block the workflow.
 
 Precedence is always:
 

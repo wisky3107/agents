@@ -37,25 +37,11 @@ Discover facts locally before asking. Ask only when an unresolved answer changes
 
 Use a fleet when the work benefits from independent slices, parallelism, isolation, specialist roles, or independent review. Stay in the current agent for a small sequential task whose coordination overhead exceeds its value.
 
-When project config has `typesafe.enabled: true` and `typesafe.auto_route: true`, read the
-`typesafe-ai` skill and run its `game-routing` adapter once while deciding whether to orchestrate,
-unless an upstream handoff already carries a result for the same task. This is automatic; the
-user does not need to name TypeSafe. During `shadow` mode, log the recommendation but keep this
-skill's router authoritative. In `active` mode, accept only low-risk suggestions that agree with
-explicit user choices, authorization boundaries, repository policy, and the hard topology rules
-below. Missing key, API failure, or low confidence falls back to this skill without retrying or
-blocking the fleet.
-
 If orchestration is justified, create a bounded Task for every independently verifiable outcome. Define exact dependencies, ownership, verification, reviewer relationships, and non-goals. If the user requests one-time approval, present the full executable plan once and do not ask again unless new material risk appears.
 
 ## Select Provider and Model First
 
 Choose the provider, then that provider's model and reasoning effort, before launching each worker. State the choices in the plan with a short rationale.
-
-A TypeSafe model-tier suggestion can be one input to this choice; it cannot override an
-explicit provider/model request, current provider eligibility, localhost/tool requirements,
-or the quality floor for planning, difficult implementation, security-sensitive work, and
-independent review.
 
 - Accept every current Orca TUI agent id as a provider (`claude`, `codex`, `cursor`, `grok`, `gemini`, and the rest listed in `references/model-selection.md`).
 - Default provider is `codex` when it is eligible and authenticated; otherwise the first eligible id in Orca's auto-pick order.

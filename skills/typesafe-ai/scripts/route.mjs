@@ -5,9 +5,9 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 const DEFAULT_CONFIG = Object.freeze({
-  enabled: true,
+  enabled: false,
   mode: "shadow",
-  auto_route: true,
+  auto_route: false,
   model: "jev-1.13.0",
   min_confidence: 0.6,
   fail_open: true,

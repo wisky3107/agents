@@ -74,15 +74,6 @@ inspect the actual launch command and correct a stale restricted launch once, af
 the old reviewer has stopped. Only use the existing infrastructure fallback for an observed
 failure that remains after launch settings are corrected.
 
-If `AGENT_NOTES.md` has `typesafe.enabled: true` and `typesafe.auto_route: true`, read the
-`typesafe-ai` skill and call its `game-routing` adapter once for each slice at the lane decision,
-unless the slice handoff already includes a result. This is the default and does not require the
-director to mention TypeSafe. `shadow` mode records recommendations without changing a lane.
-`active` mode may refine a low-risk S/M choice only when it agrees with the slice contract and
-the deterministic rules above. It never overrides an explicit director choice, L/fleet rules,
-localhost constraints, reviewer verdicts, release policy, or any director/human gate. Missing
-key, API failure, or uncertainty falls back to this policy without retrying or blocking production.
-
 ## Progress checklist
 
 ```
