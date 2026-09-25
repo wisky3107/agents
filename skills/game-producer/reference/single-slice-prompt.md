@@ -3,11 +3,11 @@ Launch recovery: before switching a reviewer provider for localhost failure, ver
 # Single-lane prompts for S / M slices (producer → `agent-session --json`)
 
 Replace `<PROJECT>`, `<Sxx>`, `<SLICE_FILE>`, `<DIRECTOR_DECISIONS>`, `<EVIDENCE_DIR>`, `<PORT>`,
-`<BUMP_PCT>`, `<WRITER_LOCKS>` (one line: `writer=<spec> reviewer=<spec> bump=<pct>%`).
+`<BUDGET_MODE>` (`advisory` or `gate:<pct>`), `<WRITER_LOCKS>` (one line: `writer=<spec> reviewer=<spec> budget=<BUDGET_MODE>`).
 Both prompts are role cards: they list every file the agent needs. The agent must not go
 looking for more skill/reference text — that is what compacted the S04/S07 writers.
 **Do not put `AGENT_NOTES.md` on the read list** — the producer already resolved locks into
-`<WRITER_LOCKS>` / `<BUMP_PCT>`. Opening that file loads the whole Notes log (cc-meowdoku: ~6.5k
+`<WRITER_LOCKS>` / `<BUDGET_MODE>`. Opening that file loads the whole Notes log (cc-meowdoku: ~6.5k
 tokens × every lane).
 
 ## Writer (`fleet.writer_agent`, title `slice-<slug>-<Sxx>`)
@@ -49,8 +49,11 @@ Build:
 5. Verify: node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT> must be green;
    play the feel rows once; batch state reads into one eval. Screenshots: ONE preview.png total.
 6. Budget: stage, `bash .cursor/skills/setup-pre-commit/check-change-budget.sh --report`, unstage;
-   paste the line into <EVIDENCE_DIR>/integration-notes.md. Over max_lines by ≤ <BUMP_PCT>%
-   → continue and say so; more → stop, HANDOFF blocked, and report.
+   paste the line into <EVIDENCE_DIR>/integration-notes.md. Budget mode <BUDGET_MODE>:
+   advisory → over budget, add
+   `budget_bump: <from>→<to>` + one-line reason and keep going; never trim code/tests/VFX/assets
+   to fit. gate:<pct> → over by ≤ pct continue and say so; more → stop, HANDOFF blocked, report.
+   tripo_credits over cap → stop and report in every mode.
 7. Evidence in <EVIDENCE_DIR>: integration-notes.md, preflight.json, preview-startup.json,
    runtime-state.json (smoke JSON + eval reads; manual_required only with the real reason),
    preview.png, stats.json, final-report.md. If a concrete reusable technique emerged, add
@@ -86,9 +89,11 @@ Do not open unrelated .cursor/skills/** reference files or producer lessons.
 2. Play only the feel rows and the slice `playtest` steps smoke cannot express (Orca browser,
    eval-first, one object per eval). Missing tween/particle/transition = major, "plays dry" counts.
 3. Static: changed paths ⊆ slice paths; quote the writer's `check-change-budget.sh --report` line
-   (code_only — scene/prefab/index/meta/plan never count). max_lines overrun ≤ budget_auto_bump_pct
-   (≤ <BUMP_PCT>%) with no other blocker/major → APPROVED with a
-   `budget_bump: <from>→<to>` line above the verdict. tsc/lint output read, not assumed.
+   (code_only — scene/prefab/index/meta/plan never count). Over budget → write a
+   `budget_bump: <from>→<to>` line above the verdict. Budget mode <BUDGET_MODE>: advisory → the
+   overrun is never a finding; flag extra code only for paths outside the slice, `scope.out` work,
+   dead/duplicated code or architecture breaks. gate:<pct> → overrun > pct is a finding (owner
+   code). tsc/lint output read, not assumed.
 4. Screenshots: one final preview.png plus at most one per blocker/major finding.
 Write <EVIDENCE_DIR>/review.md (findings F1…, owner code|scene, `## fix_routing` table when
 CHANGES_REQUESTED) ending with exactly APPROVED or CHANGES_REQUESTED, runtime-state.json

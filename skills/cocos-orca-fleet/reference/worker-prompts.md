@@ -184,7 +184,9 @@ Do:
 6. `tsc` clean; no console.log left behind. Budget: run
    `bash .cursor/skills/setup-pre-commit/check-change-budget.sh --report` (stage, report, unstage)
    and paste the line into integration-notes.md — that number is the only one anyone quotes.
-   Over `max_lines` by ≤ budget_auto_bump_pct → continue and say so; over by more → stop and `ask`.
+   Over budget → add `budget_bump: <from>→<to>` + one-line reason. PLAN `budget_mode: advisory`
+   (default) → keep going; never trim code, tests, VFX or assets to fit. `gate` → over by ≤
+   budget_auto_bump_pct continue and say so; more → stop and `ask`. tripo_credits → always a cap.
 7. If a reusable finding emerged, record evidence/learning-candidates.json as an array:
    {id,kind:failure_fix|successful_pattern,topic,context:{engine,mode,platform},finding,reuse_value,
    existing_recipe:null|id,evidence:[relative paths],limitations:[]}. Omit when empty; reviewer
@@ -227,7 +229,8 @@ Do:
    the imported prefab/mesh sub-assets appear and the model shows at the manifest's scale.
 5. Apply evidence/integration-notes.md: scene-tool first for identity-preserving edits; Funplay
    for structural/identity work; one mutation contract per structural change; ensure_* so a retry
-   cannot duplicate. Stay within allowed_scene_objects and max_nodes.
+   cannot duplicate. Stay within allowed_scene_objects; max_nodes is an estimate (advisory mode) —
+   report the count, never drop a required node to fit.
 6. Sync + reopen the scene; confirm no MissingScript, refs filled → editor-log.txt.
    Record selected recipe checks/deviations and any scene-specific reusable finding in
    evidence/learning-candidates.json (same schema as writer); retain existing candidate ids.
@@ -283,10 +286,12 @@ Step 1 — SMOKE FIRST: `node .cursor/skills/smoke-test/scripts/run-smoke.mjs --
 Static (commit-guard gates 1–4, read-only):
 - SCOPE: every changed path in allowed_paths / art_paths. Budget: quote the writer's
   `check-change-budget.sh --report` line (re-run it yourself only if missing); code_only rule —
-  scene/prefab/index/meta/plan lines are never counted. `max_lines` overrun ≤
-  budget_auto_bump_pct (PLAN field, default 15 %) with no other blocker/
-  major → APPROVED with a `budget_bump: <from>→<to>` line above the verdict (the coordinator
-  patches the PLAN; no fix round, no gate). Larger overrun → finding, owner code.
+  scene/prefab/index/meta/plan lines are never counted. Any overrun → `budget_bump: <from>→<to>`
+  line above the verdict (the coordinator patches the PLAN). PLAN `budget_mode: advisory`
+  (default): the overrun is **never a finding** at any size — flag extra code only when it is
+  outside allowed_paths, implements `scope.out` work, is dead/duplicated, or breaks
+  ARCHITECTURE. `gate`: overrun ≤ budget_auto_bump_pct (default 15 %) with no other
+  blocker/major → APPROVED; larger → finding, owner code.
 - ARCHITECTURE: no upward deps, no cycles, events from the registry only.
 - ASSETS: every asset has a .meta pair; no raw-edited .scene/.prefab/.meta. Every 3D model
   has `CONCEPT: PASS` + `VERDICT: PASS`; open compare-sheet.png (concept|model rows) and

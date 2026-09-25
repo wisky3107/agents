@@ -3,8 +3,8 @@ Launch recovery: before switching a reviewer provider for localhost failure, ver
 # Fleet orchestrator prompt per slice (producer → `agent-session --json --title fleet-<slug>-<Sxx>`)
 
 Replace `<PROJECT>`, `<Sxx>`, `<SLICE_FILE>`, `<ENGINE_LINE>`, `<DIRECTOR_DECISIONS>`, `<LITE>`
-(`true` when the slice's `assets` block is empty and `fleet_lite_when_no_assets` is on), `<BUMP_PCT>`,
-`<FLEET_LOCKS>` (one line: `writer=<spec> reviewer=<spec> art=<backend> mesh=<backend> bump=<pct>% lite=<bool>`).
+(`true` when the slice's `assets` block is empty and `fleet_lite_when_no_assets` is on), `<BUDGET_MODE>`
+(`advisory` or `gate:<pct>`), `<FLEET_LOCKS>` (one line: `writer=<spec> reviewer=<spec> art=<backend> mesh=<backend> budget=<BUDGET_MODE> lite=<bool>`).
 Do **not** tell the orchestrator to read `AGENT_NOTES.md` — you already resolved the yaml.
 
 ```text
@@ -20,7 +20,7 @@ worktree on this project or the feature worktree you create from it.
    LITE: <LITE> — when true, the DAG is implement → integrate → review only (no scan, no art).
 4. PLAN: Step 0.5 branch B (slice given) — after `cd` into the worktree, write the ≤20-line
    pointer PLAN docs/plans/<Sxx>-<name>.md per .cursor/skills/game-producer/reference/slice-to-plan.md
-   (plan_source = the slice file, locks, forbidden_changes, lite, budget_auto_bump_pct=<BUMP_PCT>).
+   (plan_source = the slice file, locks, forbidden_changes, lite, budget_mode=<BUDGET_MODE>).
    Do not copy the front-matter; validate through the mapping table. Do not widen paths or drop
    acceptance rows; feel_rows are blocking. Do NOT start a `plan` worker and do NOT author
    anything the slice does not contain — a gap is a Fable problem: `ask` me with the field.
@@ -41,7 +41,8 @@ worktree on this project or the feature worktree you create from it.
    Import existing suitable rip assets; generated concepts/meshes are only for generate rows.
 7. Review outcomes: INFRA_BLOCKED → not a fix round; curl the port yourself — 200 means the
    reviewer environment cannot reach localhost → same review Task on `cursor --model auto`.
-   `budget_bump` ≤ <BUMP_PCT>% with no other finding → patch max_lines in the PLAN, treat as APPROVED.
+   `budget_bump: <from>→<to>` → patch max_lines in the PLAN and record it. advisory: it is never a
+   finding, fix round or ask. gate:<pct>: ≤ pct with no other finding → APPROVED; more → blocked, report.
 8. Status: write .cursor/evidence/tasks/T-<Sxx>/evidence/HANDOFF.json at every fleet state change
    (working | changes_requested | infra_blocked | approved | offer_commit | committed + sha). I wait
    on that file, not on your terminal text.

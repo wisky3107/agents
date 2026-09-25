@@ -75,18 +75,26 @@ derive the full paths and change budget from that scope.
 
 ### Calibrating `change_budget` (measured, not guessed)
 
-Field data (cc-meowdoku, 8 slices): every L slice landed 1.05–1.6× over the authored `lines`
-(1600→2516, 650→669, 500→590) and each overrun cost one review round plus one fix round or a
-director gate. Author budgets so the *expected* diff sits at ~70 % of the tripwire:
+Budgets are **planning estimates** under `budget_mode: advisory` (SCOPE.md default): an overrun is
+recorded as `budget_bump` and in `lessons.jsonl`, never gated, never trimmed to fit. Only
+`tripo_credits` is a hard cap. `budget_mode: gate` (+ `budget_auto_bump_pct`) restores the old
+tripwire for projects that want it.
+
+Field data (11 projects, 2026-09): slices landed 1.05–2.05× over the authored `lines` (median
+≈1.4×; e.g. 600→820, 650→1100, 300→445, 200→410) and every overrun was approved by the director,
+while budget-only findings cost a fix round or a director gate each. Aim the estimate at the
+*expected* diff so the number stays useful for sizing and splitting:
 
 - Estimate the hand-authored lines per file you list in `paths.code` (new file ≈ 80–160, edit ≈
   20–60, test ≈ 40–80, `docs/flows` ≈ 30), sum, **multiply by 1.5, round up to the next 50**.
 - `lines` counts code/config/tests/`docs/flows` only — never `.scene`/`.prefab`/`.index.json`/
   `.meta`/`docs/plans`/evidence. State this in SCOPE.md as `budget_count: code_only` (template default).
 - `files` = every path you list + 2; `nodes` = authored nodes at max population + 20 %.
-- If a previous project's `.cursor/evidence/tasks/*/stats.json` is available, use its
-  `diff_lines / max_lines` ratio instead of 1.5.
-- Add `budget_auto_bump_pct: 15` to SCOPE.md so a small overrun is recorded, not gated.
+- If previous projects have `budget_bump` events in `.cursor/evidence/lessons.jsonl` (or
+  `.cursor/evidence/tasks/*/stats.json`), use their median `to / from` (`diff_lines / max_lines`)
+  ratio instead of 1.5.
+- Add `budget_mode: advisory` to SCOPE.md. A slice whose estimate is far beyond its siblings is a
+  signal to split it — decide that here, not in review.
 
 ```markdown
 ---

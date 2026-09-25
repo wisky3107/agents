@@ -26,7 +26,7 @@ function validProject() {
   put(p,'RELEASE_CHECKLIST.md','| id | area | check | closed_by | how to verify |\n|---|---|---|---|---|\n| RC-01 | input | tap | S01 | tap |\n| RC-02 | ship | build | S02 | build |\n');
   put(p,'EXPECT_GAMEPLAY_VISUAL.md','# S01 visual target\n[screen](reference/demo/iphone/01.jpg)\n## Game feel / VFX table\n\n| ID / interaction | VFX |\n|---|---|\n| tap | ring |\n');
   put(p,'ASSET_MANIFEST.md','| Stem | Source | Priority | Path |\n|---|---|---|---|\n| impact | import | P0 | reference/demo/rip/images_ingame/Fx.png |\n');
-  put(p,'SCOPE.md','budget_count: code_only\nbudget_auto_bump_pct: 15\n');
+  put(p,'SCOPE.md','budget_count: code_only\nbudget_mode: advisory\n');
   put(p,'HOW_TO.md','RP-001: port zero-count win behavior, S01 scenario.');
   put(p,'ARCHITECTURE.md','RP-001: Board.Won maps to WinEvaluator.');
   return p;

@@ -137,7 +137,7 @@ export function validate(p, options = {}) {
   if (!targets.length || !targets.some(f => exists(local(p, f)))) fail('missing_visual_target', 'EXPECT_GAMEPLAY_VISUAL.md', 'Link an existing image/SVG; text alone is insufficient');
   if (!/game feel[^\n]*vfx/i.test(expect)) fail('missing_vfx_table', 'EXPECT_GAMEPLAY_VISUAL.md', 'Game feel / VFX table required');
   if (!/\bP0\b/.test(manifest) || !/vfx|particle|trail|impact/i.test(manifest)) fail('missing_vfx_assets', 'ASSET_MANIFEST.md', 'P0 VFX assets required');
-  if (!/budget_count\s*:\s*code_only/.test(texts['SCOPE.md'] || '') || !/budget_auto_bump_pct/.test(texts['SCOPE.md'] || '')) fail('missing_budget_policy', 'SCOPE.md', 'State code_only counting and bump policy');
+  if (!/budget_count\s*:\s*code_only/.test(texts['SCOPE.md'] || '') || !/budget_mode\s*:\s*(advisory|gate)|budget_auto_bump_pct/.test(texts['SCOPE.md'] || '')) fail('missing_budget_policy', 'SCOPE.md', 'State code_only counting and budget_mode (advisory|gate)');
   const importRows = tables(manifest).flatMap(t => { const col = t[0].findIndex(c => /^source$/i.test(c)); return col >= 0 ? t.slice(2).filter(r => /\bimport\b/i.test(r[col])) : []; });
   if ((n.brief?.rip_path || n.store_clone?.rip_path) && !importRows.length) fail('missing_import_rows', 'ASSET_MANIFEST.md', 'Rip input requires Source=import rows');
   for (const row of importRows) {

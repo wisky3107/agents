@@ -180,7 +180,8 @@ from Tripo (≈250k verts / 500k tris) is a **source**, never an asset — alway
 Per locked `art_backend`: `antigravity` and `cursor` author raw files with the session's own
 tools; `gpt-image-gen` **must** go through `orca-gpt-image-gen` (+ `gpt-image-2-style-library`
 when present) — no freehand final pixels. Textures/sprites only; concepts and meshes are never
-produced here. Every file counts against `max_assets`.
+produced here. Every file is reported against `max_assets` (an estimate in advisory mode — never
+drop a manifest row to fit).
 
 ## Manifest row (mesh)
 

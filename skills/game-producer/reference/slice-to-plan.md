@@ -22,7 +22,8 @@ mesh_backend: <backend>
 studio_available: <bool | n/a>
 lite: <true|false>                        # true when the slice has no assets (skip scan/art)
 forbidden_changes: [<dirty snapshot verbatim>, <SCOPE.md exclusions>]
-budget_bump: null                         # set to "<from>→<to> (auto ≤ budget_auto_bump_pct)" when used
+budget_mode: <advisory|gate>              # SCOPE.md budget_mode; missing → advisory
+budget_bump: null                         # set to "<from>→<to>" when the diff exceeds max_lines (recorded, not gated)
 rollback_point: <sha>
 ```
 
@@ -62,9 +63,26 @@ git add -A -n >/dev/null; git add -A && bash .cursor/skills/setup-pre-commit/che
 ```
 
 (Stage, report, then `git reset` if you are not the committer.) Writer, reviewer, coordinator and the
-pre-commit hook all quote that line. A `max_lines` overrun of ≤ `budget_auto_bump_pct` (SCOPE.md,
-default 15 %) with no other finding is **APPROVED with `budget_bump`** recorded — no fix round, no
-director gate. Larger overruns stop the slice for re-planning.
+pre-commit hook all quote that line.
+
+## Budget mode — `advisory` (default) vs `gate`
+
+`budget_mode` comes from SCOPE.md (AGENT_NOTES `release:` / producer policy may override); missing
+means **advisory**. Field data: every slice overrun across 11 projects (1.05×–2.05×) was approved by
+the director, and budget-only findings cost fix rounds and cut shipped assets without catching any
+scope problem that the `paths` / `scope.out` / acceptance checks had missed.
+
+**advisory** — `files`, `lines`, `nodes`, `assets` are planning estimates, not tripwires:
+- Overrun is recorded as `budget_bump: <from>→<to>` (report line + one-sentence reason) and
+  appended to `lessons.jsonl` as a `budget_bump` event so game-brief can recalibrate.
+- It is **never** a review finding, never CHANGES_REQUESTED, never a fix round, never an `ask` or
+  director gate, and nobody trims code, tests, VFX or assets to fit the number.
+- Extra code is a finding only on its own merits: path outside `allowed_paths`, work listed in
+  `scope.out`, dead/duplicated code, or an architecture violation — owner code, as usual.
+- `tripo_credits` stays a hard cap in every mode (it spends money): over → stop and `ask`.
+
+**gate** (legacy, opt-in) — a `max_lines` overrun of ≤ `budget_auto_bump_pct` (default 15 %) with no
+other finding is APPROVED with `budget_bump`; a larger overrun stops the slice for re-planning.
 
 Static checks always: `tsc --noEmit` strict, lint, verify-scripts, verify-refs. Editor checks
 always: `refresh_assets`, open scene, no MissingScript, refs filled.

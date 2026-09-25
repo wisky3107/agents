@@ -281,7 +281,8 @@ Also confirm:
   `slices/S<nn>-*.md` whose front-matter carries `size`, `paths`, `acceptance`, `runtime_checks`,
   `change_budget` (the producer copies these straight into the PLAN). Budgets follow
   [slice-schema.md § Calibrating `change_budget`](reference/slice-schema.md) (estimate ×1.5,
-  code-only counting); `SCOPE.md` carries `budget_count: code_only` and `budget_auto_bump_pct`.
+  code-only counting); `SCOPE.md` carries `budget_count: code_only` and `budget_mode: advisory`
+  (budgets are planning estimates; only `tripo_credits` is a hard cap).
 - Last slice is `release-polish`; the union of all `release_items` covers every `RC-nn` row.
 - `parallel_ok` pairs have disjoint `paths`.
 - Optional `recipe_refs` carry id/revision/SHA-256/path; selected checks are in-scope, engine

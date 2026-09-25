@@ -55,12 +55,16 @@ not start-gate files.
 
 ```
 Producer locks: goal=<end_to_end|playable> · auto_commit=<bool> · auto_merge=<bool> ·
-deploy=<none|preview|prod> · budget_auto_bump=<pct>% · lite_when_no_assets=<bool> · max_parallel=1 ·
+deploy=<none|preview|prod> · budget=<advisory|gate:<pct>> · lite_when_no_assets=<bool> · max_parallel=1 ·
 lanes: L→fleet(<orchestrator_agent>, scanner=<scanner_agent>), L-no-assets→fleet lite, S/M→single(<writer_agent>) · reviewer=<reviewer_agent>
 ```
 
 Precedence: director prompt > `AGENT_NOTES.md` > defaults (`end_to_end`, `true`, `true`,
-`preview`, `budget_auto_bump_pct=15`, `fleet_lite_when_no_assets=true`, `max_parallel=1`).
+`preview`, `budget_mode=advisory` (SCOPE.md `budget_mode` wins over this default; `gate` uses
+`budget_auto_bump_pct`, default 15), `fleet_lite_when_no_assets=true`, `max_parallel=1`).
+Pass the result to lanes as `<BUDGET_MODE>` (`advisory` or `gate:<pct>`).
+A legacy policy line with only `budget_auto_bump=<pct>%` (no `budget=`) resolves to `advisory` unless
+SCOPE.md says `budget_mode: gate`; rewrite the token as `budget=advisory` when you next touch it.
 `max_parallel=2` only when the director asks **and** the pair is in `parallel_ok` (each fleet
 opens its own Creator + Funplay port; RAM is the limit).
 `reviewer_agent` must reach `127.0.0.1`. Keep the locked provider, including Codex:
@@ -90,7 +94,7 @@ Producer:
       b. release.current_slice = next; slices[next] = in_progress
       c. lane by size → spawn (fleet | fleet lite | single) with the slice prompt; wait on
          <evidence>/HANDOFF.json (see Waiting), never on terminal text
-      d. APPROVED (incl. budget_bump ≤ pct) → commit (auto_commit) → harvest evidence → merge +
+      d. APPROVED (incl. any budget_bump in advisory mode) → commit (auto_commit) → harvest evidence → merge +
          worktree rm (auto_merge) → slices[next] = merged
          INFRA_BLOCKED → not a fix round: swap reviewer to cursor auto / integrator recovery, re-review
          CHANGES_REQUESTED after lane's fix rounds → slices[next] = blocked → one `ask`
@@ -140,7 +144,9 @@ Workers receive resolved locks and selected recipe references instead of loading
 Slice line format (rewrite, do not append):
 `- S06 fleet merged fix_rounds=1 bump=650→680 commit=714d5b6 merged=y -`
 
-Cost events → `lessons.jsonl` (append one line when the slice ends, only if something cost time):
+Cost events → `lessons.jsonl` (append one line when the slice ends, only if something cost time;
+always append a `budget_bump` event with `"from"`, `"to"`, `"ratio"` when the diff exceeded the
+slice budget — game-brief calibrates future budgets from these):
 
 ```json
 {"slice":"S04","event":"infra_blocked","count":4,"cost":"4 review rounds, ~2.5h","cause":"codex sandbox cannot reach 127.0.0.1","fix_target":"template:AGENT_NOTES.md reviewer_agent","evidence":".cursor/evidence/tasks/T-S04/evidence/review.md","at":"2026-09-18T11:50:00Z"}
@@ -273,9 +279,12 @@ Launch recovery: before switching a reviewer provider for localhost failure, ver
 
 APPROVED means: reviewer's `review.md` ends `APPROVED`, no `manual_required` in
 `runtime-state.json`, evidence files present, feel/VFX acceptance rows reviewed. A
-`budget_bump: <from>→<to>` line above the verdict is still APPROVED when `<to>` ≤
-`<from> × (1 + budget_auto_bump_pct/100)` — record it in the notes entry, no gate. Above that
-→ `blocked`, one `ask` (`bump_lines_<n>` | `cut_to_<budget>`).
+`budget_bump: <from>→<to>` line above the verdict is still APPROVED — in `advisory` mode for any
+size of overrun; record it in the notes entry and `lessons.jsonl`, no gate, no ask. A review that
+lists a budget overrun as a finding in advisory mode is a misread: drop that finding (not a fix round);
+when it was the only blocker/major, the verdict counts as APPROVED. `gate:<pct>` mode only: above
+`<from> × (1 + pct/100)` → `blocked`, one `ask` (`bump_lines_<n>` | `cut_to_<budget>`).
+`tripo_credits` over its cap → `blocked`, one `ask`, in every mode.
 
 `INFRA_BLOCKED` (review.md last line): not a fix round, no notes entry beyond one line. Your own
 `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<port>/` → 200 ⇒ the reviewer agent
@@ -355,7 +364,8 @@ updates. These branches still include the retro path in the final report.
 - Pushing, merging while either the worktree or primary Creator is open, or `worktree rm` before
   the evidence dir is in main.
 - Polling `orca terminal read` on a timer, or grepping the tail for "READY FOR REVIEW".
-- Opening a director gate for a `max_lines` overrun inside `budget_auto_bump_pct`.
+- Opening a director gate, fix round or trim request for a `files`/`lines`/`nodes`/`assets`
+  overrun in advisory mode (or inside `budget_auto_bump_pct` in gate mode).
 - Counting a preview-unreachable review as a fix round, or re-spawning the same sandboxed
   reviewer agent after an `INFRA_BLOCKED`.
 - Parsing `bootstrap.mjs agent-session` output without `--json` (mixed logs broke the parse and

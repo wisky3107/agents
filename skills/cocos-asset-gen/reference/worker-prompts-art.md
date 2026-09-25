@@ -217,7 +217,8 @@ ROLE: writer (assets). art_backend=<ART_BACKEND>. Owns PLAN.art_paths only.
 Do, in this order:
 1. Write <ART_PATHS>/manifest.json FIRST.
 2. status to implement handle.
-3. Produce every 2D file (backend-specific). Count ≤ max_assets.
+3. Produce every 2D file (backend-specific). Report the count vs max_assets; over it → note
+   `budget_bump` (advisory) — never skip a manifest row to fit.
 
 Never: .meta; Creator; .scene/.prefab; Funplay/refresh_assets; invent 3D here — if PLAN gains
 meshes, coordinator must switch to the fan-out Tasks above.

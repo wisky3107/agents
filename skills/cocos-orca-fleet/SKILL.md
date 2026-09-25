@@ -177,7 +177,8 @@ integrate ← all art-mesh + art-2d + implement
 - Disjoint allowlists are mandatory so parallel writers never collide. Shared `manifest.json`:
   `art-manifest` writes the skeleton; each mesh worker updates **only its own asset row** with a
   read-modify-write; concept workers do not edit the manifest.
-- `max_assets` caps total raw files across all art Tasks; when more than ~5 meshes route to
+- `max_assets` estimates total raw files across all art Tasks (advisory: record overrun as
+  `budget_bump`, never drop a manifest row to fit); when more than ~5 meshes route to
   3D Gen Studio, put a `tripo_credits` cap in `change_budget` (≈30 credits per image→3D).
 - Studio-route meshes may run in parallel (Tripo tasks are independent); the local mesh-tools
   service serialises bake/collision, so expect those steps to queue.
@@ -302,7 +303,8 @@ pointer PLAN itself only carries locks:
 
 - Every key of `plan-schema.md` is present (B: resolvable via `plan_source`); `task_size: L`.
 - `change_budget` is understood as **code_only** (scene/prefab/index/meta/plan lines never count);
-  `budget_auto_bump_pct` resolved (AGENT_NOTES `release:` > SCOPE.md > 15) and written into the PLAN.
+  `budget_mode` resolved (producer lock > AGENT_NOTES `release:` > SCOPE.md > `advisory`) and written
+  into the PLAN; `gate` also resolves `budget_auto_bump_pct` (default 15).
 - `allowed_paths` split into `code_paths` / `art_paths`; every path is under `SCOPE.md`'s
   allowed area and none is in `forbidden_changes`.
 - `acceptance_criteria` has ≥1 observation-phrased row **and** every matching feel row of
@@ -336,7 +338,7 @@ and the lifecycle instruction to report with `worker_done` / `ask` / `escalation
 | art-import-<stem> (Source=import) | art-manifest | recipe A/B per writer_agent | copied/converted files, route=import check with source/hash + VERDICT PASS; anim-check when applicable |
 | art-concept-<stem> | art-manifest | recipe **C** **antigravity only** (no AGENTS.md boot) | concept PNGs on disk; `CONCEPT: PASS` in `concept-check.md`; `status` to matching mesh handle |
 | art-mesh-<stem> | art-concept-<stem> | recipe A (cursor) / **C** (antigravity · gpt-image-gen/codex) | `.glb` + generator; `contact-sheet` + `compare-sheet` + `VERDICT: PASS`; own manifest row `verify` set |
-| art-2d | art-manifest | recipe A (cursor) / **C** (antigravity · gpt-image-gen/codex) | 2D files ≤ budget; no 3D |
+| art-2d | art-manifest | recipe A (cursor) / **C** (antigravity · gpt-image-gen/codex) | manifest 2D rows only; no 3D |
 | implement | scan, art-manifest | recipe A/B per `writer_agent` | tsc clean; `integration-notes.md`; output-contract YAML |
 | integrate | implement, all art-import-*, all art-mesh-*, art-2d | reuse implement terminal | lock cycle; `.meta` pairs; preflight / editor-log / diff-stat; preview-startup.json with verified URL or exact blocker |
 | review | integrate | recipe A/B per `reviewer_agent`, **fresh** | `review.md` ends `APPROVED` or `CHANGES_REQUESTED` |
@@ -450,6 +452,8 @@ Pipe **stdout only** (keepalives go to stderr). Per Delivery:
    recovery Task, then the same review on a fresh terminal once readiness is observed.
    `worker_done` succeeded with a `budget_bump: <from>→<to>` line → patch `max_lines` in the
    PLAN to `<to>` (a recorded fact), note it for the final report, continue as APPROVED.
+   `budget_mode: advisory` and review.md lists a budget overrun as a finding → drop it (not a
+   fix row); if nothing else is blocker/major, treat the review as APPROVED with `budget_bump`.
    `worker_done` failed from review (`CHANGES_REQUESTED`) → if the only blocker is preview
    infrastructure, route it to integrator recovery; do not consume a code-fix round or spawn
    another reviewer until readiness is observed. Otherwise read the `## fix_routing` table

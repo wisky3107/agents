@@ -62,7 +62,7 @@ D. ASSET_MANIFEST.md — P0 raw art for the art worker (antigravity by default).
    — sprites are already de-atlased; cite the PNG name, never a packed `sactx-*` page) or `generate`
    (prompt for the art worker). Fonts: reference/<SLUG>/rip/fonts/ when present. Default
    to `import` whenever the catalog has a P0/P1 file for the need; never import a P3 / meta / uGUI entry.
-E. SCOPE.md, ARCHITECTURE.md, FOLLOWUPS.md, PLAYTEST.md from the templates (TS strict, event bus, web-mobile, core/systems/entities/ui). SCOPE.md carries `budget_count: code_only` and `budget_auto_bump_pct: 15`; size every slice `change_budget` with docs/slice-schema.md § Calibrating `change_budget` (sum per-file estimates, ×1.5, round up to 50).
+E. SCOPE.md, ARCHITECTURE.md, FOLLOWUPS.md, PLAYTEST.md from the templates (TS strict, event bus, web-mobile, core/systems/entities/ui). SCOPE.md carries `budget_count: code_only` and `budget_mode: advisory` (budgets are estimates recorded as `budget_bump`, never a review gate; only `tripo_credits` is a hard cap); size every slice `change_budget` with docs/slice-schema.md § Calibrating `change_budget` (sum per-file estimates, ×1.5, round up to 50, or the measured ratio).
 F. CONTEXT.md — game-specific domain terms only (Coin, Level, Core loop, system names), 1–2 sentence definitions, an `_Avoid_` list naming out-of-v1 modes.
 G. docs/adr/0001-tech-stack.md — <ENGINE_LINE>, TS strict, web-mobile, <DESIGN_RES>, physics only if the core loop needs it, localStorage behind SaveSystem.
 H. MILESTONES.md — every slice of the release, cut per docs/slice-schema.md: yaml block (slices, dag, parallel_ok, v1_slice, release_slice, stop_when) + table. 6–9 vertical slices; S01 == the v1 slice of GAME_BRIEF.md; last slice == release-polish.
