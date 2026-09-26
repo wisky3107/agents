@@ -38,6 +38,16 @@ Carry the resolved analysis path/hash into lane handoffs. Workers may read the s
 Missing/stale analysis returns to rip-port-analysis then targeted game-brief amendment, not
 screenshot-led replanning. Keep unaffected completed slices intact; material parity gaps use
 the existing director decision gate. Review requires RP-linked scenarios, not only visual match.
+**Slice study (port).** Before dispatching an unmerged port slice, unless it declares
+`rip_study: []`, run `~/.agents/skills/rip-port-analysis/SKILL.md` § Slice study: launch the
+locked `rip_port.analyst_agent` with the filled `references/slice-study-prompt.md`, gate with
+`validate-rip-port.mjs <project> --analysis-path <path> --slice <Sxx> --allow-analyzed`,
+spot-check two or three `adopt` claims against their extracts, set the study reviewed, rerun
+without the flag and record `rip_port.slice_studies.<Sxx>` (the one `rip_port` key you write).
+Pass `<RIP_STUDY>` (study directory + manifest SHA-256) into the lane prompt. A stale study is
+refreshed, never bypassed; one that cannot be produced leaves the slice `planned` with the
+error reported. You may run the next slice's study while a lane works (it writes only its
+study directory).
 `brief.contract_depth` absent means `full`. If it is `playable`, only `v1_slice` may dispatch,
 and only for `release.goal=playable`. Before a later slice or end_to_end run, route a targeted
 game-brief expansion, preserving merged slices; require depth=full and fresh contract gates.
@@ -83,6 +93,7 @@ Producer:
 - [ ] 2. Loop until stop condition:
       a. next = first slice in MILESTONES.slices whose deps are merged and status ∉ {merged, shipped, blocked}
       b. release.current_slice = next; slices[next] = in_progress
+         port slice (rip_study ≠ []) → reviewed slice study pinned first (see Inputs)
       c. lane by size → spawn (fleet | fleet lite | single) with the slice prompt; wait on
          <evidence>/HANDOFF.json (see Waiting), never on terminal text
       d. APPROVED (incl. any budget_bump in advisory mode) → commit (auto_commit) → harvest evidence → merge +

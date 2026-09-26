@@ -2,7 +2,8 @@
 
 Replace `<PROJECT>`, `<Sxx>`, `<SLICE_FILE>`, `<ENGINE_LINE>`, `<DIRECTOR_DECISIONS>`, `<LITE>`
 (`true` when the slice's `assets` block is empty and `fleet_lite_when_no_assets` is on), `<BUDGET_MODE>`
-(`advisory` or `gate:<pct>`), `<FLEET_LOCKS>` (one line: `writer=<spec> reviewer=<spec> art=<backend> mesh=<backend> budget=<BUDGET_MODE> lite=<bool>`).
+(`advisory` or `gate:<pct>`), `<FLEET_LOCKS>` (one line: `writer=<spec> reviewer=<spec> art=<backend> mesh=<backend> budget=<BUDGET_MODE> lite=<bool>`),
+`<RIP_STUDY>` (`<analysis_path>/slices/<Sxx>/ sha256=<manifest hash>`, or `none`).
 Do **not** tell the orchestrator to read `AGENT_NOTES.md` — you already resolved the yaml.
 
 ```text
@@ -35,6 +36,11 @@ worktree on this project or the feature worktree you create from it.
    the selected reports, RP IDs and cited source read paths to writer and reviewer. Preserve
    core behavior, level readers, reset/win/lose scenarios and declared deviations. Analysis
    docs are not runtime PASS evidence. A stale pin goes back to the producer.
+   Slice study: <RIP_STUDY>. When set, verify its manifest SHA-256 and pass RIP_SLICE_STUDY.md,
+   its extracts and cited source files to writer and reviewer. The writer implements adopt/adapt
+   claims through their Cocos targets and cites the RP-<Sxx> IDs in the handoff; the reviewer
+   traces implemented layout/VFX/camera/timing values to a claim, a declared deviation or a
+   director decision and reports untraced values.
    Art: obey ASSET_MANIFEST Source=import/generate for all listed stems (2D/font/mesh/VFX).
    Import existing suitable rip assets; generated concepts/meshes are only for generate rows.
 7. Review outcomes: INFRA_BLOCKED → not a fix round; curl the port yourself — 200 means the

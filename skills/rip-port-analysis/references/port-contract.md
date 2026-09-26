@@ -127,3 +127,70 @@ differential runtime equivalence; use source-derived scenarios and report that l
 On amendments, preserve merged slice contracts and historical pins. Refresh pins/scenarios
 for affected unmerged or follow-up slices before dispatch; new findings do not retroactively
 certify or rewrite already reviewed gameplay.
+
+## Slice studies
+
+The global analysis maps presentation at file level (which prefab/scene/clip/material owns a
+system). Parameters — layout rects, VFX modules, camera framing, clip timing, material
+properties — are read per slice, just before that slice is implemented, by the study in
+`SKILL.md` § Slice study. Each study lives in its own directory and never edits the global
+bundle:
+
+```text
+<analysis_path>/slices/<Sxx>/
+├── SLICE_STUDY_MANIFEST.json
+├── RIP_SLICE_STUDY.md
+└── extracts/*.json          # extract-unity.mjs --out outputs cited as evidence
+```
+
+```json
+{
+  "schemaVersion": 1,
+  "slice": "S05",
+  "status": "analyzed",
+  "analystAgent": "cursor --model auto",
+  "parent": {"path": "RIP_PORT_MANIFEST.json", "sha256": "current parent manifest hash"},
+  "sliceFile": {"path": "slices/S05-audio-and-juice.md", "sha256": "hash of the slice contract studied"},
+  "topics": [
+    {"id": "lockbox-open-vfx", "kind": "vfx", "source": "slice", "status": "studied", "claims": ["RP-S05-001"]},
+    {"id": "board-lighting", "kind": "environment", "source": "derived", "status": "excluded", "reason": "slice keeps S01 lighting"}
+  ],
+  "evidence": [
+    {"id": "E-S05-001", "source": "main", "path": "Assets/.../BankHeist_Lockbox.prefab", "sha256": "…", "kind": "prefab",
+     "symbol": "#1587765826080250 FXOpenGlow", "extract": "extracts/lockbox-open-vfx-fxopenglow.json", "extractSha256": "…"}
+  ],
+  "claims": [
+    {"id": "RP-S05-001", "label": "OBSERVED", "summary": "Open glow: burst 2, lifetime 0.2 s, size 10, additive billboard",
+     "evidence": ["E-S05-001"], "refines": ["RP-028"], "disposition": "adopt",
+     "cocos": "cc.ParticleSystem burst 2, startLifetime 0.2, startSize 10, additive material"}
+  ],
+  "unknowns": [],
+  "files": ["RIP_SLICE_STUDY.md"],
+  "reportHashes": {"RIP_SLICE_STUDY.md": "…"}
+}
+```
+
+- IDs are slice-scoped: `E-<Sxx>-###`, `RP-<Sxx>-###`. Claims may also cite parent `E-###` and
+  list parent claims they sharpen in `refines`. Reuse IDs when a study is refreshed. Unity
+  `#fileID`s are unique only within one file (AssetRipper reuses them across prefabs), so a
+  `symbol` always travels with its evidence `path`.
+- Evidence follows the parent rules (source IDs, trees, SHA-256 of file bytes). Unity YAML
+  (`.prefab`, `.unity`, `.anim`, `.controller`, `.overrideController`, `.playable`, `.mat`) is
+  cited through an extract: `extract` is relative to the study directory, `extractSha256` is its
+  hash, and the extract's `file`/`fileSha256` (or `materials[path].sha256`) must match the
+  evidence. Extracts are regenerable; the source hash, not the extract, proves freshness.
+- Every claim carries a label and a `disposition`: `adopt` (copy after unit/axis conversion;
+  OBSERVED/INFERRED only; `cocos` names the target), `adapt` (use with a stated `deviation` and
+  `cocos` target), `reference` (look/feel reference, no numeric parity), `exclude` (`reason`).
+- Topics come from the slice's `rip_study` front-matter (`source: slice`, all must be covered).
+  When the slice has no `rip_study` key (older contracts), the coordinator derives topics from
+  its scope, assets, feel rows and scene objects (`source: derived`). `rip_study: []` means no
+  study. Each topic is `studied` (claims) or `excluded` (reason) and is named in the report.
+- The report cites every claim and topic; RP IDs in it must exist in the study or the parent.
+- The study pins the parent manifest and the slice file. A new parent hash, an amended slice or
+  a changed source file makes it stale; refresh it before dispatch. Merged slices keep their
+  historical studies.
+
+The writer implements `adopt`/`adapt` claims through the named Cocos targets; the reviewer
+traces the implemented parameters to those claims or to a declared deviation. A study is
+expected-presentation evidence, not runtime PASS evidence.

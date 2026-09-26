@@ -5,7 +5,8 @@ description: >-
   includes one or more unity-apk-rip outputs, recovered Unity projects, or asset-only
   rip packs. Assign the forensic pass to a configurable mid-tier agent such as Cursor Auto,
   Claude Sonnet, or Codex Terra and produce evidence-backed logic, state, level, asset,
-  and port-gap maps for game-brief and implementation workers.
+  and port-gap maps for game-brief and implementation workers. Also runs the per-slice
+  presentation study (layout, VFX, models, camera, animation) before a port slice is dispatched.
 ---
 
 # Rip port analysis
@@ -56,7 +57,8 @@ PROJECT/reference/<slug>/rip-port/
 ├── RIP_STATE_MACHINE.md
 ├── RIP_LEVEL_SCHEMA.md
 ├── RIP_ASSET_MAP.md
-└── RIP_PORT_GAPS.md
+├── RIP_PORT_GAPS.md
+└── slices/<Sxx>/           # per-slice presentation studies (see Slice study)
 ```
 
 `RIP_PORT_MANIFEST.json` follows the linked contract: source IDs/roots, actual code
@@ -101,8 +103,9 @@ with readable or mixed code.
   3. **Unknowns**: every core rule/number the client does not hold, each with a verification
      step, so contracts carry it as ASSUMPTION/risk instead of inventing parity.
 
-  Serialized tuning (animation timing, camera, curves) is mapped only when the director's
-  target will copy it; otherwise list it as an index row, without parsing. The reports stay
+  Presentation parameters (layout, VFX, camera, clip timing, materials) are not parsed here:
+  `RIP_ASSET_MAP.md` names the owning files and the inventory's `presentationIndex` locates
+  them; each slice reads the parts it builds in its Slice study. The reports stay
   compact: `RIP_STATE_MACHINE.md` lists observed phase signals (scenes, timelines, popups)
   with behavior UNKNOWN; `RIP_LEVEL_SCHEMA.md` covers only level/TextAsset files that exist.
   Inventory dispositions and the validator are unchanged. Review is one semantic spot-check
@@ -283,3 +286,53 @@ or generate game assets as part of forensic analysis. The final manifest status 
 `reviewed` (the analyst may only write `analyzed`). Bundles with `schemaVersion: 1` predate
 the inventory gate and fail as `rip_schema_legacy`; re-run the analysis (targeted re-analysis
 reuses existing RP/E IDs) and refresh the manifest pins of unmerged slices only.
+
+## Slice study
+
+Presentation is studied per slice, when the slice is about to be built: how the environment
+is lit and assembled, which models sit where and with what materials, UI layout and sprite
+usage, how each VFX is configured and triggered, camera framing, clip/controller timing. This
+survives IL2CPP stubbing: built-in component data (ParticleSystem, RectTransform, renderers,
+Camera, Light, clips, controllers, materials) and bundle MonoBehaviour fields stay serialized.
+Both depths (`full` and `lightweight`) use it; the global analysis stays at file level.
+
+**When.** The producer runs a study before dispatching each unmerged port slice, unless the
+slice says `rip_study: []`. Topics come from the slice's `rip_study`; a slice without that key
+(older contracts) gets topics derived from scope, assets, feel rows and scene objects. The
+parent analysis must be reviewed and current. One study per slice; parallel slices get
+separate studies.
+
+**Who.** The locked `rip_port.analyst_agent` (mid-tier, no escalation), launched like the
+global analyst with [references/slice-study-prompt.md](references/slice-study-prompt.md)
+filled and saved as `rip-port/slices/<Sxx>/study-task.md`. It writes only its study directory.
+
+**Tools.** `scripts/extract-unity.mjs` turns Unity YAML into compact, deterministic JSON:
+
+```bash
+X=~/.agents/skills/rip-port-analysis/scripts/extract-unity.mjs; R=<ExportedProject>
+node $X --root $R --index --under Assets/<dir>                   # which prefabs/scenes/clips/materials, classes, scripts
+node $X --root $R --file <prefab|unity> --summary --max-depth 3  # node tree with #ids and components
+node $X --root $R --file <prefab> --node '#<goId>' --out <study>/extracts/<name>.json   # one subtree, full parameters
+node $X --root $R --file <prefab> --only ParticleSystem,ParticleSystemRenderer --out …  # flat component list
+node $X --root $R --file <anim|controller|mat> --out …           # clip curves, state graph, material properties
+```
+
+Output is raw Unity data (left-handed, ParticleSystem angles in radians, ZXY euler); the legend
+in each extract explains the encodings. Referenced materials are summarized with their hash.
+`noFields: true` on a MonoBehaviour means the rip has no serialized values for it (e.g. a base
+APK scene): those values are UNKNOWN, never component defaults.
+
+**Output and gate.** The study directory, manifest, dispositions and staleness rules are in
+[references/port-contract.md](references/port-contract.md) § Slice studies. The coordinator
+runs `validate-rip-port.mjs "$PROJECT" <slug> --slice <Sxx> --allow-analyzed`, spot-checks two
+or three `adopt` claims against their extracts (numbers, units, axes), sets the study
+`status: reviewed`, reruns without `--allow-analyzed`, and records the pin in AGENT_NOTES:
+
+```yaml
+rip_port:
+  slice_studies:
+    S05: {status: reviewed, sha256: <SLICE_STUDY_MANIFEST.json hash>}
+```
+
+Lane handoffs carry the study path and hash. Writers and reviewers may read the study, its
+extracts and the source files it cites; source trees stay read-only.

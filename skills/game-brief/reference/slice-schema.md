@@ -157,6 +157,25 @@ One paragraph tying the slice to GAME_BRIEF §n / HOW_TO rows.
 |-----------|-------------------|--------|
 ```
 
+**Port slices only — `rip_study`** (optional; omit outside rip-backed ports). Questions about
+how the shipped game builds what this slice builds, answered from the rip before dispatch by a
+per-slice study (`~/.agents/skills/rip-port-analysis/SKILL.md` § Slice study). Add a topic for
+each presentation the slice mirrors: environment/lighting, models and their placement, UI
+layout, VFX, camera, animation timing, audio wiring. `rip_study: []` means nothing to study; a
+missing key lets the producer derive topics from scope and assets.
+
+```yaml
+rip_study:                         # kinds: environment|model|layout|vfx|animation|camera|audio|other
+  - id: lockbox-open-vfx           # kebab-case, unique in the slice
+    kind: vfx
+    questions: ["How is the lockbox open glow built (emission, lifetime, size, blend) and when does it fire?"]
+    source_dirs: [Assets/assetstobundle/features/bankheist]   # ExportedProject-relative; [] when unknown
+```
+
+Take `source_dirs` from `RIP_ASSET_MAP.md` rows or the inventory's `presentationIndex`; do not
+open prefabs to author the contract. Acceptance still states observable targets; the study
+supplies the parameters the writer copies or adapts.
+
 For S01 specifically, acceptance and playtest must compare the running game against the S01
 expected mock screen using the visual contract below. Include the mock screen's required UI
 art/fonts in S01 `assets`; later slices cannot be prerequisites for a visually presentable S01.

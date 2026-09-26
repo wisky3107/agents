@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { presentationIndex } from './extract-unity.mjs';
 
 export const INVENTORY = 'RIP_INVENTORY.json';
 // Categories the manifest's inventoryCoverage must dispose of when their count is nonzero.
@@ -83,6 +84,8 @@ function inventoryUnityProject(root) {
     textAssets: { count: textAssets.length, files: cap(textAssets.map(rel), 500) },
     audio: { count: count(files, ['wav','ogg','mp3','aif','aiff']), byDir: groupCount(files.filter(f => ['wav','ogg','mp3'].includes(ext(f))).map(rel), 3) },
     fonts: count(files, ['ttf','otf','fnt']), textures: count(files, ['png','jpg','jpeg','tga','exr','psd']),
+    // Readable even when every script is a stub; slice studies drill in with extract-unity.mjs --index --under <dir>.
+    presentationIndex: presentationIndex(root).dirs,
   };
 }
 

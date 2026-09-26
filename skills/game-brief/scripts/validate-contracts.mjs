@@ -1,5 +1,6 @@
+import path from 'node:path';
 import { args, project, local, exists, read, front, fence, ROOTS, tables, files, notes, run } from './lib.mjs';
-import { analysisPathFor, validateRipPort } from '../../rip-port-analysis/scripts/validate-rip-port.mjs';
+import { analysisPathFor, validateRipPort, studyTopicErrors } from '../../rip-port-analysis/scripts/validate-rip-port.mjs';
 
 export function loadSlices(p) {
   return files(p, 'slices').filter(f => /^slices\/S\d+-.+\.md$/.test(f)).map(file => ({ file, text: read(local(p, file)), data: front(read(local(p, file)), file) }));
@@ -102,6 +103,13 @@ export function validate(p, options = {}) {
     const extra = list(x.unlocks).filter(u => !unlockedBy(id).includes(u));
     if (!done(n, id) && (!Array.isArray(x.unlocks ?? []) || extra.length)) fail('unlocks_mismatch', s.file, `unlocks ${extra.join(', ')} do not depend on ${id} in MILESTONES.dag`);
     if (!done(n, id)) for (const r of list(x.feel_rows)) if (typeof r !== 'string' || !feel.has(r.toLowerCase())) fail('unknown_feel_row', s.file, `feel_rows ${r} is not a row ID of the EXPECT Game feel / VFX table`);
+    // Optional per-slice rip study topics; answered by rip-port-analysis before dispatch.
+    if ('rip_study' in x && !done(n, id)) {
+      for (const msg of studyTopicErrors(x.rip_study)) fail('invalid_rip_study', s.file, msg);
+      if (portPath === null && list(x.rip_study).length) fail('rip_study_without_port', s.file, 'rip_study needs a rip-port analysis');
+      const roots = list(n.rip_port?.sources).map(r => r?.unity_project).filter(r => typeof r === 'string' && r && exists(r));
+      if (roots.length) for (const t of list(x.rip_study)) for (const d of list(t?.source_dirs)) if (typeof d === 'string' && !roots.some(r => exists(path.join(r, d)))) fail('rip_study_source_dir', s.file, `${t.id}: ${d} not found in any source unity_project`);
+    }
     if (!['S','M','L'].includes(x.size) || typeof x.needs_director_ok !== 'boolean') fail('invalid_slice_type', s.file, 'size and needs_director_ok types invalid');
     if (!x.name || !x.one_liner || !list(x.scope?.in).length || !list(x.acceptance).length) fail('missing_slice_outcome', s.file, 'Every slice, including an outline, needs a name, outcome, scope.in and acceptance');
     for (const k of ['depends_on','acceptance','feel_rows','runtime_checks','playtest','risks','release_items']) if (!Array.isArray(x[k])) fail('invalid_slice_list', s.file, `${k} must be a list`);

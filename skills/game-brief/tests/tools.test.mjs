@@ -119,6 +119,16 @@ test('scaffolding preserves authored files and cannot pass the gate',()=>{
   assert.ok(validate(p).errors.some(e=>e.code==='unfinished_scaffold'));
   assert.equal(scaffold(p,{slices:6}).written.length,0);
 });
+test('port slices pose rip_study topics; bad shapes and unknown source dirs fail',()=>{
+  const p=validProject(),f='slices/S02-slice.md',text=fs.readFileSync(path.join(p,f),'utf8'),up=path.join(p,'fixture-rip/ripped/UnityProject/ExportedProject');
+  put(p,'AGENT_NOTES.md',fs.readFileSync(path.join(p,'AGENT_NOTES.md'),'utf8').replace('release:\n',`rip_port:\n  sources:\n    - id: main\n      root: ${up}\n      unity_project: ${up}\nrelease:\n`));
+  const topics=t=>put(p,f,text.replace('risks: []\n',`rip_study:\n${t}risks: []\n`));
+  topics('  - id: open-vfx\n    kind: vfx\n    questions: [How is the open glow built?]\n    source_dirs: [Assets/Scripts]\n');
+  assert.deepEqual(validate(p).errors,[]);
+  topics('  - id: Open VFX\n    kind: shader\n    questions: []\n  - id: hud\n    kind: layout\n    questions: [Anchors?]\n    source_dirs: [Assets/UI]\n');
+  assert.deepEqual(validate(p).errors.map(e=>e.code),['invalid_rip_study','rip_study_source_dir']);
+  put(p,f,text.replace('risks: []\n','rip_study: []\nrisks: []\n')); assert.deepEqual(validate(p).errors,[]);
+});
 test('valid full contract passes, malformed YAML and DAG cycles fail',()=>{
   const p=validProject(); assert.deepEqual(validate(p).errors,[]);
   const f='MILESTONES.md'; put(p,f,'```yaml\nslices: [S01, S02]\nslices: [S01]\n```');

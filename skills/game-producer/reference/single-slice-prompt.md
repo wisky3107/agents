@@ -1,7 +1,8 @@
 # Single-lane prompts for S / M slices (producer → `agent-session --json`)
 
 Replace `<PROJECT>`, `<Sxx>`, `<SLICE_FILE>`, `<DIRECTOR_DECISIONS>`, `<EVIDENCE_DIR>`, `<PORT>`,
-`<BUDGET_MODE>` (`advisory` or `gate:<pct>`), `<WRITER_LOCKS>` (one line: `writer=<spec> reviewer=<spec> budget=<BUDGET_MODE>`).
+`<BUDGET_MODE>` (`advisory` or `gate:<pct>`), `<WRITER_LOCKS>` (one line: `writer=<spec> reviewer=<spec> budget=<BUDGET_MODE>`),
+`<RIP_STUDY>` (`<analysis_path>/slices/<Sxx>/ sha256=<manifest hash>`, or `none`).
 Both prompts are role cards: they list every file the agent needs. The agent must not go
 looking for more skill/reference text — that is what compacted the S04/S07 writers.
 **Do not put `AGENT_NOTES.md` on the read list** — the producer already resolved locks into
@@ -24,6 +25,9 @@ reads; verify the pinned analysis manifest hash. Read ASSET_MANIFEST for import 
 Implement RP-linked behavior/level mappings and declared deviations, import existing assets,
 and exercise the state → input → expected result scenarios. Source trees are read-only.
 Missing/stale analysis is a handoff gap; report it instead of inferring rules from screenshots.
+Slice study: <RIP_STUDY>. When set, verify its manifest hash, read RIP_SLICE_STUDY.md and open
+its extracts only for values you implement. Build adopt/adapt claims through their Cocos
+targets and cite the RP-<Sxx> IDs in your handoff; a value with no claim is a question, not a guess.
 Director decisions (GIVEN): <DIRECTOR_DECISIONS>
 
 Recipe context: optional slice recipe_refs (missing = []). Read only those recipe files;
@@ -80,6 +84,8 @@ deviations in review.md. Historical source evidence is not proof this implementa
 Port evidence reports and their cited source files are permitted reads. Verify the pinned
 analysis hash, RP-linked core/reset/win/lose scenarios and explicit deviations with current
 Cocos runtime evidence. Report unverified parity; do not equate a source map with runtime PASS.
+Slice study <RIP_STUDY>: trace implemented layout/VFX/camera/timing values to its adopt/adapt
+claims, declared deviations or director decisions; untraced or contradicting values are findings.
 Do not open unrelated .cursor/skills/** reference files or producer lessons.
 1. `node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT>` — its JSON is the verdict
    for every state-answerable acceptance row; do not replay them by hand. A row with no check

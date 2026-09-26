@@ -142,6 +142,11 @@ J. RELEASE_CHECKLIST.md — product-level "done" rows RC-nn per docs/slice-schem
 - Existing suitable assets default to import. List staged source, runtime destination and
   required conversion. Generate only uncovered needs with a reason. Raw Unity-only inputs
   require staging selected assets before exact import paths can pass the contract gate.
+- Each slice that mirrors shipped presentation (environment, models, UI layout, VFX, camera,
+  animation, audio wiring) gets `rip_study` topics per docs/slice-schema.md: specific questions
+  plus source_dirs from RIP_ASSET_MAP.md or the inventory's presentationIndex. Use
+  `rip_study: []` for slices with nothing to mirror. The producer answers these from the rip
+  before dispatch; do not open prefabs or scenes to author parameters yourself.
 - The analyst's source coverage is not proof of runtime parity or permission to expand v1.
 ```
 

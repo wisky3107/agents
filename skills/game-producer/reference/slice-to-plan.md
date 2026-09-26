@@ -49,6 +49,7 @@ read from `change_budget` in the slice.
 | `assets.2d/3d/vfx/audio` | art-manifest rows (`stem`, `p`) | 3D stems → concept + mesh Tasks; all empty → `lite: true` |
 | `change_budget.{files,lines,nodes,assets}` | `change_budget.{max_files,max_lines,max_nodes,max_assets}` | `tripo_credits` → `change_budget.tripo_credits` |
 | `risks` (unanswered) | — | producer resolves before dispatch; unresolved → slice stays `planned` |
+| `rip_study` (port only) | — | producer runs the slice study before dispatch; the study pin goes to the lane as `<RIP_STUDY>` |
 | `depends_on` | — | producer only; merged deps are the precondition |
 
 ## Budget counting — one rule for everyone

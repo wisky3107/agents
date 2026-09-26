@@ -299,6 +299,9 @@ For every port, the contract validator also requires fresh reviewed analysis. Th
 gate applies `docs/rip-port-contract.md`: HOW_TO port coverage, ARCHITECTURE mappings,
 slice RP scenarios and explicit Port evidence/hash pointers. Check that code/data-backed
 rules survive the handoff; material unknowns are risks, never silently promoted to OBSERVED.
+Slices that mirror shipped presentation carry `rip_study` topics with concrete questions
+(the validator checks shape and that `source_dirs` exist); the studies themselves run later,
+per slice, from the producer.
 
 ```bash
 cd "$PROJECT" && grep -c 'reference/<slug>/rip/' ASSET_MANIFEST.md HOW_TO.md EXPECT_GAMEPLAY_VISUAL.md   # ASSET_MANIFEST must be > 0
