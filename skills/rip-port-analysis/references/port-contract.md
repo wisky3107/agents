@@ -50,6 +50,7 @@ replace sample values with inspected evidence and actual hashes.
   "status": "analyzed",
   "analystAgent": "cursor --model auto",
   "logicCoverage": "partial",
+  "analysisDepth": "lightweight",
   "sources": [{"id": "main", "root": "/abs/workdir/ripped/UnityProject/ExportedProject", "primaryContent": "/abs/workdir/ripped/PrimaryContent", "output": "/abs/workdir/output", "version": "unknown", "codeAvailability": "stubs"}],
   "inventory": {"path": "RIP_INVENTORY.json", "sha256": "hash of RIP_INVENTORY.json"},
   "codeRecovery": "Cpp2IL: invalid global-metadata.dat magic → Unknown backend; needs decrypted metadata + Il2CppDumper",
@@ -84,6 +85,8 @@ do not claim this fingerprints every file in the Unity tree. Evidence `kind` is 
 `OBSERVED`/`INFERRED` claims need non-seed evidence; `UNKNOWN`, `PORT_DECISION`, and `SEED`
 stay distinct. `readable_logic` means core paths were read, not that every system was recovered.
 `partial`/`assets_only` require a nonempty unknowns list. Unavailable behavior stays UNKNOWN.
+`analysisDepth` is `full` (default when absent) or `lightweight`; lightweight is invalid while
+any source has readable or mixed code. It narrows effort, never the evidence rules.
 
 The five reports contain: core rules and data mutations; state triggers/guards/reset/win/lose;
 level keys/types/reader locations/examples; system-to-file mapping with staged paths and import

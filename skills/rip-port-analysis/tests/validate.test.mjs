@@ -105,3 +105,15 @@ test('source resolution prefers output/manifest.json source_paths and never Prim
   for (const input of [dir,path.join(dir,'output'),path.join(dir,'ripped'),f.up]) assert.equal(resolveSource(input).unityProject,f.up);
   assert.equal(resolveSource(path.join(dir,'output')).primaryContent,f.pc);
 });
+test('lightweight depth is only valid for stub/no-code sources',t=>{
+  const f=fixture(t);f.manifest.analysisDepth='lightweight';save(f);
+  assert.ok(check(f.p).errors.some(e=>e.code==='rip_depth_mismatch'));
+  f.manifest.analysisDepth='shallow';save(f);
+  assert.ok(check(f.p).errors.some(e=>e.code==='rip_depth'));
+  fs.writeFileSync(path.join(f.up,'Assets/Scripts/Game/Board.cs'),'// Dummy class\nclass Board {}\n');
+  f.manifest.evidence[0].sha256=sha256(path.join(f.up,'Assets/Scripts/Game/Board.cs'));f.manifest.claims[0].label='INFERRED';
+  f.manifest.logicCoverage='partial';f.manifest.sources[0].codeAvailability='stubs';f.manifest.unknowns=['bodies'];f.manifest.analysisDepth='lightweight';
+  const inv=writeInventory(f);save(f);
+  assert.equal(inv.recommendedDepth,'lightweight');
+  assert.equal(check(f.p).ok,true);
+});

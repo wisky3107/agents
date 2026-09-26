@@ -47,6 +47,8 @@ export function validateRipPort(project, analysisPath, { allowAnalyzed = false, 
   else if (m.schemaVersion !== 2) fail('rip_schema', 'Expected schemaVersion=2');
   if (!(allowAnalyzed ? ['reviewed','analyzed'] : ['reviewed']).includes(m.status)) fail('rip_unreviewed', 'Coordinator must review the analysis');
   if (!['readable_logic','partial','assets_only'].includes(m.logicCoverage)) fail('rip_coverage', 'Unknown logicCoverage');
+  const depth = m.analysisDepth ?? 'full';
+  if (!['full','lightweight'].includes(depth)) fail('rip_depth', 'analysisDepth must be full or lightweight');
   if (!m.analystAgent || typeof m.analystAgent !== 'string') fail('rip_agent', 'Record actual analyst launch spec');
   if (!Array.isArray(m.unknowns) || (m.logicCoverage !== 'readable_logic' && !m.unknowns.length)) fail('rip_unknowns', 'Limited coverage must list missing behavior');
   const sources = new Map(), evidence = new Map(), claims = new Set();
@@ -82,6 +84,7 @@ export function validateRipPort(project, analysisPath, { allowAnalyzed = false, 
     if (!Array.isArray(expectedSources) || expectedSources.length !== sources.size) fail('rip_source_set', 'Analysis source list differs from requested sources');
     for (const s of list(expectedSources)) if (!sources.has(s?.id) || path.resolve(s.root || '.') !== path.resolve(sources.get(s.id).root)) fail('rip_source_set', `Source changed: ${s?.id}`);
   }
+  if (depth === 'lightweight' && [...sources.values()].some(s => ['readable','mixed'].includes(s.codeAvailability))) fail('rip_depth_mismatch', 'Readable/mixed code requires analysisDepth=full');
   if (m.logicCoverage === 'readable_logic' && ![...sources.values()].some(s => ['readable','mixed'].includes(s.codeAvailability))) fail('rip_false_coverage', 'Readable logic requires inspected readable code');
   if (!list(m.evidence).length) fail('rip_evidence', 'No inspected source evidence');
   for (const e of list(m.evidence)) {
@@ -123,7 +126,7 @@ export function validateRipPort(project, analysisPath, { allowAnalyzed = false, 
     } catch(e) { fail('rip_report_missing', `${file}: ${e.message}`); }
   }
   for (const id of claims) if (!reportTexts.some(t => new RegExp(`\\b${id}\\b`).test(t))) fail('rip_unused_claim', id);
-  return { ok:errors.length === 0, analysisPath, logicCoverage:m.logicCoverage, manifestHash:sha256(path.join(root,'RIP_PORT_MANIFEST.json')), errors };
+  return { ok:errors.length === 0, analysisPath, logicCoverage:m.logicCoverage, analysisDepth:depth, manifestHash:sha256(path.join(root,'RIP_PORT_MANIFEST.json')), errors };
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const argv = process.argv.slice(2), project = path.resolve(argv[0] || '.');

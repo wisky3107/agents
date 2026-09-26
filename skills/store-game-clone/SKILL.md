@@ -230,7 +230,8 @@ already wrote `bootstrap:` — do not touch it):
   by `game-brief` in Step 4.)
 - For any rip source initialize `rip_port.enabled: true`,
   `rip_port.analysis_path: reference/<slug>/rip-port/`, `rip_port.status: pending`,
-  `rip_port.analyst_agent` from explicit override → saved value → `cursor --model auto`, and
+  `rip_port.analyst_agent` from explicit override → saved value → `cursor --model auto`,
+  `rip_port.depth: auto` (inventory picks full vs lightweight), and
   `rip_port.sources` per the analysis skill. It owns subsequent analysis status/coverage.
   Keep original absolute Unity paths in that block (`unity_project` = `.../ripped/UnityProject/ExportedProject`,
   `primary_content` = `.../ripped/PrimaryContent`, never bare `ripped/`); do not copy the large `ripped/` tree.

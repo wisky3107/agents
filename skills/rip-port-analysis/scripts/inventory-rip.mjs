@@ -140,7 +140,9 @@ export function buildInventory(paths) {
     glb: pc?.glb || 0, outputLevels: out?.levels || 0,
   };
   const floor = !up ? 'assets_only' : (s.total > s.dummy ? 'readable_logic_or_partial' : 'partial');
-  return { counts, codeAvailability, coverageFloor: floor, metadataFailure: log.metadataFailure, unityProject: up, primaryContent: pc, output: out, log };
+  // Readable bodies earn the full forensic pass; stubs/none only support structure, assets and unknowns.
+  const recommendedDepth = ['readable', 'mixed'].includes(codeAvailability) ? 'full' : 'lightweight';
+  return { counts, codeAvailability, coverageFloor: floor, recommendedDepth, metadataFailure: log.metadataFailure, unityProject: up, primaryContent: pc, output: out, log };
 }
 
 export const summarize = inv => ({ counts: inv.counts, codeAvailability: inv.codeAvailability });
@@ -160,6 +162,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     doc.sources[id] = { paths, ...inv };
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
     fs.writeFileSync(outFile, JSON.stringify(doc, null, 2) + '\n');
-    console.log(JSON.stringify({ id, paths, ...summarize(inv), coverageFloor: inv.coverageFloor, metadataFailure: inv.metadataFailure, sha256: crypto.createHash('sha256').update(fs.readFileSync(outFile)).digest('hex') }, null, 2));
+    console.log(JSON.stringify({ id, paths, ...summarize(inv), coverageFloor: inv.coverageFloor, recommendedDepth: inv.recommendedDepth, metadataFailure: inv.metadataFailure, sha256: crypto.createHash('sha256').update(fs.readFileSync(outFile)).digest('hex') }, null, 2));
   }
 }

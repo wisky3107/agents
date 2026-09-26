@@ -12,6 +12,10 @@ Inventory: <ABSOLUTE_RIP_INVENTORY_PATH> — summary: <INVENTORY_COUNTS_CODE_AVA
 Analysis root = UnityProject/ExportedProject (scripts, serialized .asset, prefabs, scenes, anim,
 audio, fonts, textures). PrimaryContent = GLB lookup only. output/ = SEED only. Never analyze ripped/.
 Director's target and investigation scope: <REQUEST_AND_SUBSYSTEM_SCOPE>.
+Analysis depth: <full|lightweight> (record as analysisDepth). For lightweight, follow the
+"Analysis depth" section of ~/.agents/skills/rip-port-analysis/SKILL.md: structure, asset map with IP_RISK, and unknowns only;
+map serialized tuning only if the target copies it; keep state/level reports to observed
+signals and existing files.
 Write only: <ABSOLUTE_ANALYSIS_OUTPUT_DIRECTORY>.
 Source trees, AGENT_NOTES, root game contracts and runtime assets are read-only to you.
 

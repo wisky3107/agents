@@ -82,6 +82,32 @@ consolidator writes the canonical reports after all parts return. Preserve sourc
 identity and record canonical choices in `RIP_PORT_GAPS.md`; never mix same-name enum/asset
 files across versions without a documented choice. Unresolved choices remain UNKNOWN.
 
+## Analysis depth
+
+The inventory's `recommendedDepth` picks how much forensic work pays off. Resolve explicit
+director override → saved `rip_port.depth` (when not `auto`) → `recommendedDepth`. Record the
+choice as `analysisDepth` in the manifest; the validator rejects `lightweight` for a source
+with readable or mixed code.
+
+- `full` (readable/mixed code): the whole procedure below. Method bodies justify tracing the
+  loop, state machine and level readers.
+- `lightweight` (stubs/none, e.g. IL2CPP metadata failure): stubs cannot prove rules, and
+  server-driven economy is usually absent from the client. Spend the pass on the three outputs
+  that still reach the port:
+  1. **Structure**: board/level topology, entity counts and ordering from prefabs, scenes,
+     TextAssets and serialized config (OBSERVED), plus game-assembly type/enum names (INFERRED).
+  2. **Asset map**: import candidates with exact paths, generate gaps with the reason
+     (meshless, branded, missing), and an `IP_RISK` list of assets never to import as-is.
+  3. **Unknowns**: every core rule/number the client does not hold, each with a verification
+     step, so contracts carry it as ASSUMPTION/risk instead of inventing parity.
+
+  Serialized tuning (animation timing, camera, curves) is mapped only when the director's
+  target will copy it; otherwise list it as an index row, without parsing. The reports stay
+  compact: `RIP_STATE_MACHINE.md` lists observed phase signals (scenes, timelines, popups)
+  with behavior UNKNOWN; `RIP_LEVEL_SCHEMA.md` covers only level/TextAsset files that exist.
+  Inventory dispositions and the validator are unchanged. Review is one semantic spot-check
+  of topology, import rows and IP_RISK, not a multi-round pass.
+
 ## Launch and ownership
 
 The coordinator prepares `rip_port` in AGENT_NOTES (add only this block if absent):
@@ -91,6 +117,7 @@ rip_port:
   enabled: true
   analysis_path: reference/<slug>/rip-port/
   analyst_agent: cursor --model auto
+  depth: auto                         # auto (inventory recommendedDepth) | full | lightweight
   status: pending                     # pending | analyzing | reviewed
   logic_coverage: pending
   sources:
@@ -114,8 +141,9 @@ node ~/.agents/skills/rip-port-analysis/scripts/inventory-rip.mjs --id main \
 
 It resolves ExportedProject/PrimaryContent/output/log (override with `--unity-project`,
 `--primary-content`, `--output`, `--log`) and prints counts, dummy-script share,
-`codeAvailability`, `coverageFloor` and `metadataFailure`. Include that summary in the
-analyst task. The analyst reads the inventory; it does not re-sample to decide what exists.
+`codeAvailability`, `coverageFloor`, `recommendedDepth` and `metadataFailure`. Resolve the
+depth (see Analysis depth) and include it with that summary in the analyst task.
+The analyst reads the inventory; it does not re-sample to decide what exists.
 
 Read `~/.agents/skills/orca-cli/SKILL.md` for terminal operations. Read
 [references/analyst-prompt.md](references/analyst-prompt.md), fill it with the source list,
@@ -194,7 +222,11 @@ some → `mixed`, no `.cs` → `none`). The validator enforces both.
 
 ## Review checklist
 
-The coordinator answers each line in `review.md` with the claim IDs or the exclusion reason:
+The coordinator answers each line in `review.md` with the claim IDs or the exclusion reason.
+For `lightweight` depth, answer the structure, asset and unknown lines in full; the state
+machine and level lines may cite the UNKNOWN rows.
+
+- [ ] `analysisDepth` matches the resolved depth; `lightweight` only with stubs/none code.
 
 - [ ] Analysis root is `UnityProject/ExportedProject`; PrimaryContent cited only for GLBs,
       output only as SEED.
