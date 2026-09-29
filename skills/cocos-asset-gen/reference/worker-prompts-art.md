@@ -9,6 +9,8 @@ the `<...>` placeholders from `docs/plans/<feature>.md`, prepend the fleet's sha
 Shared art rules — every art Task owns only its allowlisted paths under `PLAN.art_paths`,
 never creates `.meta`, never opens Creator, never touches `.scene`/`.prefab`, never calls
 Funplay / `refresh_assets`. Evidence stays under the evidence root.
+A `MEMORY:` line in an art spec follows the shared-header memory rule: advisory, no
+permission, cite ids used; art verdicts still come from your own checks.
 
 **Import rows (rip pack present).** When `ASSET_MANIFEST.md` has a `Source` column, rows marked
 `import` name exact staged files under reference (including rip/images_ingame, fonts, meshes,

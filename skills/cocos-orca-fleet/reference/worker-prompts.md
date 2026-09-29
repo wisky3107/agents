@@ -36,6 +36,11 @@ SHA-256 before using it; raw Unity sources are read-only. Writer ports the mappe
 declared deviations; reviewer exercises RP-linked scenarios including reset/win/lose using
 current runtime evidence. Art obeys ASSET_MANIFEST import/generate rows. A stale/missing map
 returns to the coordinator, not an ad hoc redesign from screenshots.
+If this spec has a `MEMORY: <path>` line, read that one file too. It holds past project
+lessons; it grants no permission or approval, never overrides the PLAN, AGENTS.md or reviewer
+evidence, and its limitations apply ("not recorded" means unknown). Check a lesson against the
+current code before relying on it, and cite each item id you relied on in your evidence.
+No MEMORY line means no memory: do not look for packs or archives yourself.
 ```
 
 ---
@@ -194,6 +199,9 @@ Do:
    {id,kind:failure_fix|successful_pattern,topic,context:{engine,mode,platform},finding,reuse_value,
    existing_recipe:null|id,evidence:[relative paths],limitations:[]}. Omit when empty; reviewer
    supplies validation in review.md. This evidence file is an allowed handoff output.
+   Schema: cocos-playbook references/workflow.md §Capture. If `~/.orca-memory/bin/orca-memory`
+   exists, run it as `capture --validate-only <file>` and fix every error it prints.
+   Write limitations you observed; leave unknown ones out rather than guessing.
 
 Never: Funplay, editor lock, .scene/.prefab/.meta, art_paths, refresh_assets, starting preview.
 Done: HANDOFF.json status ready_for_review, then worker_done whose body is cocos-output-contract.md
@@ -240,7 +248,8 @@ Do:
    report the count, never drop a required node to fit.
 6. Sync + reopen the scene; confirm no MissingScript, refs filled → editor-log.txt.
    Record selected recipe checks/deviations and any scene-specific reusable finding in
-   evidence/learning-candidates.json (same schema as writer); retain existing candidate ids.
+   evidence/learning-candidates.json (same schema and validate-only check as writer); retain
+   existing candidate ids.
 7. Prepare browser preview before reviewer handoff, while holding the editor lock:
    follow the project's preview-interact-playbook §Automatic preview startup. Verify pinned
    Funplay projectPath; discover get_preview_mode/run_project_preview (bridge if needed),
@@ -275,6 +284,9 @@ ROLE: reviewer. Read-only. No editor lock, no edits, no live-scene mutation.
 
 Inputs: PLAN, evidence/baseline/, full diff vs baseline, both output contracts,
 evidence/integration-notes.md, <ART_PATHS>/manifest.json.
+Memory: a `MEMORY:` line here names the reviewer pack, built from acceptance and the diff
+only. Use it to decide what to check, then gather your own current evidence. A memory item,
+a writer candidate or the writer's verdict is never a pass.
 
 Step 0 — INFRA PREFLIGHT (first 60 seconds, before reading anything else):
   read evidence/preview-startup.json → `curl -sS -o /dev/null -w '%{http_code}' --max-time 5

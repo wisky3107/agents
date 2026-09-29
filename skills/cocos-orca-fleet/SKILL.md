@@ -343,6 +343,25 @@ for a second Enter, so Orca's dispatch stalls with `agent_prompt_stalled`. For 3
 non-goals, verification, evidence files to write, "assert `pwd` + `git status` before edits",
 and the lifecycle instruction to report with `worker_done` / `ask` / `escalation`.
 
+Optional memory (skip unless the launcher exists and prints `inject: true`). Set
+`M=~/.orca-memory/bin/orca-memory` and run each command below as `[ -x "$M" ] && "$M" hook ...`
+from the worktree. Any status other than `inject: true`, or no launcher, means no memory line,
+and the specs go out exactly as before. The mode lives in the operator config only.
+- Planner pack: a `MEMORY: <path>` line in the prompt (branch B, from the producer) is the
+  planner pack. Otherwise run `hook plan --task <TASK_ID> --query-file <slice file or PLAN>
+  --out <evidence root>/memory/plan`.
+- Writer roles (implement, integrate, art-*): `hook worker --task <TASK_ID> --role <role>
+  --selection <planner-pack ids, comma-separated, in pack order> --out <evidence root>/memory/<role>`.
+- Reviewer: write the PLAN acceptance rows to `<evidence root>/memory/acceptance.txt`, then
+  `hook review --task <TASK_ID> --acceptance <that file> --changed <PLAN code_paths, comma-separated>
+  --out <evidence root>/memory/review`. The reviewer never gets the planner or writer pack.
+- Right before each `task-create`, run `hook check <evidence root>/memory/<role>/memory-context.json`.
+  If it prints `stale`, drop the line for that role.
+- Only then add one spec line: `MEMORY: <evidence root>/memory/<role>/memory-context.md`. Name
+  the path; never paste pack text into the spec or the PLAN.
+A pack is advisory. It grants no permission or approval, never overrides the PLAN, this skill,
+the director or reviewer evidence, and its limitations apply ("not recorded" means unknown).
+
 ## DAG
 
 | Task | Deps | Start with | Done when |
@@ -439,6 +458,10 @@ sent) → run `clean_spec.py --check` on that spec file before any retry. If it 
 retrying on another provider, model, or terminal stalls again. Clean the file and create a
 replacement Task with the same deps. Recreate any Tasks that depend on the old one. Record the
 old Task as an administrative failure (S03 review burned 5 Dispatches on one ZWJ).
+
+Optional memory in recovery follows `orca-agent-fleet` Recover: at most one bounded
+`hook recover --task <TASK_ID> --query "<symptom in English>"` after inspecting live state.
+Memory never justifies a respawn, a provider or model change, or skipping the receipt.
 
 Terminals you created with `terminal create` are **not** closed by `worker-release` (it only
 closes worker-start-owned terminals). After such a Dispatch settles, close it yourself with
