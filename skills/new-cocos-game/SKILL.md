@@ -68,6 +68,7 @@ New Cocos Game:
 - [ ] 5. Wait until MCP for THIS project answers (Funplay pin / cocos-cli pinned port)
 - [ ] 5b. Fill AGENT_NOTES.md (bootstrap facts + fleet agent defaults + release.goal/deploy from intake)
 - [ ] 6. Initial commit
+- [ ] 6a. Optional: register the project with orca-memory (mode off; skip without the launcher)
 - [ ] 6b. If brief_author=fable → game-brief (idea|media) writes root contracts
 - [ ] 7. /setup-project with the brief (auto defaults unless special asks)
 - [ ] 8. If implement=yes → Orca agent in project (producer | single | fleet orchestrator)
@@ -280,6 +281,21 @@ EOF
 ```
 
 Do not push unless asked.
+
+### Step 6a — Optional memory registration
+
+Skip unless `~/.orca-memory/bin/orca-memory` exists. Otherwise run once:
+
+```bash
+M=~/.orca-memory/bin/orca-memory; [ -x "$M" ] && "$M" register --path <project> --domain cocos \
+  --engine <engine_version> --stack-mode <2d|3d> --target <web-mobile|...> --data-owner <owner>
+```
+
+`--data-owner` is who owns the game's data (e.g. `internal`). If the user has not said, ask
+once; never guess it. The command appends the project with memory mode `off` and refuses a
+duplicate id or an overlapping path; that refusal is not a bootstrap failure. Leave out any
+fact you do not know (engine, mode, target) rather than guessing. Turning memory on is a
+separate, deliberate operator edit of `~/.orca-memory/config/projects.json`; never do it here.
 
 ---
 
