@@ -129,6 +129,10 @@ Producer:
    handles), never re-dispatch. Correct the yaml to match, append one line to
    `.cursor/evidence/tasks/T-<Sxx>/producer-log.md` with the evidence you used, then continue the
    loop. Never re-run the director gate for decisions already in the `policy` line.
+   Optional memory (skip unless the launcher exists and prints `inject: true`): after the git
+   check, at most one bounded `M=~/.orca-memory/bin/orca-memory; [ -x "$M" ] && "$M" hook
+   recover --task T-<Sxx> --query "<symptom in English>"`; read the `pack` path it prints.
+   Git and live Orca state stay the truth; memory never justifies a re-dispatch or a lock change.
 
 ## Notes discipline — AGENT_NOTES.md is state, not a log
 
@@ -184,6 +188,18 @@ the lanes). No answer within the wait budget → proceed with slices that are no
 the flagged ones `planned`, and say so.
 
 ## Step 2c — lanes
+
+Optional memory (skip unless the launcher exists and prints `inject: true`). Before spawning
+either lane, from the main checkout run
+`M=~/.orca-memory/bin/orca-memory; [ -x "$M" ] && "$M" hook plan --task T-<Sxx> --query-file <SLICE_FILE> --out <main task evidence dir>/memory/plan`
+(the absolute task evidence dir for T-<Sxx> in the main checkout). On `inject: true`, fill
+`<CONTEXT_PACK>` with the absolute path of `memory-context.md` in that dir; otherwise
+`<CONTEXT_PACK>` is `none`. Forward it next to the `recipe_refs`; never paste pack text into a
+prompt. For the single lane's reviewer, run `hook review --task T-<Sxx> --acceptance <file of
+the slice acceptance rows> --base HEAD --out <EVIDENCE_DIR>/memory/review` after the writer is
+`ready_for_review`, and fill its `<CONTEXT_PACK>` from that result, never from the plan pack. A
+pack is advisory: no permission or approval, never above the slice, contracts or reviewer
+evidence, and its limitations apply. The mode lives in the operator config only.
 
 ### L → `cocos-orca-fleet` (default for anything with art + scene + code)
 
@@ -326,6 +342,11 @@ rest of the run. Non-200 ⇒ integrator recovery, then a fresh review.
    include `.cursor/evidence/tasks/T-<Sxx>/` (check `git show --stat <sha>`), copy it now:
    `rsync -a --exclude '*.png' <wt>/.cursor/evidence/tasks/T-<Sxx>/ <main>/.cursor/evidence/tasks/T-<Sxx>/`.
    cc-meowdoku lost T-S06 and T-S08 (`stats.json` included) to `worktree rm`.
+   Optional memory harvest, before that rsync (skip unless the launcher exists):
+   `M=~/.orca-memory/bin/orca-memory; [ -x "$M" ] && "$M" hook harvest --wt <wt> --task T-<Sxx>`.
+   It archives candidates, review.md, HANDOFF.json and the PNGs they reference outside the
+   project (status `off` = nothing copied). A non-zero exit means the copy failed: keep the
+   worktree, skip `worktree rm`, and report it. Single lane: run it with `--wt <PROJECT>`.
 3. `auto_merge=true` (fleet lane) → run the `cocos-orca-worktree` finish sequence yourself.
    Close **both** Creators before merge: first `<wt>/scripts/close-editor.sh <wt>`, then
    `<main>/scripts/close-editor.sh <main>`. Confirm each checkout's
@@ -371,6 +392,8 @@ updates. These branches still include the retro path in the final report.
    successful techniques separately. Missing lessons is not an early exit. Shared-library
    curation requires existing authorization; recipe defaults and template/skill edits are
    separate decisions. Report proposed recipe ids, evidence gaps and retro path.
+   Optional memory recurrence check (`hook retro`) is described in the retro reference;
+   its matches feed proposals only.
 
 ## Stop conditions
 

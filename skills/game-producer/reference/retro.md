@@ -16,6 +16,11 @@ is project-local proposals; shared-library curation uses existing director autho
 - Recipe library INDEX/registry when available; read matching recipes to decide add vs merge.
   Use `cocos-playbook/references/workflow.md` and `recipe-format.md` for curation rules.
 - Policy already resolved by producer; do not reread Notes history.
+- Optional memory (skip unless `~/.orca-memory/bin/orca-memory` exists and prints
+  `inject: true`): for each proposed operational fix or candidate topic, at most one
+  `hook retro --query "<cause or topic in English>"`; read the `pack` path it prints. A match
+  counts toward recurrence only after you check its cited source. Matches feed proposals only:
+  no promotion, curation, or change to the memory archive.
 
 For explicitly requested extraction from a finished older project, also inspect its committed
 implementation/tests and surviving review evidence. Mark extraction as retrospective.

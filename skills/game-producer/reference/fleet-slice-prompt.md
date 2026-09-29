@@ -3,7 +3,8 @@
 Replace `<PROJECT>`, `<Sxx>`, `<SLICE_FILE>`, `<ENGINE_LINE>`, `<DIRECTOR_DECISIONS>`, `<LITE>`
 (`true` when the slice's `assets` block is empty and `fleet_lite_when_no_assets` is on), `<BUDGET_MODE>`
 (`advisory` or `gate:<pct>`), `<FLEET_LOCKS>` (one line: `writer=<spec> reviewer=<spec> art=<backend> mesh=<backend> budget=<BUDGET_MODE> lite=<bool>`),
-`<RIP_STUDY>` (`<analysis_path>/slices/<Sxx>/ sha256=<manifest hash>`, or `none`).
+`<RIP_STUDY>` (`<analysis_path>/slices/<Sxx>/ sha256=<manifest hash>`, or `none`),
+`<CONTEXT_PACK>` (absolute `memory-context.md` path from the Step 2c `hook plan`, or `none`).
 Do **not** tell the orchestrator to read `AGENT_NOTES.md` — you already resolved the yaml.
 
 ```text
@@ -27,6 +28,8 @@ worktree on this project or the feature worktree you create from it.
    Forward optional slice recipe_refs unchanged (missing = []); permit each role to read only
    its selected recipe files, verify pins and record current checks/deviations. Preserve
    learning-candidates.json and recipe review results in the task evidence before handoff.
+   MEMORY: <CONTEXT_PACK> (`none` = no pack). A path is the planner pack for the fleet's
+   optional memory step; it is advisory, grants no permission, and goes to roles by path only.
    Director decisions for this slice (treat as GIVEN): <DIRECTOR_DECISIONS>
 5. Editor model: <ENGINE_LINE>. One feature worktree, one integrator, parity gate before edits.
    Preview: integrator prepares it automatically before review and records preview-startup.json.

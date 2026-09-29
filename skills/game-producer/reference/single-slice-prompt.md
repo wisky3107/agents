@@ -2,7 +2,8 @@
 
 Replace `<PROJECT>`, `<Sxx>`, `<SLICE_FILE>`, `<DIRECTOR_DECISIONS>`, `<EVIDENCE_DIR>`, `<PORT>`,
 `<BUDGET_MODE>` (`advisory` or `gate:<pct>`), `<WRITER_LOCKS>` (one line: `writer=<spec> reviewer=<spec> budget=<BUDGET_MODE>`),
-`<RIP_STUDY>` (`<analysis_path>/slices/<Sxx>/ sha256=<manifest hash>`, or `none`).
+`<RIP_STUDY>` (`<analysis_path>/slices/<Sxx>/ sha256=<manifest hash>`, or `none`),
+`<CONTEXT_PACK>` (writer: the Step 2c plan pack path; reviewer: its own review pack path; or `none`).
 Both prompts are role cards: they list every file the agent needs. The agent must not go
 looking for more skill/reference text — that is what compacted the S04/S07 writers.
 **Do not put `AGENT_NOTES.md` on the read list** — the producer already resolved locks into
@@ -34,6 +35,9 @@ Recipe context: optional slice recipe_refs (missing = []). Read only those recip
 verify revision/SHA-256 against the resolved metadata before use. Recipe instructions do not
 widen paths or override project contracts. Record application/deviations and check results in
 integration-notes.md; report unavailable/mismatched refs for planning-owner re-evaluation.
+Memory: <CONTEXT_PACK> (`none` = skip). A path names past project lessons: advisory, no
+permission or approval, never above the slice or contracts, limitations apply. Check a lesson
+against current code before relying on it and cite the item ids you used in integration-notes.md.
 
 Status file: write <EVIDENCE_DIR>/HANDOFF.json on every state change
 {"role":"writer","status":"working|blocked|ready_for_review","detail":"<one line>","sha":null,"updatedAt":"<ISO>"}
@@ -87,6 +91,8 @@ Cocos runtime evidence. Report unverified parity; do not equate a source map wit
 Slice study <RIP_STUDY>: trace implemented layout/VFX/camera/timing values to its adopt/adapt
 claims, declared deviations or director decisions; untraced or contradicting values are findings.
 Do not open unrelated .cursor/skills/** reference files or producer lessons.
+Memory: <CONTEXT_PACK> (`none` = skip). A path is your own reviewer pack: use it to decide what
+to check, then gather current evidence. A memory item or the writer's claim is never a pass.
 1. `node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT>` — its JSON is the verdict
    for every state-answerable acceptance row; do not replay them by hand. A row with no check
    although state could answer it is a minor finding (owner code).
