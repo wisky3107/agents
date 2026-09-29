@@ -119,7 +119,7 @@ Ask only what's missing:
 10. **Gameplay video** — a video file or URL (YouTube, TikTok, a direct .mp4) of real play.
    Optional; never ask when absent. Store trailers are edited marketing cuts, so a gameplay
    recording is the better feel source. Fetch a URL in Step 1 into `assets/<slug>/video/`;
-   `game-brief` probes every video there (its [video-evidence.md](../game-brief/reference/video-evidence.md)).
+   `game-brief` probes every video there with the `gameplay-video` skill.
    Keep source mode `store`.
 
 Optional: existing models at `assets/<slug>/models/` (GLB + Blender script) — prefer import over regen.
@@ -146,13 +146,13 @@ Then write a short research pack (can be agent-authored, not required for implem
 Gameplay video URL from intake item 10:
 
 ```bash
-node ~/.agents/skills/game-brief/scripts/video-probe.mjs fetch "<VIDEO_URL>" \
+node ~/.agents/skills/gameplay-video/scripts/video-probe.mjs fetch "<VIDEO_URL>" \
   --out /Users/wikz/orca-global/assets/<slug>/video --name gameplay
 ```
 
 Read screenshots (and key trailer frames) with the Read tool before claiming feel/HUD facts.
 Timing (durations, easing, distances) comes later from `game-brief`, which probes the trailer
-and any gameplay video with `video-probe`; do not write feel numbers from frames here.
+and any gameplay video with the `gameplay-video` skill; do not write feel numbers from frames here.
 
 ---
 
@@ -303,8 +303,8 @@ Read `~/.agents/skills/game-brief/SKILL.md` and follow it end-to-end with:
 
 - project = `$PROJECT`, slug = `<slug>`
 - **source mode = `store`** (`reference/<slug>/manifest.json` exists from Step 3)
-- **videos** (`video/preview.mp4`, a fetched gameplay video) → `game-brief` probes them in its
-  Step 1 and passes the probe folders to the author for measured feel rows.
+- **videos** (`video/preview.mp4`, a fetched gameplay video) → `game-brief` probes them with
+  `gameplay-video` in its Step 1 and passes the probe folders to the author for measured feel rows.
 - **gameplay notes supplied** → pass `reference/<slug>-brief/GAMEPLAY_NOTES.md` to
   `game-brief`; it fills the optional notes prompt block and checks GP coverage. These are
   director input, separate from the research seed that the author rewrites.

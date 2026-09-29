@@ -67,7 +67,7 @@ export function prepare(p, a = {}) {
     ['reference/bounded-authoring.md', 'docs/brief-workflow.md'],
     ...(index.gameplayNotesPath ? [['reference/gameplay-notes.md', 'docs/gameplay-notes-contract.md']] : []),
     ...(port !== null ? [['../rip-port-analysis/references/port-contract.md', 'docs/rip-port-contract.md']] : []),
-    ...(index.videos.length ? [['reference/video-evidence.md', 'docs/video-evidence.md']] : []),
+    ...(index.videos.length ? [['../gameplay-video/reference/probe-guide.md', 'docs/video-evidence.md']] : []),
   ];
   if (!dry) for (const [from, to] of copies) {
     fs.mkdirSync(path.dirname(local(p, to)), { recursive: true });
@@ -103,7 +103,7 @@ export function prepare(p, a = {}) {
     STORE_URL: n.store_clone?.store_url || manifest.store_url || manifest.url,
     RIP_PORT_PATH: port?.replace(/\/$/, ''), RIP_PORT_HASH: portCheck?.manifestHash,
     GAMEPLAY_NOTES_PATH: index.gameplayNotesPath,
-    VIDEO_PROBE: `node ${path.join(SKILL, 'scripts/video-probe.mjs')}`,
+    VIDEO_PROBE: `node ${path.join(SKILL, '../gameplay-video/scripts/video-probe.mjs')}`,
     VIDEO_LIST: index.videos.map(v => `  - ${v.path}${v.sourceUrl ? ` (from ${v.sourceUrl})` : ''}: ${v.probe
       ? `${v.probe}/ (overview/, candidates.md${v.strips ? ', strips/' : ''}${v.tracks.length ? `, ${v.tracks.length} track run(s)` : ''})`
       : 'NOT PROBED: no measured timing; cite frames only'}`).join('\n'),

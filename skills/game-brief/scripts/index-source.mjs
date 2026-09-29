@@ -74,7 +74,7 @@ export function indexSource(p, a = {}) {
   }
   const media = ref ? [...files(p, ref.replace(/\/$/, '')), ...['iphone','ipad','video/frames'].flatMap(d => files(p, `${ref.replace(/\/$/, '')}/${d}`))].filter(f => /\.(png|jpe?g|webp)$/i.test(f)) : [];
   const chosenMedia = spread(media.filter(f => !/icon|poster/i.test(f)), 5);
-  // Videos are probed by the coordinator (reference/video-evidence.md) into video/probe/<stem>/; the author reads those outputs.
+  // Videos are probed by the coordinator (gameplay-video skill) into video/probe/<stem>/; the author reads those outputs.
   const VIDEO = /\.(mp4|mov|m4v|webm|mkv)$/i;
   const videos = ref ? [...files(p, ref), ...files(p, `${ref}/video`)].filter(f => VIDEO.test(f)).map(f => {
     const stem = path.basename(f).replace(VIDEO, ''), src = `${path.posix.dirname(f)}/${stem}.source.json`, probe = `${ref}/video/probe/${stem}`;
@@ -82,7 +82,7 @@ export function indexSource(p, a = {}) {
     const tracks = exists(local(p, probe)) ? fs.readdirSync(local(p, probe)).filter(d => d.startsWith('track-') && at(`${d}/track.md`)).sort().map(d => `${probe}/${d}/track.md`) : [];
     const v = { path: f, sourceUrl: exists(local(p, src)) ? json(local(p, src)).url || null : null, probe: at('candidates.md') ? probe : null,
       candidates: at('candidates.md'), overview: at('overview/overview.md'), strips: at('strips.md'), tracks };
-    if (!v.probe) warnings.push(`Video not probed: ${f}; run video-probe per reference/video-evidence.md`);
+    if (!v.probe) warnings.push(`Video not probed: ${f}; probe it with the gameplay-video skill`);
     touched.push(f, ...[v.candidates, v.overview, v.strips, ...tracks].filter(Boolean));
     return v;
   }) : [];

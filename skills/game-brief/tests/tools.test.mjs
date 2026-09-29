@@ -265,6 +265,6 @@ test('a video in the reference folder is indexed, warned until probed, and gets 
   assert.ok(!r.index.warnings.some(w=>w.startsWith('Video not probed')));
   const out=prepare(p,{}), prompt=fs.readFileSync(path.join(p,out.promptPath),'utf8');
   assert.match(prompt,/reference\/demo\/video\/gameplay\.mp4 \(from https:\/\/youtu\.be\/abc\): reference\/demo\/video\/probe\/gameplay\/ \(overview\/, candidates\.md, strips\/, 1 track run\(s\)\)/);
-  assert.match(prompt,/video-probe\.mjs track <video>/); assert.doesNotMatch(prompt,/<[A-Z][A-Z_]+>/);
-  assert.ok(fs.existsSync(path.join(p,'docs/video-evidence.md')));
+  assert.match(prompt,/gameplay-video\/scripts\/video-probe\.mjs track <video>/); assert.doesNotMatch(prompt,/<[A-Z][A-Z_]+>/);
+  assert.match(fs.readFileSync(path.join(p,'docs/video-evidence.md'),'utf8'),/^# video-probe guide/);
 });

@@ -94,7 +94,8 @@ Ask only what's missing:
      supplies reference media (screenshots, video, GDD, GLB folder) or a gameplay video
      file / URL, **or** mode=`fleet` (the fleet reviews against `EXPECT_GAMEPLAY_VISUAL.md`'s
      feel table). Source = `media` when a folder or a video was given, else `idea` (the brief
-     text). Pass a video URL on to `game-brief`, which fetches and probes it.
+     text). Pass a video URL on to `game-brief`, which fetches and probes it with the
+     `gameplay-video` skill.
    - `inline` — otherwise (current behaviour: `/setup-project` Phase 0 seeds `GAME_BRIEF.md`).
    - Keep `brief_author=fable` as the legacy routing value for the `game-brief` workflow;
      it does not force the model. A request for `game-brief` or deep contracts using another

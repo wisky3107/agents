@@ -119,7 +119,7 @@ J. RELEASE_CHECKLIST.md — product-level "done" rows RC-nn per docs/slice-schem
 ## `<VIDEO_BLOCK>` (only when the index lists videos; every source mode)
 
 ```text
-- Gameplay video, probed by the coordinator with video-probe (timing measured from decoded frames and audio, not guessed); method and limits in docs/video-evidence.md:
+- Gameplay video, probed by the coordinator with video-probe from the gameplay-video skill (timing measured from decoded frames and audio, not guessed); method and limits in docs/video-evidence.md:
 <VIDEO_LIST>
   - Start with <probe>/overview/overview.md and open one overview sheet to learn what happens when. candidates.md is an event log (cuts, flashes, motion bursts, audio onsets), not a list of feel moments; strips/cNNN.jpg replays one candidate in slow motion. Run `<PROGRESS> --evidence <path>` for each sheet, strip, track.md and track.jpg you open.
   - Measure S01 feel rows for moving objects (hop, slide, drop, exit, knock-back) instead of guessing: `<VIDEO_PROBE> track <video> --at <sec> --box x0,y0,x1,y1 --crop auto --out <probe>/track-<feel-id>` (box = screen fractions of the cropped frame at --at; add `--mode move` for slides and exits, `--cell <px>` for cells/s, `--react x0,y0,x1,y1` for what gets hit). At most 4 runs. Read track.md, open track.jpg once to confirm the right object was followed; on a WARNING rerun with a later --at or a tighter box, once.

@@ -29,7 +29,8 @@ Per topic:
    (adopt | adapt | reference | exclude), Cocos target from the table, deviation for adapt.
    Cite parent E/RP IDs where they apply (`refines`).
 5. No data is an answer: noFields MonoBehaviours, missing references, stub behavior and
-   runtime-driven values are UNKNOWN with a verification step (store video frame, director).
+   runtime-driven values are UNKNOWN with a verification step (a store or gameplay video measured
+   with the gameplay-video skill, or the director).
    Never fill them with Unity or Cocos defaults.
 Read extracts, not raw YAML; open the raw file only to confirm a single value. Stay inside the
 topics; anything else goes under Open questions.
@@ -68,4 +69,4 @@ mapping without a direct equivalent is `adapt` with a deviation.
 | AnimatorController params/states/transitions | animation graph (Marionette) or a code state machine | Trigger/bool/float/int conditions and exit times map directly; blend trees: adapt |
 | PlayableDirector (Timeline) | tween/animation sequence in code | No equivalent: adapt, keep order and timing |
 | AudioSource clip/volume/loop/playOnAwake | AudioSource | pitch and spatialBlend: adapt |
-| MonoBehaviour `noFields: true` | — | UNKNOWN; verify from store video or ask the director |
+| MonoBehaviour `noFields: true` | — | UNKNOWN; measure from a store or gameplay video (gameplay-video skill) or ask the director |
