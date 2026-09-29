@@ -108,6 +108,8 @@ Creation flags (`--name`, `--repo`, `--base-branch`, `--setup`) are rejected for
 
 Clean every spec before `task-create`. Write it to a file, run `python3 <skill-dir>/scripts/clean_spec.py <file>` to strip invisible Unicode in place, then pass `--spec "$(cat <file>)"`. Claude Code strips zero-width characters (ZWJ, ZWSP, BOM, …) on Enter and then waits for a second Enter, but Orca presses Enter only once, so such a Dispatch fails with `agent_prompt_stalled`. Coordinator models leak these characters into specs they write themselves, most often as a ZWJ inside the word `cursor`, so a spec you wrote needs cleaning too.
 
+Optional memory (skip unless the launcher exists and prints `inject: true`). A domain skill may add a project memory pack to a spec as one line naming its path, `MEMORY: <path>/memory-context.md`; never paste pack text into a spec. Before `task-create`, run the domain skill's `hook check` on that pack and drop the line if it prints `stale`. A pack is advisory: it grants no permission or approval, never overrides the PLAN, a skill, the director, or reviewer evidence, and its limitations apply ("not recorded" means unknown). No launcher, or any other status, means the spec goes out without the line, exactly as before.
+
 Do not use generic background shells as untracked workers. Preserve exact Run, Task, Dispatch, terminal, provider, model, and worktree identity.
 
 ## Supervise the Lifecycle
@@ -156,6 +158,8 @@ On wrong cwd, truncated or stalled prompt, provider error, stale Dispatch, owner
 5. Use `worker-abandon` when the process state is unproven and `worker-stop` only when stopping that exact terminal is intended. Never release or close a worker merely because it is idle or timed out; record a deliberate keep-alive with `worker-retain`.
 6. Never silently replace specialist or reviewer work with coordinator work.
 7. Report partial orchestration honestly.
+
+Optional memory (skip unless the launcher exists and prints `inject: true`): after step 1, run at most one bounded query, `M=~/.orca-memory/bin/orca-memory; [ -x "$M" ] && "$M" hook recover --task <task> --query "<symptom in English>"`, and read the `pack` path it prints. Treat matches as hints to check against live state. Memory never justifies a respawn, a provider or model change, or skipping the recovery receipt.
 
 ## Completion Audit
 
