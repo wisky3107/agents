@@ -74,6 +74,19 @@ export function indexSource(p, a = {}) {
   }
   const media = ref ? [...files(p, ref.replace(/\/$/, '')), ...['iphone','ipad','video/frames'].flatMap(d => files(p, `${ref.replace(/\/$/, '')}/${d}`))].filter(f => /\.(png|jpe?g|webp)$/i.test(f)) : [];
   const chosenMedia = spread(media.filter(f => !/icon|poster/i.test(f)), 5);
+  // Videos are probed by the coordinator (reference/video-evidence.md) into video/probe/<stem>/; the author reads those outputs.
+  const VIDEO = /\.(mp4|mov|m4v|webm|mkv)$/i;
+  const videos = ref ? [...files(p, ref), ...files(p, `${ref}/video`)].filter(f => VIDEO.test(f)).map(f => {
+    const stem = path.basename(f).replace(VIDEO, ''), src = `${path.posix.dirname(f)}/${stem}.source.json`, probe = `${ref}/video/probe/${stem}`;
+    const at = g => exists(local(p, `${probe}/${g}`)) ? `${probe}/${g}` : null;
+    const tracks = exists(local(p, probe)) ? fs.readdirSync(local(p, probe)).filter(d => d.startsWith('track-') && at(`${d}/track.md`)).sort().map(d => `${probe}/${d}/track.md`) : [];
+    const v = { path: f, sourceUrl: exists(local(p, src)) ? json(local(p, src)).url || null : null, probe: at('candidates.md') ? probe : null,
+      candidates: at('candidates.md'), overview: at('overview/overview.md'), strips: at('strips.md'), tracks };
+    if (!v.probe) warnings.push(`Video not probed: ${f}; run video-probe per reference/video-evidence.md`);
+    touched.push(f, ...[v.candidates, v.overview, v.strips, ...tracks].filter(Boolean));
+    return v;
+  }) : [];
+  if (videos.length && source === 'idea') warnings.push('Videos exist but brief.source is idea; set it to media so the video can be cited as OBSERVED');
   const sampleImages = diverse(catalogs.filter(c => c.exists && c.priority === 'P0' && /\.png$/i.test(c.path)), 3);
   const sampleMeshes = diverse(catalogs.filter(c => c.exists && c.priority === 'P0' && /\.glb$/i.test(c.path)), 3);
   const levels = rip ? files(p, `${rip.replace(/\/$/, '')}/levels`).filter(f => f.endsWith('.json')) : [];
@@ -98,8 +111,8 @@ export function indexSource(p, a = {}) {
   const fingerprint = hash(JSON.stringify(inputPaths.map(f => { const q = local(p, f); return exists(q) ? [f, fs.statSync(q).size, fs.statSync(q).mtimeMs, /\.(json|md)$/.test(f) ? hash(read(q)) : null] : [f, null]; })) + depth);
   const out = { schemaVersion: 1, source, contractDepth: depth, releaseGoal: n.release?.goal || 'end_to_end', referencePath: ref, ripPath: rip, orientation: brief.orientation || 'portrait 720x1280', inputFingerprint: fingerprint,
     requiredReads: requiredReads.filter(f => exists(local(p, f))), gameplayNotesPath: gp || null, requirements,
-    media: chosenMedia.map(f => ({ path: f, ...dimensions(local(p, f)) })), sampleImages, sampleMeshes, levels: selectedLevels,
-    counts: { media: media.length, levels: levels.length, catalogPriorities: counts, candidates: catalogs.length },
+    media: chosenMedia.map(f => ({ path: f, ...dimensions(local(p, f)) })), videos, sampleImages, sampleMeshes, levels: selectedLevels,
+    counts: { media: media.length, videos: videos.length, levels: levels.length, catalogPriorities: counts, candidates: catalogs.length },
     candidatesPath: 'docs/brief-asset-candidates.json', warnings,
     researchPolicy: 'Inspect shortlist first. Full director source is mandatory. Extra reads need a decision-specific reason; catalog priority is not v1 scope or evidence of visual inspection.' };
   const target = local(p, 'docs/brief-input-index.json');

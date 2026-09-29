@@ -337,7 +337,8 @@ Runtime:
    PLAN.acceptance_criteria as written; run /smoke-test if checks exist.
 3. Feel/VFX criteria: judge them with the reference pack open side by side — Read the cited
    reference frames/screenshots (reference/<slug>/video/frames/, iphone/) and compare against
-   what you see in the preview. A missing tween, particle, shake, or transition that the PLAN
+   what you see in the preview. When a feel row cites a video-probe `track.md`, its duration,
+   easing and distance are measured targets: time the preview's tween against them. A missing tween, particle, shake, or transition that the PLAN
    or EXPECT_GAMEPLAY_VISUAL.md lists is a finding (major by default), even when the mechanic
    itself works. "Plays dry vs reference" is a valid, reportable finding.
 4. evidence/runtime-state.json with real reads (smoke JSON + eval reads). Screenshots: one

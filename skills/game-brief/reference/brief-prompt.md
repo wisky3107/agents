@@ -5,7 +5,7 @@ The placeholder rules below document what that script does.
 Send via `bootstrap.mjs agent-session --agent "$BRIEF_AGENT"` using the resolved agent/model.
 This prompt applies equally to all supported providers; default is Fable 5.1.
 
-Replace `<PROJECT>`, `<SLUG>`, `<SOURCE_BLOCK>`, `<RIP_BLOCK>`, `<RIP_PORT_BLOCK>`, `<GAMEPLAY_NOTES_BLOCK>`, `<ORIENTATION>`, `<DESIGN_RES>`,
+Replace `<PROJECT>`, `<SLUG>`, `<SOURCE_BLOCK>`, `<RIP_BLOCK>`, `<RIP_PORT_BLOCK>`, `<GAMEPLAY_NOTES_BLOCK>`, `<VIDEO_BLOCK>`, `<ORIENTATION>`, `<DESIGN_RES>`,
 `<ENGINE_LINE>`, `<RELEASE_GOAL>` (`end_to_end` | `playable`, from `AGENT_NOTES.md` `release.goal`),
 `<BRIEF_TOOLS>` (absolute skill scripts directory), `<BRIEF_RUN_ID>`, `<CONTRACT_DEPTH>` and `<PROGRESS>`
 (the full `node <BRIEF_TOOLS>/brief-progress.mjs --project <PROJECT> --run-id <BRIEF_RUN_ID>` command).
@@ -15,6 +15,8 @@ Include RIP_PORT_BLOCK whenever rip input exists, with actual RIP_PORT_PATH and 
 RIP_PORT_HASH; its presence does not require RIP_PACK.json. Remove it for non-port tasks.
 Insert `<GAMEPLAY_NOTES_BLOCK>` only when notes exist, replacing `<GAMEPLAY_NOTES_PATH>`
 with the saved project-relative path; otherwise delete the placeholder line.
+Insert `<VIDEO_BLOCK>` only when the index lists videos (`<VIDEO_LIST>` one line per video, `<VIDEO_PROBE>` the
+video-probe command); otherwise delete the placeholder line.
 `docs/slice-schema.md` must already be copied into the project (skill Step 3).
 
 ```text
@@ -26,6 +28,7 @@ You are the brief author in <PROJECT>.
 <RIP_BLOCK>
 <RIP_PORT_BLOCK>
 <GAMEPLAY_NOTES_BLOCK>
+<VIDEO_BLOCK>
 - Read `docs/brief-input-index.json` first. Open every file in its shortlist and read the director source (IDEA / GDD / GAMEPLAY_NOTES) in full. Look up `docs/brief-asset-candidates.json` only when a specific ASSET_MANIFEST row needs a file. Open anything beyond the shortlist only to answer a named question (e.g. "what does the fail screen look like?") and log it: `<PROGRESS> --read <path> --reason "<question>"`. Do not open every file in a folder or build a contact sheet. A filename, count or catalog entry is not OBSERVED — only a file you opened is.
 - Contract templates: .cursor/skills/vibe-game-director/templates/{GAME_BRIEF,SCOPE,ARCHITECTURE,FOLLOWUPS,PLAYTEST}.md
 - Slice / milestone / release-checklist format: docs/slice-schema.md (follow it exactly — the producer parses the yaml front-matter)
@@ -83,7 +86,7 @@ J. RELEASE_CHECKLIST.md — product-level "done" rows RC-nn per docs/slice-schem
    checks to S01; later slices add coverage for new screens, and release-polish reruns all checks.
 
 ## Labels (mandatory on every HOW_TO / EXPECT row)
-- OBSERVED (<file>) — seen in a reference file; cite the exact path (reference/<SLUG>/iphone/03.jpg, reference/<SLUG>/video/frames/t12.jpg, reference/<SLUG>/rip/levels/t160-level-1.json, reference/<SLUG>/rip/images_ingame/<file>.png, …)
+- OBSERVED (<file>) — seen in a reference file; cite the exact path (reference/<SLUG>/iphone/03.jpg, reference/<SLUG>/video/frames/t12.jpg, reference/<SLUG>/video/probe/<name>/track-<feel-id>/track.md, reference/<SLUG>/rip/levels/t160-level-1.json, reference/<SLUG>/rip/images_ingame/<file>.png, …)
 - GIVEN (IDEA §n) or GIVEN (GAMEPLAY_NOTES GP-nn) — stated by the director; reported play is testimony, not agent-observed evidence. Preserve uncertainty in tentative statements.
 - SEED (reference/<SLUG>/rip/briefs/<file>.md §n) — only when a rip pack exists: a claim taken from the rip briefs / guides; never the sole evidence for a v1 mechanic — corroborate with OBSERVED or a definite GIVEN statement, otherwise downgrade to ASSUMPTION
 - ASSUMPTION — your fill; keep these few and call them out in the summary
@@ -111,6 +114,16 @@ J. RELEASE_CHECKLIST.md — product-level "done" rows RC-nn per docs/slice-schem
 - Notes contract: docs/gameplay-notes-contract.md — follow Evidence and decisions + Coverage; validate stable GP IDs against the source. Cite GIVEN (GAMEPLAY_NOTES GP-nn).
 - Add Gameplay notes coverage to HOW_TO.md and carry included rules/scenarios into the owning slices so writer and reviewer use the same requirements. Explicit requested changes override inferred store/rip behavior; record intended deviations. Report unresolved material conflicts without silently selecting a rule.
 - For amendments to existing contracts, also follow Notes arriving after contracts exist in the notes contract and the caller's affected-path/release-state handoff. Revise the affected set, preserving existing slice IDs and completed contracts; the initial full-release authoring/count rules do not require regenerating the release.
+```
+
+## `<VIDEO_BLOCK>` (only when the index lists videos; every source mode)
+
+```text
+- Gameplay video, probed by the coordinator with video-probe (timing measured from decoded frames and audio, not guessed); method and limits in docs/video-evidence.md:
+<VIDEO_LIST>
+  - Start with <probe>/overview/overview.md and open one overview sheet to learn what happens when. candidates.md is an event log (cuts, flashes, motion bursts, audio onsets), not a list of feel moments; strips/cNNN.jpg replays one candidate in slow motion. Run `<PROGRESS> --evidence <path>` for each sheet, strip, track.md and track.jpg you open.
+  - Measure S01 feel rows for moving objects (hop, slide, drop, exit, knock-back) instead of guessing: `<VIDEO_PROBE> track <video> --at <sec> --box x0,y0,x1,y1 --crop auto --out <probe>/track-<feel-id>` (box = screen fractions of the cropped frame at --at; add `--mode move` for slides and exits, `--cell <px>` for cells/s, `--react x0,y0,x1,y1` for what gets hit). At most 4 runs. Read track.md, open track.jpg once to confirm the right object was followed; on a WARNING rerun with a later --at or a tighter box, once.
+  - Labels: a duration, distance, speed or easing from track.md is OBSERVED (<probe>/track-<feel-id>/track.md); a candidate time is OBSERVED only after you opened its strip or frame. Squash, scale and tilt under ~8 % are within noise: ASSUMPTION. The Cocos tween sketch in track.md is a hint, not a contract.
 ```
 
 ## `<RIP_BLOCK>` (paste only when `reference/<SLUG>/rip/RIP_PACK.json` exists; else delete the line)
@@ -156,7 +169,7 @@ J. RELEASE_CHECKLIST.md — product-level "done" rows RC-nn per docs/slice-schem
 
 ```text
 - Store page: <STORE_URL>
-- Reference pack: reference/<SLUG>/ (iphone/, ipad/, video/preview.mp4, video/frames/, icon-1024.png, manifest.json; models/ if present) — READ the screenshots and frames, not just the manifest
+- Reference pack: reference/<SLUG>/ (iphone/, ipad/, video/preview.mp4, video/frames/, video/probe/, icon-1024.png, manifest.json; models/ if present) — READ the screenshots and frames, not just the manifest
 - Research seed if present: reference/<SLUG>-brief/ (rewrite research briefs — do not rubber-stamp; preserve director source text in GAMEPLAY_NOTES.md / IDEA.md)
 - Allowed labels: OBSERVED, GIVEN (only supplied director statements), ASSUMPTION; SEED when the rip block is present
 ```
@@ -164,7 +177,7 @@ J. RELEASE_CHECKLIST.md — product-level "done" rows RC-nn per docs/slice-schem
 ### media (user-supplied folder, not a store crawl)
 
 ```text
-- Reference media: reference/<SLUG>/ (screenshots, video + video/frames/, GDD / notes, models/*.glb if present) — inspect the index shortlist, then extra media only for an identified evidence gap; user-authored GDD/notes are director statements and must be read fully; rip research prose follows SEED rules
+- Reference media: reference/<SLUG>/ (screenshots, video + video/frames/ + video/probe/, GDD / notes, models/*.glb if present) — inspect the index shortlist, then extra media only for an identified evidence gap; user-authored GDD/notes are director statements and must be read fully; rip research prose follows SEED rules
 - Director notes (if any): reference/<SLUG>-brief/IDEA.md
 - Allowed labels: OBSERVED, GIVEN, ASSUMPTION; SEED when the rip block is present
 ```

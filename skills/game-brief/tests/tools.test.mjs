@@ -234,7 +234,7 @@ test('contract validator catches missing root contracts', () => {
 test('prepare renders every prompt block and refuses unfilled placeholders',async()=>{
   const { promptBlocks, fill, prepare } = await import('../scripts/prepare.mjs');
   const blocks = promptBlocks(fs.readFileSync(new URL('../reference/brief-prompt.md', import.meta.url),'utf8'));
-  for (const k of ['main','SOURCE_BLOCK:store','SOURCE_BLOCK:media','SOURCE_BLOCK:idea','RIP_BLOCK','RIP_PORT_BLOCK','GAMEPLAY_NOTES_BLOCK']) assert.ok(blocks[k], k);
+  for (const k of ['main','SOURCE_BLOCK:store','SOURCE_BLOCK:media','SOURCE_BLOCK:idea','RIP_BLOCK','RIP_PORT_BLOCK','GAMEPLAY_NOTES_BLOCK','VIDEO_BLOCK']) assert.ok(blocks[k], k);
   assert.throws(()=>fill('a <SLUG>\n<RIP_BLOCK>',{RIP_BLOCK:null},{}),/SLUG/);
   assert.equal(fill('a <SLUG>\n<RIP_BLOCK>',{},{SLUG:'x'}),'a x');
   const p=fs.mkdtempSync(path.join(os.tmpdir(),'gb-prep-'));
@@ -246,4 +246,25 @@ test('prepare renders every prompt block and refuses unfilled placeholders',asyn
   assert.match(prompt,new RegExp(r.runId)); assert.doesNotMatch(prompt,/<[A-Z][A-Z_]+>/);
   for (const f of ['docs/slice-schema.md','docs/brief-workflow.md','docs/brief-input-index.json']) assert.ok(fs.existsSync(path.join(p,f)),f);
   assert.equal(prepare(fs.realpathSync(p),{}).runId,r.runId);   // rerun resumes, never resets
+});
+test('a video in the reference folder is indexed, warned until probed, and gets the video block',async()=>{
+  const { prepare } = await import('../scripts/prepare.mjs');
+  const p=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'gb-video-')));
+  put(p,'AGENT_NOTES.md','---\nbootstrap:\n  creator_version: "3.8.8"\nbrief:\n  source: media\n  reference_path: reference/demo/\n  orientation: portrait 720x1280\n---\n');
+  put(p,'reference/demo/01.jpg','x');
+  put(p,'reference/demo/video/gameplay.mp4','x');
+  put(p,'reference/demo/video/gameplay.source.json',JSON.stringify({url:'https://youtu.be/abc'}));
+  let r=indexSource(p,{'dry-run':true});
+  assert.deepEqual(r.index.videos.map(v=>[v.path,v.sourceUrl,v.probe]),[['reference/demo/video/gameplay.mp4','https://youtu.be/abc',null]]);
+  assert.ok(r.index.warnings.some(w=>w.startsWith('Video not probed: reference/demo/video/gameplay.mp4')));
+  const probe='reference/demo/video/probe/gameplay';
+  for (const f of ['candidates.md','strips.md','overview/overview.md','track-F01/track.md']) put(p,`${probe}/${f}`,'# x\n');
+  fs.mkdirSync(path.join(p,probe,'track-F02'));   // a failed run with no track.md is not listed
+  r=indexSource(p,{'dry-run':true});
+  assert.equal(r.index.videos[0].probe,probe); assert.deepEqual(r.index.videos[0].tracks,[`${probe}/track-F01/track.md`]);
+  assert.ok(!r.index.warnings.some(w=>w.startsWith('Video not probed')));
+  const out=prepare(p,{}), prompt=fs.readFileSync(path.join(p,out.promptPath),'utf8');
+  assert.match(prompt,/reference\/demo\/video\/gameplay\.mp4 \(from https:\/\/youtu\.be\/abc\): reference\/demo\/video\/probe\/gameplay\/ \(overview\/, candidates\.md, strips\/, 1 track run\(s\)\)/);
+  assert.match(prompt,/video-probe\.mjs track <video>/); assert.doesNotMatch(prompt,/<[A-Z][A-Z_]+>/);
+  assert.ok(fs.existsSync(path.join(p,'docs/video-evidence.md')));
 });

@@ -8,7 +8,8 @@ description: >-
   Orca. Works from any source: an App Store reference pack (store-game-clone, optionally
   with a merged unity-apk-rip pack and mandatory rip-port-analysis forensic maps for rip-backed
   ports), a user-supplied media
-  folder (screenshots / video / GDD / GLB), or a text-only idea, with optional director
+  folder (screenshots / video / GDD / GLB), a gameplay video file or URL (measured with
+  video-probe), or a text-only idea, with optional director
   gameplay notes and amendments to existing contracts.
   Sits between store-game-clone / new-cocos-game and game-producer. Use when the
   user says "game-brief", "game brief", "fable brief", "brief sâu", "contracts",
@@ -44,13 +45,14 @@ passed. This skill never creates or opens a project.
 | Handoff file | `<project>/AGENT_NOTES.md` — this skill owns yaml `brief:` + `## Notes — game-brief` |
 | Launch prep | `scripts/prepare.mjs` — deps, docs copies, index, progress run, filled prompt (`docs/brief-author-prompt.md`), launch command |
 | Optimization tools | `scripts/index-source.mjs`, `scripts/brief-progress.mjs`, `scripts/validate-contracts.mjs`, `scripts/validate-gameplay-coverage.mjs` |
+| Video probe | `scripts/video-probe.mjs` (fetch / signals / overview / strips / zoom / track) — measured timing for gameplay video; how and when in [reference/video-evidence.md](reference/video-evidence.md) |
 
 ## Progress checklist
 
 ```
 Game Brief:
-- [ ] 0. Intake (project, slug, source mode, rip pack present?, gameplay notes?, orientation/design res, agent override?)
-- [ ] 1. Seed source (media → reference/<slug>/; idea → reference/<slug>-brief/IDEA.md; rip → already under reference/<slug>/rip/)
+- [ ] 0. Intake (project, slug, source mode, rip pack present?, gameplay notes?, video file/URL?, orientation/design res, agent override?)
+- [ ] 1. Seed source (media → reference/<slug>/; idea → reference/<slug>-brief/IDEA.md; rip → already under reference/<slug>/rip/; video → fetch + probe into reference/<slug>/video/)
 - [ ] 1b. Any rip pack/project → run or reuse reviewed rip-port-analysis before brief launch
 - [ ] 2. Fill AGENT_NOTES.md brief: block (add block/section if skeleton is old)
 - [ ] 2b. `node ~/.agents/skills/game-brief/scripts/prepare.mjs --project "$PROJECT"` → exit 0, keep `runId`, `promptPath`, `launch`
@@ -94,6 +96,12 @@ Ask only what's missing:
    Read [reference/gameplay-notes.md](reference/gameplay-notes.md) when present; it owns
    capture, evidence precedence, coverage, and late amendments. Absence requires no question.
    Existing contracts + new notes → use its late-notes flow before revising affected files.
+2e. **Gameplay video** (optional, every mode; announce, never ask) — a video file in the media
+   folder, the store trailer `reference/<slug>/video/preview.mp4`, or a video URL in the
+   request (YouTube, TikTok, a direct .mp4). Any video gets probed in Step 1 with
+   [reference/video-evidence.md](reference/video-evidence.md); it is the only source of measured
+   feel timing. A video is media: `idea` + video becomes `media`, with the idea text kept as
+   IDEA.md (GIVEN). Record each URL for the Step 5 notes.
 3. **Orientation / design res** — default from media aspect if any; else portrait `720×1280`. Landscape → `1280×720`.
 4. **Engine line** — from `AGENT_NOTES.md` `bootstrap:`: `Creator <creator_version>` (3.8 templates) or `COCOS 4 CLI <engine_version>` (cc4).
 5. **Brief agent** — resolve in this order: explicit user/caller launch spec → existing
@@ -150,8 +158,12 @@ PROJECT=/Users/wikz/Works/games/CocosCreator/cc-<slug>
   mkdir -p "$PROJECT/reference/<slug>"
   rsync -a --exclude '.DS_Store' <user media folder>/ "$PROJECT/reference/<slug>/"
   ```
-  If a video is present and no frames exist, extract ~10 frames:
-  `ffmpeg -i <video> -vf fps=1/3 "$PROJECT/reference/<slug>/video/frames/t%02d.jpg"` (skip if ffmpeg missing; note it).
+- Video (every mode that has one, intake 2e): follow the Coordinator steps of
+  [reference/video-evidence.md](reference/video-evidence.md). Fetch a URL into
+  `reference/<slug>/video/`, extract ~12 frames when `video/frames/` is empty, then run
+  `signals`, `overview` and `strips` per video into `reference/<slug>/video/probe/<name>/`.
+  Leave `track` to the brief author. Missing ffmpeg or yt-dlp: say so, keep the frames you
+  have, and expect the `Video not probed` warning from prepare (feel timing becomes ASSUMPTION).
 - `idea`: write the user's text **verbatim** to `$PROJECT/reference/<slug>-brief/IDEA.md`
   (heading `# IDEA — <slug>`, then the text). The brief author reads this file, not the chat.
 
@@ -161,7 +173,8 @@ Verify the notes source and GP index are readable before launch. Keep IDEA.md as
 idea; gameplay amendments belong in GAMEPLAY_NOTES.md without duplicating the whole idea.
 
 Read at least the key images / frames yourself with the Read tool before Step 3 so you can
-judge the brief author's OBSERVED claims at the gate. With a rip pack also read `rip/README.md`,
+judge the brief author's OBSERVED claims at the gate; with a video also `overview.md` and one
+overview sheet per video. With a rip pack also read `rip/README.md`,
 `rip/briefs/GAME_BRIEF.md`, `rip/briefs/GAMEPLAY_BRIEF.md`, and the P0 tables of
 `rip/IMAGES_INGAME_GUIDE.md` + `rip/MESHES_GUIDE.md`, and open 2–3 P0 PNGs (named de-atlased
 sprites from Gameplay/HUD families — do not expect `sactx-*` pages under `rip/images_ingame/`;
@@ -224,9 +237,11 @@ node ~/.agents/skills/game-brief/scripts/prepare.mjs --project "$PROJECT"   # ad
 ```
 
 It installs the pinned deps if missing, copies `docs/slice-schema.md`, `docs/brief-workflow.md`
-(+ `docs/gameplay-notes-contract.md` / `docs/rip-port-contract.md` when needed), runs
-`index-source`, creates or resumes the progress run, picks the source/rip/port/notes blocks from
-AGENT_NOTES, and writes `docs/brief-author-prompt.md`. It exits nonzero on a missing input or
+(+ `docs/gameplay-notes-contract.md` / `docs/rip-port-contract.md` / `docs/video-evidence.md`
+when needed), runs `index-source`, creates or resumes the progress run, picks the
+source/rip/port/notes/video blocks from AGENT_NOTES and the index, and writes
+`docs/brief-author-prompt.md`. The video block lists each video with its probe folder and lets
+the author run `video-probe track` for S01 feel rows. It exits nonzero on a missing input or
 any unfilled `<PLACEHOLDER>` — fix the named AGENT_NOTES key and rerun; never edit the prompt to
 silence it. `--dry-run` prints the prompt without writing. The JSON gives `runId` and `launch`.
 For late amendments (`existing_contracts` warning) append the affected paths/release state and
@@ -278,6 +293,10 @@ grep -c 'OBSERVED' EXPECT_GAMEPLAY_VISUAL.md HOW_TO.md slices/*.md   # idea mode
 Also confirm:
 
 - `EXPECT_GAMEPLAY_VISUAL.md` has the **Game feel / VFX table**; `ASSET_MANIFEST.md` lists VFX assets as P0.
+- With a video: feel rows for moving objects cite a `video/probe/<name>/track-*/track.md` as
+  OBSERVED, or say why not (ASSUMPTION). Open one cited `track.md` and its `track.jpg`: the
+  numbers match the row and the followed object is the one the row names. Squash/scale/tilt
+  under ~8 % is not OBSERVED.
 - `EXPECT_GAMEPLAY_VISUAL.md` satisfies [S01 visual target and review contract](reference/slice-schema.md#s01-visual-target-and-review-contract):
   an exact screenshot/frame with crop/dimensions and region annotations, or a visually inspected
   `docs/mockups/S01-ingame.svg` when no suitable image exists. Open the target yourself; text alone
@@ -336,6 +355,7 @@ grep -c 'SEED (' GAME_BRIEF.md HOW_TO.md                                        
 | No evidence/contract change for 8 minutes after an acknowledged nudge | Check the tool/job or provider state; transfer recovery only after confirming the previous writer and background jobs stopped. Reuse its index and drafts; apply the same gates. A STOP message alone is not cessation proof. |
 | `CONTEXT.md` / ADR missing | Nudge the current author; after verified ownership transfer, recovery may write minimal versions (domain terms + `_Avoid_`; engine, TS strict, web-mobile, design res, physics only if needed). |
 | `OBSERVED` in idea mode | Tell the brief author to relabel to `GIVEN` / `ASSUMPTION` |
+| Video present but S01 feel timing is guessed, or a cited `track.md` does not match its row | Nudge the brief author with the row ids and docs/video-evidence.md § Brief author |
 | Gameplay notes missing coverage, mislabelled as OBSERVED, or contradicted by slice acceptance | Nudge the brief author with the GP IDs and conflicting rows; recheck before handoff |
 | Slice missing a PLAN field / RC rows uncovered / parallel pair overlaps | Nudge the brief author with the exact ids; do not patch slices yourself (they are the brief author's contract) |
 
@@ -346,6 +366,8 @@ grep -c 'SEED (' GAME_BRIEF.md HOW_TO.md                                        
   GIVEN vs ASSUMED), media that could not be read, files written here instead of by the brief author; with a
   rip pack: how many `import` vs `generate` rows, and which rip-brief systems were kept out of v1.
   With port analysis include actual analyst, coverage, manifest hash and unresolved core rules.
+  With a video: the videos probed (with source URLs), the track runs and which feel rows they
+  measured, and any video left unprobed.
 - With gameplay notes, include their path and coverage counts by decision; for amendments,
   report changed GP IDs/files/slices and required fresh review scenarios for the current owner.
 - Report the file list, the brief author's v1 summary, the slice table from `MILESTONES.md`
