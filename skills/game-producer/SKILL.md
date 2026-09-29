@@ -129,7 +129,7 @@ Producer:
    handles), never re-dispatch. Correct the yaml to match, append one line to
    `.cursor/evidence/tasks/T-<Sxx>/producer-log.md` with the evidence you used, then continue the
    loop. Never re-run the director gate for decisions already in the `policy` line.
-   Optional memory (skip unless the launcher exists and prints `inject: true`): after the git
+   Optional memory (run only if the launcher exists; use a pack only on `inject: true`): after the git
    check, at most one bounded `M=~/.orca-memory/bin/orca-memory; [ -x "$M" ] && "$M" hook
    recover --task T-<Sxx> --query "<symptom in English>"`; read the `pack` path it prints.
    Git and live Orca state stay the truth; memory never justifies a re-dispatch or a lock change.
@@ -189,7 +189,7 @@ the flagged ones `planned`, and say so.
 
 ## Step 2c — lanes
 
-Optional memory (skip unless the launcher exists and prints `inject: true`). Before spawning
+Optional memory (run only if the launcher exists; use a pack only on `inject: true`). Before spawning
 either lane, from the main checkout run
 `M=~/.orca-memory/bin/orca-memory; [ -x "$M" ] && "$M" hook plan --task T-<Sxx> --query-file <SLICE_FILE> --out <main task evidence dir>/memory/plan`
 (the absolute task evidence dir for T-<Sxx> in the main checkout). On `inject: true`, fill

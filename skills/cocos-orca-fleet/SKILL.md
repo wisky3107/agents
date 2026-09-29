@@ -343,7 +343,7 @@ for a second Enter, so Orca's dispatch stalls with `agent_prompt_stalled`. For 3
 non-goals, verification, evidence files to write, "assert `pwd` + `git status` before edits",
 and the lifecycle instruction to report with `worker_done` / `ask` / `escalation`.
 
-Optional memory (skip unless the launcher exists and prints `inject: true`). Set
+Optional memory (run only if the launcher exists; use a pack only on `inject: true`). Set
 `M=~/.orca-memory/bin/orca-memory` and run each command below as `[ -x "$M" ] && "$M" hook ...`
 from the worktree. Any status other than `inject: true`, or no launcher, means no memory line,
 and the specs go out exactly as before. The mode lives in the operator config only.
