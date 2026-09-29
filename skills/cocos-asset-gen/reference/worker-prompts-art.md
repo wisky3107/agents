@@ -2,7 +2,8 @@
 
 Copy the block for each art role into `.cursor/evidence/tasks/<TASK_ID>/specs/<role>.md`, fill
 the `<...>` placeholders from `docs/plans/<feature>.md`, prepend the fleet's shared header
-(`cocos-orca-fleet/reference/worker-prompts.md`), then pass the content to
+(`cocos-orca-fleet/reference/worker-prompts.md`), run
+`python3 ~/.agents/skills/orca-agent-fleet/scripts/clean_spec.py <file>`, then pass the content to
 `orca orchestration task-create --spec`.
 
 Shared art rules — every art Task owns only its allowlisted paths under `PLAN.art_paths`,

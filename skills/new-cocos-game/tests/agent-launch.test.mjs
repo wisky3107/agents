@@ -77,3 +77,13 @@ test('non-native agent boots before task; native boot-only session stays ready',
   assert.deepEqual(calls.slice(1), [['send', 'boot'], ['send', 'task']]);
   assert.equal((await c.createAgentSession({ projectPath: '/project', agent: 'codex' })).ready, true);
 });
+test('prompt send strips zero-width characters that block Claude submit', () => {
+  const calls = [];
+  const context = vm.createContext({
+    console: { log() {}, error() {} },
+    orcaJson: (_bin, args) => { calls.push(args); return { status: 0, parsed: { ok: true } }; },
+  });
+  vm.runInContext(source.slice(source.indexOf('const INVISIBLE_CHARS'), source.indexOf('async function httpProbe(')), context);
+  context.sendTerminalText('orca', 'term_test', 'open .c\u200dursor/ \u200bnow\ufeff');
+  assert.equal(calls[0][calls[0].indexOf('--text') + 1], 'open .cursor/ now');
+});

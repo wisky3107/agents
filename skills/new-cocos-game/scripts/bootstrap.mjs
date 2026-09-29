@@ -659,7 +659,17 @@ function waitForTuiIdle(orcaBin, handle, timeoutMs = 90000) {
   ]);
 }
 
+// Claude Code strips these on Enter and then waits for a second Enter, so a prompt carrying
+// one is pasted but never submitted. Same set as orca-agent-fleet/scripts/clean_spec.py.
+const INVISIBLE_CHARS = /[\u00ad\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
+
 function sendTerminalText(orcaBin, handle, text) {
+  const clean = text.replace(INVISIBLE_CHARS, '');
+  if (clean.length !== text.length) {
+    console.error(
+      `new-cocos-game: warning: stripped ${text.length - clean.length} invisible char(s) from the prompt`,
+    );
+  }
   console.log(`→ orca terminal send --terminal ${handle}`);
   return orcaJson(orcaBin, [
     'terminal',
@@ -667,7 +677,7 @@ function sendTerminalText(orcaBin, handle, text) {
     '--terminal',
     handle,
     '--text',
-    text,
+    clean,
     '--enter',
   ]);
 }

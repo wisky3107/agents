@@ -335,7 +335,10 @@ pointer PLAN itself only carries locks:
 Write each worker spec to `evidence/specs/<role>.md` from
 [reference/worker-prompts.md](reference/worker-prompts.md) (plan / scan / implement / integrate /
 review / fix) and `../cocos-asset-gen/reference/worker-prompts-art.md` (every `art-*` role),
-then pass its content to `task-create --spec`. For 3D, use the `art-manifest` / `art-concept` /
+clean it with `python3 ~/.agents/skills/orca-agent-fleet/scripts/clean_spec.py <file>`, then pass
+its content to `task-create --spec`. Cleaning strips invisible Unicode, which coordinators leak
+(typically a ZWJ inside the word `cursor` in `.cursor/`). One such character makes Claude wait
+for a second Enter, so Orca's dispatch stalls with `agent_prompt_stalled`. For 3D, use the `art-manifest` / `art-concept` /
 `art-mesh` sections (not a single monolithic art Task). Every spec carries: PLAN path, evidence root, owned paths,
 non-goals, verification, evidence files to write, "assert `pwd` + `git status` before edits",
 and the lifecycle instruction to report with `worker_done` / `ask` / `escalation`.
@@ -430,6 +433,12 @@ orca orchestration worker-start --task <task_id> --terminal "$H" --worktree id:<
 Trust dialogs are pre-seeded by `setup-orca-worktree.sh` (Cursor `.workspace-trusted`, Claude
 `hasTrustDialogAccepted` + `enabledMcpjsonServers`, Codex `trust_level`). If `tui-idle` never
 arrives on recipe B, `orca terminal read` the handle — do not attach blind.
+
+`worker-start` fails with `agent_prompt_stalled` (stage `dispatch_input`, prompt pasted but not
+sent) → run `clean_spec.py --check` on that spec file before any retry. If it finds characters,
+retrying on another provider, model, or terminal stalls again. Clean the file and create a
+replacement Task with the same deps. Recreate any Tasks that depend on the old one. Record the
+old Task as an administrative failure (S03 review burned 5 Dispatches on one ZWJ).
 
 Terminals you created with `terminal create` are **not** closed by `worker-release` (it only
 closes worker-start-owned terminals). After such a Dispatch settles, close it yourself with

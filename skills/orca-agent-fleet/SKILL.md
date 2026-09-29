@@ -106,6 +106,8 @@ Creation flags (`--name`, `--repo`, `--base-branch`, `--setup`) are rejected for
 - Instruction to assert `pwd` and `git status` before edits.
 - Instruction to use Orca structured ask, escalation, heartbeat, and `worker_done` messages.
 
+Clean every spec before `task-create`. Write it to a file, run `python3 <skill-dir>/scripts/clean_spec.py <file>` to strip invisible Unicode in place, then pass `--spec "$(cat <file>)"`. Claude Code strips zero-width characters (ZWJ, ZWSP, BOM, …) on Enter and then waits for a second Enter, but Orca presses Enter only once, so such a Dispatch fails with `agent_prompt_stalled`. Coordinator models leak these characters into specs they write themselves, most often as a ZWJ inside the word `cursor`, so a spec you wrote needs cleaning too.
+
 Do not use generic background shells as untracked workers. Preserve exact Run, Task, Dispatch, terminal, provider, model, and worktree identity.
 
 ## Supervise the Lifecycle
@@ -145,14 +147,15 @@ Use a quality-first model for consequential review according to `references/mode
 
 ## Recover Transparently
 
-On wrong cwd, truncated prompt, provider error, stale Dispatch, ownership conflict, or terminal failure:
+On wrong cwd, truncated or stalled prompt, provider error, stale Dispatch, ownership conflict, or terminal failure:
 
 1. Preserve evidence and inspect current Orca state.
 2. Follow the exact version-matched recovery receipt; `worker-start` exits non-zero with `stage`, `residualResources`, and recovery commands on a failed or unknown outcome.
-3. Prefer a fresh bounded context over repeated long follow-ups. Replace a proven-dead worker with `worker-start --retry-of <dispatch_id>`, repeating the intended placement and `--agent`/`--terminal` — retry does not inherit it.
-4. Use `worker-abandon` when the process state is unproven and `worker-stop` only when stopping that exact terminal is intended. Never release or close a worker merely because it is idle or timed out; record a deliberate keep-alive with `worker-retain`.
-5. Never silently replace specialist or reviewer work with coordinator work.
-6. Report partial orchestration honestly.
+3. On `agent_prompt_stalled` (stage `dispatch_input`), run `python3 <skill-dir>/scripts/clean_spec.py --check <spec-file>` before any retry. If it reports characters, every retry stalls again whatever the provider, model, or terminal, and `task-update` cannot change a spec. Clean the file, create a replacement Task from it with the same `--deps`, and record the old Task as an administrative failure. Any Tasks that depend on the old Task must be recreated as well.
+4. Prefer a fresh bounded context over repeated long follow-ups. Replace a proven-dead worker with `worker-start --retry-of <dispatch_id>`, repeating the intended placement and `--agent`/`--terminal` — retry does not inherit it.
+5. Use `worker-abandon` when the process state is unproven and `worker-stop` only when stopping that exact terminal is intended. Never release or close a worker merely because it is idle or timed out; record a deliberate keep-alive with `worker-retain`.
+6. Never silently replace specialist or reviewer work with coordinator work.
+7. Report partial orchestration honestly.
 
 ## Completion Audit
 
@@ -173,3 +176,4 @@ Do not call the Run end-to-end successful when required implementation, verifica
 
 - `references/model-selection.md`: provider catalog, launch-time model ids and effort ranges, default models, and reasoning-effort rules for Orca roles.
 - `scripts/list_providers.py`: accepted-provider inventory, detect-binary presence, eligibility, per-provider model catalogs, and fleet defaults.
+- `scripts/clean_spec.py`: strips invisible Unicode from spec files in place before `task-create`; `--check` only reports it, for stall diagnosis.

@@ -1,7 +1,9 @@
 # Worker dispatch specs
 
 Copy the block for each role into `.cursor/evidence/tasks/<TASK_ID>/specs/<role>.md`, fill the
-`<...>` placeholders from `docs/plans/<feature>.md`, then pass the file content to
+`<...>` placeholders from `docs/plans/<feature>.md`, run
+`python3 ~/.agents/skills/orca-agent-fleet/scripts/clean_spec.py <file>` (strips invisible
+Unicode that stalls Claude's submit), then pass the file content to
 `orca orchestration task-create --spec`. Orca injects the lifecycle preamble (`worker_done`,
 `ask`, `heartbeat`, `escalation`) on dispatch; do not paraphrase it here.
 

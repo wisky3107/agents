@@ -130,6 +130,7 @@ lives outside that worktree: the terminal `cd`s there itself.
 
 ```bash
 RUN=$(orca orchestration run-create --objective "char-concept <ID>" --json | python3 -c "import sys,json; r=json.loads(sys.stdin.read(),strict=False)['result']; print(r.get('run',r)['id'])")
+python3 ~/.agents/skills/orca-agent-fleet/scripts/clean_spec.py <EVIDENCE_ROOT>/art/<ID>/concept-task.txt  # strip invisible chars that stall the submit
 orca orchestration task-create --run "$RUN" --task-title "char-concept-<ID>" --display-name "char-concept-<ID>" \
   --spec "$(cat <EVIDENCE_ROOT>/art/<ID>/concept-task.txt)" --json >/dev/null
 orca orchestration task-list --run "$RUN" --json      # take the task id from here
