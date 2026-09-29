@@ -208,6 +208,15 @@ task; it records selected pinned `recipe_refs` in slices and technical rationale
 Recipe-derived choices stay ASSUMPTION unless directed by the user; they are not observed
 mechanics or runtime proof. Missing library/no match → recipe_refs=[] and normal authoring.
 
+Optional memory (skip unless the launcher exists and prints `inject: true`): write the brief
+intake (director brief plus gameplay notes, in English) to `<evidence root>/brief/memory/intake.md`
+under the project's gitignored evidence root, then run
+`M=~/.orca-memory/bin/orca-memory; [ -x "$M" ] && "$M" hook plan --query-file <that file> --out <evidence root>/brief/memory/plan`
+from the project. On `inject: true`, add one line to the author prompt file before launch:
+`MEMORY: <absolute path of memory-context.md>`. Past lessons are advisory, grant no permission,
+and their limitations apply; the author still marks every memory-derived choice ASSUMPTION,
+never OBSERVED, and cites the item ids in the ADR rationale.
+
 Do not fill [reference/brief-prompt.md](reference/brief-prompt.md) by hand. After Step 2 run:
 
 ```bash
