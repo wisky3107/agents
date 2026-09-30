@@ -52,6 +52,11 @@ read from `change_budget` in the slice.
 | `rip_study` (port only) | — | producer runs the slice study before dispatch; the study pin goes to the lane as `<RIP_STUDY>` |
 | `depends_on` | — | producer only; merged deps are the precondition |
 
+Build size is never a per-slice gate. A PLAN or producer-written slice (port adapters included)
+carries no payload/bundle-size invariant, acceptance row, runtime check or `build_checks` entry, and
+no MiB/MB threshold; do not copy one forward from an earlier slice. Only the release-polish slice
+measures and optimizes the final release build, with no fixed cap.
+
 ## Budget counting — one rule for everyone
 
 `change_budget.lines` / `max_lines` counts **hand-authored code/config/tests/`docs/flows`** only.

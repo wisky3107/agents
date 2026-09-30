@@ -334,7 +334,7 @@ the S01 rows as regression checks. Do not defer initial S01 compliance to releas
 | RC-10 | feel | Every S01 interaction's EXPECT feel/VFX row implemented and reviewed | S01 | reviewer tick-list |
 | RC-11 | audio | SFX on every interaction + 1 music loop; unlock after first gesture (iOS) | S05 | play on iOS Safari |
 | RC-12 | perf | fps ≥ 55 on a mid device across 3 min; no per-frame GC spikes (pools for spawned objects) | S08 | profiler / smoke fps probe |
-| RC-13 | perf | Bundle ≤ budget; textures atlased; no leak after restart ×20 (node count stable) | S08 | build size, node count probe |
+| RC-13 | perf | Final release build size measured and optimized once (textures atlased/compressed; no fixed size cap); no leak after restart ×20 (node count stable) | S08 | build size before/after, node count probe |
 | RC-14 | quality | Zero console.error/warn during the full playtest script; tsc strict + lint clean | S08 | smoke-test |
 | RC-15 | quality | No debug code, cheats, logs, test scenes | S08 | grep |
 | RC-16 | branding | Icon 1024 + favicon + apple-touch-icon; title / meta / OG image; PWA manifest (optional) | S08 | view source |
@@ -358,5 +358,11 @@ cold load → play → fail → restart ×3 → pause/resume (tab switch) → ro
 ```
 
 Its `release_items` = every RC row not closed by an earlier slice; its `runtime_checks` include
-`RELEASE_CHECKLIST.md all rows PASS`, fps floor, bundle-size budget, localStorage schema check.
+`RELEASE_CHECKLIST.md all rows PASS`, fps floor, one measure-and-optimize pass on the final release
+build (no numeric size cap), localStorage schema check.
+
+**Build size is never a cap.** No contract (HOW_TO, RELEASE_CHECKLIST, slice) sets a MiB/MB
+threshold, and no slice other than release-polish carries a size invariant, acceptance row,
+runtime check or `build_checks` entry. Mid-release slices never trim art or levels to save bytes;
+the final build is optimized once, here.
 After APPROVED the producer runs the `ship` skill per `release.deploy`.

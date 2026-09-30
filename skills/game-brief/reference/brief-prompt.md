@@ -81,7 +81,7 @@ I. slices/S<nn>-<name>.md — one file per slice with the full yaml front-matter
    Every later slice that adds a screen (menu, settings, result, shop, onboarding overlay) gets its own
    visual target — an existing reference image or `docs/mockups/S<nn>-<screen>.svg` you open and inspect —
    linked in the slice or an EXPECT line naming its id, with layout metrics and PASS/FAIL checks.
-J. RELEASE_CHECKLIST.md — product-level "done" rows RC-nn per docs/slice-schema.md (lifecycle, layout, input, ux, feel, audio, perf, quality, branding, assets, ship), each with closed_by = a slice id. Union of all slices' release_items must cover every row.
+J. RELEASE_CHECKLIST.md — product-level "done" rows RC-nn per docs/slice-schema.md (lifecycle, layout, input, ux, feel, audio, perf, quality, branding, assets, ship), each with closed_by = a slice id. Union of all slices' release_items must cover every row. Build size has no numeric cap: never write a MiB/MB threshold in any contract, and never put a size invariant/acceptance/build check in a slice other than release-polish, which measures and optimizes the final build once.
    Assign initial in-game layout, input, fail/restart, feel, asset completeness, and visual fidelity
    checks to S01; later slices add coverage for new screens, and release-polish reruns all checks.
 
