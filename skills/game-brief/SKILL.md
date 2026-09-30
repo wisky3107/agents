@@ -295,8 +295,9 @@ Also confirm:
 - `EXPECT_GAMEPLAY_VISUAL.md` has the **Game feel / VFX table**; `ASSET_MANIFEST.md` lists VFX assets as P0.
 - With a video: feel rows for moving objects cite a `video/probe/<name>/track-*/track.md` as
   OBSERVED, or say why not (ASSUMPTION). Open one cited `track.md` and its `track.jpg`: the
-  numbers match the row and the followed object is the one the row names. Squash/scale/tilt
-  under ~8 % is not OBSERVED.
+  numbers match the row and the followed object is the one the row names. Squash and stretch
+  are OBSERVED only from a cited `shape.md` (its `shape.jpg` mask covers the object); tilt is
+  not OBSERVED.
 - `EXPECT_GAMEPLAY_VISUAL.md` satisfies [S01 visual target and review contract](reference/slice-schema.md#s01-visual-target-and-review-contract):
   an exact screenshot/frame with crop/dimensions and region annotations, or a visually inspected
   `docs/mockups/S01-ingame.svg` when no suitable image exists. Open the target yourself; text alone

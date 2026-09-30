@@ -3,7 +3,8 @@ name: gameplay-video
 description: >-
   Gameplay video evidence: turn a game video file or URL into a feature list, animation
   phases and measured game-feel numbers (duration, easing, distance, speed, arc, camera lag,
-  knock-back) with the ffmpeg-based video-probe tool instead of a model's guess. Use when the
+  knock-back, squash and stretch) with the ffmpeg-based video-probe tool instead of a model's
+  guess. Use when the
   user wants to watch, analyze or study a gameplay video, trailer or YouTube/TikTok link;
   extract game feel, animation, VFX or tween timing from it; or list the features and core
   loop it shows ("xem video", "phân tích video game", "trích xuất game feel / anim / feature
@@ -29,6 +30,7 @@ needs yt-dlp.
 | Feature | screens, modes, core loop, HUD, progression, what happens when | `overview` | contact sheets |
 | Anim | the phases of one moment (anticipation, motion, impact, VFX, UI pop), their order and length | `strips`, `zoom` | strips, zoom images |
 | Feel | duration, easing, distance, speed, arc, camera lag and knock-back of one moving object | `track` | `track.md`, `track.jpg` once |
+| Shape (optional) | squash and stretch, the object's full size, when it is fully under an edge | `shape` on a track | `shape.md`, `shape.jpg` once |
 
 A request for all three runs the feature pass first: it shows which moments carry the feel.
 
@@ -57,6 +59,14 @@ In zsh, keep one path per variable and spell every flag out.
    `track.jpg` once to confirm the followed object. On a WARNING, rerun once with a later `--at`
    or a tighter box. About four runs, unless the user wants more. Done when every feel moment
    has numbers from a `track.md`, or is labeled ASSUMPTION with the reason.
+   - When squash and stretch, the object's full size or its exit timing matter, run
+     `node $P shape $D/track-<moment-id>` on that track, then read `shape.md` and open `shape.jpg`
+     once: the magenta mask must cover the whole object. For an object drawn in layers, or on a
+     `WARNING` in `shape.md`, add `--pos x,y` on the part to follow and `--neg x,y` on the other
+     part. Its rest size comes from the frames before the move, so start that track a few frames
+     early. It takes 2–3 minutes per 3 s window.
+   - `shape` needs `node $P sam-setup` once (about 800 MB). Run it only with the user's OK;
+     without it, label squash and stretch ASSUMPTION.
 6. **Report** in the format below. Done when every row has a label.
 
 ## Output
@@ -67,21 +77,24 @@ One table per ask, one row per moment:
 |---|---|---|---|---|---|
 | feel-hop | 34.2–36.6 | token moves 9 tiles | hops tile to tile, camera follows | 9 hops × 0.266 s, sineOut, arc 0.54 tile, camera lag 0.21 s | OBSERVED (`probe/gameplay/track-feel-hop/track.md`) |
 
-When the asker builds the game, add the Cocos tween sketch from each `track.md` under the table;
-it is a starting point, not a contract.
+When the asker builds the game, add the Cocos tween sketch from each `track.md` (and the
+`scaleAt` keys from a `shape.md`) under the table; it is a starting point, not a contract.
 
 ## Labels
 
-- `OBSERVED (<path>)`: a file you opened, or a number from `track.md` or from the motion span in
-  `strips.md` / a zoom `.json`.
+- `OBSERVED (<path>)`: a file you opened, or a number from `track.md`, `shape.md` or the motion
+  span in `strips.md` / a zoom `.json`.
 - A candidate or overview time is OBSERVED only after its strip, sheet or frame was opened.
-- `ASSUMPTION`: squash, scale and tilt under about 8 % (measuring noise), any timing a
-  video-watching model reported, and anything not measured.
+- `ASSUMPTION`: squash and stretch without a `shape.md` (`track` cannot see them under about
+  8 %), a change under the floor `shape.md` states, tilt, any timing a video-watching model
+  reported, and anything not measured.
+- On an object that stretches, `track.md`'s arc rides its top and is an upper bound; take the
+  arc of the feet from `shape.md` when it ran.
 - Confirm a count (hops, moves, hits) from frames, not from audio onsets.
 - A user drag is not a game tween: its easing and speed belong to the player's finger.
 
 ## Budget
 
 Each opened image costs about w×h/750 tokens: an overview sheet 0.6–1.4k, a strip 0.4–1.1k, a
-`track.jpg` about 1.4k. All three asks on a 10-minute video stay around 15k. Open a sheet before
+`track.jpg` about 1.4k, a `shape.jpg` about 1.2k. All three asks on a 10-minute video stay around 15k. Open a sheet before
 its strips, and only the strips of moments you will report.

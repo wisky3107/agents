@@ -9,7 +9,9 @@
  *   node video-probe.mjs overview <video> --out <dir> [--step 5]
  *   node video-probe.mjs track    <video> --at <sec> --box x0,y0,x1,y1 --out <dir> [--dur 3] [--band 0.15,0.72]
  *                                 [--mode auto|hop|move] [--cell <px>] [--react x0,y0,x1,y1]
- *   every command but fetch: [--crop auto | x,y,w,h]  (signals saves the crop; strips reuses it)
+ *   node video-probe.mjs shape    <track-dir> [--pos x,y;x,y] [--neg x,y] [--model tiny|small|base_plus] [--device cpu|mps]
+ *   node video-probe.mjs sam-setup [--model tiny|small|base_plus]
+ *   signals, strips, zoom, overview, track: [--crop auto | x,y,w,h]  (signals saves the crop; strips reuses it)
  *
  * fetch: a video URL (YouTube, TikTok, a store page, a direct .mp4 link) to <dir>/<id>.mp4 through yt-dlp, capped at
  *   --height, with url / title / duration in <dir>/<id>.source.json. An existing file is reused.
@@ -28,13 +30,21 @@
  *   of a move that ends out of sight. An object sliding under something is followed by its trailing part (clipped),
  *   and once nothing of it is left it is gone for the rest of the window, never swapped for a look-alike. --react
  *   follows a second box (a gate, a bumper) for its knock-back. Writes <dir>/track.{json,md,jpg}.
+ * shape (optional): segments the tracked object on every frame of a track window with SAM 2 (scripts/sam-shape.py) and
+ *   reads its whole outline: squash / stretch by hop phase, the arc of its feet, its full length along a move, and when an
+ *   exit is fully under. --pos / --neg prompt with points (fractions of the cropped frame) instead of the track box, for
+ *   an object drawn in layers. About 1-2 s per frame on a laptop CPU. Writes <track-dir>/shape.{json,md,jpg}.
+ * sam-setup: once, the Python env for shape under ~/.cache/gameplay-video (torch + SAM 2, ~650 MB, through uv or python3)
+ *   and the checkpoint (tiny 156 MB, small 184 MB, base_plus 324 MB).
  * --crop auto finds the sharp area of a phone recording pillarboxed in a landscape frame (blurred or black bars);
  *   boxes and regions are then fractions of the cropped frame.
- * Needs ffmpeg + ffprobe on PATH (fetch also yt-dlp); no npm dependencies.
+ * Needs ffmpeg + ffprobe on PATH (fetch also yt-dlp); no npm dependencies. shape needs the env from sam-setup.
  */
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const W = 64, TILE_W = 120, MAX_TILES = 40, GAP_S = 0.3, BASE_WIN_S = 6, FLOOR = 4;
 const die = m => { console.error(`video-probe: ${m}`); process.exit(1); };
@@ -1207,7 +1217,7 @@ async function track(video, o) {
   await saveSheet(cv, path.join(o.out, 'track.jpg'));
 
   const samples = all.map(s => ({ t: r3(s.t), status: s.status, pos: s.pos.map(r2), board: [r2(s.bx), r2(s.by)], cam: s.G.map(v => r2(-v)), ncc: r3(s.ncc), jump: r2(s.jump), lost: s.lost, rot: s.rot, scale: r3(s.scale), cam_scale: r3(s.cam_scale), cam_rot: r2(s.cam_rot), cam_J: s.J.flat().map(r3), aspect: r3(s.aspect) }));
-  fs.writeFileSync(path.join(o.out, 'track.json'), JSON.stringify({ video: path.resolve(video), window: [r3(a), r3(b)], box, spec, detail, folded, samples, crops: sel.map(k => r3(all[k].t)) }, null, 1) + '\n');
+  fs.writeFileSync(path.join(o.out, 'track.json'), JSON.stringify({ video: path.resolve(video), mode: 'hop', window: [r3(a), r3(b)], crop: info.crop || null, box, spec, detail, folded, samples, crops: sel.map(k => r3(all[k].t)) }, null, 1) + '\n');
   const p = fit.arc.startsWith('parabola@') ? Number(fit.arc.split('@')[1]) : null;
   const arcExpr = fit.arc === 'eased' ? `4 * easing.${fit.ease}(u) * (1 - easing.${fit.ease}(u))` : p === null ? 'Math.sin(Math.PI * u)' : Math.abs(p - 0.5) < 1e-6 ? '4 * u * (1 - u)' : `u < ${p} ? 1 - ((${p} - u) / ${p}) ** 2 : 1 - ((u - ${p}) / ${r3(1 - p)}) ** 2`;
   const gx = camBest.gain && camBest.gain.map(row => row.map(r2)), goal = gx ? `[${gx[0][0]} * dx + ${gx[0][1]} * dy, ${gx[1][0]} * dx + ${gx[1][1]} * dy] + start` : 'target + offset';
@@ -1254,8 +1264,46 @@ async function track(video, o) {
   return { ok: true, out: o.out, spec, frames: detail.frames, fit: detail.fit, camera: { model: camBest.model, target: camBest.target, param_s: r3(camBest.p), rms_px: r2(camBest.rms), travel_px: r2(travel) }, clock: { source: fit.clock, delta_s: r3(fit.delta), landings: L.length } };
 }
 
+// SAM 2 lives in its own Python env, made once by sam-setup; shape runs scripts/sam-shape.py in it on a track's window.
+const SAM_HOME = path.join(os.homedir(), '.cache', 'gameplay-video'), SAM_PY = path.join(SAM_HOME, 'sam2-venv', 'bin', 'python');
+const SAM_MODELS = ['tiny', 'small', 'base_plus'], SAM_REPO = 'git+https://github.com/facebookresearch/sam2.git@2b90b9f5ceec907a1c18123530e92e794ad901a4';
+const samModel = o => { const m = typeof o.model === 'string' ? o.model : 'tiny'; if (!SAM_MODELS.includes(m)) die(`--model is one of ${SAM_MODELS.join(', ')}`); return m; };
+const samCkpt = m => path.join(SAM_HOME, 'sam2', `sam2.1_hiera_${m}.pt`);
+async function samSetup(_, o) {
+  const m = samModel(o), run = (cmd, a, env = {}) => { const r = spawnSync(cmd, a, { stdio: ['ignore', 2, 2], env: { ...process.env, ...env } }); if (r.status !== 0) die(`${cmd} ${a.slice(0, 3).join(' ')} failed`); };
+  if (!fs.existsSync(SAM_PY)) {
+    fs.mkdirSync(SAM_HOME, { recursive: true });
+    const venv = path.dirname(path.dirname(SAM_PY)), pkgs = ['torch', 'torchvision', SAM_REPO], env = { SAM2_BUILD_CUDA: '0' };
+    if (spawnSync('uv', ['--version']).status === 0) {
+      run('uv', ['venv', venv, '--python', '3.12', '-q']);
+      run('uv', ['pip', 'install', '-q', '--python', SAM_PY, ...pkgs], env);
+    } else {
+      const py = ['python3.12', 'python3.11', 'python3'].find(p => spawnSync(p, ['-c', 'import sys; assert (3, 10) <= sys.version_info[:2] <= (3, 12)']).status === 0);
+      if (!py) die('sam-setup needs uv, or python 3.10-3.12 on PATH');
+      run(py, ['-m', 'venv', venv]);
+      run(SAM_PY, ['-m', 'pip', 'install', '-q', ...pkgs], env);
+    }
+  }
+  if (!fs.existsSync(samCkpt(m))) {
+    fs.mkdirSync(path.dirname(samCkpt(m)), { recursive: true });
+    run('curl', ['-fL', '--retry', '3', '-o', `${samCkpt(m)}.part`, `https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_${m}.pt`]);
+    fs.renameSync(`${samCkpt(m)}.part`, samCkpt(m));
+  }
+  run(SAM_PY, ['-c', 'import sam2, torch']);
+  return { ok: true, python: SAM_PY, checkpoint: samCkpt(m) };
+}
+async function shape(dir, o) {
+  const m = samModel(o);
+  if (!fs.existsSync(path.join(dir, 'track.json'))) die(`no track.json in ${dir}: run track first`);
+  if (!fs.existsSync(SAM_PY) || !fs.existsSync(samCkpt(m))) die(`SAM 2 is not set up: run \`node ${fileURLToPath(import.meta.url)} sam-setup${m === 'tiny' ? '' : ` --model ${m}`}\` once (about 800 MB)`);
+  const flags = ['pos', 'neg', 'device'].flatMap(k => typeof o[k] === 'string' ? [`--${k}`, o[k]] : []);
+  const r = spawnSync(SAM_PY, [fileURLToPath(new URL('sam-shape.py', import.meta.url)), dir, '--model', m, ...flags], { stdio: ['ignore', 2, 2] });
+  if (r.status !== 0) die(`shape failed (exit ${r.status ?? r.error})`);
+  return { ok: true, out: dir, ...JSON.parse(fs.readFileSync(path.join(dir, 'shape.json'), 'utf8')).summary };
+}
+
 const o = args(process.argv.slice(2)), [cmd, video] = o._;
-const commands = { fetch: fetchUrl, signals, strips, zoom, overview, track };
-if (!commands[cmd] || !video || o.help) { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split("\n").slice(2, 12).map(l => l.replace(/^ \* ?/, '')).join('\n')); process.exit(commands[cmd] ? 0 : 1); }
-if (cmd !== 'zoom' && typeof o.out !== 'string') die(`${cmd} needs --out <dir>`);
+const commands = { fetch: fetchUrl, signals, strips, zoom, overview, track, shape, 'sam-setup': samSetup };
+if (!commands[cmd] || (!video && cmd !== 'sam-setup') || o.help) { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split("\n").slice(2, 14).map(l => l.replace(/^ \* ?/, '')).join('\n')); process.exit(commands[cmd] ? 0 : 1); }
+if (!['zoom', 'shape', 'sam-setup'].includes(cmd) && typeof o.out !== 'string') die(`${cmd} needs --out <dir>`);
 commands[cmd](video, o).then(r => console.log(JSON.stringify(r, null, 2)), e => die(e.stack || String(e)));
