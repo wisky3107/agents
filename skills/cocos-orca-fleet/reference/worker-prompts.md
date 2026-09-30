@@ -248,8 +248,11 @@ Do:
    report the count, never drop a required node to fit.
 6. Sync + reopen the scene; confirm no MissingScript, refs filled → editor-log.txt.
    Record selected recipe checks/deviations and any scene-specific reusable finding in
-   evidence/learning-candidates.json (same schema and validate-only check as writer); retain
-   existing candidate ids.
+   evidence/learning-candidates.json as an array of
+   {id,kind:failure_fix|successful_pattern,topic,context:{engine,mode,platform},finding,reuse_value,
+   existing_recipe:null|id,evidence:[relative paths],limitations:[]}; retain existing candidate
+   ids. If `~/.orca-memory/bin/orca-memory` exists, run it as `capture --validate-only <file>`
+   and fix every error it prints.
 7. Prepare browser preview before reviewer handoff, while holding the editor lock:
    follow the project's preview-interact-playbook §Automatic preview startup. Verify pinned
    Funplay projectPath; discover get_preview_mode/run_project_preview (bridge if needed),

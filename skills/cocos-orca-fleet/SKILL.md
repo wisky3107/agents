@@ -342,6 +342,9 @@ for a second Enter, so Orca's dispatch stalls with `agent_prompt_stalled`. For 3
 `art-mesh` sections (not a single monolithic art Task). Every spec carries: PLAN path, evidence root, owned paths,
 non-goals, verification, evidence files to write, "assert `pwd` + `git status` before edits",
 and the lifecycle instruction to report with `worker_done` / `ask` / `escalation`.
+Implement and integrate specs copy the `learning-candidates.json` step verbatim: the full field
+schema line and the `capture --validate-only` line. Never shorten it to "record reusable
+findings"; a summarized step produced candidates without `kind`/`topic`/`finding`.
 
 Optional memory (run only if the launcher exists; use a pack only on `inject: true`). Set
 `M=~/.orca-memory/bin/orca-memory` and run each command below as `[ -x "$M" ] && "$M" hook ...`
