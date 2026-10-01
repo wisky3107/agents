@@ -166,7 +166,7 @@ integrate ← all art-mesh + all art-anim + art-2d + implement
 | `art-concept-<stem>` | **always** `agy --dangerously-skip-permissions` | `art_paths/concepts/<stem>/**` + `evidence/art/<stem>/concept-check.md` | other stems' concepts, any `.glb`, `manifest.json` |
 | `art-mesh-<stem>` | locked `art_backend` (default antigravity) | `art_paths/gen_<stem>_*.py`, `art_paths/gen3d/<stem>/**`, `art_paths/<stem>.glb` (or PLAN name), `evidence/art/<stem>/**`, its `model-check.md`; may patch **only** its manifest row (`complexity`/`concepts`/`verify`) | other stems' files, Creator, `.meta` |
 | `art-anim-<stem>` | locked `art_backend` (needs local Blender + write access to `char_anim_home`) | `<char_anim_home>` files of id `<slug>-<stem>`, `art_paths/<stem>.fbx` (row `file`), `art_paths/<fbf_dir>/**`, `evidence/art/<stem>/anim/**`, `anim-check.md`; may patch **only** its row's `anim_verify` | other characters' pipeline files, pipeline code, Creator, `.meta` |
-| `art-2d` | locked `art_backend` / `gpt-image-gen` | 2D files under `art_paths` that are not concepts/meshes; `evidence/art/2d/2d-check.md` (antigravity) | 3D |
+| `art-2d` | locked `art_backend` / `gpt-image-gen` | 2D files under `art_paths` that are not concepts/meshes; `evidence/art/2d/gen_2d.py`; `evidence/art/2d/2d-check.md` (antigravity) | 3D |
 
 **Parallel rules**
 
@@ -239,7 +239,7 @@ lock that.
 | art-concept-<stem> | writer (assets) | **always antigravity** | `concepts/<stem>/**`, concept-check block | meshes, other stems |
 | art-mesh-<stem> | writer (assets) | locked `art_backend` (default antigravity); route per `mesh_backend` (Blender script ∣ 3D Gen Studio ∣ fallback Blender) | generator or `gen3d/<stem>/**` + `.glb` for stem, iso/compare evidence, model-check block | other stems, Creator |
 | art-anim-<stem> | writer (assets) | locked `art_backend`; char-anim-pipeline (`char-anim` skill) | rigged FBX / FBF atlas for stem, anim evidence, anim-check block | other stems, pipeline code, Creator |
-| art-2d | writer (assets) | locked `art_backend` / `gpt-image-gen` | 2D textures/sprites under `art_paths`, 2d-check block (antigravity) | 3D concepts/meshes |
+| art-2d | writer (assets) | locked `art_backend` / `gpt-image-gen` | 2D textures/sprites under `art_paths` per row `method`, gen_2d.py, 2d-check block (antigravity) | 3D concepts/meshes |
 | implement | writer | per locked `writer_agent` (default `claude --model opus --effort high`) | `code_paths` TS | Funplay, lock, scene files, `art_paths` |
 | integrate | integrator | same terminal as implement, reused | editor lock, Creator on worktree, scene-tool/Funplay, import, editor evidence | reviewing its own work |
 | review | reviewer | per locked `reviewer_agent` (default `claude --model opus`), **fresh** terminal | `evidence/review.md`, `runtime-state.json`, `preview.png` | edits, live scene, lock |
@@ -373,12 +373,12 @@ the director or reviewer evidence, and its limitations apply ("not recorded" mea
 |---|---|---|---|
 | plan (branch C only) | — | recipe A/B per `planner_agent` | PLAN on disk, passes validation, director gate approved; terminal closed (recipe B) or released (A) |
 | scan | plan (C) / — (A, B) | recipe A/B per `scanner_agent` | `discovery.md` + `baseline/`; `status` to implement + art-manifest |
-| art-manifest | scan | recipe **A** | `manifest.json` skeleton with every mesh/2D row; `status` to concept + mesh + implement handles |
+| art-manifest | scan | recipe **A** | `manifest.json` skeleton with every mesh/2D row (2D rows carry `method`); `status` to concept + mesh + implement handles |
 | art-import-<stem> (Source=import) | art-manifest | recipe A/B per writer_agent | copied/converted files, route=import check with source/hash + VERDICT PASS; anim-check when applicable |
 | art-concept-<stem> | art-manifest | recipe **C** **antigravity only** (no AGENTS.md boot) | concept PNGs on disk; `CONCEPT: PASS` in `concept-check.md`; `status` to matching mesh handle |
 | art-mesh-<stem> | art-concept-<stem> | recipe A (cursor) / **C** (antigravity · gpt-image-gen/codex) | `.glb` + generator; `contact-sheet` + `compare-sheet` + `VERDICT: PASS`; own manifest row `verify` set |
 | art-anim-<stem> | art-mesh-<stem> (animated rows) | recipe A (cursor) / **C** (antigravity · gpt-image-gen/codex) | FBX / FBF shipped to `art_paths`; pipeline `qa.json` pass; `ANIM: PASS` in `anim-check.md`; own row `anim_verify` set |
-| art-2d | art-manifest | recipe A (cursor) / **C** (antigravity · gpt-image-gen/codex) | manifest 2D rows only; no 3D; antigravity: `ART2D: PASS` in `evidence/art/2d/2d-check.md` + 2D rows' `verify` set |
+| art-2d | art-manifest | recipe A (cursor) / **C** (antigravity · gpt-image-gen/codex) | manifest 2D rows only; no 3D; each file made per its row `method`; antigravity: `ART2D: PASS` in `evidence/art/2d/2d-check.md` + 2D rows' `verify` (with `tool`) set |
 | implement | scan, art-manifest | recipe A/B per `writer_agent` | tsc clean; `integration-notes.md`; output-contract YAML |
 | integrate | implement, all art-import-*, all art-mesh-*, all art-anim-*, art-2d | reuse implement terminal | lock cycle; `.meta` pairs; preflight / editor-log / diff-stat; preview-startup.json with verified URL or exact blocker |
 | review | integrate | recipe A/B per `reviewer_agent`, **fresh** | `review.md` ends `APPROVED` or `CHANGES_REQUESTED` |

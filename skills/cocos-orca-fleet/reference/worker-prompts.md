@@ -327,7 +327,8 @@ Static (commit-guard gates 1–4, read-only):
   (owner anim). In preview, play every clip listed in `anim_verify`: wrong clip, broken loop,
   sliding/floating feet or a missing event is a finding (owner anim). Generated 2D on
   art_backend=antigravity has `ART2D: PASS` in evidence/art/2d/2d-check.md (missing → blocker,
-  owner asset); a sprite with matte/halo, a seam on a tileable, or off-style art in preview is a
+  owner asset); an `image-gen` row whose `verify.tool` is a script (gen_2d.py, Pillow, SVG) is a
+  blocker (owner asset); a sprite with matte/halo, a seam on a tileable, or off-style art in preview is a
   finding (owner asset).
 - STATIC: tsc + lint clean (read the tool output, do not assume).
 

@@ -182,16 +182,34 @@ from Tripo (≈250k verts / 500k tris) is a **source**, never an asset — alway
 ## 2D art (`art` / `art-2d` Tasks)
 
 Per locked `art_backend`: `antigravity` and `cursor` author raw files with the session's own
-tools; `gpt-image-gen` **must** go through `orca-gpt-image-gen` (+ `gpt-image-2-style-library`
-when present) — no freehand final pixels. Textures/sprites only; concepts and meshes are never
-produced here. Every file is reported against `max_assets` (an estimate in advisory mode — never
-drop a manifest row to fit).
+tools; `gpt-image-gen` **must** put every `image-gen` row through `orca-gpt-image-gen`
+(+ `gpt-image-2-style-library` when present) — no freehand final pixels. Textures/sprites
+only; concepts and meshes are never produced here. Every file is reported against `max_assets`
+(an estimate in advisory mode — never drop a manifest row to fit).
+
+Each 2D row has a `method`, written by `art-manifest`. The art worker does not change it. If a
+row needs a different method, the worker sends an `ask`.
+
+| `method` | Use for | How |
+| --- | --- | --- |
+| `image-gen` | anything that depicts something: character/item sprites, icons with a picture, backgrounds, painted textures, illustrated VFX | the backend's image-generation tool (`gpt-image-gen` → `orca-gpt-image-gen`) |
+| `procedural` | flat geometric UI with no picture: pills, panels, cards, slots, plain buttons, 9-slice frames, rings, glows, soft shadows, gradients | a script (Pillow / SVG), saved as `evidence/art/2d/gen_2d.py` so it can be re-run |
+| `acquire` | fonts and other licensed files | download from the official source; record URL, commit/version, sha256 and licence |
+
+Tie → `image-gen` if the file shows an object, character or symbol; otherwise `procedural`.
 
 `antigravity` 2D has its own gate: the worker measures each file with `sips` (size, alpha),
 Reads every PNG, and writes `evidence/art/2d/2d-check.md` (size / alpha / tiling / style /
-set consistency / readability) ending `ART2D: PASS|FAIL`, max 2 rounds regenerating only the
-failing files. PASS → each 2D row gets `verify`. No `ART2D: PASS` → the integrator does not
-import those files.
+set consistency / readability / method) ending `ART2D: PASS|FAIL`, max 2 rounds regenerating
+only the failing files. PASS → each 2D row gets `verify`, including the `tool` that actually
+made the file. No `ART2D: PASS` → the integrator does not import those files.
+
+## Manifest row (2D)
+
+```json
+{ "file": "ui/hud_pill.png", "size": [560, 192], "alpha": true, "method": "procedural",
+  "notes": "cream pill, ink outline, 9-slice 24px", "verify": null }
+```
 
 ## Manifest row (mesh)
 
@@ -215,6 +233,8 @@ row** (`complexity` if missing, `concepts`, `verify`).
 - Giving 3D concepts to ChatGPT / `orca-gpt-image-gen`; concepts are Antigravity-only.
 - `VERDICT: PASS` without opening `compare-sheet.png`, or `concept match: PASS` from stats alone.
 - `ART2D: PASS` from file names or prompts alone, without `sips` numbers and a Read of each PNG.
+- Drawing an `image-gen` row with a Pillow/SVG/canvas script, or recording only
+  `route: antigravity` so the manifest hides how the file was made.
 - Two workers sharing a stem's paths, or a shared `model-check.md` across stems.
 
 ## Resources

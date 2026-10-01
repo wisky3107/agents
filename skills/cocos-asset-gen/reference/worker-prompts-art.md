@@ -56,6 +56,14 @@ Do:
      "anim_verify": null
    Authored clips are idle, run, jump, attack; every other clip needs a mocap take (FBX/BVH).
    A clip with neither → list it under notes and `ask`; never drop it silently.
+   Each 2D row: file, size [w,h], alpha, notes, "verify": null, and
+     "method": "image-gen" | "procedural" | "acquire"   (cocos-asset-gen SKILL.md 2D table)
+     image-gen  = depicts an object/character/symbol (sprites, pictured icons, backgrounds,
+                  painted textures, illustrated VFX)
+     procedural = flat geometric UI with no picture (pills, panels, slots, plain buttons,
+                  9-slice frames, rings, glows, shadows, gradients)
+     acquire    = fonts / licensed files
+   Tie → image-gen if it shows an object, character or symbol; otherwise procedural.
 2. `orca orchestration send --type status` to every art-concept / art-mesh / art-anim / art-2d /
    implement handle with the manifest path.
 3. worker_done.
@@ -279,21 +287,26 @@ ROLE: writer (assets) — 2D textures/sprites only.
 Owns: PLAN 2D paths under art_paths (not concepts/, not gen3d/, not .glb).
 
 Do: produce listed 2D files per backend block below; update those manifest rows only.
+Follow each row's "method" (set by art-manifest; never change it — `ask` if it is wrong):
+  image-gen  → the backend's image-generation tool, never a drawing script
+  procedural → one script saved as evidence/art/2d/gen_2d.py (re-runnable)
+  acquire    → official source; record URL, commit/version, sha256, licence
 Never: 3D concepts or meshes (those are art-concept / art-mesh Tasks).
 ```
 
 ### art-2d / antigravity
 
 ```text
-Produce 2D files with this Antigravity session's own tools.
-Also owns evidence/art/2d/2d-check.md (create the dir if needed).
+Produce 2D files with this Antigravity session's own tools: image-gen rows with its
+image-generation tool, procedural rows with evidence/art/2d/gen_2d.py.
+Also owns evidence/art/2d/2d-check.md and gen_2d.py (create the dir if needed).
 
 Check, before worker_done:
 1. Measure every file you wrote (never guess):
      sips -g pixelWidth -g pixelHeight -g hasAlpha <file>
 2. Read every PNG, then write evidence/art/2d/2d-check.md:
      ## 2D — round <n>
-     <file>: size <w>x<h> vs row <w>x<h> | alpha yes/no vs row | PASS|FAIL — <reason>
+     <file>: size <w>x<h> vs row <w>x<h> | alpha yes/no vs row | method <row> via <tool> | PASS|FAIL — <reason>
      ...
      size: PASS|FAIL — every file matches its manifest row (or PLAN when the row has none)
      alpha: PASS|FAIL — sprites/icons/UI on transparent background, no matte or halo;
@@ -303,25 +316,30 @@ Check, before worker_done:
      set consistency: PASS|FAIL — one palette, outline weight, light direction and
        relative scale across the set
      readability: PASS|FAIL — silhouette and icon meaning hold at in-game size
+     method: PASS|FAIL — every file made the way its row's method says (no script-drawn
+       image-gen row); <tool> is the image tool name, gen_2d.py, or source URL + sha256
      ART2D: PASS | ART2D: FAIL — <failing files + reason>
 3. ART2D FAIL → regenerate only the failing files and append a new round (max 2 rounds).
    Still FAIL → worker_done --outcome failed listing those files.
 4. On PASS set each 2D row's
-   "verify": {"status":"PASS","check":"evidence/art/2d/2d-check.md","round":n}.
+   "verify": {"status":"PASS","check":"evidence/art/2d/2d-check.md","round":n,
+              "tool":"<image tool | evidence/art/2d/gen_2d.py | source URL>"}.
 ```
 
 ### art-2d / cursor
 
 ```text
-Produce 2D files with this Cursor session's own tools.
+Produce 2D files with this Cursor session's own tools: image-gen rows with its
+image-generation tool, procedural rows with evidence/art/2d/gen_2d.py.
 ```
 
 ### art-2d / gpt-image-gen
 
 ```text
-Produce every 2D manifest file via the installed orca-gpt-image-gen skill (and
-gpt-image-2-style-library when present). Destination = absolute paths under art_paths.
-Do not freehand final pixels. Verify each download exists before worker_done.
+Produce every image-gen 2D row via the installed orca-gpt-image-gen skill (and
+gpt-image-2-style-library when present); procedural rows via evidence/art/2d/gen_2d.py.
+Destination = absolute paths under art_paths.
+Do not freehand image-gen rows. Verify each download exists before worker_done.
 ```
 
 ---
@@ -330,10 +348,10 @@ Do not freehand final pixels. Verify each download exists before worker_done.
 
 ```text
 ROLE: writer (assets). art_backend=<ART_BACKEND>. Owns PLAN.art_paths only
-(+ evidence/art/2d/2d-check.md when art_backend=antigravity).
+(+ evidence/art/2d/gen_2d.py, and 2d-check.md when art_backend=antigravity).
 
 Do, in this order:
-1. Write <ART_PATHS>/manifest.json FIRST.
+1. Write <ART_PATHS>/manifest.json FIRST (2D rows carry "method" per the art-manifest block).
 2. status to implement handle.
 3. Produce every 2D file (backend-specific; antigravity also runs that block's 2d-check to
    ART2D: PASS). Report the count vs max_assets; over it → note
