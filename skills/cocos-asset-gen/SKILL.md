@@ -187,6 +187,12 @@ when present) — no freehand final pixels. Textures/sprites only; concepts and 
 produced here. Every file is reported against `max_assets` (an estimate in advisory mode — never
 drop a manifest row to fit).
 
+`antigravity` 2D has its own gate: the worker measures each file with `sips` (size, alpha),
+Reads every PNG, and writes `evidence/art/2d/2d-check.md` (size / alpha / tiling / style /
+set consistency / readability) ending `ART2D: PASS|FAIL`, max 2 rounds regenerating only the
+failing files. PASS → each 2D row gets `verify`. No `ART2D: PASS` → the integrator does not
+import those files.
+
 ## Manifest row (mesh)
 
 ```json
@@ -208,6 +214,7 @@ row** (`complexity` if missing, `concepts`, `verify`).
   `--source-glb <stem>_high.glb`.
 - Giving 3D concepts to ChatGPT / `orca-gpt-image-gen`; concepts are Antigravity-only.
 - `VERDICT: PASS` without opening `compare-sheet.png`, or `concept match: PASS` from stats alone.
+- `ART2D: PASS` from file names or prompts alone, without `sips` numbers and a Read of each PNG.
 - Two workers sharing a stem's paths, or a shared `model-check.md` across stems.
 
 ## Resources

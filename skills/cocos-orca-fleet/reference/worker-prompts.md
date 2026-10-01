@@ -239,9 +239,11 @@ Do:
    (one take per clip → AnimationClips; use `anim_verify.clips` for seconds / loop / events) and/or
    the FBF atlas + animations.json under the row's fbf_dir. Missing or FAIL → do not import; `ask`
    (concept fail → art-concept Task; mesh/compare fail → art-mesh Task; anim fail → art-anim
-   Task). Then refresh_assets → verify every file in the manifest has a
-   .meta pair and no import errors (editor-log.txt via get_recent_logs); for meshes also confirm
-   the imported prefab/mesh sub-assets appear and the model shows at the manifest's scale.
+   Task). Generated 2D rows on art_backend=antigravity need evidence/art/2d/2d-check.md ending
+   `ART2D: PASS` (missing or FAIL → do not import; `ask`, owner art-2d). Then refresh_assets →
+   verify every file in the manifest has a .meta pair and no import errors (editor-log.txt via
+   get_recent_logs); for meshes also confirm the imported prefab/mesh sub-assets appear and the
+   model shows at the manifest's scale.
 5. Apply evidence/integration-notes.md: scene-tool first for identity-preserving edits; Funplay
    for structural/identity work; one mutation contract per structural change; ensure_* so a retry
    cannot duplicate. Stay within allowed_scene_objects; max_nodes is an estimate (advisory mode) —
@@ -323,7 +325,10 @@ Static (commit-guard gates 1–4, read-only):
   `ANIM: PASS` in evidence/art/<stem>/anim-check.md and a filled `anim_verify`; open the clip
   contact sheets in evidence/art/<stem>/anim/ — a missing anim-check or sheet is a blocker
   (owner anim). In preview, play every clip listed in `anim_verify`: wrong clip, broken loop,
-  sliding/floating feet or a missing event is a finding (owner anim).
+  sliding/floating feet or a missing event is a finding (owner anim). Generated 2D on
+  art_backend=antigravity has `ART2D: PASS` in evidence/art/2d/2d-check.md (missing → blocker,
+  owner asset); a sprite with matte/halo, a seam on a tileable, or off-style art in preview is a
+  finding (owner asset).
 - STATIC: tsc + lint clean (read the tool output, do not assume).
 
 Runtime:

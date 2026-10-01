@@ -286,6 +286,28 @@ Never: 3D concepts or meshes (those are art-concept / art-mesh Tasks).
 
 ```text
 Produce 2D files with this Antigravity session's own tools.
+Also owns evidence/art/2d/2d-check.md (create the dir if needed).
+
+Check, before worker_done:
+1. Measure every file you wrote (never guess):
+     sips -g pixelWidth -g pixelHeight -g hasAlpha <file>
+2. Read every PNG, then write evidence/art/2d/2d-check.md:
+     ## 2D — round <n>
+     <file>: size <w>x<h> vs row <w>x<h> | alpha yes/no vs row | PASS|FAIL — <reason>
+     ...
+     size: PASS|FAIL — every file matches its manifest row (or PLAN when the row has none)
+     alpha: PASS|FAIL — sprites/icons/UI on transparent background, no matte or halo;
+       opaque only when the row says texture/background
+     tiling: PASS|FAIL|n/a — rows noted tileable have no visible seam when repeated
+     style: PASS|FAIL — vs GAME_BRIEF / PLAN art direction
+     set consistency: PASS|FAIL — one palette, outline weight, light direction and
+       relative scale across the set
+     readability: PASS|FAIL — silhouette and icon meaning hold at in-game size
+     ART2D: PASS | ART2D: FAIL — <failing files + reason>
+3. ART2D FAIL → regenerate only the failing files and append a new round (max 2 rounds).
+   Still FAIL → worker_done --outcome failed listing those files.
+4. On PASS set each 2D row's
+   "verify": {"status":"PASS","check":"evidence/art/2d/2d-check.md","round":n}.
 ```
 
 ### art-2d / cursor
@@ -307,12 +329,14 @@ Do not freehand final pixels. Verify each download exists before worker_done.
 ## art (legacy single Task — 2D-only features, no meshes)
 
 ```text
-ROLE: writer (assets). art_backend=<ART_BACKEND>. Owns PLAN.art_paths only.
+ROLE: writer (assets). art_backend=<ART_BACKEND>. Owns PLAN.art_paths only
+(+ evidence/art/2d/2d-check.md when art_backend=antigravity).
 
 Do, in this order:
 1. Write <ART_PATHS>/manifest.json FIRST.
 2. status to implement handle.
-3. Produce every 2D file (backend-specific). Report the count vs max_assets; over it → note
+3. Produce every 2D file (backend-specific; antigravity also runs that block's 2d-check to
+   ART2D: PASS). Report the count vs max_assets; over it → note
    `budget_bump` (advisory) — never skip a manifest row to fit.
 
 Never: .meta; Creator; .scene/.prefab; Funplay/refresh_assets; invent 3D here — if PLAN gains
