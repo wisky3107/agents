@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.agents.workflow-scorecard</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/python3</string>
+    <string>/Users/wikz/.agents/tools/workflow-scorecard/scorecard.py</string>
+    <string>daily</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+  </dict>
+  <!-- 09:17 local; a Mac asleep at that time runs the job on wake. OmniRoute keeps ~7 days. -->
+  <key>StartCalendarInterval</key>
+  <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>17</integer></dict>
+  <key>StandardOutPath</key><string>/Users/wikz/.agents/logs/scorecard-daily.log</string>
+  <key>StandardErrorPath</key><string>/Users/wikz/.agents/logs/scorecard-daily.log</string>
+</dict>
+</plist>
