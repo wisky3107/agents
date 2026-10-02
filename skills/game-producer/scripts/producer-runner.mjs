@@ -21,6 +21,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { loadProject, sliceStatuses, nextSlice, preflight, writeRelease } from './lib/project.mjs';
 import * as st from './lib/state.mjs';
 import { laneFor, runSlice, applyAnswer } from './lib/lanes.mjs';
@@ -251,9 +252,30 @@ function applyAnswers(root) {
   return {};
 }
 
+/**
+ * Tell the director a question waits — once per question, also across restarts: a terminal bell
+ * (stderr, so stdout stays JSON lines) and a desktop notification (macOS osascript, or
+ * PRODUCER_RUNNER_NOTIFY_CMD <title> <body>; PRODUCER_RUNNER_NOTIFY=0 turns it off). Best effort.
+ */
+function notify(root, q) {
+  if (q.notified) return;
+  st.setQuestion(root, q.id, { notified: st.now() });
+  process.stderr.write('\x07');
+  if (process.env.PRODUCER_RUNNER_NOTIFY === '0') return;
+  const title = `producer-runner · ${path.basename(root)}`;
+  const body = `${q.id} ${q.kind}${q.slice ? ` ${q.slice}` : ''}: ${String(q.text).replace(/\s+/g, ' ').slice(0, 180)}`;
+  try {
+    if (process.env.PRODUCER_RUNNER_NOTIFY_CMD) spawnSync(process.env.PRODUCER_RUNNER_NOTIFY_CMD, [title, body], { timeout: 10000 });
+    else if (process.platform === 'darwin') spawnSync('osascript', ['-e', `display notification ${JSON.stringify(body)} with title ${JSON.stringify(title)} sound name "Glass"`], { timeout: 10000 });
+  } catch {
+    /* a missed notification never stops the runner */
+  }
+}
+
 /** Wait for the human's answer: poll the runner file (no model, no tokens). false = stop/pause. */
 function waitForAnswer(root, q) {
   say({ waiting: q.id, kind: q.kind, slice: q.slice, text: q.text, options: q.options, answer: `producer-runner answer --id ${q.id} --choice "<option>"` });
+  notify(root, q);
   for (;;) {
     const c = st.readControl(root);
     if (c?.cmd === 'stop' || c?.cmd === 'pause') return false;

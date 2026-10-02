@@ -289,6 +289,9 @@ test('a runner waiting on a question survives a kill; the answer from another pr
   await exited(second);
   assert.match(out, /"stopped":"control file says stop"/);
   assert.equal(loadProject(p.root).release.slices.S01, 'blocked');
+  // the director was told once, although two runners waited on q1
+  assert.equal(f.notices().length, 1);
+  assert.match(f.notices()[0], /^producer-runner · runner-proj-\w+ \| q1 director_gate S01: Record the director decision/);
   assert.deepEqual(f.spawns().map((s) => s.slice), ['S02']);
 });
 
