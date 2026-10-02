@@ -170,6 +170,9 @@ const RSYNC_EXCLUDES = [
   '/.codex/hooks.json',
   '/.cursor/hooks.json',
   '/.opencode/plugins/coordinator-guard.js',
+  // producer runner state (game-producer scripts/producer-runner.mjs: lock, control, runner file,
+  // handoff prompts, crash leftovers): per project, never templated
+  '/.cursor/producer*',
 ];
 
 function die(msg, code = 1) {

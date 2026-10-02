@@ -110,7 +110,7 @@ test('CLI: dry-run writes nothing; start marks the slice and holds one lock; ans
   const proj = loadProject(p.root);
   assert.deepEqual([proj.release.current_slice, proj.release.slices.S01], ['S01', 'in_progress']);
   assert.equal(fs.existsSync(path.join(p.root, '.cursor/producer.lock')), false); // released on exit
-  assert.match(fs.readFileSync(path.join(p.root, '.git/info/exclude'), 'utf8'), /\/\.cursor\/producer\.lock/);
+  assert.match(fs.readFileSync(path.join(p.root, '.git/info/exclude'), 'utf8'), /^\/\.cursor\/producer\*$/m);
   clearControl(p.root);
   // a live holder refuses a second runner; a dead one is taken over
   const holder = spawn(process.execPath, ['-e', 'setTimeout(()=>{}, 20000)']);

@@ -41,12 +41,17 @@ export function writeJson(file, value) {
 
 export const now = () => new Date().toISOString();
 
-/** Runner-owned files under .cursor/ that the template does not ignore yet: git info/exclude. */
+/**
+ * Runner-owned files under .cursor/ (lock, control, runner file, handoff prompts, and the .tmp /
+ * .dead leftovers of a crash) for projects whose .gitignore predates them: git info/exclude, with
+ * the project's path inside the repo when it is not the repo root.
+ */
 export function ensureExcluded(root) {
-  const ex = spawnSync('git', ['-C', root, 'rev-parse', '--git-path', 'info/exclude'], { encoding: 'utf8' });
+  const ex = spawnSync('git', ['-C', root, 'rev-parse', '--git-path', 'info/exclude', '--show-prefix'], { encoding: 'utf8' });
   if (ex.status !== 0) return;
-  const file = path.resolve(root, ex.stdout.trim());
-  const want = ['/.cursor/producer.lock', '/.cursor/producer.control', '/.cursor/producer-runner.json', '/.cursor/producer-handoff-*.md'];
+  const [exclude, prefix = ''] = ex.stdout.split('\n');
+  const file = path.resolve(root, exclude.trim());
+  const want = [`/${prefix.trim()}.cursor/producer*`];
   try {
     const text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
     const missing = want.filter((w) => !text.split('\n').includes(w));
@@ -136,7 +141,16 @@ export function readControl(root) {
   }
 }
 
+const excludedRoots = new Set();
+/** ensureExcluded once per process, before the first runner file is written. */
+function excludeOnce(root) {
+  if (excludedRoots.has(root)) return;
+  excludedRoots.add(root);
+  ensureExcluded(root);
+}
+
 export function writeControl(root, text) {
+  excludeOnce(root);
   fs.mkdirSync(path.dirname(files(root).control), { recursive: true });
   if (text) fs.writeFileSync(files(root).control, `${text}\n`);
   else fs.rmSync(files(root).control, { force: true });
@@ -147,6 +161,7 @@ export function readRunner(root) {
 }
 
 export function writeRunner(root, patch) {
+  excludeOnce(root);
   const next = { ...readRunner(root), ...patch, updated: now() };
   writeJson(files(root).runner, next);
   return next;
