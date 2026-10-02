@@ -18,6 +18,44 @@ You are the **producer**: a coordinator of coordinators. You pick slices, spawn 
 builds each one, read its verdict, commit/merge, and move on. You never edit game files, never
 touch the Editor, never hold the editor lock, never rewrite a slice file.
 
+## Runner mode (`release.producer_mode: runner`)
+
+With `producer_mode: runner` the mechanical loop of Step 2 is a script, not a model:
+`scripts/producer-runner.mjs` picks the slice, preflights it, spawns and waits on the lanes, applies
+Step 2d (accept, commit, merge journal, verify on main, record) and moves on. An LLM producer still
+does the judgement at both ends: **Step 0–1** (`reference/producer-step01-prompt.md`: inputs, policy
+line, director gate, then `producer-runner.mjs launch`) and **Step 3** (`reference/producer-step3-prompt.md`,
+spawned once by the runner at the stop condition). Default is `llm`: this whole skill, run by a model.
+
+```bash
+node ~/.agents/skills/game-producer/scripts/producer-runner.mjs launch --project <PROJECT>   # visible Orca terminal
+node ~/.agents/skills/game-producer/scripts/producer-runner.mjs status --project <PROJECT>
+node ~/.agents/skills/game-producer/scripts/producer-runner.mjs answer --project <PROJECT> --id q3 --choice "<option>" [--text "…"]
+node ~/.agents/skills/game-producer/scripts/producer-runner.mjs pause|stop|stop-after S05|clear --project <PROJECT>
+node ~/.agents/skills/game-producer/scripts/producer-runner.mjs handoff-reset --project <PROJECT>   # forget a Step 0–1 / Step 3 handoff
+node ~/.agents/skills/game-producer/scripts/producer-runner.mjs start --dry-run --project <PROJECT>   # what it would do; writes nothing
+```
+
+- **It never guesses.** Anything a rule here leaves to judgement becomes one question with fixed
+  options in `.cursor/producer-runner.json` (shown by `status`; the runner waits, using no model).
+  Contract drift — a slice in progress that MILESTONES lacks, two slices in progress, a policy line
+  that locks a different agent than `fleet:`, a director decision not written as `<Sxx> GIVEN|approved`
+  — stops it with a question, never with an interpretation.
+- **Judge** (`judge_agent: claude --model <m>` in AGENT_NOTES): one `claude -p` read-only call
+  (`reference/judge-prompt.md`) answers fleet gates and lane questions the contracts already settle,
+  unknown HANDOFF statuses and verdict-line mismatches; it can only pick an offered option or defer,
+  never stop / block. Other providers are not verified yet: their questions go to the director.
+- **One producer per project:** the runner holds `.cursor/producer.lock` (a second `start` or a
+  `launch` is refused). An LLM producer does not take that lock: never run an LLM slice loop while
+  `producer-runner.mjs status` shows a live runner; the Step 0–1 / Step 3 producers never dispatch
+  slices. `handoff-reset` forgets a Step 0–1 / Step 3 handoff so the runner may spawn a new one.
+- **Phase 1 limits:** `max_parallel=1`; a port slice without a reviewed slice study stops
+  (`needs_slice_study`: run the study with an LLM producer); verifying main after a fleet merge needs
+  3.8 + Funplay — cc4 or no Funplay → the director verifies; a single lane gets the preview port from
+  the newest `preview-startup.json` or records it itself.
+- State: `.cursor/producer-runner.json` (questions, run-wide reviewer switch, LLM handoffs) and
+  `T-<Sxx>/producer-state.json`, `producer-log.md`, `merge-journal.json` (all resumable after a kill).
+
 ## Inputs (all at project root — abort with one `ask` if any is missing)
 
 | File | Use |

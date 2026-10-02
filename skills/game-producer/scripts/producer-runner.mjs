@@ -8,18 +8,29 @@
  *   producer-runner.mjs status [--project <path>]
  *   producer-runner.mjs pause | stop | stop-after <Sxx> | clear   [--project <path>]
  *   producer-runner.mjs answer --id <qN> --choice <option> [--text "…"] [--project <path>]
+ *   producer-runner.mjs launch [--project <path>]      (a visible Orca terminal running `start`)
+ *   producer-runner.mjs handoff-reset [--project <path>] (forget the Step 0–1 / Step 3 LLM handoffs)
  *
- * One runner per project (.cursor/producer.lock, shared with a manual LLM producer). Git is the truth
+ * One runner per project (.cursor/producer.lock; an LLM producer must not loop while it is held). Git is the truth
  * for merged slices; the AGENT_NOTES release: yaml is a cache the runner rewrites value by value.
- * Anything the runner cannot decide mechanically becomes one question with fixed options; the runner
- * waits for `answer` (polling a local file, no model), or exits with --once. It never guesses.
+ * Anything the runner cannot decide mechanically becomes one question with fixed options; a judge
+ * (`judge_agent`, claude -p) may answer the few kinds the contracts settle, the rest wait for `answer`
+ * (polling a local file, no model), or the runner exits with --once. It never guesses. Step 0–1 and
+ * Step 3 are handed to an LLM producer (reference/producer-step01-prompt.md, -step3-prompt.md).
  * Phase 1: max_parallel=1, no slice studies.
  */
 import fs from 'node:fs';
+import path from 'node:path';
 import { loadProject, sliceStatuses, nextSlice, preflight, writeRelease } from './lib/project.mjs';
 import * as st from './lib/state.mjs';
 import { laneFor, runSlice, applyAnswer } from './lib/lanes.mjs';
 import { currentBranch, appendLessons, lessonRows, readJournal } from './lib/merge.mjs';
+import { consult, judgeSpec, JUDGE_KINDS, MAX_JUDGED } from './lib/judge.mjs';
+import * as io from './lib/orca.mjs';
+import { fileURLToPath } from 'node:url';
+
+const RUNNER = fileURLToPath(import.meta.url);
+const REF = new URL('../reference/', import.meta.url);
 
 const msEnv = (k, d) => Number(process.env[k]) || d;
 const WAIT_MS = msEnv('PRODUCER_RUNNER_WAIT_MS', 540000); // one orca-wait call (its own cap is 570000)
@@ -123,12 +134,86 @@ function unfinished(root, statuses) {
   return ['committing', 'merge'].includes(st.readSliceState(root, id).phase) ? id : null;
 }
 
+/**
+ * One judge consult, never fatal. A lane that keeps asking does not get the judge forever: after
+ * MAX_JUDGED judge answers for this slice and kind, or a question text it already judged, the
+ * director answers.
+ */
+function judgeOnce(root, project, open) {
+  const earlier = st.readRunner(root).questions.filter((x) => x.id !== open.id && x.slice === open.slice && x.kind === open.kind && x.judge);
+  if (earlier.some((x) => x.text === open.text)) return { defer: 'the judge already saw this exact question: the director decides' };
+  if (earlier.filter((x) => x.answer?.by === 'judge').length >= MAX_JUDGED) return { defer: `the judge answered ${MAX_JUDGED} ${open.kind} questions for ${open.slice} already: the director decides` };
+  try {
+    return consult(project, open);
+  } catch (err) {
+    return { defer: `judge error: ${err.message}` };
+  }
+}
+
 function freshLane(root, id, project) {
   const moved = st.archiveSliceState(root, id);
   const lane = laneFor(project, id);
   // the branch main is on now is where this slice merges back (asked when main moved on meanwhile)
   st.writeSliceState(root, id, { phase: lane === 'fleet' ? 'spawn-coordinator' : 'spawn-writer', lane, selected_at: st.now(), base_branch: currentBranch(root) });
   return { lane, moved };
+}
+
+/**
+ * Step 0–1 or Step 3 to an LLM producer, once (Step 3 once per goal: extending a playable run to
+ * end_to_end gets its own). Spawned like a lane: intent first, a registry row recovers the handle
+ * after a kill, an intent with no row is never re-spawned blind (bootstrap may still create it), and
+ * a prompt bootstrap could not send is reported. `handoff-reset` forgets the handoffs.
+ * → { handle, again, prompt_sent } | { unconfirmed }
+ */
+function handToLlm(root, step) {
+  const project = loadProject(root);
+  const key = step === 'step3' ? `step3:${project.policy?.tokens.goal || project.release.goal || 'end_to_end'}` : step;
+  const r = st.readRunner(root);
+  const rec = r.llm?.[key];
+  const save = (v) => st.writeRunner(root, { llm: { ...(st.readRunner(root).llm || {}), [key]: v } });
+  if (rec?.handle) return { handle: rec.handle, again: true, prompt_sent: rec.prompt_sent };
+  if (rec?.spawning) {
+    const reg = io.registeredSpawn({ root, slice: null, role: 'producer', sinceIso: rec.spawning });
+    if (!reg?.handle) return { unconfirmed: true, since: rec.spawning };
+    save({ handle: reg.handle, at: st.now(), prompt_sent: 'unknown' });
+    return { handle: reg.handle, again: true, prompt_sent: 'unknown' };
+  }
+  const agent = project.fleet.orchestrator_agent;
+  if (!agent) throw new Error('AGENT_NOTES fleet.orchestrator_agent is empty: no agent for the LLM producer');
+  const file = step === 'step01' ? 'producer-step01-prompt.md' : 'producer-step3-prompt.md';
+  const tpl = fs.readFileSync(new URL(file, REF), 'utf8').match(/```text\n([\s\S]*?)\n```/)[1];
+  const prompt = tpl.replace(/<PROJECT>/g, () => root).replace(/<RUNNER>/g, () => RUNNER);
+  // the filled prompt on disk: what the director pastes when bootstrap could not send it
+  fs.mkdirSync(path.join(root, '.cursor'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.cursor', `producer-handoff-${step}.md`), `${prompt}\n`);
+  const slug = root.split('/').pop().replace(/^cc4?-/, '');
+  const intent = st.now();
+  save({ spawning: intent });
+  let res;
+  try {
+    res = io.spawnLane({ root, agent, role: 'producer', slice: null, title: `producer-${step}-${slug}`, prompt });
+  } catch (err) {
+    const reg = io.registeredSpawn({ root, slice: null, role: 'producer', sinceIso: intent });
+    if (!reg?.handle) {
+      save(undefined); // bootstrap finished without a terminal: nothing to recover
+      throw err;
+    }
+    res = { handle: reg.handle, promptSent: false };
+  }
+  save({ handle: res.handle, at: st.now(), prompt_sent: res.promptSent });
+  return { handle: res.handle, again: false, prompt_sent: res.promptSent };
+}
+
+/** The runner's report of a handoff, with what the director must do when it did not fully land. */
+function handoffReport(step, h, extra = {}) {
+  const file = `.cursor/producer-handoff-${step}.md`;
+  if (h.unconfirmed) {
+    return { ...extra, handed_to_llm: step, unconfirmed: true, next: `a ${step} producer spawn started at ${h.since} was interrupted: look for a producer-${step} terminal in Orca; \`producer-runner.mjs handoff-reset\` lets the runner spawn a new one` };
+  }
+  const next = h.prompt_sent === false ? `the terminal exists but its prompt was not sent: paste ${file} into it, or \`handoff-reset\` and run again`
+    : h.prompt_sent === 'unknown' ? `reattached after an interrupted spawn: check that the prompt from ${file} reached ${h.handle}`
+    : h.again ? `already handed to ${h.handle}; if that producer is gone, \`producer-runner.mjs handoff-reset\` and run again` : undefined;
+  return { ...extra, handed_to_llm: step, handle: h.handle, again: h.again, ...(next ? { next } : {}) };
 }
 
 /**
@@ -146,7 +231,10 @@ function applyAnswers(root) {
         return { stop: q.id };
       }
       if (choice === 'mark blocked' || choice === 'skip this slice') markBlocked(root, q.slice, `${q.kind}: ${choice}`);
-      else if (q.kind === 'adopt' || q.kind === 'blocked_resume') {
+      else if (q.kind === 'needs_policy' && choice === 'run Step 0-1 with an LLM producer') {
+        const h = handToLlm(root, 'step01');
+        return { exit: handoffReport('step01', h, h.handle && h.prompt_sent !== false ? { note: 'the LLM producer launches the runner when the policy line is written' } : {}) };
+      } else if (q.kind === 'adopt' || q.kind === 'blocked_resume') {
         const { lane, moved } = freshLane(root, q.slice, loadProject(root));
         st.log(root, q.slice, `${q.kind}: ${choice} (${lane} lane)${moved.length ? `; earlier state kept as ${moved.join(', ')}` : ''}`);
       } else if (!QUESTION[q.kind]) {
@@ -205,8 +293,21 @@ async function start(root, { dryRun: dry, once }) {
   for (;;) {
     const control = st.readControl(root);
     if (control?.cmd === 'stop' || control?.cmd === 'pause') return say({ stopped: `control file says ${control.cmd}`, resume: 'producer-runner clear, then start' });
-    if (applyAnswers(root).stop) return say({ stopped: 'the human chose stop', resume: 'producer-runner clear, then start' });
+    const applied = applyAnswers(root);
+    if (applied.stop) return say({ stopped: 'the human chose stop', resume: 'producer-runner clear, then start' });
+    if (applied.exit) return say(applied.exit);
     const open = st.readRunner(root).questions.find((q) => !q.answer);
+    if (open && !open.judge && JUDGE_KINDS.has(open.kind)) {
+      // the judge first, once per question: an answer is applied like the director's, a defer waits for them
+      const project = loadProject(root);
+      if (judgeSpec(project)) {
+        const v = judgeOnce(root, project, open);
+        const q = st.judgeVerdict(root, open.id, v);
+        if (open.slice) st.log(root, open.slice, `judge on ${open.id} (${open.kind}): ${v.choice ? `${v.choice} — ${v.reason}${q.judge.superseded ? ' (superseded: the director answered first)' : ''}` : v.defer}`);
+        say({ judge: open.id, ...(v.choice ? { choice: v.choice, reason: v.reason } : { deferred: v.defer }) });
+        continue;
+      }
+    }
     if (open) {
       if (once) return say({ waiting: open.id, kind: open.kind, slice: open.slice, options: open.options });
       if (!waitForAnswer(root, open)) continue;
@@ -218,7 +319,11 @@ async function start(root, { dryRun: dry, once }) {
     // finishes its journal — verify, record — before anything else is selected or reported done
     const finishing = unfinished(root, statuses);
     if (!finishing) {
-      if (next.done) return say({ done: next.reason, next_step: 'Step 3 (ship / retro) is handed to an LLM producer (M4d)' });
+      if (next.done) {
+        // runner mode owns the whole run: release and retro go to an LLM producer, once
+        if (project.release.producer_mode !== 'runner') return say({ done: next.reason, next_step: 'Step 3 (ship / retro): run game-producer Step 3, or set release.producer_mode: runner' });
+        return say(handoffReport('step3', handToLlm(root, 'step3'), { done: next.reason }));
+      }
       if (next.stuck) {
         stopFor(root, null, 'stuck', next.reason);
         continue;
@@ -288,14 +393,29 @@ async function main() {
     return st.writeControl(root, `stop-after ${v._[0]}`);
   }
   if (cmd === 'clear') return st.writeControl(root, null);
+  if (cmd === 'handoff-reset') return say({ forgot: Object.keys(st.readRunner(root).llm || {}), llm: st.writeRunner(root, { llm: {} }).llm });
+  if (cmd === 'launch') {
+    const holder = st.lockHolder(root);
+    if (holder?.alive) return say({ refused: 'a producer already holds the lock', holder });
+    const control = st.readControl(root);
+    if (control?.cmd === 'stop' || control?.cmd === 'pause') return say({ refused: `the control file says ${control.cmd}: \`producer-runner.mjs clear\` first` });
+    // a runner launched moments ago may not hold the lock yet: no second terminal
+    const last = st.readRunner(root).launched;
+    if (last && Date.now() - Date.parse(last.at) < 120000) return say({ refused: `a runner was launched at ${last.at} (${last.handle}) and is still starting`, status: 'producer-runner.mjs status' });
+    const handle = io.launchRunner(root, RUNNER);
+    if (!handle) throw new Error('orca terminal create gave no handle');
+    st.writeRunner(root, { launched: { handle, at: st.now() } });
+    return say({ launched: handle, command: `producer-runner.mjs start --project ${root}` });
+  }
   if (cmd === 'answer') {
     if (!v.id || !v.choice) throw new Error('answer needs --id and --choice');
     const q = st.readRunner(root).questions.find((x) => x.id === v.id);
     if (q?.kind === 'fleet_gate' && v.choice === 'answer with --text' && !v.text) throw new Error('this gate needs --text with the decision');
     if (q?.kind === 'spawn_unconfirmed' && v.choice.startsWith('reattach') && !/^\S+$/.test(v.text || '')) throw new Error('give the terminal handle with --text');
+    if (v.choice === 'send this answer to the lane' && !v.text) throw new Error('give the answer for the lane with --text');
     return say(st.answer(root, v.id, v.choice, v.text || ''));
   }
-  throw new Error('usage: producer-runner.mjs start|resume|status|pause|stop|stop-after <Sxx>|clear|answer [--project <path>]');
+  throw new Error('usage: producer-runner.mjs start|resume|status|pause|stop|stop-after <Sxx>|clear|answer|launch|handoff-reset [--project <path>]');
 }
 
 main().catch((err) => {

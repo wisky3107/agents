@@ -43,8 +43,12 @@ ${policy}
 export const POLICY = '- policy: goal=end_to_end auto_commit=true auto_merge=true deploy=preview budget=advisory max_parallel=1 (director gate: S02 GIVEN)';
 
 /** slices: { S01: { needs, size, study, assets } } */
-export function project({ notes = NOTES(POLICY), slices = { S01: { needs: false }, S02: { needs: true }, S03: { needs: false } }, dag } = {}) {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runner-proj-')));
+export function project({ notes = NOTES(POLICY), slices = { S01: { needs: false }, S02: { needs: true }, S03: { needs: false } }, dag, prefix = 'runner-proj-', files = {} } = {}) {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
+  for (const [rel, body] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
+    fs.writeFileSync(path.join(root, rel), body);
+  }
   const ids = Object.keys(slices);
   const ms = { slices: ids, dag: dag || Object.fromEntries(ids.map((id, i) => [id, i ? [ids[i - 1]] : []])), parallel_ok: [], v1_slice: 'S01', release_slice: ids[ids.length - 1] };
   fs.writeFileSync(path.join(root, 'AGENT_NOTES.md'), notes);
@@ -53,7 +57,7 @@ export function project({ notes = NOTES(POLICY), slices = { S01: { needs: false 
   for (const [id, o] of Object.entries(slices)) {
     const assets = o.assets ? `assets:\n  2d:\n    - ${o.assets}\n  3d: []\n` : 'assets:\n  2d: []\n  3d: []\n';
     fs.writeFileSync(path.join(root, 'slices', `${id}-x.md`),
-      `---\nid: ${id}\nsize: ${o.size || 'M'}             # S | M | L\nneeds_director_ok: ${o.needs}\n${o.study ? 'rip_study:\n  - a\n' : ''}${assets}---\n# ${id}\n`);
+      `---\nid: ${id}\nsize: ${o.size || 'M'}             # S | M | L\nneeds_director_ok: ${o.needs}\n${o.study ? 'rip_study:\n  - a\n' : ''}${assets}---\n# ${id}\n${o.body || ''}`);
   }
   const g = (...a) => spawnSync('git', ['-C', root, ...a], { encoding: 'utf8' });
   g('init', '-q');
@@ -119,6 +123,10 @@ if (cmd === 'worktree rm') {
   log('rm.log', { wt, phase: 'done', status: r.status });
   out(r.status === 0 ? { ok: true, result: { removed: wt } } : { ok: false, error: { code: 'worktree_remove_failed', message: r.stderr } }, r.status === 0 ? 0 : 1);
 }
+if (cmd === 'terminal create') {
+  log('creates.log', { worktree: arg('--worktree'), title: arg('--title'), command: arg('--command') });
+  out({ ok: true, result: { handle: 'term_created' } });
+}
 if (cmd === 'terminal send') { log('sends.log', { to: arg('--terminal'), text: arg('--text') }); out({ ok: true }); }
 if (cmd === 'terminal close') { log('closes.log', { handle: arg('--terminal') }); out({ ok: true }); }
 if (cmd === 'terminal list') out({ ok: true, result: { terminals: [] } });
@@ -164,10 +172,28 @@ const promptSent = !mode('bootstrap-no-prompt');
 process.stdout.write(JSON.stringify({ ok: promptSent, session: { handle, ready: true, promptSent } }, null, 2) + '\\n');
 `;
 
+// The judge: never the real claude in tests. It records stdin / env / args and answers with
+// judge-reply.json (as structured_output), or judge-raw.txt verbatim, or fails with judge-fail.
+const FAKE_JUDGE = `#!/usr/bin/env node
+const fs = require('fs'), path = require('path');
+const D = process.env.FAKE_DIR;
+const input = fs.readFileSync(0, 'utf8');
+const n = fs.readdirSync(D).filter((f) => f.startsWith('judge-call-')).length + 1;
+fs.writeFileSync(path.join(D, 'judge-call-' + n + '.json'), JSON.stringify({ input, args: process.argv.slice(2), cwd: process.cwd(), role: process.env.CC_ROLE, slice: process.env.CC_SLICE, route: process.env.JUDGE_ROUTE_PROBE || null }));
+if (fs.existsSync(path.join(D, 'judge-sleep'))) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(fs.readFileSync(path.join(D, 'judge-sleep'), 'utf8')));
+if (fs.existsSync(path.join(D, 'judge-fail'))) { console.error('boom'); process.exit(1); }
+if (fs.existsSync(path.join(D, 'judge-raw.txt'))) { process.stdout.write(fs.readFileSync(path.join(D, 'judge-raw.txt'), 'utf8')); process.exit(0); }
+const reply = JSON.parse(fs.readFileSync(path.join(D, 'judge-reply.json'), 'utf8'));
+process.stdout.write(JSON.stringify({ type: 'result', is_error: false, result: 'done', structured_output: reply }, null, 2) + '\\n');
+`;
+
 export function fakes() {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runner-fake-')));
   fs.writeFileSync(path.join(dir, 'orca'), FAKE_ORCA, { mode: 0o755 });
   fs.writeFileSync(path.join(dir, 'bootstrap.cjs'), FAKE_BOOTSTRAP);
+  fs.writeFileSync(path.join(dir, 'judge'), FAKE_JUDGE, { mode: 0o755 });
+  // the judge's Claude settings: a stand-in env block, never the real one (it holds the auth token)
+  fs.writeFileSync(path.join(dir, 'claude-settings.json'), JSON.stringify({ env: { JUDGE_ROUTE_PROBE: 'via-settings' } }));
   fs.writeFileSync(path.join(dir, 'registry.jsonl'), '');
   const lines = (f) => {
     try {
@@ -185,6 +211,8 @@ export function fakes() {
     sends: () => lines('sends.log'),
     closes: () => lines('closes.log').map((c) => c.handle),
     waits: () => lines('waits.log'),
+    creates: () => lines('creates.log'),
+    judgeCalls: () => fs.readdirSync(dir).filter((f) => f.startsWith('judge-call-')).sort().map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'))),
   };
 }
 
@@ -194,6 +222,8 @@ const env = (root, fake) => ({
   FAKE_DIR: fake.dir,
   FAKE_PROJECT: root,
   PRODUCER_RUNNER_BOOTSTRAP: path.join(fake.dir, 'bootstrap.cjs'),
+  PRODUCER_RUNNER_JUDGE_CMD: path.join(fake.dir, 'judge'),
+  PRODUCER_RUNNER_CLAUDE_SETTINGS: path.join(fake.dir, 'claude-settings.json'),
   CC_SPAWN_REGISTRY: path.join(fake.dir, 'registry.jsonl'),
   ORCA_MEMORY_BIN: path.join(fake.dir, 'no-orca-memory'),
   PRODUCER_RUNNER_WAIT_MS: '1500',

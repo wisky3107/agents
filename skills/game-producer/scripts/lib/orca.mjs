@@ -37,15 +37,27 @@ export const orca = (args, opts) => json('orca', [...args, '--json'], opts);
 /** Spawn one lane terminal. → handle (throws when bootstrap did not return one: never spawn twice blind). */
 export function spawnLane({ root, agent, role, slice, title, prompt }) {
   const r = json(process.execPath, [BOOTSTRAP, 'agent-session', '--json', '--path', root, '--agent', agent, '--role', role,
-    '--slice', slice, '--title', title, '--prompt', prompt]);
+    ...(slice ? ['--slice', slice] : []), '--title', title, '--prompt', prompt]);
   const handle = r.parsed?.session?.handle;
   if (!handle) throw new Error(`agent-session returned no handle (exit ${r.status}): ${(r.stderr || r.stdout).slice(-300)}`);
   return { handle, ok: Boolean(r.parsed?.ok), promptSent: Boolean(r.parsed?.session?.promptSent) };
 }
 
+const registryFile = () => process.env.CC_SPAWN_REGISTRY || path.join(os.homedir(), '.agents', 'logs', 'spawns.jsonl');
+
+/** A row of our own (the judge's `claude -p`), so token-report books it under the producer. */
+export function appendRegistry(row) {
+  try {
+    fs.mkdirSync(path.dirname(registryFile()), { recursive: true });
+    fs.appendFileSync(registryFile(), JSON.stringify(row) + '\n');
+  } catch {
+    /* the registry is for reports only */
+  }
+}
+
 /** The spawn registry bootstrap appends to (one JSON row per terminal create; bad rows skipped). */
 export function spawnRows() {
-  const f = process.env.CC_SPAWN_REGISTRY || path.join(os.homedir(), '.agents', 'logs', 'spawns.jsonl');
+  const f = registryFile();
   let text = '';
   try {
     text = fs.readFileSync(f, 'utf8');
@@ -83,6 +95,16 @@ export function send(handle, text) {
     const e = r.parsed?.error;
     throw new Error(`terminal send to ${handle} failed: ${e ? [e.code, e.message].filter(Boolean).join(': ') : (r.stderr || r.stdout).trim().slice(-200)}`);
   }
+}
+
+/** A visible Orca terminal in the project that runs `producer-runner.mjs start`. → handle | null */
+export function launchRunner(root, runner) {
+  const title = `producer-runner-${path.basename(root).replace(/^cc4?-/, '')}`;
+  // single quotes: the shell expands nothing inside ($, `, ! in a path stay literal)
+  const q = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
+  const r = orca(['terminal', 'create', '--worktree', `path:${root}`, '--title', title,
+    '--command', `node ${q(runner)} start --project ${q(root)}`]);
+  return r.parsed?.result?.handle || r.parsed?.result?.terminal?.handle || null;
 }
 
 /** → true when Orca confirmed the close. */

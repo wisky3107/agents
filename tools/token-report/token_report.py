@@ -521,6 +521,9 @@ def alias_role(role: str, cwd: str) -> str:
     feature worktree, otherwise a single-lane writer/reviewer in the main checkout."""
     if role == 'coordinator':
         return 'fleet-orch'
+    if role == 'judge':
+        # the producer runner's judge calls are producer cost (plan §1: the gate includes the judge)
+        return 'producer'
     if role == 'worker':
         return 'fleet-worker' if '/orca/workspaces/' in (cwd or '') else 'slice-agent'
     return role

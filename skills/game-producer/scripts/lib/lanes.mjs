@@ -32,6 +32,8 @@ export const STALL_NUDGE =
 const SINGLE_EVIDENCE = ['integration-notes.md', 'preflight.json', 'preview-startup.json', 'runtime-state.json', 'preview.png', 'stats.json', 'final-report.md'];
 const FLEET_EVIDENCE = ['final-report.md', 'stats.json'];
 const COORDINATOR = '@coordinator'; // outbox address resolved through run-show at send time
+// a lane's own question: the director (or the judge, from the contracts) answers it in the lane
+const LANE_BLOCKED_OPTIONS = ['send this answer to the lane', 'answered in the lane, continue', 'mark blocked', 'stop'];
 
 /** HANDOFF status → one of KNOWN, or null (unknown: never acted on mechanically). */
 export function normalizeStatus(s) {
@@ -128,6 +130,7 @@ export function prompts(project, id, pack = 'none') {
 // ------------------------------------------------------------------ files
 
 const slug = (root) => path.basename(root).replace(/^cc4?-/, '');
+const oneLine = (t) => String(t || '').replace(/\s+/g, ' ').trim();
 const evidenceDir = (root, id) => path.join(st.sliceDir(root, id), 'evidence');
 const handoffMain = (root, id) => path.join(evidenceDir(root, id), 'HANDOFF.json');
 const mtime = (f) => {
@@ -476,7 +479,7 @@ function singleStep(ctx, s, phase) {
     if (h.fresh && !h.status) {
       return ask(s, 'unknown_status', `writer HANDOFF status "${h.raw ?? '(none)'}" is not one the runner knows`, ['treat as ready_for_review', 'mark blocked', 'stop'], { obs: obs('unknown_status') });
     }
-    if (h.status === 'blocked') return ask(s, 'lane_blocked', `writer HANDOFF blocked: ${h.detail || 'no detail'}`, ['answered in the lane, continue', 'mark blocked', 'stop'], { obs: obs('lane_blocked') });
+    if (h.status === 'blocked') return ask(s, 'lane_blocked', `writer HANDOFF blocked: ${h.detail || 'no detail'}`, LANE_BLOCKED_OPTIONS, { obs: obs('lane_blocked') });
     if (w.event === 'idle' && w.idle_streak === 2 && !s.nudged_writer) {
       const text = s.fix_rounds && h.status === 'changes_requested'
         ? `Fix round ${s.fix_rounds} is still open: apply the \`## fix_routing\` rows in ${path.join(evidence, 'review.md')}, re-verify, then set HANDOFF.json ready_for_review.`
@@ -614,7 +617,7 @@ function committing(ctx, s, w, h) {
     return null;
   }
   const lane = ctx.lane === 'fleet' ? 'coordinator' : 'writer';
-  if (h.status === 'blocked') return ask(s, 'lane_blocked', `commit blocked: ${h.detail || 'no detail'}`, ['answered in the lane, continue', 'mark blocked', 'stop'], { obs: `lane_blocked@${h.mtime}` });
+  if (h.status === 'blocked') return ask(s, 'lane_blocked', `commit blocked: ${h.detail || 'no detail'}`, LANE_BLOCKED_OPTIONS, { obs: `lane_blocked@${h.mtime}` });
   if (w.event === 'terminal-missing' || (w.event === 'idle' && w.idle_streak >= 3)) {
     return ask(s, 'commit_stalled', `${lane} ${w.handle || ''} is ${w.event} after "${COMMIT_TEXT}"; HANDOFF is ${h.raw || 'missing'}${h.status === 'committed' ? ' without a sha' : ''}`,
       ['resend commit', 'mark blocked', 'stop'], { obs: `commit_stalled@${h.mtime || 0}:${w.handle}` });
@@ -716,7 +719,7 @@ function fleetStep(ctx, s, phase) {
     return ask(s, 'unknown_status', `fleet HANDOFF status "${h.raw ?? '(none)'}" is not one the runner knows`, ['treat as offer_commit', 'mark blocked', 'stop'], { obs: obs('unknown_status') });
   }
   if (h.status === 'blocked' || h.status === 'infra_blocked') {
-    return ask(s, 'lane_blocked', `fleet HANDOFF ${h.status}: ${h.detail || 'no detail'}`, ['answered in the lane, continue', 'mark blocked', 'stop'], { obs: obs('lane_blocked') });
+    return ask(s, 'lane_blocked', `fleet HANDOFF ${h.status}: ${h.detail || 'no detail'}`, LANE_BLOCKED_OPTIONS, { obs: obs('lane_blocked') });
   }
   if (w.event === 'idle') {
     // idle with any other status: stalled (S08 lost ~3 h) → one nudge, then the human
@@ -807,6 +810,13 @@ export function applyAnswer(ctx, q) {
     case 'send_failed:resume lane carries it':
       st.writeSliceState(root, id, { outbox: { ...s.outbox, [q.ref]: { ...s.outbox[q.ref], dropped: true } }, resume_note: s.outbox[q.ref].text });
       return resumeWriter(ctx, st.readSliceState(root, id), `unreachable (${s.outbox[q.ref].failed})`);
+    case 'lane_blocked:send this answer to the lane': {
+      if (!q.answer.text) throw new Error('give the answer with --text');
+      ack();
+      // one line (a newline could submit early); a judge answer says so and names its contract line
+      const who = q.answer.by === 'judge' ? `Answer from the producer's judge (per the contract line "${oneLine(q.answer.quote)}")` : "Director's answer to your question";
+      return sendOnce(ctx, `answer:${q.id}`, laneHandle, `${who}: ${oneLine(q.answer.text)} — continue the slice; update HANDOFF.json when your status changes.`);
+    }
     case 'lane_blocked:answered in the lane, continue':
     case 'coordinator_missing:taken over, continue':
     case 'fleet_stall:nudged again, continue':
@@ -815,9 +825,10 @@ export function applyAnswer(ctx, q) {
     default:
       if (MERGE_KINDS.has(q.kind)) return applyMergeAnswer(ctx, q);
       if (q.kind === 'fleet_gate') {
-        const decision = choice === 'answer with --text' ? q.answer.text : `${choice}${note}`;
+        const decision = oneLine(choice === 'answer with --text' ? q.answer.text : `${choice}${note}`);
         if (!decision) throw new Error('this gate needs --text with the decision');
-        return sendOnce(ctx, `gate:${q.ref}:${q.id}`, COORDINATOR, `Director decision for gate ${q.ref}: ${decision}. Resolve your gate with it and continue.`,
+        const who = q.answer.by === 'judge' ? `Decision for gate ${q.ref} (producer judge, per the contract line "${oneLine(q.answer.quote)}")` : `Director decision for gate ${q.ref}`;
+        return sendOnce(ctx, `gate:${q.ref}:${q.id}`, COORDINATOR, `${who}: ${decision}. Resolve your gate with it and continue.`,
           { relayed_gates: [...(s.relayed_gates || []), q.ref], gate_waits: 0 });
       }
       throw new Error(`no action for ${q.kind}: ${choice}`);

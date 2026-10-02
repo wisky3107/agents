@@ -252,6 +252,7 @@ class Registry(unittest.TestCase):
         self.assertEqual(tr.alias_role('coordinator', '/p'), 'fleet-orch')
         self.assertEqual(tr.alias_role('worker', '/Users/wikz/orca/workspaces/cc-x/S01-a'), 'fleet-worker')
         self.assertEqual(tr.alias_role('worker', '/Users/wikz/Works/games/CocosCreator/cc-x'), 'slice-agent')
+        self.assertEqual(tr.alias_role('judge', '/p'), 'producer')  # runner judge calls are producer cost
         self.assertEqual(tr.key_label('wikz-leap-codex-cli'), 'codex')
 
 

@@ -1,7 +1,6 @@
-# M4 — producer runner: báo cáo (M4a + M4b + M4c)
+# M4 — producer runner: báo cáo (M4a–M4d)
 
-Ngày: 2026-10-02 · Branch `feat/coordinator-token-opt` · Sub-plan: [m4-plan.md](m4-plan.md) · Review độc lập: §4 (M4a+b), §7 (M4c).
-M4d (judge, Step 0–1/3, "Runner mode" trong SKILL) chưa làm.
+Ngày: 2026-10-02 · Branch `feat/coordinator-token-opt` · Sub-plan: [m4-plan.md](m4-plan.md) · Review độc lập: §4 (M4a+b), §7 (M4c), §8 (M4d).
 
 ## 1. Thay đổi
 
@@ -155,3 +154,44 @@ Cả bốn trường hợp dừng hoặc hỏi đều là dữ liệu hợp đ�
 - **`auto_merge=false`:** runner hỏi người. Sau khi director merge, runner để `worktree rm`, mở lại Editor và verify cho director; chỉ ghi nhận.
 - **Recipe reuse rows** (phần recipe results trong `review.md`) chưa ghi, vì định dạng chưa cố định.
 - **Tài liệu Orca chưa nói** `orca worktree rm` xử lý worktree bẩn và branch ra sao. Runner tự kiểm worktree bẩn và không xoá branch.
+
+## 8. M4d — judge, handoff cho LLM, Runner mode
+
+| File | Nội dung |
+|---|---|
+| `scripts/lib/judge.mjs`, `reference/judge-prompt.md` | Judge chỉ chạy khi AGENT_NOTES có `judge_agent: claude …` và chỉ cho 4 loại câu hỏi: `fleet_gate`, `lane_blocked`, `unknown_status`, `verdict_mismatch`. Mỗi câu hỏi một lần gọi `claude -p --restricted --tools Read,Grep,Glob --strict-mcp-config --disable-slash-commands --permission-prompts none --json-schema …` (thêm `--add-dir` cho worktree fleet; env lấy từ settings của user để đi đúng route): chỉ đọc thật, bỏ qua settings của project. Các giới hạn được kiểm bằng code, không dựa vào lời dặn trong prompt: (1) mỗi loại chỉ đưa cho judge một số option nhất định; (2) duyệt PLAN và các câu hỏi budget, credits, chi phí không bao giờ tới judge; (3) "treat as approved" chỉ xuất hiện khi `review.md` thật sự kết thúc bằng APPROVED; (4) câu trả lời từ hợp đồng phải trích một câu mà runner tìm thấy trong slice, `SCOPE.md` hoặc `MILESTONES.md`; (5) tối đa 2 câu trả lời của judge cho mỗi slice và loại câu hỏi. Text do lane viết được rào lại thành dữ liệu. Câu trả lời của judge được ghi nhãn là của judge khi chuyển cho lane. Defer, lỗi, `is_error` hay JSON sai đều chuyển cho người. Mỗi lần gọi ghi một dòng spawn registry (`role: judge`) |
+| `tools/token-report` | `alias_role('judge') → 'producer'`: token của judge được tính vào mục tiêu của producer (PLAN §1) |
+| `scripts/lib/lanes.mjs` | Câu hỏi `lane_blocked` thêm option "send this answer to the lane" (`--text`), gửi qua outbox. Người cũng dùng được |
+| `producer-runner.mjs` | Judge được hỏi một lần cho mỗi câu hỏi đang mở, trước người. `needs_policy` → "run Step 0-1 with an LLM producer" → spawn LLM producer (`reference/producer-step01-prompt.md`; xong thì chạy `producer-runner.mjs launch`), runner thoát. Tới điều kiện dừng mà `producer_mode: runner` → spawn LLM Step 3 (`reference/producer-step3-prompt.md`) một lần. Lệnh mới `launch`: mở terminal Orca chạy `start`, từ chối nếu đang có producer giữ lock. Ghi ý định trước khi spawn, gắn lại handle từ registry khi bị kill |
+| `SKILL.md`, `reference/producer-prompt.md` | Mục **Runner mode**: lệnh, câu hỏi và `answer`, judge, một producer cho mỗi project, giới hạn giai đoạn 1, file state. `producer-prompt.md` chọn chế độ theo `release.producer_mode` (mặc định `llm`) |
+| `tests/runner-m4d.test.mjs` | 10 test: judge trả lời câu hỏi của lane (sandbox, nhãn, registry); 9 cách judge không trả lời được + provider chưa xác minh; gate duyệt PLAN không tới judge, gate thiết kế được trả lời kèm trích dẫn; chặn "treat as approved" (kể cả verdict kiểu "APPROVED pending…"); giới hạn số lần trả lời; người trả lời trong lúc judge chạy; kill giữa lúc gọi judge; handoff (prompt chưa gửi, chưa xác nhận, `handoff-reset`, Step 3 theo goal); `launch` (quote cho shell, các trường hợp từ chối); runner đang chờ câu trả lời thì bị kill |
+
+**Đã kiểm trên CLI thật:** một lần gọi `claude -p --json-schema` (haiku) trả về `{is_error, result, structured_output, …}`.
+- Mỗi lần gọi judge tốn khoảng 37k token cache-creation (system prompt mặc định), ≈ $0.08 với haiku.
+- Con số này cần đưa vào phép đo token của pilot. Nếu judge được gọi nhiều, nên cân nhắc `--system-prompt` gọn hơn.
+
+**Đã kiểm judge thật sự chỉ-đọc trên CLI thật:**
+- Cấu hình: project tạm có `.claude/settings.local.json` cho phép Bash, Write và Edit; prompt yêu cầu `touch` một file và ghi một file khác.
+- Kết quả: judge với haiku không tạo file nào và trả lời `defer`.
+
+**Review độc lập M4d:**
+- **Vòng 1:** CHANGES_REQUESTED, gồm 3 lỗi HIGH:
+  - judge chưa thực sự chỉ-đọc (`--allowedTools` không gỡ các tool khác, và settings của project vẫn áp dụng);
+  - judge có thể "đóng dấu" gate duyệt PLAN;
+  - judge chọn "treat as approved" có thể dẫn tới merge một slice bị CHANGES_REQUESTED.
+  
+  Cùng các lỗi MEDIUM:
+  - handoff yếu hơn `spawnOnce`;
+  - không giới hạn số lần judge trả lời;
+  - người trả lời đúng lúc judge đang chạy làm runner crash;
+  - text do lane viết lái được judge và được chuyển đi như lời director.
+  
+  Đã sửa hết.
+- **Vòng 2:** đã sửa thêm 2 lỗi MEDIUM và các lỗi LOW:
+  - gate của fleet không được đưa judge các option `mark blocked` / `skip this slice`;
+  - `--restricted` giới hạn việc đọc file trong thư mục làm việc, nên evidence của worktree fleet phải được thêm bằng `--add-dir`;
+  - `--restricted` bỏ qua settings của user, nên judge mất route proxy và token. Giờ khối `env` trong settings được gộp vào môi trường của judge. Đã kiểm thật từ môi trường trống: đi qua proxy (`cc/claude-haiku-…`), đọc được thư mục qua `--add-dir`, và transcript được ghi đúng chỗ cho token-report;
+  - câu trích dẫn phải dài 30+ ký tự và nằm trong phần văn xuôi;
+  - `treat as approved` chỉ dành cho `verdict_mismatch` khi HANDOFF nói approved và verdict là APPROVED không điều kiện;
+  - prompt handoff đã điền sẵn được ghi vào `.cursor/producer-handoff-<step>.md`.
+- **Vòng 3:** **APPROVED**. Áp dụng luôn 2 ghi chú LOW: câu trích dẫn không được lấy từ khối code hay yaml; verdict mà judge được chấp nhận phải là `APPROVED` trơn, hoặc kèm một chú thích trong ngoặc không có điều kiện.

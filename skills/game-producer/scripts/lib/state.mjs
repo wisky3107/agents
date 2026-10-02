@@ -4,7 +4,7 @@
  *   .cursor/producer.control       pause | stop | stop-after <Sxx>   (written by the CLI, read between steps)
  *   .cursor/producer-runner.json   {slice, step, questions[], updated}
  *   .cursor/evidence/tasks/T-<Sxx>/producer-state.json, producer-log.md, merge-journal.json
- * The runner and a manual (LLM) producer honour the same lock.
+ * Only the runner takes the lock; an LLM producer must not run a slice loop while it is held.
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -46,7 +46,7 @@ export function ensureExcluded(root) {
   const ex = spawnSync('git', ['-C', root, 'rev-parse', '--git-path', 'info/exclude'], { encoding: 'utf8' });
   if (ex.status !== 0) return;
   const file = path.resolve(root, ex.stdout.trim());
-  const want = ['/.cursor/producer.lock', '/.cursor/producer.control', '/.cursor/producer-runner.json'];
+  const want = ['/.cursor/producer.lock', '/.cursor/producer.control', '/.cursor/producer-runner.json', '/.cursor/producer-handoff-*.md'];
   try {
     const text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
     const missing = want.filter((w) => !text.split('\n').includes(w));
@@ -201,13 +201,37 @@ export function ask(root, q) {
   return { question, isNew: true };
 }
 
-export function answer(root, id, choice, text = '') {
+export function answer(root, id, choice, text = '', meta = { by: 'human' }) {
   const r = readRunner(root);
   const q = r.questions.find((x) => x.id === id);
   if (!q) throw new Error(`no question ${id}`);
   if (q.answer) throw new Error(`${id} is already answered (${q.answer.choice})`);
   if (!q.options.includes(choice)) throw new Error(`choice must be one of: ${q.options.join(', ')}`);
-  q.answer = { choice, text, at: now() };
+  q.answer = { choice, text, at: now(), ...meta };
+  writeRunner(root, { questions: r.questions });
+  return q;
+}
+
+/**
+ * The judge's verdict and, when it chose, its answer — in one write. A director who answered while
+ * the judge ran wins: their answer stays, the verdict is only noted. → the question
+ */
+export function judgeVerdict(root, id, v) {
+  const r = readRunner(root);
+  const q = r.questions.find((x) => x.id === id);
+  if (!q) throw new Error(`no question ${id}`);
+  q.judge = { at: now(), ...v, ...(q.answer && v.choice ? { superseded: 'the director answered first' } : {}) };
+  if (v.choice && !q.answer) q.answer = { choice: v.choice, text: v.text || '', at: now(), by: 'judge', reason: v.reason, ...(v.quote ? { quote: v.quote } : {}) };
+  writeRunner(root, { questions: r.questions });
+  return q;
+}
+
+/** Merge fields into one question. */
+export function setQuestion(root, id, patch) {
+  const r = readRunner(root);
+  const q = r.questions.find((x) => x.id === id);
+  if (!q) throw new Error(`no question ${id}`);
+  Object.assign(q, patch);
   writeRunner(root, { questions: r.questions });
   return q;
 }
