@@ -45,7 +45,13 @@ model or equivalent; never drop it, or the producer, to a Haiku-class model.
 
 ## Preconditions
 
-1. `orca skills get orchestration --full` — read it; it is the authority for every Orca command.
+1. Orca commands: run `node ~/.agents/skills/cocos-orca-fleet/scripts/gen-orca-cheatsheet.mjs --check`
+   (stale → run the command it prints), then read
+   `~/.agents/skills/cocos-orca-fleet/reference/orca/cheatsheet.md` — every flag you use, generated for
+   the installed orca — instead of running `--help`. The Orca protocol you need is in **Orca protocol
+   floor** below; at an action gate load only the reference it names
+   (`orca skills get orchestration --reference references/<file>.md`). `--full` only if `--reference`
+   is rejected.
 2. `orca status --json` shows a running runtime; orchestration is enabled in Settings.
 3. Project has `orca.yaml` with the Cocos setup/archive hooks (`cocos-orca-worktree` skill).
    The template ships them (`orca.yaml` + `scripts/`); if missing, copy from
@@ -542,6 +548,29 @@ and wait again. Per Delivery:
 
 Timeouts and `{count:0}` are checkpoints, not failures. Never `task-update --status completed`
 after a valid `worker_done`; never release on idle/heartbeat.
+
+**Orca protocol floor** (from `orca skills get orchestration`, orca 1.4.218; you do not load that guide by default):
+
+- `worker-start` exits non-zero (`failed` / `outcome_unknown`) → never relaunch. Read the receipt's
+  `failedStage` and `residualResources`, then load `references/recovery-and-cleanup.md`.
+- Validate each `worker_done` against the expected active Dispatch before acting on it.
+- After three consecutive empty waits, run `orca orchestration worker-list --include-remote --json`
+  and act on each row's `projection.attention` and literal `projection.nextAction` argv (while
+  `page.hasMore`, follow `page.nextCursor`). `nextAction: none` → read `liveness.reason`, keep waiting.
+- Stop, abandon, retry or release only on positive proof the agent stopped: `exited` liveness, the
+  worker's own report of exit, or a transcript whose last turn sent no `worker_done`. Absence and
+  `unverifiable` (including `worker-show` with `agentWait: null`) never authorize them.
+- After each accepted settlement do exactly one: reuse the proven terminal for the next Dispatch,
+  `worker-retain` (only when the user asked), or `worker-release` (recipe A). An uncertain release
+  follows its recovery receipt; never substitute `terminal close` for it.
+- Do not end your turn until `orca orchestration worker-list --run <run_id> --terminal-state reclaimable --json`
+  returns none.
+- Action gates → `orca skills get orchestration --reference references/<file>.md`:
+  `coordinator-loop.md` (waves, launch model/effort, terminal reuse, review ownership) ·
+  `messaging-and-gates.md` (replay, follow-ups, group addresses, decision gates) ·
+  `recovery-and-cleanup.md` (failed/unknown attempts, retry, stop, abandon, retain, uncertain release) ·
+  `placement-and-remote.md` · `legacy-contract-migration.md` (any takeover or adopted Run) ·
+  `low-level-topology.md` (argv `worker-start` cannot express).
 
 ## Messaging rules
 

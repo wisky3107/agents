@@ -17,6 +17,8 @@ Before your first edit: run `pwd` and `git status`; the cwd must be worktree <WO
 Preserve unrelated dirty files listed in PLAN.forbidden_changes. Ask via `orca orchestration ask`
 only at real decision gates (behavior, scope, dependency, destructive, identity). Report with
 `worker_done`; use `--outcome failed` for any failure, never prose alone.
+Before your first `orca` call read ~/.agents/skills/cocos-orca-fleet/reference/orca/cheatsheet-worker.md
+(Orca browser: cheatsheet-browser.md next to it) instead of running `orca … --help`.
 Context discipline (this spec is your role card and is complete): read ONLY the PLAN, its slice
 file, docs/flows/docs-index.md + the flow docs it names for your paths, and the files this spec
 lists. Do NOT open .cursor/skills/**/SKILL.md or reference/*.md unless this spec names the file

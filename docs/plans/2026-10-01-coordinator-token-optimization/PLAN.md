@@ -96,7 +96,7 @@ Các luật dưới đây rút ra từ sự cố đã xảy ra và được gi�
 
 ## 3. Đặt thay đổi ở đâu
 
-`game-producer`, `cocos-orca-fleet`, `cocos-asset-gen` trong template và trong mọi project là **symlink** về `~/.agents/skills/…` (trỏ vào **working tree** của `~/.agents`), và `~/.cursor/skills/new-cocos-game` cũng là symlink nên `scripts/setup-orca-worktree.sh` của mọi project gọi đúng `bootstrap.mjs` trong `~/.agents`. Sửa ở `~/.agents` thì mọi project nhận ngay.
+`game-producer`, `cocos-orca-fleet`, `cocos-asset-gen` trong template và trong các project dùng producer là **symlink** về `~/.agents/skills/…` (kiểm 2026-10-02: 7/8 project có pipeline producer symlink; **`cc-bus-fever-party` giữ bản copy**, cùng 6 project cũ không dùng producer — arrow-puzzle, block-blast, jelly-busters, nitelore, taxi-pizza, cc4-playground — nên các thay đổi trong `~/.agents` không tới được những project này) (trỏ vào **working tree** của `~/.agents`), và `~/.cursor/skills/new-cocos-game` cũng là symlink nên `scripts/setup-orca-worktree.sh` của mọi project gọi đúng `bootstrap.mjs` trong `~/.agents`. Sửa ở `~/.agents` thì mọi project nhận ngay.
 
 Các thứ **được copy** vào từng project (sửa template chỉ áp cho project mới): `scripts/`, `AGENT_NOTES.md`, `AGENTS.md`, `.cursor/rules/*`, và các skill không symlink như `cocos-orca-worktree`, `vibe-game-director`. Chưa project nào có `.cursor/.skills-manifest.json`, nên `update-skills` không dùng được; project cũ phải sync tay (ghi vào FOLLOWUPS của từng project).
 
@@ -108,7 +108,7 @@ Các thứ **được copy** vào từng project (sửa template chỉ áp cho p
 | Lệnh spawn producer/coordinator (M1) | `game-producer/SKILL.md` §Step 2c; `game-producer/reference/fleet-slice-prompt.md`, `single-slice-prompt.md`, `producer-prompt.md`; `new-cocos-game/SKILL.md` (~347, spawn `fleet-<slug>`); `store-game-clone/SKILL.md` (~370) và `store-game-clone/reference/fleet-orchestrator-prompt.md` |
 | Lệnh spawn worker recipe B (M1, chỉ để gắn role) | `cocos-orca-fleet/SKILL.md` (~429, ~450), `cocos-orca-fleet/reference/worker-prompts.md` (~156) |
 | `opencode.json` theo checkout, `mcp-audit`, `clientConfigEntries: {}` (M1a) | `bootstrap.mjs` (`mcp-config`, lệnh mới `mcp-audit`); luật trong template `.cursor/skills/cocos-orca-worktree`, `.cursor/skills/vibe-game-director`, `.cursor/rules/00-guardrails.mdc` |
-| Bảng tra cứu orca (M3) | `~/.agents/skills/orca-cli/reference/cheatsheet.md` cùng script sinh `scripts/gen-cheatsheet.mjs`; chỗ đọc guide full: `cocos-orca-fleet/SKILL.md` Precondition 1, `store-game-clone/reference/fleet-orchestrator-prompt.md`, `new-cocos-game/SKILL.md` (~443) |
+| Bảng tra cứu orca (M3) | `~/.agents/skills/cocos-orca-fleet/reference/orca/cheatsheet{,-producer,-worker,-browser}.md` cùng script sinh `cocos-orca-fleet/scripts/gen-orca-cheatsheet.mjs` (không đặt trong `orca-cli`: skill đó do skills CLI quản lý, `orca skills update` có thể ghi đè); chỗ đọc guide full: `cocos-orca-fleet/SKILL.md` Precondition 1, `store-game-clone/reference/fleet-orchestrator-prompt.md`, `new-cocos-game/SKILL.md` (~443) |
 | Helper chờ (M2) | `~/.agents/skills/cocos-orca-fleet/scripts/orca-wait.mjs` |
 | Guard core cùng adapter (M2) | `~/.agents/hooks/coordinator-guard.mjs` cùng `~/.agents/hooks/adapters/` |
 | Cài hook | Cấp checkout, do `bootstrap.mjs agent-session --role …` ghi lúc spawn; gate bằng `CC_ROLE`; **không** sửa config global (§M2.6) |
@@ -271,7 +271,7 @@ Biến `baseline-scripts/` thành `~/.agents/tools/token-report/token-report.mjs
 
 ### M3: Bảng tra cứu `orca` thay cho `--help` và guide full
 
-1. `gen-cheatsheet.mjs` chạy `orca --version` và `--help` của các subcommand mà skill đang dùng: `terminal create|read|wait|send|list|show|close`, `orchestration check|send|reply|ask|inbox|run-*|task-*|worker-*|gate-*|dispatch`, `worktree *`, `eval`, `exec`, `tab`, cùng các mục lệnh của `orca skills get orchestration --full` mà fleet dùng.
+1. `gen-orca-cheatsheet.mjs` (M3 thực tế: đọc `orca agent-context --json`, schema máy đọc được của mọi lệnh, thay vì parse `--help`; một file cho mỗi vai trò: coordinator, producer, worker, browser) chạy `orca --version` và `--help` của các subcommand mà skill đang dùng: `terminal create|read|wait|send|list|show|close`, `orchestration check|send|reply|ask|inbox|run-*|task-*|worker-*|gate-*|dispatch`, `worktree *`, `eval`, `exec`, `tab`, cùng các mục lệnh của `orca skills get orchestration --full` mà fleet dùng.
    - Sinh `cheatsheet.md` gọn: mỗi lệnh có signature, flag hay dùng và 1 ví dụ; header ghi version Orca.
 2. Các skill trỏ tới cheatsheet: `cocos-orca-fleet`, `game-producer`, prompt worker trong `cocos-orca-fleet/reference/worker-prompts.md`. **Chỉ thêm một dòng trỏ**, không chép nội dung.
 3. **Thay việc đọc guide full (R4).** `cocos-orca-fleet/SKILL.md` Precondition 1, `store-game-clone/reference/fleet-orchestrator-prompt.md` và `new-cocos-game/SKILL.md` (~443) đang bảo coordinator đọc `orca skills get orchestration --full` (42,5KB). Đổi thành: đọc cheatsheet; chỉ đọc guide (bản không `--full` trước, 13KB) khi cheatsheet không có lệnh cần dùng hoặc version lệch. Guide vẫn là nguồn chuẩn để sinh cheatsheet.

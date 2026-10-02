@@ -442,6 +442,8 @@ updates. These branches still include the retro path in the final report.
 
 ## Resources
 
+- `~/.agents/skills/cocos-orca-fleet/reference/orca/cheatsheet-producer.md` — every `orca` flag you
+  use (terminals, read-only Run state, worktrees); read it instead of running `--help`.
 - [reference/producer-prompt.md](reference/producer-prompt.md) — how `new-cocos-game` /
   `store-game-clone` spawn this producer.
 - [reference/fleet-slice-prompt.md](reference/fleet-slice-prompt.md) — orchestrator prompt per slice.

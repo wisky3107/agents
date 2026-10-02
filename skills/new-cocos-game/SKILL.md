@@ -445,7 +445,7 @@ child worktree you create from it). Do not operate from any other folder.
    art_backend). Lock those values at Step 0.2 unless this prompt overrides one below; do not
    fall back to the SKILL defaults when the file sets a value.
 3. Read and follow .cursor/skills/cocos-orca-fleet/SKILL.md in this project
-   (and `orca skills get orchestration --full`).
+   (Orca flags: ~/.agents/skills/cocos-orca-fleet/reference/orca/cheatsheet.md, not `--help`).
 4. Confirm `orca.yaml` + `scripts/setup-orca-worktree.sh` exist (shipped by template,
    see .cursor/skills/cocos-orca-worktree). If missing, copy from the template that
    bootstrapped this project
