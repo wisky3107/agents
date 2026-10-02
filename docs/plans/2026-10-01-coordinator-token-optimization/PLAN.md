@@ -68,8 +68,8 @@ Mục tiêu: giảm token của lớp điều phối mà **không** làm yếu g
 
 Đo bằng tool M0, so trước và sau trên các slice cùng size:
 
-1. Token context của producer mỗi slice giảm ≥ 70%, **tính cả token của judge và các LLM producer được runner gọi** (mỗi lần gọi là context mới, không có cache). Đây là chỉ số chính. Tỷ trọng producer trong tổng token tuần < 5% chỉ là chỉ số phụ, vì nó phụ thuộc mẫu số.
-2. Lượt của fleet orchestrator mỗi slice giảm ≥ 40%.
+1. Token context của producer mỗi slice giảm **≥ 60% (gate)**, mục tiêu mở rộng 70%, **tính cả token của judge và các LLM producer được runner gọi** (mỗi lần gọi là context mới, không có cache). Đây là chỉ số chính. Tỷ trọng producer trong tổng token tuần < 5% chỉ là chỉ số phụ, vì nó phụ thuộc mẫu số. (Director chốt 2026-10-02 sau M0: trần ước được là 56–73%.)
+2. Fleet orchestrator mỗi slice: lượt giảm ≥ 40% **và token context giảm ≥ 40%** (M0: fleet-orch là bucket lớn hơn producer).
 3. Lượt đầu của coordinator giảm đúng bằng phần schema MCP bị bỏ (M0 in breakdown theo server). Nếu chỉ bỏ Funplay thì ước khoảng 72k → 55–58k.
 4. Coordinator: `--help`, `terminal read` polling và `check` không `--wait` ≈ 0, trừ allowlist. Worker: `--help` ≤ 5 mỗi slice (worker không có hook, chỉ có cheatsheet).
 5. Không regression:
@@ -143,9 +143,9 @@ Kết quả test (thư mục `/tmp/hooktest`, hook từ chối mọi lệnh có 
 
 | CLI | Cơ chế | Trạng thái |
 |---|---|---|
-| Claude | `--strict-mcp-config --mcp-config <rỗng>` | Flag có trong 2.1.x; executor test |
-| Codex | `-c mcp_servers.<name>.enabled=false` (Codex có trường `enabled` cho mỗi server) | Executor xác minh với **tên server thực của checkout** (`.codex/config.toml` của project, ví dụ `funplay_cocos`) |
-| OpenCode | `OPENCODE_CONFIG_CONTENT='{"mcp":{"<name>":{"enabled":false}}}'` (biến môi trường có trong binary) | Executor xác minh |
+| Claude | `--strict-mcp-config` (không cần `--mcp-config`) | ✅ M1: trong cc-lego-stack, init từ 1 server/135 tool xuống 0 server/27 tool; lượt đầu `claude -p` 52,3k → 35,8k |
+| Codex | `-c mcp_servers.<name>.enabled=false` | ✅ M1: `codex mcp list` báo `disabled`. Tắt server của checkout + server global nối localhost qua HTTP (`unityMCP`); **giữ** server stdio global (`node_repl`, `computer-use`) vì có thể là nền của tool `exec`/`js` |
+| OpenCode | `OPENCODE_CONFIG_CONTENT='{"mcp":{"<name>":{"enabled":false}}}'` | ✅ M1: `opencode mcp list` báo `disabled`, merge với config sẵn có. Tắt mọi server đã khai báo |
 | Cursor | Chưa có cờ theo lần launch. Có `cursor-agent mcp disable`, nhưng lưu vĩnh viễn và ảnh hưởng worker cùng checkout | Không làm; ghi "không hỗ trợ" |
 | Antigravity | `~/.gemini/antigravity/mcp_config.json` là global | Không làm |
 
@@ -153,11 +153,11 @@ Kết quả test (thư mục `/tmp/hooktest`, hook từ chối mọi lệnh có 
 
 | CLI | Giới hạn thời gian một lệnh shell | Orca vẫn nhận `agentIdentity` và `tui-idle` khi lệnh launch có prefix `CC_ROLE=…`? |
 |---|---|---|
-| Claude | 600000 ms (Bash tool) | Executor test |
-| Codex | Executor xác minh (model tự truyền `timeout_ms`; lego chạy được với 540000) | Executor test |
-| Cursor | Executor xác minh | Executor test |
-| OpenCode | Executor xác minh | Executor test |
-| Antigravity | Executor xác minh | Executor test |
+| Claude | 600000 ms (Bash tool) | ✅ M1, 2026-10-02 (Claude Code 2.1.287): `agentIdentity: claude`, `tui-idle` ok, agent đọc được `CC_ROLE`/`CC_SLICE` |
+| Codex | Executor xác minh (model tự truyền `timeout_ms`; lego chạy được với 540000) | ✅ M1, 2026-10-02 (codex-cli 0.160.0): `agentIdentity: codex`, `tui-idle` ok, env tới agent |
+| Cursor | Executor xác minh | M1, 2026-10-02: `tui-idle` ok; Orca **không** gán `agentIdentity` cho `cursor-agent`, kể cả khi không có prefix (đối chứng), nên prefix không đổi gì. **Env chưa kiểm**: `cursor-agent` trong terminal Orca hiện ở màn hình đăng nhập |
+| OpenCode | Executor xác minh | ✅ M1: `agentIdentity: opencode`, `tui-idle` ok, env tới process. **Shell tool của OpenCode lọc env**: chỉ thấy `CC_ROLE`, không thấy `CC_SLICE`, `CC_PROJECT`, `HOME` → adapter M2 phải là plugin đọc `process.env`, không dựa vào shell |
+| Antigravity | Executor xác minh | ✅ M1: `tui-idle` ok, env tới agent; Orca không gán `agentIdentity` (kể cả khi không có prefix) |
 
 `orca terminal create` (Orca 1.4.218) **không có `--env`**; `--command` được gõ vào login shell, nên prefix `CC_ROLE=x claude …` chạy được về mặt shell. Nếu Orca không nhận ra agent khi có prefix, dùng `env CC_ROLE=x claude …` hoặc export trong một wrapper giữ nguyên tên process; chọn cách nào phải ghi lý do.
 
@@ -546,6 +546,7 @@ Viết harness (`scripts/test/runner-kill.mjs`) dùng repo git giả, mock `orca
 12. (R4, director duyệt 2026-10-02) Project cũ sync tay các thay đổi ở bản copy (`cocos-orca-worktree`, `vibe-game-director`, `.cursor/rules`); không dùng `update-skills` vì chưa project nào có manifest.
 13. (R4, director duyệt 2026-10-02) Giới hạn thời gian lệnh shell của từng CLI và việc Orca nhận `agentIdentity` khi có prefix `CC_ROLE=…` do executor xác minh (bảng R4 ở §3a) trước khi dùng trong M1/M2.
 14. (R4, director duyệt 2026-10-02) Mục tiêu −70% của producer được phép chỉnh sau M0: nếu bảng phân loại lượt producer cho thấy phần phán đoán quá lớn, executor đề xuất target mới và director chốt trước khi build M4.
+15. (Director chốt 2026-10-02, theo `m0-report.md` §4) Gate producer −60% token/slice (tính cả judge), −70% là mục tiêu mở rộng; thêm chỉ tiêu −40% token/slice cho fleet coordinator. Đây là tiêu chí nghiệm thu của plan này (M2, pilot M4, gate §7.4), không phải cấu hình của project game.
 
 ## 10. Bàn giao cho agent thực thi
 

@@ -210,12 +210,18 @@ Spawn the fleet orchestrator in a **new terminal in this project** with the lock
 node ~/.agents/skills/new-cocos-game/scripts/bootstrap.mjs agent-session --json \
   --path "<PROJECT>" \
   --agent "<fleet.orchestrator_agent>" \
+  --role coordinator --slice <Sxx> \
   --title "fleet-<slug>-<Sxx>" \
   --prompt "$(cat <<'EOF'
 …reference/fleet-slice-prompt.md filled for <Sxx>…
 EOF
 )"
 ```
+
+`--role coordinator` launches the orchestrator without the editor's MCP tools (it never edits
+through Funplay; it uses `probe.mjs` and `preview-startup.json`) and tags the launch for the token
+report. Every lane you spawn for a slice (fleet, single writer, reviewer, resume lane) carries
+`--role` and `--slice`.
 
 The fleet writes a pointer PLAN to the slice file (mapping in
 [reference/slice-to-plan.md](reference/slice-to-plan.md); fleet Step 0.5 branch B — a cheap
@@ -252,7 +258,7 @@ python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d["status"],d.g
 **Single-agent lane:** `working` after idle for two consecutive waits → one nudge naming the
 missing evidence files, then `terminal wait` again. Three idle waits with no file change →
 treat as hung: `terminal close`, spawn a resume lane (same evidence dir, "finish verify +
-evidence only"), note it.
+evidence only", `--role worker --slice <Sxx>`), note it.
 
 **Fleet lane:** a healthy coordinator is busy (its `check --wait` runs in the foreground), so
 wait timeouts are normal for hours. Idle with `offer_commit` / `blocked` / `infra_blocked` →
@@ -282,7 +288,8 @@ Spawn the locked `fleet.writer_agent` in the **main checkout** (main Creator is 
 
 ```bash
 node ~/.agents/skills/new-cocos-game/scripts/bootstrap.mjs agent-session --json \
-  --path "<PROJECT>" --agent "<fleet.writer_agent>" --title "slice-<slug>-<Sxx>" \
+  --path "<PROJECT>" --agent "<fleet.writer_agent>" --role worker --slice <Sxx> \
+  --title "slice-<slug>-<Sxx>" \
   --prompt "$(cat <<'EOF'
 …reference/single-slice-prompt.md filled for <Sxx>…
 EOF
@@ -293,8 +300,9 @@ With `--json`, stdout is exactly one JSON object (`.session.handle`) and progres
 stderr — redirect stdout to a file and parse that; spawn exactly once (a failed parse on S07
 led to a second writer on the same evidence dir).
 
-Then spawn a **fresh** reviewer terminal (`fleet.reviewer_agent`) with the review section of the
-same reference — a single lane still gets an independent review before you accept it.
+Then spawn a **fresh** reviewer terminal (`fleet.reviewer_agent`, `--role worker --slice <Sxx>`)
+with the review section of the same reference — a single lane still gets an independent review
+before you accept it.
 
 ### Preview (both lanes)
 

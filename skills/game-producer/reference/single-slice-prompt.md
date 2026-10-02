@@ -1,4 +1,4 @@
-# Single-lane prompts for S / M slices (producer → `agent-session --json`)
+# Single-lane prompts for S / M slices (producer → `agent-session --json --role worker --slice <Sxx>`)
 
 Replace `<PROJECT>`, `<Sxx>`, `<SLICE_FILE>`, `<DIRECTOR_DECISIONS>`, `<EVIDENCE_DIR>`, `<PORT>`,
 `<BUDGET_MODE>` (`advisory` or `gate:<pct>`), `<WRITER_LOCKS>` (one line: `writer=<spec> reviewer=<spec> budget=<BUDGET_MODE>`),

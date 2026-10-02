@@ -1,4 +1,4 @@
-# Fleet orchestrator prompt (for `bootstrap.mjs agent-session --title fleet-<slug>`)
+# Fleet orchestrator prompt (for `bootstrap.mjs agent-session --role coordinator --title fleet-<slug>`)
 
 Replace `<PROJECT>`, `<SLUG>`, `<FUNPLAY_PORT>`, `<V1_ONE_LINER>`, `<OVERRIDE_LINE>`, `<RIP_LINE>`
 (`<FUNPLAY_PORT>` comes from `AGENT_NOTES.md` `bootstrap.funplay_port`; `<RIP_LINE>` is kept only

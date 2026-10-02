@@ -7,6 +7,7 @@ bootstrap chat.
 node ~/.agents/skills/new-cocos-game/scripts/bootstrap.mjs agent-session --json \
   --path "<PROJECT>" \
   --agent "<fleet.orchestrator_agent>" \
+  --role producer \
   --title "producer-<slug>" \
   --prompt "$(cat <<'EOF'
 You are the game-producer for the Cocos project at <PROJECT>. Your shell cwd and Orca worktree

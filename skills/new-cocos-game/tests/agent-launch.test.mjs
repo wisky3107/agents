@@ -6,11 +6,21 @@ import path from 'node:path';
 
 // Exercise the real resolver and session sequencing with an isolated Orca/trust boundary.
 const source = fs.readFileSync(new URL('../scripts/bootstrap.mjs', import.meta.url), 'utf8');
-function harness({ failWait = false, failSend = false } = {}) {
+function harness({ failWait = false, failSend = false, files = {} } = {}) {
   const calls = [];
+  const appended = [];
+  const fakeFs = {
+    existsSync: () => true,
+    readFileSync: (file) => {
+      if (!(file in files)) throw new Error(`ENOENT ${file}`);
+      return files[file];
+    },
+    mkdirSync() {},
+    appendFileSync: (file, text) => appended.push([file, text]),
+  };
   const context = vm.createContext({
     DEFAULT_AGENT: 'cursor', FORCE_BOOT: null, NON_CURSOR_BOOT_PROMPT: 'boot',
-    path, fs: { existsSync: () => true }, console: { log() {}, error() {} },
+    path, fs: fakeFs, os: { homedir: () => '/home/u' }, console: { log() {}, error() {} },
     which: x => `/bin/${x}`, resolveOrcaBin: () => 'orca',
     die: msg => { throw new Error(msg); }, ensureOrcaReady() {},
     ensureAgentWorkspacesTrusted: () => ({}), isCc4Project: () => false,
@@ -21,8 +31,109 @@ function harness({ failWait = false, failSend = false } = {}) {
   });
   vm.runInContext(source.slice(source.indexOf('function parseAgentSpec('), source.indexOf('/** stdout is reserved')), context);
   vm.runInContext(source.slice(source.indexOf('async function createAgentSession('), source.indexOf('function cmdResolve(')), context);
-  return { context, calls };
+  return { context, calls, appended };
 }
+
+// ---- launch roles (M1 of the coordinator token plan) ----
+const PROJECT_TOML = '[mcp_servers.funplay_cocos]\nurl = "http://127.0.0.1:8775/"\n';
+const GLOBAL_TOML = [
+  'model = "x"',
+  '[mcp_servers.unityMCP]', 'url = "http://localhost:8080/mcp"',
+  '[mcp_servers.node_repl]', 'command = "/bin/node_repl"',
+  '[mcp_servers.node_repl.env]', 'A = "1"',
+  '[mcp_servers.computer-use]', 'command = "./cu"',
+  '[hooks.state]', 'url = "http://127.0.0.1:1/"',
+].join('\n');
+const ROLE_FILES = {
+  '/project/.codex/config.toml': PROJECT_TOML,
+  '/home/u/.codex/config.toml': GLOBAL_TOML,
+  '/project/opencode.json': JSON.stringify({ mcp: { funplay_cocos: { type: 'remote', url: 'http://127.0.0.1:8775/' } } }),
+  '/home/u/.config/opencode/opencode.json': JSON.stringify({ mcp: { unityMCP: { type: 'remote', url: 'http://localhost:8080/mcp' }, docs: { type: 'local', command: ['x'] } } }),
+};
+test('no --role keeps every launch command byte-identical', () => {
+  const { context: c } = harness({ files: ROLE_FILES });
+  for (const id of ['claude', 'codex', 'cursor', 'opencode', 'antigravity']) {
+    const base = c.resolveAgentLaunchCommand(id);
+    assert.equal(c.applyLaunchRole(base, id, { projectPath: '/project' }).command, base);
+  }
+});
+test('coordinator: env prefix and editor MCP dropped per provider', () => {
+  const { context: c } = harness({ files: ROLE_FILES });
+  const claude = c.applyLaunchRole(c.resolveAgentLaunchCommand('claude --model sonnet'), 'claude --model sonnet',
+    { role: 'coordinator', slice: 'S03', projectPath: '/project' });
+  assert.equal(claude.command,
+    'CC_ROLE=coordinator CC_PROJECT=/project CC_SLICE=S03 claude --model sonnet --dangerously-skip-permissions --strict-mcp-config');
+  const codex = c.applyLaunchRole(c.resolveAgentLaunchCommand('codex'), 'codex', { role: 'coordinator', projectPath: '/project' });
+  assert.deepEqual([...codex.mcp.servers], ['funplay_cocos', 'unityMCP']); // stdio node_repl / computer-use stay
+  // the checkout server restates its url: a bare enabled=false for an unloaded server stops codex
+  assert.ok(codex.command.endsWith(
+    `-c 'mcp_servers.funplay_cocos.url="http://127.0.0.1:8775/"' -c mcp_servers.funplay_cocos.enabled=false`
+    + ' -c mcp_servers.unityMCP.enabled=false'));
+  const oc = c.applyLaunchRole('opencode', 'opencode', { role: 'coordinator', projectPath: '/project' });
+  assert.equal(oc.env.OPENCODE_CONFIG_CONTENT,
+    '{"mcp":{"funplay_cocos":{"enabled":false},"unityMCP":{"enabled":false},"docs":{"enabled":false}}}');
+  assert.ok(oc.command.startsWith(`CC_ROLE=coordinator CC_PROJECT=/project OPENCODE_CONFIG_CONTENT='{"mcp"`));
+  const cursor = c.applyLaunchRole(c.resolveAgentLaunchCommand('cursor'), 'cursor', { role: 'coordinator', projectPath: '/project' });
+  assert.equal(cursor.mcp.mode, 'unsupported');
+  assert.equal(cursor.command, 'CC_ROLE=coordinator CC_PROJECT=/project cursor-agent --yolo --model auto');
+});
+test('producer and worker keep MCP; paths with spaces are quoted; bad role/slice rejected', () => {
+  const { context: c } = harness({ files: ROLE_FILES });
+  const p = c.applyLaunchRole('claude --dangerously-skip-permissions', 'claude', { role: 'producer', projectPath: '/My Games/x' });
+  assert.equal(p.command, "CC_ROLE=producer CC_PROJECT='/My Games/x' claude --dangerously-skip-permissions");
+  assert.equal(p.mcp.mode, 'kept');
+  assert.equal(c.applyLaunchRole('codex', 'codex', { role: 'worker', projectPath: '/project' }).mcp.servers.length, 0);
+  assert.throws(() => c.applyLaunchRole('claude', 'claude', { role: 'boss', projectPath: '/p' }));
+  assert.throws(() => c.applyLaunchRole('claude', 'claude', { role: 'worker', slice: 'slice-3', projectPath: '/p' }));
+  assert.equal(c.applyLaunchRole('claude', 'claude', { role: 'worker', slice: 'S14a', projectPath: '/p' }).env.CC_SLICE, 'S14a');
+});
+test('codex TOML scan: comments, quoted keys, array tables, local hosts; quoted keys stay one shell word', () => {
+  const toml = [
+    '[mcp_servers."f.g"] # dotted name', "url = 'http://[::1]:9/'",
+    "[mcp_servers.'a b']", 'url = "http://0.0.0.0:1/mcp"',
+    '[[profiles]]', 'url = "http://127.0.0.1:2/"', // must not attach to the server above
+    '[mcp_servers.stdio_only]', 'command = "x"',
+  ].join('\n');
+  const { context: c } = harness({ files: { '/p/.codex/config.toml': '', '/home/u/.codex/config.toml': toml } });
+  const servers = c.codexMcpServers('/home/u/.codex/config.toml');
+  assert.deepEqual(JSON.parse(JSON.stringify(servers.map((s) => [s.name, s.url]))), // vm realm → plain arrays
+    [['f.g', 'http://[::1]:9/'], ['a b', 'http://0.0.0.0:1/mcp'], ['stdio_only', '']]);
+  const r = c.applyLaunchRole('codex', 'codex', { role: 'coordinator', projectPath: '/p' });
+  assert.deepEqual([...r.mcp.servers], ['f.g', 'a b']);
+  assert.ok(r.command.includes(`-c 'mcp_servers."f.g".enabled=false' -c 'mcp_servers."a b".enabled=false'`));
+  // a checkout server without a url is left alone (no bare override)
+  const { context: c2 } = harness({ files: { '/p/.codex/config.toml': '[mcp_servers.x]\ncommand = "y"\n' } });
+  assert.equal(c2.applyLaunchRole('codex', 'codex', { role: 'coordinator', projectPath: '/p' }).command,
+    'CC_ROLE=coordinator CC_PROJECT=/p codex');
+});
+test('teams wrapper is flagged unverified; --slice needs --role; unparsable opencode config strips nothing', () => {
+  const { context: c } = harness({ files: { '/p/opencode.json': '{ // jsonc\n }' } });
+  assert.equal(c.applyLaunchRole('orca claude-teams', 'claude-agent-teams', { role: 'coordinator', projectPath: '/p' }).mcp.mode,
+    'stripped-all-unverified');
+  assert.throws(() => c.applyLaunchRole('claude', 'claude', { slice: 'S01', projectPath: '/p' }), /--slice needs --role/);
+  assert.deepEqual([...c.applyLaunchRole('opencode', 'opencode', { role: 'coordinator', projectPath: '/p' }).mcp.servers], []);
+});
+test('a failing spawn registry never breaks the launch', async () => {
+  const { context: c, calls } = harness({ files: ROLE_FILES });
+  c.fs.appendFileSync = () => { throw new Error('EACCES'); };
+  const session = await c.createAgentSession({ projectPath: '/project', agent: 'codex', prompt: 'task', role: 'worker', slice: 'S02' });
+  assert.equal(session.ready, true);
+  assert.equal(session.promptSent, true);
+  assert.equal(calls.filter((x) => x[0] === 'terminal').length, 1);
+});
+test('agent-session launches the role command once and writes one registry line', async () => {
+  const { context: c, calls, appended } = harness({ files: ROLE_FILES });
+  const session = await c.createAgentSession({
+    projectPath: '/project', agent: 'claude --model sonnet', prompt: 'task', role: 'coordinator', slice: 'S03',
+  });
+  assert.equal(calls.filter((x) => x[0] === 'terminal').length, 1);
+  assert.ok(calls[0].join(' ').includes('CC_ROLE=coordinator CC_PROJECT=/project CC_SLICE=S03 claude --model sonnet'));
+  assert.equal(session.mcpLaunch.mode, 'stripped-all');
+  assert.equal(appended.length, 1);
+  assert.equal(appended[0][0], '/home/u/.agents/logs/spawns.jsonl');
+  const row = JSON.parse(appended[0][1]);
+  assert.deepEqual([row.role, row.slice, row.handle, row.cwd], ['coordinator', 'S03', 'term_test', '/project']);
+});
 test('all seven settings providers retain launch permissions and identity', () => {
   const { context: c } = harness();
   const cases = {

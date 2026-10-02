@@ -1,4 +1,4 @@
-# Fleet orchestrator prompt per slice (producer → `agent-session --json --title fleet-<slug>-<Sxx>`)
+# Fleet orchestrator prompt per slice (producer → `agent-session --json --role coordinator --slice <Sxx> --title fleet-<slug>-<Sxx>`)
 
 Replace `<PROJECT>`, `<Sxx>`, `<SLICE_FILE>`, `<ENGINE_LINE>`, `<DIRECTOR_DECISIONS>`, `<LITE>`
 (`true` when the slice's `assets` block is empty and `fleet_lite_when_no_assets` is on), `<BUDGET_MODE>`

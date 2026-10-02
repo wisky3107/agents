@@ -12,7 +12,9 @@
  *   node bootstrap.mjs agent-session --path <abs> [--agent cursor|claude|claude-agent-teams|codex|gemini|opencode|antigravity|"<spec>"] [--model m] [--effort e] [--title name] [--prompt "..."] [--json] [--boot|--no-boot]
  *       --json: stdout = exactly one JSON object (progress → stderr). Boot turn is auto: skipped for
  *       cursor/codex and for claude when the project has CLAUDE.md; --boot/--no-boot override.
- *   node bootstrap.mjs agent-cmd [--agent ...] [--model m] [--effort e]   dry preview of the launch command
+ *       [--role producer|coordinator|worker|judge] [--slice S<nn>]: CC_ROLE/CC_PROJECT/CC_SLICE env,
+ *       spawn registry line; coordinator launches without editor MCP (see applyLaunchRole).
+ *   node bootstrap.mjs agent-cmd [--agent ...] [--model m] [--effort e] [--role r] [--slice S<nn>] [--path <abs>]   dry preview of the launch command
  *
  * Port model: every checkout (main project or Orca worktree) owns ONE editor MCP
  * port, pinned locally:
@@ -180,7 +182,9 @@ function parseArgs(argv) {
       a === '--prompt' ||
       a === '--timeout-ms' ||
       a === '--port' ||
-      a === '--template'
+      a === '--template' ||
+      a === '--role' ||
+      a === '--slice'
     ) {
       values[a.slice(2)] = argv[++i];
     } else if (a.startsWith('--')) {
@@ -616,6 +620,163 @@ function resolveAgentLaunchCommand(agent, model, effort) {
     return id === 'gemini' ? 'gemini --yolo' : 'opencode';
   }
   die(`Unsupported agent id: ${id}; add an explicit launch mapping matching Orca settings before launching`);
+}
+
+// ---- launch roles (plan docs/plans/2026-10-01-coordinator-token-optimization, M1) ----
+// `--role` tags a launch with CC_ROLE / CC_PROJECT / CC_SLICE (read by the coordinator guard and
+// tools/token-report) and lets a fleet coordinator start without the editor's MCP tools. No role =
+// the launch command is exactly what it was before.
+const AGENT_ROLES = ['producer', 'coordinator', 'worker', 'judge'];
+const LOCAL_URL_RE = /^https?:\/\/(127\.0\.0\.1|localhost|0\.0\.0\.0|\[::1\])(:\d+)?(\/|$)/i;
+
+function shellQuote(value) {
+  const s = String(value);
+  return /^[\w./:@%+=,-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * `[mcp_servers.<name>]` tables of a Codex TOML file → [{name, url}]. A line scan, not a TOML parser:
+ * sub-tables (`.env`) and `[[array]]` tables end the current server; inline-table or dotted-key server
+ * definitions are not seen (they then simply stay enabled).
+ */
+function codexMcpServers(file) {
+  let text = '';
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch {
+    return [];
+  }
+  const out = [];
+  let cur = null;
+  for (const line of text.split('\n')) {
+    if (/^\s*\[\[/.test(line)) {
+      cur = null;
+      continue;
+    }
+    const header = line.match(/^\s*\[([^\[\]]+)\]\s*(#.*)?$/);
+    if (header) {
+      const m = header[1].trim().match(/^mcp_servers\.(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))$/);
+      cur = m ? { name: m[1] || m[2] || m[3], url: '' } : null;
+      if (cur) out.push(cur);
+      continue;
+    }
+    const url = cur && line.match(/^\s*url\s*=\s*(?:"([^"]*)"|'([^']*)')/);
+    if (url) cur.url = url[1] ?? url[2];
+  }
+  return out;
+}
+
+/** `mcp` entries of an OpenCode JSON config → [{name, url}]. */
+function opencodeMcpServers(file) {
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch {
+    return [];
+  }
+  try {
+    const mcp = JSON.parse(text).mcp || {};
+    return Object.entries(mcp).map(([name, v]) => ({ name, url: (v && v.url) || '' }));
+  } catch {
+    console.error(`new-cocos-game: note: cannot parse ${file} as JSON; its MCP servers stay enabled`);
+    return [];
+  }
+}
+
+function tomlKey(name) {
+  return /^[A-Za-z0-9_-]+$/.test(name) ? name : JSON.stringify(name);
+}
+
+/**
+ * Codex `-c` overrides that switch off the editor MCP servers a coordinator must not load:
+ * - servers the checkout declares (the Funplay / COCOS CLI pin written by mcp-config). Codex reads the
+ *   checkout config only when the folder is trusted, and a bare `enabled=false` for a server it never
+ *   loaded is an invalid server that stops Codex at startup, so the override restates the url;
+ *   checkout servers without a url are left alone;
+ * - global servers that bridge to a local editor over HTTP (always loaded, so `enabled=false` is enough).
+ * Global stdio servers (node_repl, computer-use) back Codex's own tools and stay.
+ */
+function codexMcpOverrides(projectServers, globalServers) {
+  const args = [];
+  const servers = [];
+  for (const s of projectServers) {
+    if (!s.url || servers.includes(s.name)) continue;
+    args.push(`mcp_servers.${tomlKey(s.name)}.url=${JSON.stringify(s.url)}`, `mcp_servers.${tomlKey(s.name)}.enabled=false`);
+    servers.push(s.name);
+  }
+  for (const s of globalServers) {
+    if (!LOCAL_URL_RE.test(s.url) || servers.includes(s.name)) continue;
+    args.push(`mcp_servers.${tomlKey(s.name)}.enabled=false`);
+    servers.push(s.name);
+  }
+  return { args, servers };
+}
+
+/**
+ * Role-aware launch command. Every provider gets the env prefix; `coordinator` also drops editor MCP:
+ * claude → --strict-mcp-config (no MCP at all); codex → the `-c` overrides of codexMcpOverrides;
+ * opencode → OPENCODE_CONFIG_CONTENT disabling every declared server; cursor / antigravity / gemini have
+ * no per-launch switch, so they keep their MCP (said on stderr). `producer` keeps Funplay: it verifies
+ * primary parity on main after a merge.
+ */
+function applyLaunchRole(baseCmd, agentId, { role, slice, projectPath }) {
+  if (slice && !role) die('--slice needs --role');
+  if (!role) return { command: baseCmd, env: {}, mcp: { mode: 'unchanged', servers: [] } };
+  if (!AGENT_ROLES.includes(role)) die(`Unsupported --role ${role}; use ${AGENT_ROLES.join('|')}`);
+  if (slice && !/^S\d{2}[a-z]?$/.test(slice)) die(`Invalid --slice ${slice}; expected S<nn> (e.g. S03, S14a)`);
+  const { id } = parseAgentSpec(agentId);
+  const env = { CC_ROLE: role, CC_PROJECT: projectPath };
+  if (slice) env.CC_SLICE = slice;
+  let cmd = baseCmd;
+  let mcp = { mode: 'kept', servers: [] };
+  if (role === 'coordinator') {
+    if (id === 'claude' || id === 'claude-agent-teams') {
+      cmd += ' --strict-mcp-config';
+      // verified on plain claude; whether the Orca claude-teams wrapper adds its own --mcp-config is not
+      mcp = { mode: id === 'claude' ? 'stripped-all' : 'stripped-all-unverified', servers: [] };
+    } else if (id === 'codex') {
+      const { args, servers } = codexMcpOverrides(
+        codexMcpServers(path.join(projectPath, '.codex', 'config.toml')),
+        codexMcpServers(path.join(os.homedir(), '.codex', 'config.toml')),
+      );
+      for (const a of args) cmd += ` -c ${shellQuote(a)}`;
+      mcp = { mode: 'disabled', servers };
+    } else if (id === 'opencode') {
+      // OpenCode has no internal MCP like Codex's node_repl, so every declared server goes (as with claude).
+      const servers = [
+        ...new Set(
+          [
+            ...opencodeMcpServers(path.join(projectPath, 'opencode.json')),
+            ...opencodeMcpServers(path.join(os.homedir(), '.config', 'opencode', 'opencode.json')),
+          ].map((s) => s.name),
+        ),
+      ];
+      if (servers.length) {
+        env.OPENCODE_CONFIG_CONTENT = JSON.stringify({
+          mcp: Object.fromEntries(servers.map((n) => [n, { enabled: false }])),
+        });
+      }
+      mcp = { mode: 'disabled', servers };
+    } else {
+      console.error(`new-cocos-game: note: MCP stripping unsupported for ${id}; the coordinator keeps its MCP servers`);
+      mcp = { mode: 'unsupported', servers: [] };
+    }
+  }
+  const prefix = Object.entries(env)
+    .map(([k, v]) => `${k}=${shellQuote(v)}`)
+    .join(' ');
+  return { command: `${prefix} ${cmd}`, env, mcp };
+}
+
+/** One line per spawn in ~/.agents/logs/spawns.jsonl — tools/token-report joins sessions to roles with it. */
+function appendSpawnRegistry(entry) {
+  try {
+    const dir = path.join(os.homedir(), '.agents', 'logs');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, 'spawns.jsonl'), JSON.stringify(entry) + '\n');
+  } catch (err) {
+    console.error(`new-cocos-game: warning: spawn registry not written: ${err?.message || err}`);
+  }
 }
 
 function isCursorAgent(agentId) {
@@ -1252,13 +1413,18 @@ async function waitForCocosCliMcp({
  * Required for implement=yes and especially mode=fleet (cocos-orca-fleet
  * orchestrator must live in the new project — never the bootstrap chat).
  */
-async function createAgentSession({ projectPath, agent, model, effort, title, prompt }) {
+async function createAgentSession({ projectPath, agent, model, effort, title, prompt, role, slice }) {
   const orcaBin = resolveOrcaBin();
   ensureOrcaReady(orcaBin);
   const worktree = `path:${projectPath}`;
   const agentId = agent || DEFAULT_AGENT;
   const agentSpec = parseAgentSpec(agentId, model, effort);
-  const agentCmd = resolveAgentLaunchCommand(agentId, model, effort);
+  const launch = applyLaunchRole(resolveAgentLaunchCommand(agentId, model, effort), agentId, {
+    role,
+    slice,
+    projectPath,
+  });
+  const agentCmd = launch.command;
   const tabTitle = title || `implement-${path.basename(projectPath)}`;
 
   console.log('→ pre-trust Cursor + Claude + Codex workspace (skip trust dialog)');
@@ -1274,6 +1440,7 @@ async function createAgentSession({ projectPath, agent, model, effort, title, pr
   }
 
   console.log(`→ orca terminal create --worktree ${worktree} --command ${agentCmd}`);
+  const spawnedAt = new Date().toISOString();
   const created = orcaJson(orcaBin, [
     'terminal',
     'create',
@@ -1297,6 +1464,17 @@ async function createAgentSession({ projectPath, agent, model, effort, title, pr
     created.parsed?.result?.agentTerminalHandle ||
     created.parsed?.result?.startupTerminal?.handle ||
     null;
+  appendSpawnRegistry({
+    ts: spawnedAt,
+    project: projectPath,
+    cwd: projectPath,
+    role: role || null,
+    slice: slice || null,
+    agentSpec: agentSpecString(agentSpec),
+    command: agentCmd,
+    title: tabTitle,
+    handle,
+  });
 
   let sendResult = null;
   let bootSend = null;
@@ -1370,6 +1548,9 @@ async function createAgentSession({ projectPath, agent, model, effort, title, pr
     // Canonical launch spec — write this into AGENT_NOTES.md fleet.orchestrator_agent.
     agentSpec: agentSpecString(agentSpec),
     command: agentCmd,
+    role: role || null,
+    slice: slice || null,
+    mcpLaunch: launch.mcp,
     title: tabTitle,
     handle,
     mcpPort: isCc4Project(projectPath)
@@ -1653,6 +1834,8 @@ async function cmdAgentSession(values) {
     effort: values.effort,
     title: values.title,
     prompt: values.prompt,
+    role: values.role,
+    slice: values.slice,
   });
   const ok = Boolean(session.ready && (!values.prompt || session.promptSent));
   emitResult({ ok, projectPath, session });
@@ -1664,13 +1847,22 @@ function cmdAgentCmd(values) {
   const agentId = values.agent || DEFAULT_AGENT;
   const spec = parseAgentSpec(agentId, values.model, values.effort);
   const projectPath = values.path ? path.resolve(values.path) : process.cwd();
+  const launch = applyLaunchRole(resolveAgentLaunchCommand(agentId, values.model, values.effort), agentId, {
+    role: values.role,
+    slice: values.slice,
+    projectPath,
+  });
   emitResult({
     ok: true,
     agent: spec.id,
     model: spec.model,
     effort: spec.effort,
     agentSpec: agentSpecString(spec),
-    command: resolveAgentLaunchCommand(agentId, values.model, values.effort),
+    command: launch.command,
+    role: values.role || null,
+    slice: values.slice || null,
+    env: launch.env,
+    mcp: launch.mcp,
     needsBoot:
       FORCE_BOOT === null ? !agentLoadsRulesNatively(agentId, projectPath) : FORCE_BOOT,
   });
@@ -1713,7 +1905,13 @@ async function main() {
         '    claude → claude [--model m] [--effort e] --dangerously-skip-permissions\n' +
         '    codex → codex --dangerously-bypass-approvals-and-sandbox [--model m] [-c model_reasoning_effort=e]\n' +
         '    antigravity → agy --dangerously-skip-permissions (model/effort ignored)\n' +
-        '  agent-cmd: [--agent ...] [--model m] [--effort e] → print the launch command + canonical agentSpec, no side effects',
+        '  agent-session / agent-cmd: [--role producer|coordinator|worker|judge] [--slice S<nn>]\n' +
+        '    every role: CC_ROLE / CC_PROJECT / CC_SLICE env prefix + one line in ~/.agents/logs/spawns.jsonl (agent-session)\n' +
+        '    coordinator drops editor MCP: claude --strict-mcp-config · codex -c mcp_servers.<n>.enabled=false\n' +
+        '      (checkout servers + global localhost-HTTP servers) · opencode OPENCODE_CONFIG_CONTENT (all declared servers)\n' +
+        '      · cursor/antigravity/gemini unsupported\n' +
+        '    producer keeps Funplay (post-merge parity on main); no --role = launch command unchanged\n' +
+        '  agent-cmd: [--agent ...] [--model m] [--effort e] [--path <checkout>] → print the launch command + canonical agentSpec, no side effects',
     );
   }
 }

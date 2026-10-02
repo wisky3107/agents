@@ -153,7 +153,8 @@ spec header line `writer_agent=<spec>` so the evidence shows who wrote the code.
 
 Use SKILL.md recipe B for non-Cursor scan / plan / implement / review and recipe A for Cursor.
 Managed `worker-start --agent` supports model/effort for Claude/Codex/Cursor; custom commands
-must come from the shared `bootstrap.mjs agent-cmd` resolver to preserve Orca permissions.
+must come from the shared `bootstrap.mjs agent-cmd --role worker --slice <Sxx>` resolver to preserve
+Orca permissions and tag the launch.
 Codex/Cursor load rules natively; Claude/Teams use the template's `CLAUDE.md` import.
 For scan/code/plan/review only, when `agent-cmd --path <checkout>` reports `needsBoot: true`, send
 this once after the first `tui-idle`, wait again, then attach the Task:

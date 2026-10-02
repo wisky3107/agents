@@ -29,6 +29,11 @@ reasoned by you. You never edit game files, never touch the Editor, and never ho
 lock. `AGENTS.md`, `.cursor/rules/*`, and the Orca orchestration guide are binding for every
 worker; this skill only assigns hats and wires the DAG.
 
+Launched with `bootstrap.mjs agent-session --role coordinator` you start without the editor's MCP
+tools (claude, codex, opencode; cursor and antigravity keep theirs): `probe.mjs`, `curl` and
+`preview-startup.json` are all you need. Cheap is fine, but keep the orchestrator on a Sonnet-class
+model or equivalent; never drop it, or the producer, to a Haiku-class model.
+
 ## When to use / not use
 
 | Situation | Action |
@@ -427,7 +432,7 @@ baseline, resolve it through the shared launcher, preserving the provider and al
 
 ```bash
 CMD=$(node ~/.agents/skills/new-cocos-game/scripts/bootstrap.mjs agent-cmd \
-  --agent "<locked spec>" --json | jq -er '.command')
+  --agent "<locked spec>" --role worker --slice <Sxx> --path <wt> --json | jq -er '.command')
 H=$(orca terminal create --worktree id:<wt> --title "<role>" \
   --command "$CMD" --json | jq -er '.result.handle // .result.terminal.handle')
 orca terminal wait --terminal "$H" --for tui-idle --timeout-ms 90000 --json
@@ -447,7 +452,7 @@ send the boot prompt; do not wait for `AGENTS.md loaded — …`. The art spec f
 
 ```bash
 H=$(orca terminal create --worktree id:<wt> --title "<art-role>" \
-  --command "<command resolved by bootstrap.mjs agent-cmd for the locked art spec>" --json \
+  --command "<agent-cmd --agent <locked art spec> --role worker --slice <Sxx> → .command>" --json \
   | jq -r '.result.handle // .result.terminal.handle')
 orca terminal wait --terminal "$H" --for tui-idle --timeout-ms 90000 --json
 # NO boot prompt here
