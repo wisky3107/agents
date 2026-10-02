@@ -1,0 +1,1118 @@
+{
+ "window": {
+  "since": "2026-09-24T00:00:00.000Z",
+  "until": "2026-10-01T12:41:00.000Z",
+  "project": null
+ },
+ "generated_at": "2026-10-02T03:22:07+00:00",
+ "by_source": {
+  "claude": {
+   "sessions": 408,
+   "turns": 34257,
+   "ctx": 4456593930
+  },
+  "codex": {
+   "sessions": 66,
+   "turns": 4183,
+   "ctx": 472734171
+  }
+ },
+ "roles_by_source": {
+  "claude": {
+   "total_ctx": 4456593930,
+   "roles": {
+    "interactive": {
+     "sessions": 83,
+     "turns": 10849,
+     "ctx": 1381690346,
+     "share": 0.3100328115377566,
+     "avg_ctx": 127356,
+     "median_first_ctx": 66983,
+     "out": 8365767,
+     "cache_read": 1346451104
+    },
+    "fleet-worker": {
+     "sessions": 183,
+     "turns": 10016,
+     "ctx": 1281184467,
+     "share": 0.287480638156324,
+     "avg_ctx": 127913,
+     "median_first_ctx": 74913,
+     "out": 7205521,
+     "cache_read": 1240795588
+    },
+    "fleet-orch": {
+     "sessions": 21,
+     "turns": 4605,
+     "ctx": 617961531,
+     "share": 0.13866229248308473,
+     "avg_ctx": 134193,
+     "median_first_ctx": 71789,
+     "out": 2708701,
+     "cache_read": 600450189
+    },
+    "subagent": {
+     "sessions": 92,
+     "turns": 3699,
+     "ctx": 485014106,
+     "share": 0.10883067060139356,
+     "avg_ctx": 131120,
+     "median_first_ctx": 55694,
+     "out": 3133683,
+     "cache_read": 470552821
+    },
+    "producer": {
+     "sessions": 12,
+     "turns": 2878,
+     "ctx": 399298511,
+     "share": 0.08959723889405379,
+     "avg_ctx": 138741,
+     "median_first_ctx": 80115,
+     "out": 1473245,
+     "cache_read": 385922189
+    },
+    "slice-agent": {
+     "sessions": 9,
+     "turns": 1478,
+     "ctx": 181131959,
+     "share": 0.04064358607605966,
+     "avg_ctx": 122552,
+     "median_first_ctx": 73787,
+     "out": 1342752,
+     "cache_read": 177492074
+    },
+    "helper": {
+     "sessions": 7,
+     "turns": 731,
+     "ctx": 110313010,
+     "share": 0.024752762251327665,
+     "avg_ctx": 150906,
+     "median_first_ctx": 77189,
+     "out": 1038288,
+     "cache_read": 96737039
+    },
+    "orca-boot-only": {
+     "sessions": 1,
+     "turns": 1,
+     "ctx": 0,
+     "share": 0.0,
+     "avg_ctx": 0,
+     "median_first_ctx": 0,
+     "out": 0,
+     "cache_read": 0
+    }
+   }
+  },
+  "codex": {
+   "total_ctx": 472734171,
+   "roles": {
+    "fleet-orch": {
+     "sessions": 11,
+     "turns": 1429,
+     "ctx": 179805236,
+     "share": 0.38035167971811373,
+     "avg_ctx": 125825,
+     "median_first_ctx": 16945,
+     "out": 323733,
+     "cache_read": 170642432
+    },
+    "interactive": {
+     "sessions": 27,
+     "turns": 1275,
+     "ctx": 132011994,
+     "share": 0.2792520661680706,
+     "avg_ctx": 103538,
+     "median_first_ctx": 16097,
+     "out": 383618,
+     "cache_read": 110971136
+    },
+    "producer": {
+     "sessions": 12,
+     "turns": 916,
+     "ctx": 103220659,
+     "share": 0.21834820779223932,
+     "avg_ctx": 112686,
+     "median_first_ctx": 16071,
+     "out": 270536,
+     "cache_read": 89884672
+    },
+    "helper": {
+     "sessions": 7,
+     "turns": 262,
+     "ctx": 31552247,
+     "share": 0.06674416392040337,
+     "avg_ctx": 120428,
+     "median_first_ctx": 20026,
+     "out": 291649,
+     "cache_read": 25470208
+    },
+    "fleet-worker": {
+     "sessions": 8,
+     "turns": 299,
+     "ctx": 26112099,
+     "share": 0.055236326463906076,
+     "avg_ctx": 87331,
+     "median_first_ctx": 17333,
+     "out": 129062,
+     "cache_read": 24103680
+    },
+    "orca-boot-only": {
+     "sessions": 1,
+     "turns": 2,
+     "ctx": 31936,
+     "share": 6.755593726690851e-05,
+     "avg_ctx": 15968,
+     "median_first_ctx": 15577,
+     "out": 238,
+     "cache_read": 0
+    }
+   }
+  }
+ },
+ "roles_all": {
+  "total_ctx": 4929328101,
+  "roles": {
+   "interactive": {
+    "sessions": 110,
+    "turns": 12124,
+    "ctx": 1513702340,
+    "share": 0.30708086558346953,
+    "avg_ctx": 124851,
+    "median_first_ctx": 54784,
+    "out": 8749385,
+    "cache_read": 1457422240
+   },
+   "fleet-worker": {
+    "sessions": 191,
+    "turns": 10315,
+    "ctx": 1307296566,
+    "share": 0.26520786184526696,
+    "avg_ctx": 126737,
+    "median_first_ctx": 74812,
+    "out": 7334583,
+    "cache_read": 1264899268
+   },
+   "fleet-orch": {
+    "sessions": 32,
+    "turns": 6034,
+    "ctx": 797766767,
+    "share": 0.1618408737771298,
+    "avg_ctx": 132211,
+    "median_first_ctx": 67877,
+    "out": 3032434,
+    "cache_read": 771092621
+   },
+   "producer": {
+    "sessions": 24,
+    "turns": 3794,
+    "ctx": 502519170,
+    "share": 0.10194475995583561,
+    "avg_ctx": 132451,
+    "median_first_ctx": 41618,
+    "out": 1743781,
+    "cache_read": 475806861
+   },
+   "subagent": {
+    "sessions": 92,
+    "turns": 3699,
+    "ctx": 485014106,
+    "share": 0.09839355304866122,
+    "avg_ctx": 131120,
+    "median_first_ctx": 55694,
+    "out": 3133683,
+    "cache_read": 470552821
+   },
+   "slice-agent": {
+    "sessions": 9,
+    "turns": 1478,
+    "ctx": 181131959,
+    "share": 0.03674577047595071,
+    "avg_ctx": 122552,
+    "median_first_ctx": 73787,
+    "out": 1342752,
+    "cache_read": 177492074
+   },
+   "helper": {
+    "sessions": 14,
+    "turns": 993,
+    "ctx": 141865257,
+    "share": 0.028779836540241695,
+    "avg_ctx": 142865,
+    "median_first_ctx": 42975,
+    "out": 1329937,
+    "cache_read": 122207247
+   },
+   "orca-boot-only": {
+    "sessions": 2,
+    "turns": 3,
+    "ctx": 31936,
+    "share": 6.478773444502756e-06,
+    "avg_ctx": 10645,
+    "median_first_ctx": 7788,
+    "out": 238,
+    "cache_read": 0
+   }
+  }
+ },
+ "behaviour": {
+  "interactive": {
+   "orca --help": 184,
+   "terminal read": 123,
+   "guide --full": 7,
+   "sleep>30 / sleep loop": 329,
+   "text-only turns": 641,
+   "SKILL.md re-reads": 389,
+   "SKILL.md reads": 608,
+   "check (no wait/ack)": 24,
+   "check --wait": 15,
+   "check --ack (no wait)": 19
+  },
+  "producer": {
+   "orca --help": 89,
+   "terminal read": 360,
+   "guide --full": 9,
+   "SKILL.md reads": 203,
+   "text-only turns": 720,
+   "SKILL.md re-reads": 125,
+   "sleep>30 / sleep loop": 99,
+   "check (no wait/ack)": 9,
+   "check --wait": 5
+  },
+  "helper": {
+   "orca --help": 0,
+   "terminal read": 0,
+   "guide --full": 0,
+   "text-only turns": 24,
+   "SKILL.md re-reads": 2,
+   "SKILL.md reads": 16
+  },
+  "fleet-orch": {
+   "orca --help": 365,
+   "terminal read": 518,
+   "guide --full": 31,
+   "text-only turns": 571,
+   "SKILL.md reads": 229,
+   "check --wait": 588,
+   "check (no wait/ack)": 383,
+   "check --ack (no wait)": 278,
+   "SKILL.md re-reads": 135,
+   "sleep>30 / sleep loop": 123
+  },
+  "fleet-worker": {
+   "orca --help": 398,
+   "terminal read": 0,
+   "guide --full": 5,
+   "text-only turns": 371,
+   "SKILL.md re-reads": 13,
+   "sleep>30 / sleep loop": 314,
+   "SKILL.md reads": 35,
+   "check (no wait/ack)": 51,
+   "check --wait": 1
+  },
+  "subagent": {
+   "orca --help": 16,
+   "terminal read": 0,
+   "guide --full": 0,
+   "text-only turns": 115,
+   "SKILL.md re-reads": 10,
+   "SKILL.md reads": 28,
+   "sleep>30 / sleep loop": 70
+  },
+  "slice-agent": {
+   "orca --help": 51,
+   "terminal read": 0,
+   "guide --full": 0,
+   "SKILL.md reads": 41,
+   "sleep>30 / sleep loop": 34,
+   "text-only turns": 16,
+   "SKILL.md re-reads": 30
+  },
+  "orca-boot-only": {
+   "orca --help": 0,
+   "terminal read": 0,
+   "guide --full": 0,
+   "text-only turns": 2,
+   "SKILL.md re-reads": 0
+  }
+ },
+ "turn_split": {
+  "producer": {
+   "wait": {
+    "turns": 1755,
+    "turn_share": 0.4625724828676858,
+    "ctx": 235145157,
+    "ctx_share": 0.4679327099103503
+   },
+   "overhead": {
+    "turns": 151,
+    "turn_share": 0.03979968371112282,
+    "ctx": 15486148,
+    "ctx_share": 0.03081702932845328
+   },
+   "mechanical": {
+    "turns": 875,
+    "turn_share": 0.23062730627306274,
+    "ctx": 115332795,
+    "ctx_share": 0.22950924439360193
+   },
+   "judgement": {
+    "turns": 1013,
+    "turn_share": 0.2670005271481286,
+    "ctx": 136555070,
+    "ctx_share": 0.2717410163675945
+   },
+   "replaceable_ctx_share": 0.7282589836324055,
+   "replaceable_ctx_share_strict": 0.5642862380752559
+  },
+  "fleet-orch": {
+   "wait": {
+    "turns": 2393,
+    "turn_share": 0.39658601259529336,
+    "ctx": 334804207,
+    "ctx_share": 0.41967680385964234
+   },
+   "overhead": {
+    "turns": 402,
+    "turn_share": 0.06662247265495526,
+    "ctx": 46966298,
+    "ctx_share": 0.058872216721456885
+   },
+   "mechanical": {
+    "turns": 833,
+    "turn_share": 0.13805104408352667,
+    "ctx": 103491348,
+    "ctx_share": 0.12972632137733558
+   },
+   "judgement": {
+    "turns": 2406,
+    "turn_share": 0.3987404706662247,
+    "ctx": 312504914,
+    "ctx_share": 0.3917246580415652
+   },
+   "replaceable_ctx_share": 0.6082753419584348,
+   "replaceable_ctx_share_strict": 0.5279585919376859
+  }
+ },
+ "slices": [
+  {
+   "project": "cc-block-out",
+   "slice": "S01",
+   "role": "fleet-orch",
+   "source": "claude",
+   "sessions": 1,
+   "turns": 308,
+   "ctx": 41756799
+  },
+  {
+   "project": "cc-block-out",
+   "slice": "S01",
+   "role": "fleet-worker",
+   "source": "claude",
+   "sessions": 4,
+   "turns": 562,
+   "ctx": 68454957
+  },
+  {
+   "project": "cc-block-out",
+   "slice": "S02",
+   "role": "fleet-orch",
+   "source": "claude",
+   "sessions": 2,
+   "turns": 392,
+   "ctx": 50767396
+  },
+  {
+   "project": "cc-block-out",
+   "slice": "S02",
+   "role": "fleet-worker",
+   "source": "claude",
+   "sessions": 10,
+   "turns": 466,
+   "ctx": 53586161
+  },
+  {
+   "project": "cc-block-out",
+   "slice": "S03",
+   "role": "fleet-orch",
+   "source": "claude",
+   "sessions": 1,
+   "turns": 93,
+   "ctx": 11061725
+  },
+  {
+   "project": "cc-block-out",
+   "slice": "S03",
+   "role": "fleet-worker",
+   "source": "claude",
+   "sessions": 3,
+   "turns": 238,
+   "ctx": 30100880
+  },
+  {
+   "project": "cc-block-out",
+   "slice": "S04",
+   "role": "fleet-orch",
+   "source": "claude",
+   "sessions": 1,
+   "turns": 191,
+   "ctx": 23794302
+  },
+  {
+   "project": "cc-block-out",
+   "slice": "S04",
+   "role": "fleet-worker",
+   "source": "claude",
+   "sessions": 6,
+   "turns": 431,
+   "ctx": 51847609
+  },
+  {
+   "project": "cc-block-out",
+   "slice": "S07",
+   "role": "fleet-orch",
+   "source": "claude",
+   "sessions": 1,
+   "turns": 41,
+   "ctx": 4413515
+  },
+  {
+   "project": "cc-block-out",
+   "slice": "S08",
+   "role": "fleet-orch",
+   "source": "claude",
+   "sessions": 1,
+   "turns": 343,
+   "ctx": 46867239
+  },
+  {
+   "project": "cc-block-out",
+   "slice": "S08",
+   "role": "fleet-worker",
+   "source": "claude",
+   "sessions": 8,
+   "turns": 753,
+   "ctx": 90123221
+  },
+  {
+   "project": "cc-block-out",
+   "slice": "S09",
+   "role": "fleet-orch",
+   "source": "claude",
+   "sessions": 1,
+   "turns": 152,
+   "ctx": 16895829
+  },
+  {
+   "project": "cc-block-out",
+   "slice": "S09",
+   "role": "fleet-worker",
+   "source": "claude",
+   "sessions": 10,
+   "turns": 672,
+   "ctx": 79609382
+  },
+  {
+   "project": "cc-block-out",
+   "slice": "S12",
+   "role": "fleet-orch",
+   "source": "claude",
+   "sessions": 1,
+   "turns": 188,
+   "ctx": 23707542
+  },
+  {
+   "project": "cc-block-out",
+   "slice": "S12",
+   "role": "fleet-worker",
+   "source": "claude",
+   "sessions": 7,
+   "turns": 533,
+   "ctx": 65689553
+  },
+  {
+   "project": "cc-block-out",
+   "slice": "S19",
+   "role": "fleet-orch",
+   "source": "claude",
+   "sessions": 1,
+   "turns": 75,
+   "ctx": 12391258
+  },
+  {
+   "project": "cc-block-out",
+   "slice": "S19",
+   "role": "fleet-worker",
+   "source": "claude",
+   "sessions": 4,
+   "turns": 312,
+   "ctx": 66556578
+  },
+  {
+   "project": "cc-block-out",
+   "slice": "S20",
+   "role": "fleet-orch",
+   "source": "claude",
+   "sessions": 1,
+   "turns": 117,
+   "ctx": 19177454
+  },
+  {
+   "project": "cc-block-out",
+   "slice": "S20",
+   "role": "fleet-worker",
+   "source": "claude",
+   "sessions": 6,
+   "turns": 452,
+   "ctx": 83794974
+  },
+  {
+   "project": "cc-block-out",
+   "slice": "S21",
+   "role": "fleet-orch",
+   "source": "claude",
+   "sessions": 1,
+   "turns": 122,
+   "ctx": 23484983
+  },
+  {
+   "project": "cc-block-out",
+   "slice": "S21",
+   "role": "fleet-worker",
+   "source": "claude",
+   "sessions": 8,
+   "turns": 573,
+   "ctx": 114564172
+  },
+  {
+   "project": "cc-lego-layers",
+   "slice": "S01",
+   "role": "fleet-orch",
+   "source": "codex",
+   "sessions": 5,
+   "turns": 590,
+   "ctx": 78976967
+  },
+  {
+   "project": "cc-lego-layers",
+   "slice": "S01",
+   "role": "fleet-worker",
+   "source": "codex",
+   "sessions": 8,
+   "turns": 299,
+   "ctx": 26112099
+  },
+  {
+   "project": "cc-lego-stack",
+   "slice": "S01",
+   "role": "fleet-orch",
+   "source": "codex",
+   "sessions": 1,
+   "turns": 191,
+   "ctx": 24775984
+  },
+  {
+   "project": "cc-lego-stack",
+   "slice": "S01",
+   "role": "fleet-worker",
+   "source": "claude",
+   "sessions": 3,
+   "turns": 62,
+   "ctx": 7840337
+  },
+  {
+   "project": "cc-lego-stack",
+   "slice": "S01",
+   "role": "producer",
+   "source": "codex",
+   "sessions": 1,
+   "turns": 37,
+   "ctx": 2970123
+  },
+  {
+   "project": "cc-monopoly-go",
+   "slice": "S01",
+   "role": "fleet-orch",
+   "source": "claude",
+   "sessions": 2,
+   "turns": 710,
+   "ctx": 93304560
+  },
+  {
+   "project": "cc-monopoly-go",
+   "slice": "S01",
+   "role": "fleet-worker",
+   "source": "claude",
+   "sessions": 52,
+   "turns": 2083,
+   "ctx": 239033504
+  },
+  {
+   "project": "cc-monopoly-go",
+   "slice": "S02",
+   "role": "fleet-orch",
+   "source": "claude",
+   "sessions": 1,
+   "turns": 284,
+   "ctx": 36360711
+  },
+  {
+   "project": "cc-monopoly-go",
+   "slice": "S02",
+   "role": "fleet-worker",
+   "source": "claude",
+   "sessions": 10,
+   "turns": 406,
+   "ctx": 46486913
+  },
+  {
+   "project": "cc-monopoly-go",
+   "slice": "S03",
+   "role": "fleet-orch",
+   "source": "claude",
+   "sessions": 1,
+   "turns": 153,
+   "ctx": 19325021
+  },
+  {
+   "project": "cc-monopoly-go",
+   "slice": "S03",
+   "role": "fleet-worker",
+   "source": "claude",
+   "sessions": 4,
+   "turns": 297,
+   "ctx": 37210396
+  },
+  {
+   "project": "cc-monopoly-go",
+   "slice": "S04",
+   "role": "slice-agent",
+   "source": "claude",
+   "sessions": 3,
+   "turns": 416,
+   "ctx": 48928263
+  },
+  {
+   "project": "cc-monopoly-go",
+   "slice": "S05",
+   "role": "slice-agent",
+   "source": "claude",
+   "sessions": 2,
+   "turns": 352,
+   "ctx": 42984843
+  },
+  {
+   "project": "cc-monopoly-go",
+   "slice": "S06",
+   "role": "slice-agent",
+   "source": "claude",
+   "sessions": 2,
+   "turns": 310,
+   "ctx": 39496691
+  },
+  {
+   "project": "cc-monopoly-go",
+   "slice": "S07",
+   "role": "slice-agent",
+   "source": "claude",
+   "sessions": 2,
+   "turns": 400,
+   "ctx": 49722162
+  },
+  {
+   "project": "cc-monopoly-go",
+   "slice": "S08",
+   "role": "fleet-orch",
+   "source": "claude",
+   "sessions": 3,
+   "turns": 1382,
+   "ctx": 189773954
+  },
+  {
+   "project": "cc-monopoly-go",
+   "slice": "S08",
+   "role": "fleet-orch",
+   "source": "codex",
+   "sessions": 1,
+   "turns": 126,
+   "ctx": 11608214
+  },
+  {
+   "project": "cc-monopoly-go",
+   "slice": "S08",
+   "role": "fleet-worker",
+   "source": "claude",
+   "sessions": 41,
+   "turns": 1989,
+   "ctx": 226086252
+  },
+  {
+   "project": "cc-monopoly-go",
+   "slice": "S10",
+   "role": "fleet-orch",
+   "source": "codex",
+   "sessions": 2,
+   "turns": 84,
+   "ctx": 7300001
+  },
+  {
+   "project": "cc-monopoly-go",
+   "slice": "S10",
+   "role": "fleet-worker",
+   "source": "claude",
+   "sessions": 2,
+   "turns": 31,
+   "ctx": 3594544
+  },
+  {
+   "project": "cc-monopoly-go",
+   "slice": "S11",
+   "role": "fleet-orch",
+   "source": "codex",
+   "sessions": 1,
+   "turns": 409,
+   "ctx": 55283135
+  }
+ ],
+ "cross_file_dupe_ctx": 41329767,
+ "roles_baseline_claude": {
+  "total_ctx": 4497923697,
+  "roles": {
+   "interactive": {
+    "sessions": 97,
+    "turns": 11874,
+    "ctx": 1533920432,
+    "share": 0.3410285579150855,
+    "avg_ctx": 129183,
+    "median_first_ctx": 70949,
+    "out": 9488309,
+    "cache_read": 1485708294
+   },
+   "fleet-worker": {
+    "sessions": 183,
+    "turns": 10016,
+    "ctx": 1281184467,
+    "share": 0.28483908427671134,
+    "avg_ctx": 127913,
+    "median_first_ctx": 74913,
+    "out": 7205521,
+    "cache_read": 1240795588
+   },
+   "producer": {
+    "sessions": 35,
+    "turns": 7509,
+    "ctx": 981871522,
+    "share": 0.21829439273389256,
+    "avg_ctx": 130759,
+    "median_first_ctx": 71597,
+    "out": 4871070,
+    "cache_read": 952651917
+   },
+   "subagent": {
+    "sessions": 84,
+    "turns": 3107,
+    "ctx": 351452254,
+    "share": 0.07813655314660177,
+    "avg_ctx": 113116,
+    "median_first_ctx": 55694,
+    "out": 2627900,
+    "cache_read": 337799335
+   },
+   "fleet-orch": {
+    "sessions": 5,
+    "turns": 1258,
+    "ctx": 182882985,
+    "share": 0.04065942361849719,
+    "avg_ctx": 145375,
+    "median_first_ctx": 71810,
+    "out": 662776,
+    "cache_read": 176543052
+   },
+   "slice-agent": {
+    "sessions": 7,
+    "turns": 895,
+    "ctx": 166612037,
+    "share": 0.03704198830921164,
+    "avg_ctx": 186158,
+    "median_first_ctx": 57145,
+    "out": 714484,
+    "cache_read": 164383490
+   }
+  }
+ },
+ "reclassified": [
+  [
+   [
+    "producer",
+    "fleet-orch"
+   ],
+   {
+    "sessions": 11,
+    "ctx": 396328715
+   }
+  ],
+  [
+   [
+    "interactive",
+    "slice-agent"
+   ],
+   {
+    "sessions": 9,
+    "ctx": 181131959
+   }
+  ],
+  [
+   [
+    "producer",
+    "interactive"
+   ],
+   {
+    "sessions": 9,
+    "ctx": 180826152
+   }
+  ],
+  [
+   [
+    "slice-agent",
+    "subagent"
+   ],
+   {
+    "sessions": 7,
+    "ctx": 166612037
+   }
+  ],
+  [
+   [
+    "interactive",
+    "helper"
+   ],
+   {
+    "sessions": 7,
+    "ctx": 110313010
+   }
+  ],
+  [
+   [
+    "interactive",
+    "fleet-orch"
+   ],
+   {
+    "sessions": 5,
+    "ctx": 38749831
+   }
+  ],
+  [
+   [
+    "producer",
+    "subagent"
+   ],
+   {
+    "sessions": 4,
+    "ctx": 5744244
+   }
+  ],
+  [
+   [
+    "interactive",
+    "producer"
+   ],
+   {
+    "sessions": 1,
+    "ctx": 326100
+   }
+  ],
+  [
+   [
+    "interactive",
+    "orca-boot-only"
+   ],
+   {
+    "sessions": 1,
+    "ctx": 0
+   }
+  ]
+ ],
+ "omniroute": {
+  "oldest_row": "2026-09-25T03:21:49.307Z",
+  "compared_from": "2026-09-25T03:21:49.307Z",
+  "clients": {
+   "other": {
+    "calls": 10579,
+    "tokens_in": 1440,
+    "cache_read": 0,
+    "cache_write": 0,
+    "out": 514
+   },
+   "claude": {
+    "calls": 30581,
+    "tokens_in": 3950596374,
+    "cache_read": 3806401861,
+    "cache_write": 143345087,
+    "out": 25174516
+   },
+   "codex": {
+    "calls": 3450,
+    "tokens_in": 382239278,
+    "cache_read": 353243648,
+    "cache_write": 0,
+    "out": 1021379
+   }
+  }
+ },
+ "transcript_cache_read_overlap": {
+  "claude": 3370970237,
+  "codex": 347560192
+ },
+ "schema": {
+  "files_in_window": 8664,
+  "files_scanned": 619,
+  "requests_with_tools": 292,
+  "bytes_per_token": [
+   4.0,
+   3.2
+  ],
+  "signatures": [
+   {
+    "key": "claude",
+    "requests": 109,
+    "tools_bytes": 117801,
+    "groups_bytes": {
+     "builtin": 63707,
+     "mcp:funplay_cocos": 54094
+    },
+    "groups_tokens_est": {
+     "builtin": [
+      15927,
+      19908
+     ],
+     "mcp:funplay_cocos": [
+      13524,
+      16904
+     ]
+    }
+   },
+   {
+    "key": "claude",
+    "requests": 69,
+    "tools_bytes": 187646,
+    "groups_bytes": {
+     "builtin": 133552,
+     "mcp:funplay_cocos": 54094
+    },
+    "groups_tokens_est": {
+     "builtin": [
+      33388,
+      41735
+     ],
+     "mcp:funplay_cocos": [
+      13524,
+      16904
+     ]
+    }
+   },
+   {
+    "key": "claude",
+    "requests": 38,
+    "tools_bytes": 133222,
+    "groups_bytes": {
+     "builtin": 79128,
+     "mcp:funplay_cocos": 54094
+    },
+    "groups_tokens_est": {
+     "builtin": [
+      19782,
+      24728
+     ],
+     "mcp:funplay_cocos": [
+      13524,
+      16904
+     ]
+    }
+   },
+   {
+    "key": "claude",
+    "requests": 21,
+    "tools_bytes": 130757,
+    "groups_bytes": {
+     "builtin": 130757
+    },
+    "groups_tokens_est": {
+     "builtin": [
+      32689,
+      40862
+     ]
+    }
+   },
+   {
+    "key": "claude",
+    "requests": 18,
+    "tools_bytes": 187335,
+    "groups_bytes": {
+     "builtin": 133241,
+     "mcp:funplay_cocos": 54094
+    },
+    "groups_tokens_est": {
+     "builtin": [
+      33310,
+      41638
+     ],
+     "mcp:funplay_cocos": [
+      13524,
+      16904
+     ]
+    }
+   },
+   {
+    "key": "claude",
+    "requests": 12,
+    "tools_bytes": 81786,
+    "groups_bytes": {
+     "builtin": 85,
+     "mcp:unity-editor-mcp": 81701
+    },
+    "groups_tokens_est": {
+     "builtin": [
+      21,
+      27
+     ],
+     "mcp:unity-editor-mcp": [
+      20425,
+      25532
+     ]
+    }
+   },
+   {
+    "key": "claude",
+    "requests": 11,
+    "tools_bytes": 129984,
+    "groups_bytes": {
+     "builtin": 129984
+    },
+    "groups_tokens_est": {
+     "builtin": [
+      32496,
+      40620
+     ]
+    }
+   },
+   {
+    "key": "claude",
+    "requests": 5,
+    "tools_bytes": 83348,
+    "groups_bytes": {
+     "builtin": 29254,
+     "mcp:funplay_cocos": 54094
+    },
+    "groups_tokens_est": {
+     "builtin": [
+      7314,
+      9142
+     ],
+     "mcp:funplay_cocos": [
+      13524,
+      16904
+     ]
+    }
+   }
+  ]
+ }
+}
