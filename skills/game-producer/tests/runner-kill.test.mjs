@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
-import { project, fakes, runner, runnerChild, until, evRel, sliceState, approvedEvidence, commitStep, lastCommit } from './harness.mjs';
+import { project, fakes, runner, runnerChild, until, evRel, sliceState, approvedEvidence, commitStep, lastCommit, singleCommitText } from './harness.mjs';
 
 // PLAN §6: real SIGKILLs at the runner's risky points, then a restart. Nothing may be spawned or sent twice.
 const H = evRel('S01', 'HANDOFF.json');
@@ -87,7 +87,7 @@ test('kill (whole process group) during a lane wait: the restart resumes the sam
   const out = runner(p.root, f, 'start', '--once').out;
   assert.deepEqual(out.find((o) => o.merged), { merged: 'S01', commit: lastCommit(f) });
   assert.deepEqual(f.spawns().map((s) => s.role), ['worker', 'worker']); // one writer, one reviewer
-  assert.deepEqual(f.sends(), [{ to: 'term_1', text: 'approved — commit' }]);
+  assert.deepEqual(f.sends(), [{ to: 'term_1', text: singleCommitText(p.root, 'S01') }]);
 });
 
 test('two runners taking over the same dead lock: exactly one wins', async () => {

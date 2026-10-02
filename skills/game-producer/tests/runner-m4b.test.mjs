@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { loadProject, preflight, policyAgents, sameSpec, budgetMode, liteWhenNoAssets, isCc4, ripStudy, sliceFront } from '../scripts/lib/project.mjs';
 import { fill, prompts, normalizeStatus, manualRequired } from '../scripts/lib/lanes.mjs';
-import { NOTES, POLICY, project, fakes, runner, evRel, ev, sliceState, clearControl, approvedEvidence, commitStep, lastCommit } from './harness.mjs';
+import { NOTES, POLICY, project, fakes, runner, evRel, ev, sliceState, clearControl, approvedEvidence, commitStep, lastCommit, singleCommitText } from './harness.mjs';
 
 // Lane state machines (plan M4b) against a fake orca / bootstrap (pretty-printed JSON, like the
 // real ones) and the real orca-wait.
@@ -42,7 +42,7 @@ test('single lane: writer → fresh reviewer → Step 2d accept → commit → r
   assert.match(sp[0].prompt, /--port \(port of previewUrl in \/.+preview-startup\.json\)/); // the writer records the port itself
   assert.match(sp[1].prompt, /http:\/\/127\.0\.0\.1:7461\//); // the reviewer gets the writer's port
   assert.match(sp[0].prompt, /"updatedAt":"<ISO>"/); // the agent's own placeholder stays
-  assert.deepEqual(f.sends(), [{ to: 'term_1', text: 'approved — commit' }]);
+  assert.deepEqual(f.sends(), [{ to: 'term_1', text: singleCommitText(p.root, 'S01') }]);
   assert.deepEqual(f.closes(), ['term_2', 'term_1']); // the reviewer at its verdict, the writer once recorded
   assert.equal(sliceState(p.root, 'S01').phase, 'done');
   // single lane: the commit is on main — harvest + record, no merge (M4c)
@@ -76,7 +76,7 @@ test('single lane: one nudge at idle 2, resume lane at idle 3; a stale review.md
   assert.deepEqual(sends.map((s) => s.to), ['term_1', 'term_2', 'term_2']);
   assert.match(sends[0].text, /^Status check: .*preview-startup\.json/);
   assert.match(sends[1].text, /^Fix round 1: apply exactly the rows of the `## fix_routing` table/);
-  assert.equal(sends[2].text, 'approved — commit');
+  assert.equal(sends[2].text, singleCommitText(p.root, 'S01'));
   assert.deepEqual(f.closes().slice(0, 3), ['term_1', 'term_3', 'term_4']);
   const s = sliceState(p.root, 'S01');
   assert.deepEqual([s.fix_rounds, s.respawns, s.commit_sha], [1, 1, lastCommit(f)]);

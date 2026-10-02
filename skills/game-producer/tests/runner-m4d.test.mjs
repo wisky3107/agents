@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { loadProject } from '../scripts/lib/project.mjs';
-import { NOTES, POLICY, project, fakes, runner, runnerChild, until, evRel, approvedEvidence } from './harness.mjs';
+import { NOTES, POLICY, project, fakes, runner, runnerChild, until, evRel, approvedEvidence, singleCommitText } from './harness.mjs';
 
 // Judge, LLM handoffs and launch (plan M4d). The judge is always the fake (PRODUCER_RUNNER_JUDGE_CMD).
 const H = evRel('S01', 'HANDOFF.json');
@@ -133,7 +133,7 @@ test('judge: "treat as approved" only when review.md really ends APPROVED', () =
   // markup the runner's own check does not strip: the judge may confirm it
   const ok = run('APPROVED (minor notes only)');
   assert.deepEqual([ok.q.kind, ok.q.answer?.by, ok.q.answer?.choice], ['verdict_mismatch', 'judge', 'treat as approved']);
-  assert.deepEqual(ok.f.sends(), [{ to: 'term_1', text: 'approved — commit' }]);
+  assert.deepEqual(ok.f.sends(), [{ to: 'term_1', text: singleCommitText(ok.p.root, 'S01') }]);
   // a CHANGES_REQUESTED or conditional review: the option is not even offered, the judge's pick is refused
   for (const verdict of ['CHANGES_REQUESTED, but approve the art', 'APPROVED pending the art pass', 'APPROVED subject to the art pass', 'APPROVED (needs follow-up)']) {
     const no = run(verdict);

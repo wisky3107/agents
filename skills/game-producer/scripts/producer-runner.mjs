@@ -84,6 +84,26 @@ const QUESTION = {
   stuck: { options: ['fixed, retry', 'stop'], text: 'The runner cannot pick a slice.' },
 };
 const NOT_STARTED = new Set(['planned', 'pending', 'todo', '']);
+
+/**
+ * `release.autopilot: retry_once` (or the policy token): the routine "try again" answers, given by
+ * the runner itself once per slice and kind; the same stop a second time — or any other question —
+ * waits for the director (or the judge).
+ */
+const AUTOPILOT = {
+  commit_stalled: 'resend commit',
+  reviewer_hung: 'spawn a fresh reviewer',
+  lane_hung: 'spawn another resume lane',
+  changes_after_rounds: 'one more fix round',
+  orca_error: 'retry',
+};
+function autopilotChoice(root, project, q) {
+  if (String(project.policy?.tokens?.autopilot ?? project.release.autopilot ?? 'off') !== 'retry_once') return null;
+  const choice = AUTOPILOT[q.kind];
+  if (!choice || q.answer || !q.options.includes(choice)) return null;
+  const used = st.readRunner(root).questions.some((x) => x.id !== q.id && x.slice === q.slice && x.kind === q.kind && x.answer?.by === 'autopilot');
+  return used ? null : choice;
+}
 const LEGACY_GATE_TEXT = 'Record the director decision for this slice in the policy line, then answer.';
 
 /**
@@ -527,6 +547,19 @@ async function start(root, { dryRun: dry, once }) {
         const q = st.judgeVerdict(root, open.id, v);
         if (open.slice) st.log(root, open.slice, `judge on ${open.id} (${open.kind}): ${v.choice ? `${v.choice} — ${v.reason}${q.judge.superseded ? ' (superseded: the director answered first)' : ''}` : v.defer}`);
         say({ judge: open.id, ...(v.choice ? { choice: v.choice, reason: v.reason } : { deferred: v.defer }) });
+        continue;
+      }
+    }
+    if (open && !open.answer) {
+      const choice = autopilotChoice(root, loadProject(root), open);
+      if (choice) {
+        try {
+          st.answer(root, open.id, choice, '', { by: 'autopilot' });
+          if (open.slice) st.log(root, open.slice, `autopilot on ${open.id} (${open.kind}): ${choice} — once for this slice; the next one waits for the director`);
+          say({ autopilot: open.id, kind: open.kind, choice });
+        } catch {
+          /* answered meanwhile */
+        }
         continue;
       }
     }

@@ -103,8 +103,8 @@ if (cmd === 'terminal wait') {
     const cp = require('child_process');
     cp.spawnSync('git', ['-C', P, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-qm', step.commit.message]);
     const sha = cp.spawnSync('git', ['-C', P, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
-    const f = path.resolve(P, step.commit.handoff);
-    fs.writeFileSync(f, JSON.stringify({ role: 'writer', status: 'committed', sha }));
+    // noHandoff: the writer commits and says nothing (pilot 2)
+    if (!step.commit.noHandoff) fs.writeFileSync(path.resolve(P, step.commit.handoff), JSON.stringify({ role: 'writer', status: 'committed', sha }));
     fs.writeFileSync(path.join(D, 'last-commit'), sha);
   }
   if (step.runs) fs.writeFileSync(path.join(D, 'runs.json'), JSON.stringify(step.runs));
@@ -292,6 +292,8 @@ export const approvedEvidence = (id, verdict = 'APPROVED', runtime = { status: '
 export const commitStep = (id, message = `feat(${id}): slice`) => ({ name: 'committed', commit: { message, handoff: `.cursor/evidence/tasks/T-${id}/evidence/HANDOFF.json` } });
 export const lastCommit = (fake) => fs.readFileSync(path.join(fake.dir, 'last-commit'), 'utf8').trim();
 
+/** The single-lane commit request (M6c): it says what to write in HANDOFF.json after the commit. */
+export const singleCommitText = (root, id) => `approved — commit: run /commit-guard on this checkout, then write ${path.join(root, '.cursor', 'evidence', 'tasks', `T-${id}`, 'evidence', 'HANDOFF.json')} with "status": "committed" and "sha": the full sha of that commit.`;
 export const ev = (root, id, ...rel) => path.join(root, '.cursor', 'evidence', 'tasks', `T-${id}`, ...rel);
 export const evRel = (id, file) => `.cursor/evidence/tasks/T-${id}/evidence/${file}`;
 export const sliceState = (root, id) => JSON.parse(fs.readFileSync(ev(root, id, 'producer-state.json'), 'utf8'));
