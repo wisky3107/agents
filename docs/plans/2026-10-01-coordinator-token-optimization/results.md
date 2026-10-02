@@ -20,6 +20,8 @@ Project totals 2026-09-24 → 2026-10-02: producer 167.9M (27%), fleet-orch 196.
 |---|---|---|---|---|---|---|---|
 | 1 | S08 | L / fleet | `producer_mode: runner`, no judge, guard `shadow`, M1 roles + M3 cheatsheets live (master f5fc21e; runner restarted onto 02c1541, e154671) | 0 (no LLM producer) + runner's verifier 1.2M (13 turns) | 82.9M (616 turns) | 7 / 7 / 0 | merged 2026-10-02 14:47Z (main b8dc783, commit cc223e7), verified; 3 review rounds, 2 fix rounds, 3 gates; 5 h 53 m wall |
 
+| 2 | S02 | M / single | runner sau M6/M6b + lựa chọn director_gate GIVEN; `manual_required: defer`; no judge | 0 (no LLM producer) | — (single lane: writer + 2 reviewers, 3 sessions, 238 turns, 39.5M) | 2 / 2 / 0 trong slice (+5 director_gate trước khi chọn) | merged 2026-10-02 19:52Z (`403f1d1`, bookkeeping `2ef8040`); 1 fix round; 5 manual deferred; kẹt 1 h 30 ở bước commit |
+
 ### Pilot 1 — kết quả
 
 token-report `--since 2026-10-02T08:54:00Z --project cc-lego-stack`, đến 14:49Z.
@@ -101,3 +103,24 @@ token-report `--since 2026-10-02T08:54:00Z --project cc-lego-stack`, đến 14:4
     - 2 file untracked do Editor tạo khi mở lại: `assets/.meta`, `assets/scenes/game.scene.index.json.meta`.
   - Chưa rõ SKILL muốn runner commit các file này hay để director commit.
   - Runner chuyển ngay sang S02 và dừng ở `q8` (director_gate: S02 `needs_director_ok`, dòng policy chưa ghi quyết định).
+
+### Pilot 2 — S02 (M, single lane), 2026-10-02
+
+- **17:29Z: director chọn "S02 GIVEN — record it" trong hộp thoại (q12).** Runner ghi quyết định lên dòng policy và chọn S02 ngay.
+  - Trước đó, q8–q11 lặp lại: director chọn "decided, retry" mà chưa ghi quyết định lên dòng policy. Lỗi này đã sửa bằng lựa chọn GIVEN (merge `a6c403f`).
+- **Lane chạy đúng.** Writer chạy 28 phút. Review 1 trả CHANGES_REQUESTED, runner gửi fix round 1, rồi review 2 trả APPROVED. `manual_required: defer` hoãn 5 việc manual mà không hỏi.
+- **18:22Z: writer commit `403f1d1` nhưng không ghi HANDOFF `committed` + sha, rồi thoát.**
+  - Prompt của writer ghi "Do not commit". Quy trình commit chỉ nằm trong phần hướng dẫn cho producer, nên lệnh `approved — commit` không nói writer phải làm gì.
+  - Runner hỏi `commit_stalled` (q13). Director chọn "resend commit" sau 81 phút. Sau đó runner chờ im lặng: fingerprint của tình huống trùng với q13 đã được trả lời.
+  - 19:52Z, session producer ghi HANDOFF thay writer, theo lệnh của director. Runner chạy tiếp: harvest, record, rồi bookkeeping commit `2ef8040` (`AGENT_NOTES.md`). Sau đó runner hỏi director_gate cho S03.
+- **Đã sửa (commit `f579d10`):**
+  - lệnh commit cho single lane nói rõ phải ghi gì vào HANDOFF;
+  - đúng một commit mới trên main kể từ lúc gửi lệnh thì runner nhận luôn, nhiều hơn thì director chọn;
+  - đã gửi lại lệnh commit mà vẫn kẹt thì runner hỏi lại;
+  - thêm `autopilot: retry_once`;
+  - việc manual hiển thị dạng "item — reason".
+- **Token:** lego-stack chưa có slice single lane nào chạy theo cách cũ để so sánh. Producer tốn 0 token. Lane: 3 session, 238 turn, 39,5M context.
+- **2026-10-03: director yêu cầu chạy S03–S07 liên tục, không dừng.** Đã làm 3 việc:
+  - ghi `S03-S07 GIVEN` lên dòng policy;
+  - bật `judge_agent: claude --model sonnet`;
+  - bật `autopilot: retry_once` sau khi merge.
