@@ -348,9 +348,14 @@ node ~/.agents/skills/new-cocos-game/scripts/bootstrap.mjs agent-session \
   --path <projectPath> \
   [--agent cursor|claude|codex|antigravity | "<spec from AGENT_NOTES.md fleet.orchestrator_agent>"] \
   [--model <m>] [--effort <e>] \
-  [--title "implement-<slug>" | "fleet-<slug>"] \
+  [--title "implement-<slug>" | "fleet-<slug>" | "producer-<slug>"] \
+  [--role coordinator | producer | worker] [--slice S01] \
   [--prompt "<prompt>"]
 ```
+
+`--role`: mode `fleet` → `coordinator --slice S01` (launches without the editor's MCP tools; the
+coordinator never edits through Funplay); mode `producer` → `producer` (keeps Funplay for post-merge
+parity on main); mode `single` → `worker`. `--slice` needs a `--role`.
 
 Pass `--agent "$(yq '.fleet.orchestrator_agent' …)"`-style spec strings verbatim, or the id plus
 `--model` / `--effort`; explicit flags win over the spec. The JSON result's `session.agentSpec`
@@ -399,7 +404,7 @@ Existing sessions keep their original permissions until replaced after work has 
 ### Mode `producer` (default when brief_author=`fable`) — spawn in project
 
 Requires `MILESTONES.md` + `slices/` at the project root (written by Step 6b). Missing →
-fall back to mode `single`/`fleet` and say why. Use title `producer-<slug>` and the prompt in
+fall back to mode `single`/`fleet` and say why. Use title `producer-<slug>`, `--role producer`, and the prompt in
 `<project>/.cursor/skills/game-producer/reference/producer-prompt.md` (fill `<PROJECT>`,
 `<slug>`; keep the Overrides block only for values the user changed after Step 5b — the
 producer reads `release:` from `AGENT_NOTES.md` otherwise). Report the terminal handle and stop
@@ -422,7 +427,7 @@ Do not push unless I ask.
 
 ### Mode `fleet` — prompt template (orchestrator in project, one slice only)
 
-Use title `fleet-<slug>`. The spawned agent **is** the `cocos-orca-fleet`
+Use title `fleet-<slug>` and `--role coordinator --slice S01`. The spawned agent **is** the `cocos-orca-fleet`
 coordinator; this bootstrap chat must not keep coordinating. When `slices/` exists, name
 `slices/S01-*.md` in the prompt so the fleet copies its PLAN from it.
 
@@ -440,7 +445,7 @@ child worktree you create from it). Do not operate from any other folder.
    art_backend). Lock those values at Step 0.2 unless this prompt overrides one below; do not
    fall back to the SKILL defaults when the file sets a value.
 3. Read and follow .cursor/skills/cocos-orca-fleet/SKILL.md in this project
-   (and `orca skills get orchestration --full`).
+   (Orca flags: ~/.agents/skills/cocos-orca-fleet/reference/orca/cheatsheet.md, not `--help`).
 4. Confirm `orca.yaml` + `scripts/setup-orca-worktree.sh` exist (shipped by template,
    see .cursor/skills/cocos-orca-worktree). If missing, copy from the template that
    bootstrapped this project

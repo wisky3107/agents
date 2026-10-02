@@ -1,4 +1,4 @@
-# Fleet orchestrator prompt (for `bootstrap.mjs agent-session --title fleet-<slug>`)
+# Fleet orchestrator prompt (for `bootstrap.mjs agent-session --role coordinator --title fleet-<slug>`)
 
 Replace `<PROJECT>`, `<SLUG>`, `<FUNPLAY_PORT>`, `<V1_ONE_LINER>`, `<OVERRIDE_LINE>`, `<RIP_LINE>`
 (`<FUNPLAY_PORT>` comes from `AGENT_NOTES.md` `bootstrap.funplay_port`; `<RIP_LINE>` is kept only
@@ -9,7 +9,7 @@ You are the cocos-orca-fleet orchestrator for <PROJECT>. Keep cwd and Orca workt
 
 1. Assert pwd is <PROJECT> (or Orca child). Uncommitted contracts (GAME_BRIEF, HOW_TO, EXPECT_*, ASSET_MANIFEST, SCOPE, ARCHITECTURE, FOLLOWUPS, PLAYTEST, CONTEXT, docs/adr) are expected; snapshot anything else into forbidden_changes.
 2. Read GAME_BRIEF.md, SCOPE.md, ARCHITECTURE.md, PLAYTEST.md, FOLLOWUPS.md, HOW_TO.md, EXPECT_GAMEPLAY_VISUAL.md, ASSET_MANIFEST.md, and AGENT_NOTES.md.
-3. Follow .cursor/skills/cocos-orca-fleet/SKILL.md and `orca skills get orchestration --full`.
+3. Follow .cursor/skills/cocos-orca-fleet/SKILL.md; Orca flags come from ~/.agents/skills/cocos-orca-fleet/reference/orca/cheatsheet.md, not `--help`.
 4. Confirm orca.yaml + scripts/setup-orca-worktree.sh exist.
 5. Main Creator on this path uses Funplay :<FUNPLAY_PORT>. Fleet creates ONE feature worktree with --setup run; integrator edits only via worktree Creator after `probe.mjs --only funplay` → parity:true. Never edit through the main Creator.
 

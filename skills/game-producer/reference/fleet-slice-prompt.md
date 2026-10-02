@@ -1,4 +1,4 @@
-# Fleet orchestrator prompt per slice (producer → `agent-session --json --title fleet-<slug>-<Sxx>`)
+# Fleet orchestrator prompt per slice (producer → `agent-session --json --role coordinator --slice <Sxx> --title fleet-<slug>-<Sxx>`)
 
 Replace `<PROJECT>`, `<Sxx>`, `<SLICE_FILE>`, `<ENGINE_LINE>`, `<DIRECTOR_DECISIONS>`, `<LITE>`
 (`true` when the slice's `assets` block is empty and `fleet_lite_when_no_assets` is on), `<BUDGET_MODE>`
@@ -55,7 +55,7 @@ worktree on this project or the feature worktree you create from it.
    on that file, not on your terminal text.
 
 Run the DAG for this slice only. Coordinator only — never edit game files, never hold the editor
-lock. Wait loop: foreground `check --wait --timeout-ms 540000` (never nohup/&/background), ack
+lock. Wait loop: foreground `node ~/.agents/skills/cocos-orca-fleet/scripts/orca-wait.mjs coord [--ack <id>]` (never nohup/&/background), ack
 every Delivery you handled (heartbeats too), never end your turn while a Dispatch is live, and
 create every fix_routing row's Task in one pass with --deps. Decisions from me arrive as plain
 text; you resolve your own gates. End at "offer commit" (HANDOFF status offer_commit) and wait

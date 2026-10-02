@@ -1,4 +1,4 @@
-# Single-lane prompts for S / M slices (producer → `agent-session --json`)
+# Single-lane prompts for S / M slices (producer → `agent-session --json --role worker --slice <Sxx>`)
 
 Replace `<PROJECT>`, `<Sxx>`, `<SLICE_FILE>`, `<DIRECTOR_DECISIONS>`, `<EVIDENCE_DIR>`, `<PORT>`,
 `<BUDGET_MODE>` (`advisory` or `gate:<pct>`), `<WRITER_LOCKS>` (one line: `writer=<spec> reviewer=<spec> budget=<BUDGET_MODE>`),
@@ -97,7 +97,8 @@ to check, then gather current evidence. A memory item or the writer's claim is n
    for every state-answerable acceptance row; do not replay them by hand. A row with no check
    although state could answer it is a minor finding (owner code).
 2. Play only the feel rows and the slice `playtest` steps smoke cannot express (Orca browser,
-   eval-first, one object per eval). Missing tween/particle/transition = major, "plays dry" counts.
+   eval-first, one object per eval; flags in ~/.agents/skills/cocos-orca-fleet/reference/orca/cheatsheet-browser.md,
+   not `--help`). Missing tween/particle/transition = major, "plays dry" counts.
 3. Static: changed paths ⊆ slice paths; quote the writer's `check-change-budget.sh --report` line
    (code_only — scene/prefab/index/meta/plan never count). Over budget → write a
    `budget_bump: <from>→<to>` line above the verdict. Budget mode <BUDGET_MODE>: advisory → the

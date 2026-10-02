@@ -3,10 +3,18 @@
 Spawn **inside the project** with the locked orchestrator agent; never run the producer from the
 bootstrap chat.
 
+**Pick the mode from AGENT_NOTES `release.producer_mode`** (missing → `llm`):
+- `llm` — the prompt below: one model runs the whole skill.
+- `runner` — same command, but `--title "producer-step01-<slug>"` and the prompt from
+  [producer-step01-prompt.md](producer-step01-prompt.md) (`<RUNNER>` =
+  `~/.agents/skills/game-producer/scripts/producer-runner.mjs`): the model does Step 0–1, then
+  launches the runner for the slice loop (SKILL § Runner mode).
+
 ```bash
 node ~/.agents/skills/new-cocos-game/scripts/bootstrap.mjs agent-session --json \
   --path "<PROJECT>" \
   --agent "<fleet.orchestrator_agent>" \
+  --role producer \
   --title "producer-<slug>" \
   --prompt "$(cat <<'EOF'
 You are the game-producer for the Cocos project at <PROJECT>. Your shell cwd and Orca worktree

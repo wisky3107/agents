@@ -21,6 +21,8 @@ Nobody answers prompts in this terminal: never open an interactive question menu
 (Claude: AskUserQuestion, EnterPlanMode) — questions go through `orca orchestration ask`. Never
 spawn subagents, workflows or worktrees (Claude: Agent, Workflow, EnterWorktree) and never write
 agent auto-memory; reusable findings belong in your evidence files.
+Before your first `orca` call read ~/.agents/skills/cocos-orca-fleet/reference/orca/cheatsheet-worker.md
+(Orca browser: cheatsheet-browser.md next to it) instead of running `orca … --help`.
 Context discipline (this spec is your role card and is complete): read ONLY the PLAN, its slice
 file, docs/flows/docs-index.md + the flow docs it names for your paths, and the files this spec
 lists. Do NOT open .cursor/skills/**/SKILL.md or reference/*.md unless this spec names the file
@@ -157,7 +159,8 @@ spec header line `writer_agent=<spec>` so the evidence shows who wrote the code.
 
 Use SKILL.md recipe B for non-Cursor scan / plan / implement / review and recipe A for Cursor.
 Managed `worker-start --agent` supports model/effort for Claude/Codex/Cursor; custom commands
-must come from the shared `bootstrap.mjs agent-cmd` resolver to preserve Orca permissions.
+must come from the shared `bootstrap.mjs agent-cmd --role worker --slice <Sxx>` resolver to preserve
+Orca permissions and tag the launch.
 Codex/Cursor load rules natively; Claude/Teams use the template's `CLAUDE.md` import.
 For scan/code/plan/review only, when `agent-cmd --path <checkout>` reports `needsBoot: true`, send
 this once after the first `tui-idle`, wait again, then attach the Task:

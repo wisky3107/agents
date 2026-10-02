@@ -8,18 +8,21 @@
  *   node bootstrap.mjs trust        --name <slug> | --path <abs>   (linked git worktree: also turns Claude auto-memory off)
  *   node bootstrap.mjs claude-trust --name <slug> | --path <abs>   (alias of trust)
  *   node bootstrap.mjs mcp-config --path <abs> [--port N]   pin a Funplay port for this checkout + write project-local MCP client configs
+ *   node bootstrap.mjs mcp-audit [--fix [--fix-port-matches]] [--home <dir>]   report (or remove) per-checkout editor MCP entries in global agent configs
  *   node bootstrap.mjs wait-mcp --path <abs> [--timeout-ms 180000] [--port N]
  *   node bootstrap.mjs agent-session --path <abs> [--agent cursor|claude|claude-agent-teams|codex|gemini|opencode|antigravity|"<spec>"] [--model m] [--effort e] [--title name] [--prompt "..."] [--json] [--boot|--no-boot]
  *       --json: stdout = exactly one JSON object (progress → stderr). Boot turn is auto: skipped for
  *       cursor/codex and for claude when the project has CLAUDE.md; --boot/--no-boot override.
- *   node bootstrap.mjs agent-cmd [--agent ...] [--model m] [--effort e]   dry preview of the launch command
+ *       [--role producer|coordinator|worker|judge] [--slice S<nn>]: CC_ROLE/CC_PROJECT/CC_SLICE env,
+ *       spawn registry line; coordinator launches without editor MCP (see applyLaunchRole).
+ *   node bootstrap.mjs agent-cmd [--agent ...] [--model m] [--effort e] [--role r] [--slice S<nn>] [--path <abs>]   dry preview of the launch command
  *
  * Port model: every checkout (main project or Orca worktree) owns ONE editor MCP
  * port, pinned locally:
  *   - 3.8 Funplay → funplay-cocos-mcp.config.json (8765..)
  *   - cc4 COCOS CLI → cocos-cli-mcp.config.json (MCP 9527..9559, preview 7456..7489)
  * Agents in that checkout reach the editor through project-local MCP client configs
- * (.cursor/mcp.json, .mcp.json, .codex/config.toml) that point at that port —
+ * (.cursor/mcp.json, .mcp.json, .codex/config.toml, opencode.json) that point at that port —
  * never through a global 8765/9527 assumption. `wait-mcp` only reports ok when
  * the gate for THIS checkout passes (Funplay /health.projectName, or cocos-cli
  * initialize on the pinned port).
@@ -28,6 +31,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync, execFileSync } from 'node:child_process';
 import os from 'node:os';
+import { fileURLToPath } from 'node:url';
 
 const GAMES_ROOT = '/Users/wikz/Works/games/CocosCreator';
 const TEMPLATES_DIR = '/Users/wikz/Works/games/template';
@@ -107,6 +111,9 @@ const CREATOR_SEARCH_ROOTS = [
 ];
 const DEFAULT_AGENT = 'cursor';
 const DEFAULT_MCP_PORT = 8765;
+// coordinator-guard (plan M2) lives at <repo>/hooks next to skills/; CC_GUARD_HOOKS_DIR overrides it in tests
+const GUARD_HOOKS_DIR =
+  process.env.CC_GUARD_HOOKS_DIR || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'hooks');
 const MCP_PORT_RANGE_END = 8799;
 const FUNPLAY_CONFIG_FILE = 'funplay-cocos-mcp.config.json';
 const MCP_SERVER_KEY = 'funplay_cocos';
@@ -157,6 +164,15 @@ const RSYNC_EXCLUDES = [
   '/.cursor/mcp.json',
   '/.mcp.json',
   '/.codex/config.toml',
+  '/opencode.json',
+  // coordinator guard hooks (agent-session --role coordinator|producer)
+  '/.claude/settings.local.json',
+  '/.codex/hooks.json',
+  '/.cursor/hooks.json',
+  '/.opencode/plugins/coordinator-guard.js',
+  // producer runner state (game-producer scripts/producer-runner.mjs: lock, control, runner file,
+  // handoff prompts, crash leftovers): per project, never templated
+  '/.cursor/producer*',
 ];
 
 function die(msg, code = 1) {
@@ -180,7 +196,10 @@ function parseArgs(argv) {
       a === '--prompt' ||
       a === '--timeout-ms' ||
       a === '--port' ||
-      a === '--template'
+      a === '--template' ||
+      a === '--role' ||
+      a === '--slice' ||
+      a === '--home'
     ) {
       values[a.slice(2)] = argv[++i];
     } else if (a.startsWith('--')) {
@@ -647,6 +666,251 @@ function resolveAgentLaunchCommand(agent, model, effort) {
   die(`Unsupported agent id: ${id}; add an explicit launch mapping matching Orca settings before launching`);
 }
 
+// ---- launch roles (plan docs/plans/2026-10-01-coordinator-token-optimization, M1) ----
+// `--role` tags a launch with CC_ROLE / CC_PROJECT / CC_SLICE (read by the coordinator guard and
+// tools/token-report) and lets a fleet coordinator start without the editor's MCP tools. No role =
+// the launch command is exactly what it was before.
+const AGENT_ROLES = ['producer', 'coordinator', 'worker', 'judge'];
+const GUARDED_ROLES = ['producer', 'coordinator'];
+const LOCAL_URL_RE = /^https?:\/\/(127\.0\.0\.1|localhost|0\.0\.0\.0|\[::1\])(:\d+)?(\/|$)/i;
+
+function shellQuote(value) {
+  const s = String(value);
+  return /^[\w./:@%+=,-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * Servers of a Codex TOML file → [{name, url}]: `[mcp_servers.<name>]` tables and one-line inline
+ * entries under `[mcp_servers]` (`name = { url = "…" }`). A line scan, not a TOML parser: sub-tables
+ * (`.env`) and `[[array]]` tables end the current server; top-level dotted keys are not seen.
+ */
+function codexMcpServers(file) {
+  let text = '';
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch {
+    return [];
+  }
+  const out = [];
+  let cur = null;
+  let inMcpTable = false;
+  const urlOf = (s) => {
+    const u = s.match(/\burl\s*=\s*(?:"([^"]*)"|'([^']*)')/);
+    return u ? (u[1] ?? u[2]) : '';
+  };
+  for (const line of text.split('\n')) {
+    if (/^\s*\[\[/.test(line)) {
+      cur = null;
+      inMcpTable = false;
+      continue;
+    }
+    const header = line.match(/^\s*\[([^\[\]]+)\]\s*(#.*)?$/);
+    if (header) {
+      const m = header[1].trim().match(/^mcp_servers\.(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))$/);
+      cur = m ? { name: m[1] || m[2] || m[3], url: '' } : null;
+      if (cur) out.push(cur);
+      inMcpTable = header[1].trim() === 'mcp_servers';
+      continue;
+    }
+    if (inMcpTable) {
+      const inline = line.match(/^\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))\s*=\s*\{(.*)$/);
+      if (inline) out.push({ name: inline[1] || inline[2] || inline[3], url: urlOf(inline[4]) });
+      continue;
+    }
+    if (cur && /^\s*url\s*=/.test(line)) cur.url = urlOf(line);
+  }
+  return out;
+}
+
+/** `mcp` entries of an OpenCode JSON config → [{name, url}]. */
+function opencodeMcpServers(file) {
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch {
+    return [];
+  }
+  try {
+    const mcp = JSON.parse(text).mcp || {};
+    return Object.entries(mcp).map(([name, v]) => ({ name, url: (v && v.url) || '' }));
+  } catch {
+    console.error(`new-cocos-game: note: cannot parse ${file} as JSON; its MCP servers stay enabled`);
+    return [];
+  }
+}
+
+function tomlKey(name) {
+  return /^[A-Za-z0-9_-]+$/.test(name) ? name : JSON.stringify(name);
+}
+
+/**
+ * Codex `-c` overrides that switch off the editor MCP servers a coordinator must not load:
+ * - servers the checkout declares (the Funplay / COCOS CLI pin written by mcp-config). Codex reads the
+ *   checkout config only when the folder is trusted, and a bare `enabled=false` for a server it never
+ *   loaded is an invalid server that stops Codex at startup, so the override restates the url;
+ *   checkout servers without a url are left alone;
+ * - global servers that bridge to a local editor over HTTP (always loaded, so `enabled=false` is enough).
+ * Global stdio servers (node_repl, computer-use) back Codex's own tools and stay.
+ */
+function codexMcpOverrides(projectServers, globalServers) {
+  const args = [];
+  const servers = [];
+  for (const s of projectServers) {
+    if (!s.url || servers.includes(s.name)) continue;
+    args.push(`mcp_servers.${tomlKey(s.name)}.url=${JSON.stringify(s.url)}`, `mcp_servers.${tomlKey(s.name)}.enabled=false`);
+    servers.push(s.name);
+  }
+  for (const s of globalServers) {
+    if (!LOCAL_URL_RE.test(s.url) || servers.includes(s.name)) continue;
+    args.push(`mcp_servers.${tomlKey(s.name)}.enabled=false`);
+    servers.push(s.name);
+  }
+  return { args, servers };
+}
+
+/**
+ * Role-aware launch command. Every provider gets the env prefix; `coordinator` also drops editor MCP:
+ * claude → --strict-mcp-config (no MCP at all); codex → the `-c` overrides of codexMcpOverrides;
+ * opencode → OPENCODE_CONFIG_CONTENT disabling every declared server; cursor / antigravity / gemini have
+ * no per-launch switch, so they keep their MCP (said on stderr). `producer` keeps Funplay: it verifies
+ * primary parity on main after a merge.
+ */
+function applyLaunchRole(baseCmd, agentId, { role, slice, projectPath }) {
+  if (slice && !role) die('--slice needs --role');
+  if (!role) return { command: baseCmd, env: {}, mcp: { mode: 'unchanged', servers: [] } };
+  if (!AGENT_ROLES.includes(role)) die(`Unsupported --role ${role}; use ${AGENT_ROLES.join('|')}`);
+  if (slice && !/^S\d{2}[a-z]?$/.test(slice)) die(`Invalid --slice ${slice}; expected S<nn> (e.g. S03, S14a)`);
+  const { id } = parseAgentSpec(agentId);
+  const env = { CC_ROLE: role, CC_PROJECT: projectPath };
+  if (slice) env.CC_SLICE = slice;
+  let cmd = baseCmd;
+  let mcp = { mode: 'kept', servers: [] };
+  if (role === 'coordinator') {
+    if (id === 'claude' || id === 'claude-agent-teams') {
+      cmd += ' --strict-mcp-config';
+      // verified on plain claude; whether the Orca claude-teams wrapper adds its own --mcp-config is not
+      mcp = { mode: id === 'claude' ? 'stripped-all' : 'stripped-all-unverified', servers: [] };
+    } else if (id === 'codex') {
+      const { args, servers } = codexMcpOverrides(
+        codexMcpServers(path.join(projectPath, '.codex', 'config.toml')),
+        codexMcpServers(path.join(os.homedir(), '.codex', 'config.toml')),
+      );
+      for (const a of args) cmd += ` -c ${shellQuote(a)}`;
+      mcp = { mode: 'disabled', servers };
+    } else if (id === 'opencode') {
+      // OpenCode has no internal MCP like Codex's node_repl, so every declared server goes (as with claude).
+      const servers = [
+        ...new Set(
+          [
+            ...opencodeMcpServers(path.join(projectPath, 'opencode.json')),
+            ...opencodeMcpServers(path.join(os.homedir(), '.config', 'opencode', 'opencode.json')),
+          ].map((s) => s.name),
+        ),
+      ];
+      if (servers.length) {
+        env.OPENCODE_CONFIG_CONTENT = JSON.stringify({
+          mcp: Object.fromEntries(servers.map((n) => [n, { enabled: false }])),
+        });
+      }
+      mcp = { mode: 'disabled', servers };
+    } else {
+      console.error(`new-cocos-game: note: MCP stripping unsupported for ${id}; the coordinator keeps its MCP servers`);
+      mcp = { mode: 'unsupported', servers: [] };
+    }
+  }
+  // Codex skips an untrusted project hook without a word, and every new checkout path is untrusted:
+  // the coordinator guard that agent-session installs for these roles only runs with this flag.
+  if (id === 'codex' && GUARDED_ROLES.includes(role)) cmd += ' --dangerously-bypass-hook-trust';
+  const prefix = Object.entries(env)
+    .map(([k, v]) => `${k}=${shellQuote(v)}`)
+    .join(' ');
+  return { command: `${prefix} ${cmd}`, env, mcp };
+}
+
+/** One line per spawn in ~/.agents/logs/spawns.jsonl — tools/token-report joins sessions to roles with it. */
+function appendSpawnRegistry(entry) {
+  try {
+    const dir = path.join(os.homedir(), '.agents', 'logs');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, 'spawns.jsonl'), JSON.stringify(entry) + '\n');
+  } catch (err) {
+    console.error(`new-cocos-game: warning: spawn registry not written: ${err?.message || err}`);
+  }
+}
+
+/**
+ * Coordinator guard hooks (plan M2) for a producer / coordinator launch, written into the checkout the
+ * agent starts in — never into the global CLI configs Orca owns. Idempotent: our entry is found by
+ * its `coordinator-guard.mjs` command and replaced; every other hook stays. The guard itself acts only
+ * when CC_ROLE is set, so other sessions in the same checkout are untouched. Antigravity / Gemini have
+ * no adapter: layer 1 (orca-wait, runner) only.
+ */
+function installGuardHooks(projectPath, agentId) {
+  const { id } = parseAgentSpec(agentId);
+  const core = path.join(GUARD_HOOKS_DIR, 'coordinator-guard.mjs');
+  if (!fs.existsSync(core)) {
+    console.error(`new-cocos-game: warning: ${core} missing; the coordinator guard is not installed`);
+    return { cli: id, installed: [], skipped: 'guard core missing' };
+  }
+  const command = (cli) => `node ${shellQuote(core)} --cli ${cli}`;
+  const ours = (c) => typeof c === 'string' && c.includes('coordinator-guard.mjs');
+  const installed = [];
+  const writeJson = (rel, mutate) => {
+    const file = path.join(projectPath, rel);
+    let doc = {};
+    if (fs.existsSync(file)) {
+      doc = readJsonSafe(file);
+      if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
+        console.error(`new-cocos-game: warning: ${file} is not plain JSON; the coordinator guard is not added to it`);
+        return;
+      }
+    }
+    mutate(doc);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(doc, null, 2) + '\n');
+    ensureGitIgnored(projectPath, rel);
+    installed.push(rel);
+  };
+  const preToolUse = (cli, entry) => (doc) => {
+    doc.hooks = doc.hooks || {};
+    const keep = (doc.hooks.PreToolUse || []).filter((e) => !(e.hooks || []).some((h) => ours(h.command)));
+    doc.hooks.PreToolUse = [...keep, { ...entry, hooks: [{ type: 'command', command: command(cli), timeout: 10 }] }];
+  };
+  if (id === 'claude' || id === 'claude-agent-teams') {
+    writeJson(path.join('.claude', 'settings.local.json'), preToolUse('claude', { matcher: 'Bash|Edit|Write|MultiEdit' }));
+  } else if (id === 'codex') {
+    writeJson(path.join('.codex', 'hooks.json'), preToolUse('codex', {}));
+  } else if (id === 'cursor' || id === 'cursor-agent' || id === 'agent') {
+    writeJson(path.join('.cursor', 'hooks.json'), (doc) => {
+      doc.version = doc.version || 1;
+      doc.hooks = doc.hooks || {};
+      const keep = (doc.hooks.beforeShellExecution || []).filter((e) => !ours(e.command));
+      doc.hooks.beforeShellExecution = [...keep, { command: command('cursor'), timeout: 10 }];
+    });
+  } else if (id === 'opencode') {
+    const rel = path.join('.opencode', 'plugins', 'coordinator-guard.js');
+    const file = path.join(projectPath, rel);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const plugin = path.join(GUARD_HOOKS_DIR, 'adapters', 'opencode-plugin.js');
+    fs.writeFileSync(file, `// written by bootstrap.mjs agent-session --role (coordinator guard)\nexport { CoordinatorGuard } from ${JSON.stringify(plugin)};\n`);
+    ensureGitIgnored(projectPath, rel);
+    installed.push(rel);
+    // OpenCode installs .opencode/node_modules on its first start in a checkout and can miss project
+    // plugins during that start; install them now (no model call, ~4 s) so the guard is live at once.
+    // Tried once per checkout (marker), so an offline machine does not wait on every spawn.
+    const marker = path.join(projectPath, '.opencode', '.coordinator-guard-warmed');
+    if (!fs.existsSync(path.join(projectPath, '.opencode', 'node_modules')) && !fs.existsSync(marker)) {
+      const warm = spawnSync('opencode', ['debug', 'config'], { cwd: projectPath, encoding: 'utf8', timeout: 60000 });
+      fs.writeFileSync(marker, `${new Date().toISOString()} exit ${warm.status}\n`);
+      if (warm.status !== 0) console.error('new-cocos-game: warning: `opencode debug config` failed; the guard may miss the first OpenCode start');
+    }
+  } else {
+    console.error(`new-cocos-game: note: no coordinator-guard adapter for ${id}; layer 1 only (orca-wait, runner)`);
+    return { cli: id, installed: [], skipped: `no adapter for ${id}` };
+  }
+  return { cli: id, installed };
+}
+
 function isCursorAgent(agentId) {
   const { id } = parseAgentSpec(agentId);
   return id === 'cursor' || id === 'cursor-agent' || id === 'agent';
@@ -910,6 +1174,58 @@ function writeFunplayProjectConfig(projectPath, port) {
   return file;
 }
 
+/**
+ * Project-scope OpenCode config: OpenCode merges <checkout>/opencode.json over the global one, so the
+ * checkout's editor server lives here instead of agents editing ~/.config/opencode/opencode.json.
+ * `mcp.<key>` is ours and is replaced whole; every other key stays. A file that is not plain JSON
+ * (JSONC) or that git tracks is left alone with a warning, so the pin never costs user settings or
+ * dirties the repo.
+ */
+function writeOpencodeJson(projectPath, key, url) {
+  const file = path.join(projectPath, 'opencode.json');
+  let prev = {};
+  if (fs.existsSync(file)) {
+    prev = readJsonSafe(file);
+    if (!prev || typeof prev !== 'object' || Array.isArray(prev)) {
+      console.error(`new-cocos-game: warning: ${file} is not plain JSON; left as is — add mcp.${key} = {"type":"remote","url":"${url}"} by hand`);
+      return null;
+    }
+    if (spawnSync('git', ['-C', projectPath, 'ls-files', '--error-unmatch', 'opencode.json']).status === 0) {
+      console.error(`new-cocos-game: warning: ${file} is tracked by git; the per-checkout ${key} pin is not added`);
+      return null;
+    }
+  }
+  const mcp = { ...(prev.mcp || {}), [key]: { type: 'remote', url } };
+  const next = { $schema: prev.$schema || 'https://opencode.ai/config.json', ...prev, mcp };
+  fs.writeFileSync(file, JSON.stringify(next, null, 2) + '\n');
+  ensureGitIgnored(projectPath, 'opencode.json');
+  return file;
+}
+
+/**
+ * Projects created before a per-checkout file joined the template .gitignore get it in
+ * .git/info/exclude (shared by every worktree of the repo; anchored at the checkout's prefix when the
+ * project sits in a repo subdirectory). No-op outside git or when already ignored.
+ */
+function ensureGitIgnored(projectPath, rel) {
+  const check = spawnSync('git', ['-C', projectPath, 'check-ignore', '-q', rel], { encoding: 'utf8' });
+  if (check.status !== 1) return; // 0 = already ignored, 128 = not a git checkout
+  const ex = spawnSync('git', ['-C', projectPath, 'rev-parse', '--git-path', 'info/exclude', '--show-prefix'], { encoding: 'utf8' });
+  if (ex.status !== 0) return;
+  const [excludeRel, prefix = ''] = ex.stdout.split('\n');
+  const excludeFile = path.resolve(projectPath, excludeRel.trim());
+  const pattern = `/${prefix.trim()}${rel}`;
+  try {
+    fs.mkdirSync(path.dirname(excludeFile), { recursive: true });
+    const text = fs.existsSync(excludeFile) ? fs.readFileSync(excludeFile, 'utf8') : '';
+    if (!text.split('\n').includes(pattern)) {
+      fs.appendFileSync(excludeFile, `${text && !text.endsWith('\n') ? '\n' : ''}${pattern}\n`);
+    }
+  } catch (err) {
+    console.error(`new-cocos-game: warning: could not add ${pattern} to ${excludeFile}: ${err?.message || err}`);
+  }
+}
+
 function writeCursorMcpJson(projectPath, url) {
   const dir = path.join(projectPath, '.cursor');
   fs.mkdirSync(dir, { recursive: true });
@@ -966,6 +1282,7 @@ async function configureFunplayMcp(projectPath, preferredPort) {
     cursor: writeCursorMcpJson(abs, url),
     claude: writeClaudeMcpJson(abs, url),
     codex: writeCodexProjectToml(abs, url),
+    opencode: writeOpencodeJson(abs, MCP_SERVER_KEY, url),
   };
   const seedPath = resolveFunplaySeedPath(abs);
   console.log(`→ Funplay port for ${funplayProjectName(abs)}: ${port} (${reason})`);
@@ -1136,13 +1453,14 @@ function writeCocosCliMcpConfig(projectPath, preferredMcpPort) {
       rootMcp,
       JSON.stringify({ mcpServers: { 'cocos-cli': { url } } }, null, 2) + '\n',
     );
+    const opencode = writeOpencodeJson(abs, 'cocos-cli', url);
     return {
       engine: 'cocos-cli',
       port: COCOS_CLI_MCP_PORT,
       mcp_port: COCOS_CLI_MCP_PORT,
       preview_port: 7456,
       url,
-      files: { cursorMcp, rootMcp },
+      files: { cursorMcp, rootMcp, opencode },
       legacy: true,
     };
   }
@@ -1169,6 +1487,8 @@ function writeCocosCliMcpConfig(projectPath, preferredMcpPort) {
   console.log(
     `→ COCOS CLI ports for ${parsed.projectName}: MCP ${parsed.mcp_port}, preview ${parsed.preview_port} (${parsed.reason?.mcp || 'ok'})`,
   );
+  // resolve-ports.mjs writes .cursor/mcp.json and .mcp.json; OpenCode's is ours
+  const opencode = parsed.url ? writeOpencodeJson(abs, 'cocos-cli', parsed.url) : null;
   return {
     engine: 'cocos-cli',
     port: parsed.mcp_port,
@@ -1176,7 +1496,7 @@ function writeCocosCliMcpConfig(projectPath, preferredMcpPort) {
     preview_port: parsed.preview_port,
     url: parsed.url,
     reason: parsed.reason,
-    files: parsed.files,
+    files: { ...(parsed.files || {}), ...(opencode ? { opencode } : {}) },
   };
 }
 
@@ -1281,13 +1601,28 @@ async function waitForCocosCliMcp({
  * Required for implement=yes and especially mode=fleet (cocos-orca-fleet
  * orchestrator must live in the new project — never the bootstrap chat).
  */
-async function createAgentSession({ projectPath, agent, model, effort, title, prompt }) {
+async function createAgentSession({ projectPath, agent, model, effort, title, prompt, role, slice }) {
   const orcaBin = resolveOrcaBin();
   ensureOrcaReady(orcaBin);
   const worktree = `path:${projectPath}`;
   const agentId = agent || DEFAULT_AGENT;
   const agentSpec = parseAgentSpec(agentId, model, effort);
-  const agentCmd = resolveAgentLaunchCommand(agentId, model, effort);
+  const launch = applyLaunchRole(resolveAgentLaunchCommand(agentId, model, effort), agentId, {
+    role,
+    slice,
+    projectPath,
+  });
+  const agentCmd = launch.command;
+  let guardHooks = null;
+  if (GUARDED_ROLES.includes(role)) {
+    try {
+      guardHooks = installGuardHooks(projectPath, agentId);
+    } catch (err) {
+      // the guard is layer 2: a failed install must never stop the launch
+      console.error(`new-cocos-game: warning: coordinator guard not installed: ${err?.message || err}`);
+      guardHooks = { installed: [], skipped: `install failed: ${err?.message || err}` };
+    }
+  }
   const tabTitle = title || `implement-${path.basename(projectPath)}`;
 
   console.log('→ pre-trust Cursor + Claude + Codex workspace (skip trust dialog)');
@@ -1303,6 +1638,7 @@ async function createAgentSession({ projectPath, agent, model, effort, title, pr
   }
 
   console.log(`→ orca terminal create --worktree ${worktree} --command ${agentCmd}`);
+  const spawnedAt = new Date().toISOString();
   const created = orcaJson(orcaBin, [
     'terminal',
     'create',
@@ -1326,6 +1662,17 @@ async function createAgentSession({ projectPath, agent, model, effort, title, pr
     created.parsed?.result?.agentTerminalHandle ||
     created.parsed?.result?.startupTerminal?.handle ||
     null;
+  appendSpawnRegistry({
+    ts: spawnedAt,
+    project: projectPath,
+    cwd: projectPath,
+    role: role || null,
+    slice: slice || null,
+    agentSpec: agentSpecString(agentSpec),
+    command: agentCmd,
+    title: tabTitle,
+    handle,
+  });
 
   let sendResult = null;
   let bootSend = null;
@@ -1399,6 +1746,10 @@ async function createAgentSession({ projectPath, agent, model, effort, title, pr
     // Canonical launch spec — write this into AGENT_NOTES.md fleet.orchestrator_agent.
     agentSpec: agentSpecString(agentSpec),
     command: agentCmd,
+    role: role || null,
+    slice: slice || null,
+    mcpLaunch: launch.mcp,
+    guardHooks,
     title: tabTitle,
     handle,
     mcpPort: isCc4Project(projectPath)
@@ -1598,6 +1949,7 @@ async function cmdCreate(values, flags) {
       'if mode=fleet → orchestrator prompt uses cocos-orca-fleet; worktree MUST be this project',
     ],
   };
+  warnGlobalMcpPins();
   emitResult(result);
 }
 
@@ -1630,8 +1982,241 @@ function cmdCreator(values) {
   console.log(hit.binary);
 }
 
+// ---- mcp-audit: per-checkout editor MCP must never sit in a GLOBAL agent config ----
+// A Funplay / COCOS CLI pin in ~/.codex, ~/.cursor, ~/.config/opencode or ~/.claude.json is loaded by
+// every session on the machine (token cost) and can drive the wrong project's Editor.
+const AUDIT_NAME_RE = /^(funplay_cocos|cocos-.+-[0-9a-f]{6})$/;
+const AUDIT_URL_RE = /^https?:\/\/(127\.0\.0\.1|localhost|0\.0\.0\.0|\[::1\])(?::(\d+))?(\/|$)/i;
+
+/**
+ * Why an entry looks like a per-checkout editor pin. A `name` match is certain; a `port` match only
+ * says something local listens in the Funplay / COCOS CLI range (wrangler's 8787 does too), so it is
+ * removed by --fix only together with --fix-port-matches.
+ */
+function auditMatch(name, url) {
+  if (AUDIT_NAME_RE.test(name)) return { match: 'name', reason: `name ${name}` };
+  const m = (url || '').match(AUDIT_URL_RE);
+  const port = m && Number(m[2]);
+  if (port >= DEFAULT_MCP_PORT && port <= MCP_PORT_RANGE_END) return { match: 'port', reason: `Funplay port ${port}` };
+  if (port >= 9527 && port <= 9559) return { match: 'port', reason: `COCOS CLI port ${port}` };
+  return null;
+}
+
+function entryUrl(v) {
+  return (v && (v.url || v.serverUrl || v.httpUrl)) || '';
+}
+
+/** JSONC → JSON: drop line and block comments and trailing commas outside strings. */
+function stripJsonc(text) {
+  let out = '';
+  let inStr = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    const n = text[i + 1];
+    if (inStr) {
+      out += c;
+      if (c === '\\') out += text[++i] ?? '';
+      else if (c === '"') inStr = false;
+    } else if (c === '"') {
+      inStr = true;
+      out += c;
+    } else if (c === '/' && n === '/') {
+      while (i < text.length && text[i] !== '\n') i++;
+      out += '\n';
+    } else if (c === '/' && n === '*') {
+      i += 2;
+      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
+      i++;
+    } else {
+      out += c;
+    }
+  }
+  return out.replace(/,(\s*[}\]])/g, '$1');
+}
+
+function mcpAuditTargets(home) {
+  const config =
+    home === os.homedir() && process.env.XDG_CONFIG_HOME ? process.env.XDG_CONFIG_HOME : path.join(home, '.config');
+  return [
+    { client: 'claude', file: path.join(home, '.claude.json'), kind: 'json', key: 'mcpServers' },
+    { client: 'cursor', file: path.join(home, '.cursor', 'mcp.json'), kind: 'json', key: 'mcpServers' },
+    { client: 'opencode', file: path.join(config, 'opencode', 'opencode.json'), kind: 'json', key: 'mcp' },
+    { client: 'opencode', file: path.join(config, 'opencode', 'opencode.jsonc'), kind: 'json', key: 'mcp' },
+    { client: 'codex', file: path.join(home, '.codex', 'config.toml'), kind: 'toml' },
+  ];
+}
+
+/**
+ * Flagged global entries (each with `fixable` and, if not, `why`), claude project-scoped entries
+ * (reported, never changed) and files that could not be read as JSON/JSONC.
+ */
+function auditMcpConfigs(home, { fixPorts = false } = {}) {
+  const findings = [];
+  const projectScoped = [];
+  const unparsed = [];
+  const add = (t, name, url, extra = {}) => {
+    const hit = auditMatch(name, url);
+    if (!hit) return;
+    let why = '';
+    if (hit.match === 'port' && !fixPorts) why = 'port match only: --fix-port-matches to remove';
+    else if (extra.jsonc) why = 'JSONC file: edit by hand (a rewrite would drop its comments)';
+    else if (extra.inline === 'multiline') why = 'inline table spans lines: edit by hand';
+    findings.push({ client: t.client, file: t.file, name, url, ...hit, fixable: !why, ...(why ? { why } : {}) });
+  };
+  for (const t of mcpAuditTargets(home)) {
+    if (!fs.existsSync(t.file)) continue;
+    if (t.kind === 'toml') {
+      for (const s of codexMcpServers(t.file)) add(t, s.name, s.url);
+      continue;
+    }
+    const text = fs.readFileSync(t.file, 'utf8');
+    let doc = null;
+    let jsonc = false;
+    try {
+      doc = JSON.parse(text);
+    } catch {
+      try {
+        doc = JSON.parse(stripJsonc(text));
+        jsonc = true;
+      } catch (err) {
+        unparsed.push({ client: t.client, file: t.file, error: err.message });
+        continue;
+      }
+    }
+    for (const [name, v] of Object.entries(doc?.[t.key] || {})) add(t, name, entryUrl(v), { jsonc });
+    if (t.client === 'claude') {
+      for (const [project, p] of Object.entries(doc?.projects || {})) {
+        for (const [name, v] of Object.entries(p?.mcpServers || {})) {
+          const hit = auditMatch(name, entryUrl(v));
+          if (hit) projectScoped.push({ file: t.file, project, name, url: entryUrl(v), ...hit });
+        }
+      }
+    }
+  }
+  return { findings, projectScoped, unparsed };
+}
+
+const TOML_HEADER_RE = /^\s*\[\[?([^\[\]]+)\]\]?\s*(#.*)?$/;
+const TOML_SERVER_KEY_RE = /^mcp_servers\.(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))(\..*)?$/;
+
+/**
+ * Drop `[mcp_servers.<name>]` blocks (sub-tables included) and one-line inline entries under
+ * `[mcp_servers]`. Every other line stays byte-for-byte: comments directly above the next table
+ * belong to that table and are kept; blank lines between the dropped block and them go with it.
+ */
+function removeTomlServers(text, names) {
+  const drop = new Set(names);
+  const out = [];
+  let skipping = false;
+  let inMcpTable = false;
+  let pending = [];
+  for (const line of text.split('\n')) {
+    const header = line.match(TOML_HEADER_RE);
+    if (header) {
+      const m = header[1].trim().match(TOML_SERVER_KEY_RE);
+      const dropNow = Boolean(m && drop.has(m[1] || m[2] || m[3]));
+      if (skipping && !dropNow) {
+        const firstComment = pending.findIndex((l) => l.trim() !== '');
+        if (firstComment !== -1) out.push(...pending.slice(firstComment));
+      }
+      pending = [];
+      skipping = dropNow;
+      inMcpTable = header[1].trim() === 'mcp_servers';
+      if (!skipping) out.push(line);
+      continue;
+    }
+    if (skipping) {
+      if (/^\s*(#.*)?$/.test(line)) pending.push(line);
+      else pending = [];
+      continue;
+    }
+    if (inMcpTable) {
+      const inline = line.match(/^\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))\s*=\s*\{/);
+      if (inline && drop.has(inline[1] || inline[2] || inline[3])) continue;
+    }
+    out.push(line);
+  }
+  const result = out.join('\n');
+  return text.endsWith('\n') && !result.endsWith('\n') ? `${result}\n` : result;
+}
+
+/** Write through a symlinked dotfile and keep the file's mode (these configs hold credentials). */
+function writeFileAtomic(file, text) {
+  const target = fs.realpathSync(file);
+  const mode = fs.statSync(target).mode & 0o7777;
+  const tmp = `${target}.tmp-mcp-audit-${process.pid}`;
+  fs.writeFileSync(tmp, text, { mode });
+  fs.chmodSync(tmp, mode);
+  fs.renameSync(tmp, target);
+}
+
+function fixMcpFindings(findings, home) {
+  const ts = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '');
+  const fixed = [];
+  const errors = [];
+  for (const t of mcpAuditTargets(home)) {
+    const names = findings.filter((f) => f.file === t.file && f.fixable).map((f) => f.name);
+    if (!names.length) continue;
+    try {
+      const backup = `${t.file}.bak-mcp-audit-${ts}`;
+      fs.copyFileSync(t.file, backup);
+      if (t.kind === 'toml') {
+        writeFileAtomic(t.file, removeTomlServers(fs.readFileSync(t.file, 'utf8'), names));
+      } else {
+        // ~/.claude.json is rewritten by every running Claude Code session: re-read, and only replace
+        // the file when it did not change while we edited it (a small window remains; close sessions first).
+        const target = fs.realpathSync(t.file);
+        let written = false;
+        for (let attempt = 0; attempt < 5 && !written; attempt++) {
+          const before = fs.statSync(target);
+          const doc = JSON.parse(fs.readFileSync(target, 'utf8'));
+          for (const n of names) if (doc[t.key]) delete doc[t.key][n];
+          const text = JSON.stringify(doc, null, 2) + '\n';
+          const now = fs.statSync(target);
+          if (now.mtimeMs !== before.mtimeMs || now.size !== before.size) continue;
+          writeFileAtomic(t.file, text);
+          written = true;
+        }
+        if (!written) throw new Error('file kept changing while being fixed; close the agent sessions and retry');
+      }
+      fixed.push({ client: t.client, file: t.file, backup, removed: names });
+    } catch (err) {
+      errors.push({ client: t.client, file: t.file, error: err?.message || String(err) });
+    }
+  }
+  return { fixed, errors };
+}
+
+/** Report-only audit for create / mcp-config: warn on stderr, never fix. */
+function warnGlobalMcpPins() {
+  try {
+    const { findings, unparsed } = auditMcpConfigs(os.homedir());
+    if (findings.length) {
+      console.error(`new-cocos-game: warning: ${findings.length} editor MCP entr${findings.length === 1 ? 'y' : 'ies'} in global agent configs:`);
+      for (const f of findings) console.error(`  ${f.client}: ${f.name} (${f.reason}) in ${f.file}`);
+      console.error('  review with: node ~/.agents/skills/new-cocos-game/scripts/bootstrap.mjs mcp-audit [--fix]');
+    }
+    for (const u of unparsed) console.error(`new-cocos-game: warning: mcp-audit could not parse ${u.file}: ${u.error}`);
+  } catch (err) {
+    console.error(`new-cocos-game: warning: mcp-audit failed: ${err?.message || err}`);
+  }
+}
+
+function cmdMcpAudit(values, flags) {
+  if ('home' in values && !values.home) die('--home needs a directory');
+  const home = values.home ? path.resolve(values.home) : os.homedir();
+  const audit = auditMcpConfigs(home, { fixPorts: flags.has('fix-port-matches') });
+  const { fixed, errors } = flags.has('fix') ? fixMcpFindings(audit.findings, home) : { fixed: [], errors: [] };
+  const done = new Set(fixed.flatMap((f) => f.removed.map((n) => `${f.file}\0${n}`)));
+  const remaining = audit.findings.filter((f) => !done.has(`${f.file}\0${f.name}`));
+  const ok = !remaining.length && !audit.unparsed.length && !errors.length;
+  emitResult({ ok, home, ...audit, remaining, fixed, errors });
+  if (!ok) process.exitCode = 2;
+}
+
 async function cmdMcpConfig(values) {
   const projectPath = resolveProjectPath(values);
+  warnGlobalMcpPins();
   if (isCc4Project(projectPath)) {
     const result = writeCocosCliMcpConfig(projectPath, values.port);
     emitResult({ ok: true, ...result, projectPath });
@@ -1682,6 +2267,8 @@ async function cmdAgentSession(values) {
     effort: values.effort,
     title: values.title,
     prompt: values.prompt,
+    role: values.role,
+    slice: values.slice,
   });
   const ok = Boolean(session.ready && (!values.prompt || session.promptSent));
   emitResult({ ok, projectPath, session });
@@ -1693,13 +2280,22 @@ function cmdAgentCmd(values) {
   const agentId = values.agent || DEFAULT_AGENT;
   const spec = parseAgentSpec(agentId, values.model, values.effort);
   const projectPath = values.path ? path.resolve(values.path) : process.cwd();
+  const launch = applyLaunchRole(resolveAgentLaunchCommand(agentId, values.model, values.effort), agentId, {
+    role: values.role,
+    slice: values.slice,
+    projectPath,
+  });
   emitResult({
     ok: true,
     agent: spec.id,
     model: spec.model,
     effort: spec.effort,
     agentSpec: agentSpecString(spec),
-    command: resolveAgentLaunchCommand(agentId, values.model, values.effort),
+    command: launch.command,
+    role: values.role || null,
+    slice: values.slice || null,
+    env: launch.env,
+    mcp: launch.mcp,
     needsBoot:
       FORCE_BOOT === null ? !agentLoadsRulesNatively(agentId, projectPath) : FORCE_BOOT,
   });
@@ -1723,17 +2319,22 @@ async function main() {
   else if (cmd === 'trust' || cmd === 'claude-trust') cmdTrust(values);
   else if (cmd === 'creator') cmdCreator(values);
   else if (cmd === 'mcp-config') await cmdMcpConfig(values);
+  else if (cmd === 'mcp-audit') cmdMcpAudit(values, flags);
   else if (cmd === 'wait-mcp') await cmdWaitMcp(values);
   else if (cmd === 'agent-session') await cmdAgentSession(values);
   else if (cmd === 'agent-cmd') cmdAgentCmd(values);
   else {
     die(
-      'usage: bootstrap.mjs <resolve|create|orca-add|trust|creator|mcp-config|wait-mcp|agent-session|agent-cmd> [options]\n' +
+      'usage: bootstrap.mjs <resolve|create|orca-add|trust|creator|mcp-config|mcp-audit|wait-mcp|agent-session|agent-cmd> [options]\n' +
         '  creator: [--path <abs>] → print Creator binary matching package.json creator.version\n' +
         '  create: --name <slug> [--template game|playable|cc4|<cc-*-template>|<abs>] [--open|--no-open] [--no-orca] [--no-wait-mcp] [--port N] [--timeout-ms N]\n' +
         '    --template default: cc-game-template; "playable" → cc-playable-template; "cc4" → cc4-game-template\n' +
         '  orca-add / trust / claude-trust / mcp-config / wait-mcp: --name <slug> | --path <abs>\n' +
-        '  mcp-config: Funplay pin (3.8) or cocos-cli pin+mcp.json (cc4; MCP 9527..9559, preview 7456..7489)\n' +
+        '  mcp-config: Funplay pin (3.8) or cocos-cli pin+mcp.json (cc4; MCP 9527..9559, preview 7456..7489); also writes <checkout>/opencode.json\n' +
+        '  mcp-audit [--fix [--fix-port-matches]] [--home <dir>]: per-checkout editor MCP entries in GLOBAL claude/cursor/opencode/codex configs\n' +
+        '    name match (funplay_cocos | cocos-*-<hex6>) or port match (127.0.0.1/localhost on 8765..8799 / 9527..9559, report-only\n' +
+        '    unless --fix-port-matches); --fix backs up <file>.bak-mcp-audit-<ts>, removes only those entries, keeps file mode;\n' +
+        '    JSONC files and ~/.claude.json projects.*.mcpServers are reported, never changed; exit 2 while anything remains\n' +
         '  wait-mcp: Funplay /health projectName gate (3.8) or cocos-cli initialize on pinned port (cc4)\n' +
         '  agent-session: --path <abs> [--prompt "..."] [--agent cursor|claude|claude-agent-teams|codex|gemini|opencode|antigravity|"<spec>"] [--model m] [--effort e] [--title name]\n' +
         '    --agent also accepts an AGENT_NOTES.md launch spec ("claude --model opus --effort high"); explicit --model/--effort win\n' +
@@ -1742,7 +2343,13 @@ async function main() {
         '    claude → claude [--model m] [--effort e] --dangerously-skip-permissions\n' +
         '    codex → codex --dangerously-bypass-approvals-and-sandbox [--model m] [-c model_reasoning_effort=e]\n' +
         '    antigravity → agy --dangerously-skip-permissions (model/effort ignored)\n' +
-        '  agent-cmd: [--agent ...] [--model m] [--effort e] → print the launch command + canonical agentSpec, no side effects',
+        '  agent-session / agent-cmd: [--role producer|coordinator|worker|judge] [--slice S<nn>]\n' +
+        '    every role: CC_ROLE / CC_PROJECT / CC_SLICE env prefix + one line in ~/.agents/logs/spawns.jsonl (agent-session)\n' +
+        '    coordinator drops editor MCP: claude --strict-mcp-config · codex -c mcp_servers.<n>.enabled=false\n' +
+        '      (checkout servers + global localhost-HTTP servers) · opencode OPENCODE_CONFIG_CONTENT (all declared servers)\n' +
+        '      · cursor/antigravity/gemini unsupported\n' +
+        '    producer keeps Funplay (post-merge parity on main); no --role = launch command unchanged\n' +
+        '  agent-cmd: [--agent ...] [--model m] [--effort e] [--path <checkout>] → print the launch command + canonical agentSpec, no side effects',
     );
   }
 }

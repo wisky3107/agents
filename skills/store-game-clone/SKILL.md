@@ -370,6 +370,7 @@ monitoring.
 node ~/.agents/skills/new-cocos-game/scripts/bootstrap.mjs agent-session \
   --path "$PROJECT" \
   --agent "<fleet.orchestrator_agent>" \
+  --role coordinator --slice <Sxx> \
   --title "fleet-cc-<slug>" \
   --prompt "$(cat <<'EOF'
 …see reference/fleet-orchestrator-prompt.md…

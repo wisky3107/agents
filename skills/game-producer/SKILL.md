@@ -18,6 +18,44 @@ You are the **producer**: a coordinator of coordinators. You pick slices, spawn 
 builds each one, read its verdict, commit/merge, and move on. You never edit game files, never
 touch the Editor, never hold the editor lock, never rewrite a slice file.
 
+## Runner mode (`release.producer_mode: runner`)
+
+With `producer_mode: runner` the mechanical loop of Step 2 is a script, not a model:
+`scripts/producer-runner.mjs` picks the slice, preflights it, spawns and waits on the lanes, applies
+Step 2d (accept, commit, merge journal, verify on main, record) and moves on. An LLM producer still
+does the judgement at both ends: **Step 0–1** (`reference/producer-step01-prompt.md`: inputs, policy
+line, director gate, then `producer-runner.mjs launch`) and **Step 3** (`reference/producer-step3-prompt.md`,
+spawned once by the runner at the stop condition). Default is `llm`: this whole skill, run by a model.
+
+```bash
+node ~/.agents/skills/game-producer/scripts/producer-runner.mjs launch --project <PROJECT>   # visible Orca terminal
+node ~/.agents/skills/game-producer/scripts/producer-runner.mjs status --project <PROJECT>
+node ~/.agents/skills/game-producer/scripts/producer-runner.mjs answer --project <PROJECT> --id q3 --choice "<option>" [--text "…"]
+node ~/.agents/skills/game-producer/scripts/producer-runner.mjs pause|stop|stop-after S05|clear --project <PROJECT>
+node ~/.agents/skills/game-producer/scripts/producer-runner.mjs handoff-reset --project <PROJECT>   # forget a Step 0–1 / Step 3 handoff
+node ~/.agents/skills/game-producer/scripts/producer-runner.mjs start --dry-run --project <PROJECT>   # what it would do; writes nothing
+```
+
+- **It never guesses.** Anything a rule here leaves to judgement becomes one question with fixed
+  options in `.cursor/producer-runner.json` (shown by `status`; the runner waits, using no model).
+  Contract drift — a slice in progress that MILESTONES lacks, two slices in progress, a policy line
+  that locks a different agent than `fleet:`, a director decision not written as `<Sxx> GIVEN|approved`
+  — stops it with a question, never with an interpretation.
+- **Judge** (`judge_agent: claude --model <m>` in AGENT_NOTES): one `claude -p` read-only call
+  (`reference/judge-prompt.md`) answers fleet gates and lane questions the contracts already settle,
+  unknown HANDOFF statuses and verdict-line mismatches; it can only pick an offered option or defer,
+  never stop / block. Other providers are not verified yet: their questions go to the director.
+- **One producer per project:** the runner holds `.cursor/producer.lock` (a second `start` or a
+  `launch` is refused). An LLM producer does not take that lock: never run an LLM slice loop while
+  `producer-runner.mjs status` shows a live runner; the Step 0–1 / Step 3 producers never dispatch
+  slices. `handoff-reset` forgets a Step 0–1 / Step 3 handoff so the runner may spawn a new one.
+- **Phase 1 limits:** `max_parallel=1`; a port slice without a reviewed slice study stops
+  (`needs_slice_study`: run the study with an LLM producer); verifying main after a fleet merge needs
+  3.8 + Funplay — cc4 or no Funplay → the director verifies; a single lane gets the preview port from
+  the newest `preview-startup.json` or records it itself.
+- State: `.cursor/producer-runner.json` (questions, run-wide reviewer switch, LLM handoffs) and
+  `T-<Sxx>/producer-state.json`, `producer-log.md`, `merge-journal.json` (all resumable after a kill).
+
 ## Inputs (all at project root — abort with one `ask` if any is missing)
 
 | File | Use |
@@ -210,12 +248,18 @@ Spawn the fleet orchestrator in a **new terminal in this project** with the lock
 node ~/.agents/skills/new-cocos-game/scripts/bootstrap.mjs agent-session --json \
   --path "<PROJECT>" \
   --agent "<fleet.orchestrator_agent>" \
+  --role coordinator --slice <Sxx> \
   --title "fleet-<slug>-<Sxx>" \
   --prompt "$(cat <<'EOF'
 …reference/fleet-slice-prompt.md filled for <Sxx>…
 EOF
 )"
 ```
+
+`--role coordinator` launches the orchestrator without the editor's MCP tools (it never edits
+through Funplay; it uses `probe.mjs` and `preview-startup.json`) and tags the launch for the token
+report. Every lane you spawn for a slice (fleet, single writer, reviewer, resume lane) carries
+`--role` and `--slice`.
 
 The fleet writes a pointer PLAN to the slice file (mapping in
 [reference/slice-to-plan.md](reference/slice-to-plan.md); fleet Step 0.5 branch B — a cheap
@@ -241,18 +285,27 @@ workers (S08: four nudges over 2 h went to the implement worker while the coordi
 "Workspace startup procedures", sat stalled). Wait like this and nothing else:
 
 ```bash
-# block on the terminal going idle, then read the file; repeat. No `terminal read` polling,
-# no grepping for "READY FOR REVIEW" (it matches the prompt you sent — false READY on S07).
-# tui-idle returns at once on an already-idle terminal; a timeout is a checkpoint. Keep
-# --timeout-ms under your shell tool's cap (Claude Code Bash max 600000).
-orca terminal wait --terminal <handle> --for tui-idle --timeout-ms 540000 --json >/dev/null
-python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d["status"],d.get("detail",""),d.get("sha"))' <HANDOFF.json>
+# fleet lane: --run (the coordinator handle is re-read from run-show every minute: takeovers replace it)
+node ~/.agents/skills/cocos-orca-fleet/scripts/orca-wait.mjs lane --run <run_id> \
+  --handoff <wt>/.cursor/evidence/tasks/T-<Sxx>/evidence/HANDOFF.json \
+  --state <PROJECT>/.cursor/evidence/tasks/T-<Sxx>/producer-state.json
+# single lane: --handle <writer or reviewer handle> instead of --run
 ```
 
-**Single-agent lane:** `working` after idle for two consecutive waits → one nudge naming the
-missing evidence files, then `terminal wait` again. Three idle waits with no file change →
+One JSON line: `event` (`idle` | `handoff` | `gate` | `terminal-missing` | `orca-error` | `timeout`),
+`handle`, `handle_changed`, HANDOFF `status`/`detail`/`sha`, `handoff_changed`, `idle_streak`
+(a new handle starts at 1), `pending_gates`, `unread_to_run`. `terminal-missing`: a single lane
+gets a resume lane (rule below); a fleet coordinator is never respawned — report it. `orca-error`:
+the runtime failed, not the lane — retry the wait once, then report. `unread_to_run` > 0 on an idle
+coordinator is the stall evidence used below. It never runs past `--max-ms` (default 540000; give the Bash
+tool `timeout: 600000`); a `timeout` is a checkpoint. No `terminal read` polling, no grepping for
+"READY FOR REVIEW" (it matches the prompt you sent — false READY on S07). Keep `--state` in the
+main checkout, never in the lane's evidence dir (the fleet commits that dir).
+
+**Single-agent lane:** `working` with `idle_streak` 2 → one nudge naming the
+missing evidence files, then `orca-wait lane` again. `idle_streak` 3 (idle, HANDOFF unchanged) →
 treat as hung: `terminal close`, spawn a resume lane (same evidence dir, "finish verify +
-evidence only"), note it.
+evidence only", `--role worker --slice <Sxx>`), note it.
 
 **Fleet lane:** a healthy coordinator is busy (its `check --wait` runs in the foreground), so
 wait timeouts are normal for hours. Idle with `offer_commit` / `blocked` / `infra_blocked` →
@@ -282,7 +335,8 @@ Spawn the locked `fleet.writer_agent` in the **main checkout** (main Creator is 
 
 ```bash
 node ~/.agents/skills/new-cocos-game/scripts/bootstrap.mjs agent-session --json \
-  --path "<PROJECT>" --agent "<fleet.writer_agent>" --title "slice-<slug>-<Sxx>" \
+  --path "<PROJECT>" --agent "<fleet.writer_agent>" --role worker --slice <Sxx> \
+  --title "slice-<slug>-<Sxx>" \
   --prompt "$(cat <<'EOF'
 …reference/single-slice-prompt.md filled for <Sxx>…
 EOF
@@ -293,8 +347,9 @@ With `--json`, stdout is exactly one JSON object (`.session.handle`) and progres
 stderr — redirect stdout to a file and parse that; spawn exactly once (a failed parse on S07
 led to a second writer on the same evidence dir).
 
-Then spawn a **fresh** reviewer terminal (`fleet.reviewer_agent`) with the review section of the
-same reference — a single lane still gets an independent review before you accept it.
+Then spawn a **fresh** reviewer terminal (`fleet.reviewer_agent`, `--role worker --slice <Sxx>`)
+with the review section of the same reference — a single lane still gets an independent review
+before you accept it.
 
 ### Preview (both lanes)
 
@@ -333,7 +388,10 @@ when it was the only blocker/major, the verdict counts as APPROVED. `gate:<pct>`
 `INFRA_BLOCKED` (review.md last line): not a fix round, no notes entry beyond one line. Your own
 `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<port>/` → 200 ⇒ the reviewer agent
 cannot reach localhost: spawn the same review on `cursor --model auto` and lock that for the
-rest of the run. Non-200 ⇒ integrator recovery, then a fresh review.
+rest of the run. Non-200 ⇒ integrator recovery, then a fresh review. `producer-runner.mjs`
+launches every reviewer with bootstrap's current command, so there is no stale launch to correct
+first: its first 200-with-INFRA_BLOCKED moves straight to `cursor --model auto` (policy
+`no_cursor=true` → it asks instead).
 
 1. `auto_commit=true` → reply to the lane terminal: *"approved — commit"*; the lane runs
    `/commit-guard` in its checkout and sets HANDOFF `committed` + sha. `false` → mark
@@ -353,7 +411,9 @@ rest of the run. Non-200 ⇒ integrator recovery, then a fresh review.
    `probe.mjs --only funplay` reports nothing listening; if primary shutdown cannot be confirmed,
    do not merge. With both Editors closed, run `git -C <main> merge --no-ff <branch>`, then
    `orca worktree rm --worktree path:<wt> --run-hooks --json`. Reopen the primary Editor with
-   `<main>/scripts/open-editor.sh <main>`, wait for primary Funplay parity, and perform the
+   `<main>/scripts/open-editor.sh <main>`, wait for primary Funplay parity with one foreground
+   `node ~/.agents/skills/new-cocos-game/scripts/bootstrap.mjs wait-mcp --path <main> --timeout-ms 180000`
+   (no retry loop), and perform the
    primary-checkout integration/runtime verification before marking the slice merged. When
    Feature Cropping changed, verify each active config's `includeModules` contains both the
    parent feature and selected backend (for example `physics` + `physics-ammo`). An untracked
@@ -434,6 +494,8 @@ updates. These branches still include the retro path in the final report.
 
 ## Resources
 
+- `~/.agents/skills/cocos-orca-fleet/reference/orca/cheatsheet-producer.md` — every `orca` flag you
+  use (terminals, read-only Run state, worktrees); read it instead of running `--help`.
 - [reference/producer-prompt.md](reference/producer-prompt.md) — how `new-cocos-game` /
   `store-game-clone` spawn this producer.
 - [reference/fleet-slice-prompt.md](reference/fleet-slice-prompt.md) — orchestrator prompt per slice.
