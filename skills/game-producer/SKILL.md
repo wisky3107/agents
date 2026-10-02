@@ -52,7 +52,13 @@ node ~/.agents/skills/game-producer/scripts/producer-runner.mjs start --dry-run 
   `PRODUCER_RUNNER_DIALOG=0` / `PRODUCER_RUNNER_TTY=0` turn the dialog / terminal prompt off — set
   `PRODUCER_RUNNER_TTY=0` when starting the runner in the background of a shell (`&`); an agent
   answering for the director always passes `--id/--choice` (the menu waits for a keyboard). A
-  restarted runner reopens the dialog unless it is still open or was closed with "Later".
+  restarted runner reopens the dialog unless it is still open or was closed with "Later". Every
+  question comes with where the run stands: project · slice title (lane and phase, or its status),
+  release progress, the runner's last event.
+- **director_gate** (a `needs_director_ok` slice with no decision on the policy line): the first
+  choice `<Sxx> GIVEN — record it on the policy line` makes the runner append
+  `(director gate: <Sxx> GIVEN — <note>; recorded by producer-runner <date>)` to the policy line and
+  start the slice; "decided, retry" is for a decision the director wrote there themselves.
 - **`release.manual_required: defer`** (default `ask`; a `manual_required=` policy token wins): when
   the only Step 2d problem is `manual_required` — the newest review ends APPROVED, `runtime-state.json`
   and the evidence files are there — the runner commits and merges anyway, writes the items to
