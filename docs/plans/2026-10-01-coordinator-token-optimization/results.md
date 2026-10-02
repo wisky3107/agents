@@ -29,3 +29,10 @@ Project totals 2026-09-24 → 2026-10-02: producer 167.9M (27%), fleet-orch 196.
   - Sửa: runner gửi thông báo desktop và rung chuông khi bắt đầu chờ một câu hỏi (commit bfcbf47, merge 02c1541). Runner của pilot 1 vẫn chạy code cũ cho tới khi được khởi động lại.
   - Đề xuất cho fleet SKILL: art-manifest dùng `writer_agent` khi Cursor không dùng được, hoặc kiểm tra đăng nhập Cursor trước khi dispatch.
 - **10:35Z: một lần chạy test game-producer trên master có 1 test fail; 4 lần chạy lại đều 51/51.** Có lẽ một test kill với cửa sổ thời gian 1,5 s bị chậm vì máy đang chạy fleet. Chưa xác định được test nào.
+- **10:52Z: fleet ghi HANDOFF `status: "implementing"`, ngoài bộ status đã quy định.** Runner hỏi `q2` (`unknown_status`), đúng nguyên tắc không đoán, nhưng câu hỏi fleet không có lựa chọn nào hợp. Fleet không bị chặn: nó vẫn implement trong lúc runner chờ.
+  - Sửa: status chỉ tên bước (`implementing`, `reviewing`…) được coi là `working`; mọi câu hỏi `unknown_status` có thêm "treat as working, keep waiting" (commit a23c12e, merge e154671).
+  - 11:09Z: runner được khởi động lại với code mới. `q2` được bổ sung lựa chọn đó rồi trả lời; runner mới áp dụng câu trả lời và chờ tiếp.
+- **Cùng commit đó: Cursor không đăng nhập được không còn làm slice dừng.**
+  - Runner dò một lần (`agent-ready.mjs`; `cursor-agent status` báo sai), rồi hỏi một câu `cursor_off` cho cả run trước mọi spawn chạy Cursor.
+  - Fleet SKILL: art-manifest chuyển sang claude sonnet khi Cursor không dùng được.
+  - Còn lại: `worker-prompts-art.md` và `worker-prompts.md` vẫn ghi Cursor cho art-manifest. Session khác đang sửa dở hai file này trên master, nên để sửa sau.
