@@ -8,6 +8,7 @@
  *   node bootstrap.mjs trust        --name <slug> | --path <abs>
  *   node bootstrap.mjs claude-trust --name <slug> | --path <abs>   (alias of trust)
  *   node bootstrap.mjs mcp-config --path <abs> [--port N]   pin a Funplay port for this checkout + write project-local MCP client configs
+ *   node bootstrap.mjs mcp-audit [--fix [--fix-port-matches]] [--home <dir>]   report (or remove) per-checkout editor MCP entries in global agent configs
  *   node bootstrap.mjs wait-mcp --path <abs> [--timeout-ms 180000] [--port N]
  *   node bootstrap.mjs agent-session --path <abs> [--agent cursor|claude|claude-agent-teams|codex|gemini|opencode|antigravity|"<spec>"] [--model m] [--effort e] [--title name] [--prompt "..."] [--json] [--boot|--no-boot]
  *       --json: stdout = exactly one JSON object (progress → stderr). Boot turn is auto: skipped for
@@ -21,7 +22,7 @@
  *   - 3.8 Funplay → funplay-cocos-mcp.config.json (8765..)
  *   - cc4 COCOS CLI → cocos-cli-mcp.config.json (MCP 9527..9559, preview 7456..7489)
  * Agents in that checkout reach the editor through project-local MCP client configs
- * (.cursor/mcp.json, .mcp.json, .codex/config.toml) that point at that port —
+ * (.cursor/mcp.json, .mcp.json, .codex/config.toml, opencode.json) that point at that port —
  * never through a global 8765/9527 assumption. `wait-mcp` only reports ok when
  * the gate for THIS checkout passes (Funplay /health.projectName, or cocos-cli
  * initialize on the pinned port).
@@ -159,6 +160,7 @@ const RSYNC_EXCLUDES = [
   '/.cursor/mcp.json',
   '/.mcp.json',
   '/.codex/config.toml',
+  '/opencode.json',
 ];
 
 function die(msg, code = 1) {
@@ -184,7 +186,8 @@ function parseArgs(argv) {
       a === '--port' ||
       a === '--template' ||
       a === '--role' ||
-      a === '--slice'
+      a === '--slice' ||
+      a === '--home'
     ) {
       values[a.slice(2)] = argv[++i];
     } else if (a.startsWith('--')) {
@@ -635,9 +638,9 @@ function shellQuote(value) {
 }
 
 /**
- * `[mcp_servers.<name>]` tables of a Codex TOML file → [{name, url}]. A line scan, not a TOML parser:
- * sub-tables (`.env`) and `[[array]]` tables end the current server; inline-table or dotted-key server
- * definitions are not seen (they then simply stay enabled).
+ * Servers of a Codex TOML file → [{name, url}]: `[mcp_servers.<name>]` tables and one-line inline
+ * entries under `[mcp_servers]` (`name = { url = "…" }`). A line scan, not a TOML parser: sub-tables
+ * (`.env`) and `[[array]]` tables end the current server; top-level dotted keys are not seen.
  */
 function codexMcpServers(file) {
   let text = '';
@@ -648,9 +651,15 @@ function codexMcpServers(file) {
   }
   const out = [];
   let cur = null;
+  let inMcpTable = false;
+  const urlOf = (s) => {
+    const u = s.match(/\burl\s*=\s*(?:"([^"]*)"|'([^']*)')/);
+    return u ? (u[1] ?? u[2]) : '';
+  };
   for (const line of text.split('\n')) {
     if (/^\s*\[\[/.test(line)) {
       cur = null;
+      inMcpTable = false;
       continue;
     }
     const header = line.match(/^\s*\[([^\[\]]+)\]\s*(#.*)?$/);
@@ -658,10 +667,15 @@ function codexMcpServers(file) {
       const m = header[1].trim().match(/^mcp_servers\.(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))$/);
       cur = m ? { name: m[1] || m[2] || m[3], url: '' } : null;
       if (cur) out.push(cur);
+      inMcpTable = header[1].trim() === 'mcp_servers';
       continue;
     }
-    const url = cur && line.match(/^\s*url\s*=\s*(?:"([^"]*)"|'([^']*)')/);
-    if (url) cur.url = url[1] ?? url[2];
+    if (inMcpTable) {
+      const inline = line.match(/^\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))\s*=\s*\{(.*)$/);
+      if (inline) out.push({ name: inline[1] || inline[2] || inline[3], url: urlOf(inline[4]) });
+      continue;
+    }
+    if (cur && /^\s*url\s*=/.test(line)) cur.url = urlOf(line);
   }
   return out;
 }
@@ -1042,6 +1056,58 @@ function writeFunplayProjectConfig(projectPath, port) {
   return file;
 }
 
+/**
+ * Project-scope OpenCode config: OpenCode merges <checkout>/opencode.json over the global one, so the
+ * checkout's editor server lives here instead of agents editing ~/.config/opencode/opencode.json.
+ * `mcp.<key>` is ours and is replaced whole; every other key stays. A file that is not plain JSON
+ * (JSONC) or that git tracks is left alone with a warning, so the pin never costs user settings or
+ * dirties the repo.
+ */
+function writeOpencodeJson(projectPath, key, url) {
+  const file = path.join(projectPath, 'opencode.json');
+  let prev = {};
+  if (fs.existsSync(file)) {
+    prev = readJsonSafe(file);
+    if (!prev || typeof prev !== 'object' || Array.isArray(prev)) {
+      console.error(`new-cocos-game: warning: ${file} is not plain JSON; left as is — add mcp.${key} = {"type":"remote","url":"${url}"} by hand`);
+      return null;
+    }
+    if (spawnSync('git', ['-C', projectPath, 'ls-files', '--error-unmatch', 'opencode.json']).status === 0) {
+      console.error(`new-cocos-game: warning: ${file} is tracked by git; the per-checkout ${key} pin is not added`);
+      return null;
+    }
+  }
+  const mcp = { ...(prev.mcp || {}), [key]: { type: 'remote', url } };
+  const next = { $schema: prev.$schema || 'https://opencode.ai/config.json', ...prev, mcp };
+  fs.writeFileSync(file, JSON.stringify(next, null, 2) + '\n');
+  ensureGitIgnored(projectPath, 'opencode.json');
+  return file;
+}
+
+/**
+ * Projects created before a per-checkout file joined the template .gitignore get it in
+ * .git/info/exclude (shared by every worktree of the repo; anchored at the checkout's prefix when the
+ * project sits in a repo subdirectory). No-op outside git or when already ignored.
+ */
+function ensureGitIgnored(projectPath, rel) {
+  const check = spawnSync('git', ['-C', projectPath, 'check-ignore', '-q', rel], { encoding: 'utf8' });
+  if (check.status !== 1) return; // 0 = already ignored, 128 = not a git checkout
+  const ex = spawnSync('git', ['-C', projectPath, 'rev-parse', '--git-path', 'info/exclude', '--show-prefix'], { encoding: 'utf8' });
+  if (ex.status !== 0) return;
+  const [excludeRel, prefix = ''] = ex.stdout.split('\n');
+  const excludeFile = path.resolve(projectPath, excludeRel.trim());
+  const pattern = `/${prefix.trim()}${rel}`;
+  try {
+    fs.mkdirSync(path.dirname(excludeFile), { recursive: true });
+    const text = fs.existsSync(excludeFile) ? fs.readFileSync(excludeFile, 'utf8') : '';
+    if (!text.split('\n').includes(pattern)) {
+      fs.appendFileSync(excludeFile, `${text && !text.endsWith('\n') ? '\n' : ''}${pattern}\n`);
+    }
+  } catch (err) {
+    console.error(`new-cocos-game: warning: could not add ${pattern} to ${excludeFile}: ${err?.message || err}`);
+  }
+}
+
 function writeCursorMcpJson(projectPath, url) {
   const dir = path.join(projectPath, '.cursor');
   fs.mkdirSync(dir, { recursive: true });
@@ -1098,6 +1164,7 @@ async function configureFunplayMcp(projectPath, preferredPort) {
     cursor: writeCursorMcpJson(abs, url),
     claude: writeClaudeMcpJson(abs, url),
     codex: writeCodexProjectToml(abs, url),
+    opencode: writeOpencodeJson(abs, MCP_SERVER_KEY, url),
   };
   const seedPath = resolveFunplaySeedPath(abs);
   console.log(`→ Funplay port for ${funplayProjectName(abs)}: ${port} (${reason})`);
@@ -1268,13 +1335,14 @@ function writeCocosCliMcpConfig(projectPath, preferredMcpPort) {
       rootMcp,
       JSON.stringify({ mcpServers: { 'cocos-cli': { url } } }, null, 2) + '\n',
     );
+    const opencode = writeOpencodeJson(abs, 'cocos-cli', url);
     return {
       engine: 'cocos-cli',
       port: COCOS_CLI_MCP_PORT,
       mcp_port: COCOS_CLI_MCP_PORT,
       preview_port: 7456,
       url,
-      files: { cursorMcp, rootMcp },
+      files: { cursorMcp, rootMcp, opencode },
       legacy: true,
     };
   }
@@ -1301,6 +1369,8 @@ function writeCocosCliMcpConfig(projectPath, preferredMcpPort) {
   console.log(
     `→ COCOS CLI ports for ${parsed.projectName}: MCP ${parsed.mcp_port}, preview ${parsed.preview_port} (${parsed.reason?.mcp || 'ok'})`,
   );
+  // resolve-ports.mjs writes .cursor/mcp.json and .mcp.json; OpenCode's is ours
+  const opencode = parsed.url ? writeOpencodeJson(abs, 'cocos-cli', parsed.url) : null;
   return {
     engine: 'cocos-cli',
     port: parsed.mcp_port,
@@ -1308,7 +1378,7 @@ function writeCocosCliMcpConfig(projectPath, preferredMcpPort) {
     preview_port: parsed.preview_port,
     url: parsed.url,
     reason: parsed.reason,
-    files: parsed.files,
+    files: { ...(parsed.files || {}), ...(opencode ? { opencode } : {}) },
   };
 }
 
@@ -1750,6 +1820,7 @@ async function cmdCreate(values, flags) {
       'if mode=fleet → orchestrator prompt uses cocos-orca-fleet; worktree MUST be this project',
     ],
   };
+  warnGlobalMcpPins();
   emitResult(result);
 }
 
@@ -1782,8 +1853,241 @@ function cmdCreator(values) {
   console.log(hit.binary);
 }
 
+// ---- mcp-audit: per-checkout editor MCP must never sit in a GLOBAL agent config ----
+// A Funplay / COCOS CLI pin in ~/.codex, ~/.cursor, ~/.config/opencode or ~/.claude.json is loaded by
+// every session on the machine (token cost) and can drive the wrong project's Editor.
+const AUDIT_NAME_RE = /^(funplay_cocos|cocos-.+-[0-9a-f]{6})$/;
+const AUDIT_URL_RE = /^https?:\/\/(127\.0\.0\.1|localhost|0\.0\.0\.0|\[::1\])(?::(\d+))?(\/|$)/i;
+
+/**
+ * Why an entry looks like a per-checkout editor pin. A `name` match is certain; a `port` match only
+ * says something local listens in the Funplay / COCOS CLI range (wrangler's 8787 does too), so it is
+ * removed by --fix only together with --fix-port-matches.
+ */
+function auditMatch(name, url) {
+  if (AUDIT_NAME_RE.test(name)) return { match: 'name', reason: `name ${name}` };
+  const m = (url || '').match(AUDIT_URL_RE);
+  const port = m && Number(m[2]);
+  if (port >= DEFAULT_MCP_PORT && port <= MCP_PORT_RANGE_END) return { match: 'port', reason: `Funplay port ${port}` };
+  if (port >= 9527 && port <= 9559) return { match: 'port', reason: `COCOS CLI port ${port}` };
+  return null;
+}
+
+function entryUrl(v) {
+  return (v && (v.url || v.serverUrl || v.httpUrl)) || '';
+}
+
+/** JSONC → JSON: drop line and block comments and trailing commas outside strings. */
+function stripJsonc(text) {
+  let out = '';
+  let inStr = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    const n = text[i + 1];
+    if (inStr) {
+      out += c;
+      if (c === '\\') out += text[++i] ?? '';
+      else if (c === '"') inStr = false;
+    } else if (c === '"') {
+      inStr = true;
+      out += c;
+    } else if (c === '/' && n === '/') {
+      while (i < text.length && text[i] !== '\n') i++;
+      out += '\n';
+    } else if (c === '/' && n === '*') {
+      i += 2;
+      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
+      i++;
+    } else {
+      out += c;
+    }
+  }
+  return out.replace(/,(\s*[}\]])/g, '$1');
+}
+
+function mcpAuditTargets(home) {
+  const config =
+    home === os.homedir() && process.env.XDG_CONFIG_HOME ? process.env.XDG_CONFIG_HOME : path.join(home, '.config');
+  return [
+    { client: 'claude', file: path.join(home, '.claude.json'), kind: 'json', key: 'mcpServers' },
+    { client: 'cursor', file: path.join(home, '.cursor', 'mcp.json'), kind: 'json', key: 'mcpServers' },
+    { client: 'opencode', file: path.join(config, 'opencode', 'opencode.json'), kind: 'json', key: 'mcp' },
+    { client: 'opencode', file: path.join(config, 'opencode', 'opencode.jsonc'), kind: 'json', key: 'mcp' },
+    { client: 'codex', file: path.join(home, '.codex', 'config.toml'), kind: 'toml' },
+  ];
+}
+
+/**
+ * Flagged global entries (each with `fixable` and, if not, `why`), claude project-scoped entries
+ * (reported, never changed) and files that could not be read as JSON/JSONC.
+ */
+function auditMcpConfigs(home, { fixPorts = false } = {}) {
+  const findings = [];
+  const projectScoped = [];
+  const unparsed = [];
+  const add = (t, name, url, extra = {}) => {
+    const hit = auditMatch(name, url);
+    if (!hit) return;
+    let why = '';
+    if (hit.match === 'port' && !fixPorts) why = 'port match only: --fix-port-matches to remove';
+    else if (extra.jsonc) why = 'JSONC file: edit by hand (a rewrite would drop its comments)';
+    else if (extra.inline === 'multiline') why = 'inline table spans lines: edit by hand';
+    findings.push({ client: t.client, file: t.file, name, url, ...hit, fixable: !why, ...(why ? { why } : {}) });
+  };
+  for (const t of mcpAuditTargets(home)) {
+    if (!fs.existsSync(t.file)) continue;
+    if (t.kind === 'toml') {
+      for (const s of codexMcpServers(t.file)) add(t, s.name, s.url);
+      continue;
+    }
+    const text = fs.readFileSync(t.file, 'utf8');
+    let doc = null;
+    let jsonc = false;
+    try {
+      doc = JSON.parse(text);
+    } catch {
+      try {
+        doc = JSON.parse(stripJsonc(text));
+        jsonc = true;
+      } catch (err) {
+        unparsed.push({ client: t.client, file: t.file, error: err.message });
+        continue;
+      }
+    }
+    for (const [name, v] of Object.entries(doc?.[t.key] || {})) add(t, name, entryUrl(v), { jsonc });
+    if (t.client === 'claude') {
+      for (const [project, p] of Object.entries(doc?.projects || {})) {
+        for (const [name, v] of Object.entries(p?.mcpServers || {})) {
+          const hit = auditMatch(name, entryUrl(v));
+          if (hit) projectScoped.push({ file: t.file, project, name, url: entryUrl(v), ...hit });
+        }
+      }
+    }
+  }
+  return { findings, projectScoped, unparsed };
+}
+
+const TOML_HEADER_RE = /^\s*\[\[?([^\[\]]+)\]\]?\s*(#.*)?$/;
+const TOML_SERVER_KEY_RE = /^mcp_servers\.(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))(\..*)?$/;
+
+/**
+ * Drop `[mcp_servers.<name>]` blocks (sub-tables included) and one-line inline entries under
+ * `[mcp_servers]`. Every other line stays byte-for-byte: comments directly above the next table
+ * belong to that table and are kept; blank lines between the dropped block and them go with it.
+ */
+function removeTomlServers(text, names) {
+  const drop = new Set(names);
+  const out = [];
+  let skipping = false;
+  let inMcpTable = false;
+  let pending = [];
+  for (const line of text.split('\n')) {
+    const header = line.match(TOML_HEADER_RE);
+    if (header) {
+      const m = header[1].trim().match(TOML_SERVER_KEY_RE);
+      const dropNow = Boolean(m && drop.has(m[1] || m[2] || m[3]));
+      if (skipping && !dropNow) {
+        const firstComment = pending.findIndex((l) => l.trim() !== '');
+        if (firstComment !== -1) out.push(...pending.slice(firstComment));
+      }
+      pending = [];
+      skipping = dropNow;
+      inMcpTable = header[1].trim() === 'mcp_servers';
+      if (!skipping) out.push(line);
+      continue;
+    }
+    if (skipping) {
+      if (/^\s*(#.*)?$/.test(line)) pending.push(line);
+      else pending = [];
+      continue;
+    }
+    if (inMcpTable) {
+      const inline = line.match(/^\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))\s*=\s*\{/);
+      if (inline && drop.has(inline[1] || inline[2] || inline[3])) continue;
+    }
+    out.push(line);
+  }
+  const result = out.join('\n');
+  return text.endsWith('\n') && !result.endsWith('\n') ? `${result}\n` : result;
+}
+
+/** Write through a symlinked dotfile and keep the file's mode (these configs hold credentials). */
+function writeFileAtomic(file, text) {
+  const target = fs.realpathSync(file);
+  const mode = fs.statSync(target).mode & 0o7777;
+  const tmp = `${target}.tmp-mcp-audit-${process.pid}`;
+  fs.writeFileSync(tmp, text, { mode });
+  fs.chmodSync(tmp, mode);
+  fs.renameSync(tmp, target);
+}
+
+function fixMcpFindings(findings, home) {
+  const ts = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '');
+  const fixed = [];
+  const errors = [];
+  for (const t of mcpAuditTargets(home)) {
+    const names = findings.filter((f) => f.file === t.file && f.fixable).map((f) => f.name);
+    if (!names.length) continue;
+    try {
+      const backup = `${t.file}.bak-mcp-audit-${ts}`;
+      fs.copyFileSync(t.file, backup);
+      if (t.kind === 'toml') {
+        writeFileAtomic(t.file, removeTomlServers(fs.readFileSync(t.file, 'utf8'), names));
+      } else {
+        // ~/.claude.json is rewritten by every running Claude Code session: re-read, and only replace
+        // the file when it did not change while we edited it (a small window remains; close sessions first).
+        const target = fs.realpathSync(t.file);
+        let written = false;
+        for (let attempt = 0; attempt < 5 && !written; attempt++) {
+          const before = fs.statSync(target);
+          const doc = JSON.parse(fs.readFileSync(target, 'utf8'));
+          for (const n of names) if (doc[t.key]) delete doc[t.key][n];
+          const text = JSON.stringify(doc, null, 2) + '\n';
+          const now = fs.statSync(target);
+          if (now.mtimeMs !== before.mtimeMs || now.size !== before.size) continue;
+          writeFileAtomic(t.file, text);
+          written = true;
+        }
+        if (!written) throw new Error('file kept changing while being fixed; close the agent sessions and retry');
+      }
+      fixed.push({ client: t.client, file: t.file, backup, removed: names });
+    } catch (err) {
+      errors.push({ client: t.client, file: t.file, error: err?.message || String(err) });
+    }
+  }
+  return { fixed, errors };
+}
+
+/** Report-only audit for create / mcp-config: warn on stderr, never fix. */
+function warnGlobalMcpPins() {
+  try {
+    const { findings, unparsed } = auditMcpConfigs(os.homedir());
+    if (findings.length) {
+      console.error(`new-cocos-game: warning: ${findings.length} editor MCP entr${findings.length === 1 ? 'y' : 'ies'} in global agent configs:`);
+      for (const f of findings) console.error(`  ${f.client}: ${f.name} (${f.reason}) in ${f.file}`);
+      console.error('  review with: node ~/.agents/skills/new-cocos-game/scripts/bootstrap.mjs mcp-audit [--fix]');
+    }
+    for (const u of unparsed) console.error(`new-cocos-game: warning: mcp-audit could not parse ${u.file}: ${u.error}`);
+  } catch (err) {
+    console.error(`new-cocos-game: warning: mcp-audit failed: ${err?.message || err}`);
+  }
+}
+
+function cmdMcpAudit(values, flags) {
+  if ('home' in values && !values.home) die('--home needs a directory');
+  const home = values.home ? path.resolve(values.home) : os.homedir();
+  const audit = auditMcpConfigs(home, { fixPorts: flags.has('fix-port-matches') });
+  const { fixed, errors } = flags.has('fix') ? fixMcpFindings(audit.findings, home) : { fixed: [], errors: [] };
+  const done = new Set(fixed.flatMap((f) => f.removed.map((n) => `${f.file}\0${n}`)));
+  const remaining = audit.findings.filter((f) => !done.has(`${f.file}\0${f.name}`));
+  const ok = !remaining.length && !audit.unparsed.length && !errors.length;
+  emitResult({ ok, home, ...audit, remaining, fixed, errors });
+  if (!ok) process.exitCode = 2;
+}
+
 async function cmdMcpConfig(values) {
   const projectPath = resolveProjectPath(values);
+  warnGlobalMcpPins();
   if (isCc4Project(projectPath)) {
     const result = writeCocosCliMcpConfig(projectPath, values.port);
     emitResult({ ok: true, ...result, projectPath });
@@ -1886,17 +2190,22 @@ async function main() {
   else if (cmd === 'trust' || cmd === 'claude-trust') cmdTrust(values);
   else if (cmd === 'creator') cmdCreator(values);
   else if (cmd === 'mcp-config') await cmdMcpConfig(values);
+  else if (cmd === 'mcp-audit') cmdMcpAudit(values, flags);
   else if (cmd === 'wait-mcp') await cmdWaitMcp(values);
   else if (cmd === 'agent-session') await cmdAgentSession(values);
   else if (cmd === 'agent-cmd') cmdAgentCmd(values);
   else {
     die(
-      'usage: bootstrap.mjs <resolve|create|orca-add|trust|creator|mcp-config|wait-mcp|agent-session|agent-cmd> [options]\n' +
+      'usage: bootstrap.mjs <resolve|create|orca-add|trust|creator|mcp-config|mcp-audit|wait-mcp|agent-session|agent-cmd> [options]\n' +
         '  creator: [--path <abs>] → print Creator binary matching package.json creator.version\n' +
         '  create: --name <slug> [--template game|playable|cc4|<cc-*-template>|<abs>] [--open|--no-open] [--no-orca] [--no-wait-mcp] [--port N] [--timeout-ms N]\n' +
         '    --template default: cc-game-template; "playable" → cc-playable-template; "cc4" → cc4-game-template\n' +
         '  orca-add / trust / claude-trust / mcp-config / wait-mcp: --name <slug> | --path <abs>\n' +
-        '  mcp-config: Funplay pin (3.8) or cocos-cli pin+mcp.json (cc4; MCP 9527..9559, preview 7456..7489)\n' +
+        '  mcp-config: Funplay pin (3.8) or cocos-cli pin+mcp.json (cc4; MCP 9527..9559, preview 7456..7489); also writes <checkout>/opencode.json\n' +
+        '  mcp-audit [--fix [--fix-port-matches]] [--home <dir>]: per-checkout editor MCP entries in GLOBAL claude/cursor/opencode/codex configs\n' +
+        '    name match (funplay_cocos | cocos-*-<hex6>) or port match (127.0.0.1/localhost on 8765..8799 / 9527..9559, report-only\n' +
+        '    unless --fix-port-matches); --fix backs up <file>.bak-mcp-audit-<ts>, removes only those entries, keeps file mode;\n' +
+        '    JSONC files and ~/.claude.json projects.*.mcpServers are reported, never changed; exit 2 while anything remains\n' +
         '  wait-mcp: Funplay /health projectName gate (3.8) or cocos-cli initialize on pinned port (cc4)\n' +
         '  agent-session: --path <abs> [--prompt "..."] [--agent cursor|claude|claude-agent-teams|codex|gemini|opencode|antigravity|"<spec>"] [--model m] [--effort e] [--title name]\n' +
         '    --agent also accepts an AGENT_NOTES.md launch spec ("claude --model opus --effort high"); explicit --model/--effort win\n' +
