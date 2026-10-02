@@ -87,6 +87,11 @@ Do:
      plan-notes.md (which system owns it, why it must change); nothing outside SCOPE.md.
    - allowed_scene_objects as concrete node paths / prefab names that exist or are to be
      created (say which).
+   - Popups (overlay that opens and closes: result, pause, settings, shop, reward, toast):
+     follow docs/flows/03-popup-system.md — prefab `assets/resources/prefab/ui/Popup<Name>.prefab`
+     in allowed_scene_objects, script under modules/popup/**, key in constant/PopupDefine.ts.
+     No assets/scripts/common/uiManager.ts yet and docs/flows/00-project-overview.md offers the
+     `ui-popup` kit → the PLAN installs it first (step + kit paths in code_paths/art_paths).
    - forbidden_changes = SCOPE.md exclusions + the dirty snapshot + shared systems you decided
      not to touch.
    - acceptance_criteria as observations only; include EVERY matching row of
@@ -187,6 +192,11 @@ Do:
    transition logic — all driven from code with @property hooks for the integrator.
    Skipping them because "mechanics work" is an incomplete task, not a FOLLOWUPS item.
 3. Expose scene wiring as @property refs; do NOT attach scripts, create nodes, or wire refs.
+   Popups: if the PLAN installs the `ui-popup` kit, run its `install.sh <worktree>` first (it
+   copies scripts/prefabs with their .meta and patches GameController — not a raw edit; the
+   integrator refreshes the asset-db). A new popup = script extending PopupBase + POPUP key,
+   opened only via `UIManager.instance.showDialog(POPUP.X)`; its prefab (duplicate of
+   PopupSample, root renamed to the key, component swapped) goes in integration-notes.
 4. Write evidence/integration-notes.md: exact nodes/components/refs the integrator must create
    or wire, in `{Kind} - {label}` form with parent path, ensure_* semantics, and which manifest
    asset goes where.
@@ -323,7 +333,9 @@ Static (commit-guard gates 1–4, read-only):
   outside allowed_paths, implements `scope.out` work, is dead/duplicated, or breaks
   ARCHITECTURE. `gate`: overrun ≤ budget_auto_bump_pct (default 15 %) with no other
   blocker/major → APPROVED; larger → finding, owner code.
-- ARCHITECTURE: no upward deps, no cycles, events from the registry only.
+- ARCHITECTURE: no upward deps, no cycles, events from the registry only. Popups only via
+  `UIManager.showDialog/hideDialog(POPUP.X)` with key = prefab name = root node name =
+  `@ccclass`; no popup node parented to the Canvas by hand, no second popup manager.
 - ASSETS: every asset has a .meta pair; no raw-edited .scene/.prefab/.meta. Every 3D model
   has `CONCEPT: PASS` + `VERDICT: PASS`; open compare-sheet.png (concept|model rows) and
   contact-sheet.png together — missing either sheet is a blocker (owner asset). Overturn when

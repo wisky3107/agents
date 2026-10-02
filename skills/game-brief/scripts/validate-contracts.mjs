@@ -15,7 +15,11 @@ export function overlap(a, b) {
 }
 const list = x => Array.isArray(x) ? x : [];
 const IMAGE = /(?:reference|docs\/mockups)\/[^\s)`'"|<>,]+\.(?:png|jpe?g|svg|webp)/gi;
-const SCREEN = /(?:Panel|Screen|Menu|Popup|Dialog|Overlay|Modal)s?(?:\/|$)/i;
+const SCREEN = /(?:Panel|Screen|Menu|Popup|Dialog|Overlay|Modal)s?(?:\/|$)|(?:^|\/)Popup\w*(?:\.prefab)?$/i;
+// ui-popup kit: popups are prefab/ui/Popup* + modules/popup/**, shown by common/uiManager.ts.
+const KIT_MANAGER = 'assets/scripts/common/uiManager.ts';
+const POPUP_PATH = /(?:resources\/prefab\/ui\/|(?:^|\/))Popup\w*(?:\.prefab)?$|assets\/scripts\/modules\/popup\//;
+const POPUP_NODE = /^Canvas\/(?:.+\/)?\w*(?:Popup|Dialog|Modal)\w*$/i;
 // Feel-table IDs are the leading identifier of the first cell in tables under a "feel" heading.
 export function feelIds(expect) {
   const out = new Set();
@@ -94,6 +98,23 @@ export function validate(p, options = {}) {
       if (added.length && !mock && !refs.some(f => exists(local(p, f)))) fail('missing_screen_target', s.file, `New screen ${added.join(', ')} needs an existing reference image or docs/mockups/${id}-*.svg cited in the slice or an EXPECT line naming ${id}`);
     }
     seenScenes.push(...scenes);
+  }
+  // Projects whose overview offers the ui-popup kit show popups through it, installed once.
+  const overview = local(p, 'docs/flows/00-project-overview.md');
+  if (exists(overview) && read(overview).includes('ui-popup')) {
+    let kit = exists(local(p, KIT_MANAGER));
+    for (const id of planned) {
+      const s = byId.get(id); if (!s?.data) continue;
+      const code = list(s.data.paths?.code).filter(o => typeof o === 'string');
+      const scenes = list(s.data.paths?.scene_objects).filter(o => typeof o === 'string');
+      const installs = code.includes(KIT_MANAGER);
+      if (!done(n, id)) {
+        const nodes = scenes.filter(o => POPUP_NODE.test(o));
+        if (nodes.length) fail('popup_outside_kit', s.file, `${nodes.join(', ')}: popups are prefabs under assets/resources/prefab/ui/ shown by UIManager (docs/flows/03-popup-system.md), not Canvas nodes`);
+        if (!kit && !installs && [...code, ...scenes].some(o => POPUP_PATH.test(o))) fail('popup_kit_missing', s.file, `adds a popup but no earlier slice installs the ui-popup kit; add the kit step and ${KIT_MANAGER} (kit paths) to this slice`);
+      }
+      kit ||= installs;
+    }
   }
   for (const [id, s] of byId) {
     const x = s.data;
