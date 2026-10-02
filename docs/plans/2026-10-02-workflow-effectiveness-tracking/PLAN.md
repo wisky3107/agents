@@ -1,6 +1,6 @@
 # Plan đo hiệu quả các hệ thống trong workflow Cocos (workflow scorecard)
 
-Trạng thái: **S0 xong (2026-10-02), S1 xong (2026-10-03)**: xem `s0-baseline.md` và §10. S2–S3 chưa triển khai.
+Trạng thái: **S0 xong (2026-10-02), S1–S2 xong (2026-10-03), S3 đã có khung đo**: xem `s0-baseline.md` và §10. S3 chờ dữ liệu (≥5 slice/nhánh, đổi cấu hình trong cùng project).
 Ngày: 2026-10-02 · Revision: 2 (các quyết định mở #1–#4 đã chốt theo đề xuất; sửa số liệu Orca ở §4.1)
 Phạm vi review: KPI cho từng hạng mục hệ thống, hợp đồng dữ liệu tối thiểu, lộ trình, quyết định mở.
 
@@ -287,3 +287,26 @@ Scorecard đọc thêm:
 Pilot cc-lego-stack S08 (runner): e2e 355 phút, trong đó 202 phút runner dừng chờ, qua 7 lần dừng. Lâu nhất là 83 phút ở lần đầu, do `cursor-agent` chưa đăng nhập nên art-manifest không dispatch được.
 
 Test: scorecard 23, game-producer 81 (gồm 3 test S1).
+
+### S2 — 2026-10-03
+
+- **Ngưỡng:** 13 KPI cho 8 hạng mục, số lấy từ §4. Mỗi KPI có số mẫu tối thiểu; dưới mức đó ghi "chưa đủ dữ liệu". `memory.promotion` chỉ có mức vàng.
+- **Đầu ra của job `daily`:**
+  - `logs/weekly/scorecard-<YYYY>-W<ww>.md`: cờ KPI, slice xong trong 7 ngày, top 3 `fix_target` lặp, các nhánh cấu hình.
+  - `logs/scorecard-dashboard.html`: trang local, light/dark, dùng palette trạng thái có icon và nhãn chữ.
+- **Retro:** đọc `scorecard-latest.md` (S1).
+- **Chưa làm:** cảnh báo hồi quy TTFT (§4.2). Histogram theo bucket quá thô để so ±50%.
+- **Lần chạy đầu (2026-10-03):** ĐỎ 4, VÀNG 7, XANH 15, chưa đủ dữ liệu 4. Bốn mục ĐỎ:
+  - runner chờ chiếm 57% e2e (cc-lego-stack S08),
+  - lỗi agy 5%,
+  - budget cc-block-out median ×2,64,
+  - `contract:Fable change_budget counting note` lặp ở 6 slice.
+
+### S3 — 2026-10-03 (khung đo)
+
+- `experiments()` nhóm slice theo reviewer, writer, art backend. Nhãn ghi trong chính slice (`stats.json` `agents`) được ưu tiên hơn khóa AGENT_NOTES.
+- Một chiều chỉ "so được" khi mỗi nhánh có ≥5 slice **và** có ít nhất một project đã chạy cả hai cấu hình.
+- **Hiện chưa chiều nào so được:**
+  - Reviewer: các nhánh có dưới 5 slice.
+  - Writer và art backend: mỗi nhánh trùng với một project riêng.
+- **Để có phép so đầu tiên:** trong một project pilot, đổi `reviewer_agent` giữa hai cấu hình, mỗi cấu hình ≥5 slice. Fleet ghi `stats.json` `agents` (S1), nên mỗi slice tự mang nhãn của mình.

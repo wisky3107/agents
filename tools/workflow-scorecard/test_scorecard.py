@@ -269,5 +269,68 @@ class S1Sources(unittest.TestCase):
             self.assertIn('| cc-x | 2 | 1 | 1/2 (50%) | 1 |', report)
 
 
+class S2S3(unittest.TestCase):
+    def test_judge(self):
+        self.assertEqual(sc.judge('orca.task_fail', 0.2, 50), 'critical')
+        self.assertEqual(sc.judge('orca.task_fail', 0.1, 50), 'warning')
+        self.assertEqual(sc.judge('orca.task_fail', 0.01, 50), 'good')
+        self.assertEqual(sc.judge('orca.task_fail', 0.5, 3), 'na')  # below min n
+        self.assertEqual(sc.judge('agent.first_pass', 0.2, 6), 'critical')
+        self.assertEqual(sc.judge('agent.first_pass', 0.4, 6), 'warning')
+        self.assertEqual(sc.judge('memory.promotion', 0.0, 57), 'warning')  # yellow-only KPI
+
+    def test_short_agent(self):
+        self.assertEqual(sc.short_agent('claude --model opus --effort high'), 'claude opus')
+        self.assertEqual(sc.short_agent('task_b7 (opencode deepseek-v4.1-flash)'), 'opencode deepseek-v4.1-flash')
+        self.assertEqual(sc.short_agent('opencode --model opencode-go/deepseek-v4.1-flash'), 'opencode deepseek-v4.1-flash')
+        self.assertEqual(sc.short_agent('antigravity'), 'antigravity')
+        self.assertIsNone(sc.short_agent(''))
+
+    def _db(self, d, rows):
+        con = sc.connect(os.path.join(d, 'sc.sqlite'))
+        for p, s, fr, review in rows:
+            con.execute('INSERT INTO slices (project, slice, review_rounds, fix_rounds) VALUES (?,?,?,?)', (p, s, 1, fr))
+            con.execute('INSERT INTO slice_agents VALUES (?,?,?,?)', (p, s, 'review', review))
+        con.commit()
+        return con
+
+    def test_experiment_needs_same_project(self):
+        with tempfile.TemporaryDirectory() as d:
+            # each reviewer only ever ran in its own project: a project comparison, not a config one
+            rows = [('cc-a', f'S{i:02}', 0, 'claude --model opus') for i in range(5)] + \
+                   [('cc-b', f'S{i:02}', 1, 'cursor --model auto') for i in range(5)]
+            exps = sc.experiments(self._db(d, rows), ['cc-a', 'cc-b'])
+            rev = [e for e in exps if e['dim'] == 'reviewer']
+            self.assertEqual({e['arm'] for e in rev}, {'claude opus', 'cursor auto'})
+            self.assertTrue(all(e['ready'].startswith('chưa (mỗi nhánh') for e in rev))
+            self.assertEqual({e['arm']: e['own'] for e in rev}, {'claude opus': 5, 'cursor auto': 5})
+
+    def test_experiment_ready(self):
+        with tempfile.TemporaryDirectory() as d:
+            rows = [('cc-a', f'S{i:02}', 0, 'claude --model opus') for i in range(5)] + \
+                   [('cc-a', f'S{i:02}', 2, 'cursor --model auto') for i in range(5, 10)]
+            rev = [e for e in sc.experiments(self._db(d, rows), ['cc-a']) if e['dim'] == 'reviewer']
+            self.assertTrue(all(e['ready'] == 'có' for e in rev))
+            got = {e['arm']: (e['first_pass'], e['fix_median']) for e in rev}
+            self.assertEqual(got, {'claude opus': (1.0, 0), 'cursor auto': (0.0, 2)})
+
+    def test_outputs(self):
+        with tempfile.TemporaryDirectory() as d:
+            con = self._db(d, [('cc-a', 'S01', 3, 'claude --model opus')])
+            con.execute("INSERT INTO llm_daily VALUES ('2026-10-01','agy','m','',300,30,0,0,0,0,'[]','[]',0)")
+            con.commit()
+            flags = sc.evaluate(con, ['cc-a'])
+            gw = [f for f in flags if f['kpi'] == 'gateway.error_rate'][0]
+            self.assertEqual((gw['status'], gw['scope']), ('critical', 'provider agy'))
+            fp = [f for f in flags if f['kpi'] == 'agent.first_pass'][0]
+            self.assertEqual(fp['status'], 'na')  # one slice < min n 5
+            weekly, dash = sc.write_outputs(con, ['cc-a'], d)
+            self.assertIn('gateway.error_rate', open(weekly).read())
+            html_text = open(dash).read()
+            self.assertIn('<title>Workflow scorecard</title>', html_text)
+            self.assertIn('prefers-color-scheme: dark', html_text)
+            self.assertIn('✖ ĐỎ', html_text)
+
+
 if __name__ == '__main__':
     unittest.main()
