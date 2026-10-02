@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import path from 'node:path';
+import os from 'node:os';
 
 // Exercise the real resolver and session sequencing with an isolated Orca/trust boundary.
 const source = fs.readFileSync(new URL('../scripts/bootstrap.mjs', import.meta.url), 'utf8');
@@ -21,6 +22,7 @@ function harness({ failWait = false, failSend = false, files = {} } = {}) {
   const context = vm.createContext({
     DEFAULT_AGENT: 'cursor', FORCE_BOOT: null, NON_CURSOR_BOOT_PROMPT: 'boot',
     path, fs: fakeFs, os: { homedir: () => '/home/u' }, console: { log() {}, error() {} },
+    GUARD_HOOKS_DIR: '/nonexistent-hooks', readJsonSafe: () => null, ensureGitIgnored() {},
     which: x => `/bin/${x}`, resolveOrcaBin: () => 'orca',
     die: msg => { throw new Error(msg); }, ensureOrcaReady() {},
     ensureAgentWorkspacesTrusted: () => ({}), isCc4Project: () => false,
@@ -68,7 +70,7 @@ test('coordinator: env prefix and editor MCP dropped per provider', () => {
   // the checkout server restates its url: a bare enabled=false for an unloaded server stops codex
   assert.ok(codex.command.endsWith(
     `-c 'mcp_servers.funplay_cocos.url="http://127.0.0.1:8775/"' -c mcp_servers.funplay_cocos.enabled=false`
-    + ' -c mcp_servers.unityMCP.enabled=false'));
+    + ' -c mcp_servers.unityMCP.enabled=false --dangerously-bypass-hook-trust')); // M2: project guard hook must run
   const oc = c.applyLaunchRole('opencode', 'opencode', { role: 'coordinator', projectPath: '/project' });
   assert.equal(oc.env.OPENCODE_CONFIG_CONTENT,
     '{"mcp":{"funplay_cocos":{"enabled":false},"unityMCP":{"enabled":false},"docs":{"enabled":false}}}');
@@ -104,7 +106,7 @@ test('codex TOML scan: comments, quoted keys, array tables, local hosts; quoted 
   // a checkout server without a url is left alone (no bare override)
   const { context: c2 } = harness({ files: { '/p/.codex/config.toml': '[mcp_servers.x]\ncommand = "y"\n' } });
   assert.equal(c2.applyLaunchRole('codex', 'codex', { role: 'coordinator', projectPath: '/p' }).command,
-    'CC_ROLE=coordinator CC_PROJECT=/p codex');
+    'CC_ROLE=coordinator CC_PROJECT=/p codex --dangerously-bypass-hook-trust');
 });
 test('teams wrapper is flagged unverified; --slice needs --role; unparsable opencode config strips nothing', () => {
   const { context: c } = harness({ files: { '/p/opencode.json': '{ // jsonc\n }' } });
@@ -197,4 +199,49 @@ test('prompt send strips zero-width characters that block Claude submit', () => 
   vm.runInContext(source.slice(source.indexOf('const INVISIBLE_CHARS'), source.indexOf('async function httpProbe(')), context);
   context.sendTerminalText('orca', 'term_test', 'open .c\u200dursor/ \u200bnow\ufeff');
   assert.equal(calls[0][calls[0].indexOf('--text') + 1], 'open .cursor/ now');
+});
+
+test('guarded roles install the checkout guard hook for their CLI, idempotently, keeping other hooks', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'guard-install-'));
+  const hooks = fs.mkdtempSync(path.join(os.tmpdir(), 'guard-core-'));
+  fs.mkdirSync(path.join(hooks, 'adapters'));
+  fs.writeFileSync(path.join(hooks, 'coordinator-guard.mjs'), '');
+  const excluded = [];
+  const warmed = [];
+  const ctx = vm.createContext({
+    path, fs, os, console: { log() {}, error() {} }, DEFAULT_AGENT: 'cursor', die: (m) => { throw new Error(m); },
+    which: () => '/bin/x', resolveOrcaBin: () => 'orca', GUARD_HOOKS_DIR: hooks,
+    readJsonSafe: (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } },
+    ensureGitIgnored: (_p, rel) => excluded.push(rel),
+    spawnSync: (bin, args) => { warmed.push([bin, ...args].join(' ')); return { status: 0 }; },
+  });
+  vm.runInContext(source.slice(source.indexOf('function parseAgentSpec('), source.indexOf('/** stdout is reserved')), ctx);
+  fs.mkdirSync(path.join(dir, '.claude'));
+  fs.writeFileSync(path.join(dir, '.claude/settings.local.json'), JSON.stringify({
+    enabledMcpjsonServers: ['funplay_cocos'],
+    hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'other-hook' }] }] },
+  }));
+  ctx.installGuardHooks(dir, 'claude --model sonnet');
+  ctx.installGuardHooks(dir, 'claude --model sonnet'); // twice: still one guard entry
+  const claude = JSON.parse(fs.readFileSync(path.join(dir, '.claude/settings.local.json'), 'utf8'));
+  assert.deepEqual(claude.enabledMcpjsonServers, ['funplay_cocos']);
+  assert.equal(claude.hooks.PreToolUse.length, 2);
+  assert.equal(claude.hooks.PreToolUse[0].hooks[0].command, 'other-hook');
+  assert.match(claude.hooks.PreToolUse[1].hooks[0].command, /coordinator-guard\.mjs'? --cli claude$/);
+  assert.equal(claude.hooks.PreToolUse[1].matcher, 'Bash|Edit|Write|MultiEdit');
+  ctx.installGuardHooks(dir, 'codex');
+  assert.match(JSON.parse(fs.readFileSync(path.join(dir, '.codex/hooks.json'), 'utf8')).hooks.PreToolUse[0].hooks[0].command, /--cli codex$/);
+  ctx.installGuardHooks(dir, 'cursor');
+  const cursor = JSON.parse(fs.readFileSync(path.join(dir, '.cursor/hooks.json'), 'utf8'));
+  assert.equal(cursor.version, 1);
+  assert.match(cursor.hooks.beforeShellExecution[0].command, /--cli cursor$/);
+  ctx.installGuardHooks(dir, 'opencode');
+  assert.match(fs.readFileSync(path.join(dir, '.opencode/plugins/coordinator-guard.js'), 'utf8'),
+    /export \{ CoordinatorGuard \} from ".*adapters\/opencode-plugin\.js";/);
+  assert.deepEqual(warmed, ['opencode debug config']); // first-start plugin deps installed up front
+  assert.equal(ctx.installGuardHooks(dir, 'antigravity').installed.length, 0); // no adapter: layer 1 only
+  assert.deepEqual([...new Set(excluded)].sort(), ['.claude/settings.local.json', '.codex/hooks.json', '.cursor/hooks.json',
+    '.opencode/plugins/coordinator-guard.js']);
+  fs.rmSync(dir, { recursive: true });
+  fs.rmSync(hooks, { recursive: true });
 });

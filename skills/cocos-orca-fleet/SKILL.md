@@ -34,6 +34,22 @@ tools (claude, codex, opencode; cursor and antigravity keep theirs): `probe.mjs`
 `preview-startup.json` are all you need. Cheap is fine, but keep the orchestrator on a Sonnet-class
 model or equivalent; never drop it, or the producer, to a Haiku-class model.
 
+The same launch installs a **coordinator guard** in the checkout (`~/.agents/hooks/coordinator-guard.mjs`).
+It refuses, with the reason and the right command, the polling this skill already forbids: a second
+bare `check` before the next wait, an unbounded or repeated `terminal read`, sleeps over 30 s and sleep
+loops, a detached or over-cap wait, a repeated `--help`, and any write to a global agent MCP config.
+`CC_GUARD_MODE`: `shadow` (default, log only) · `block` · `off`; log `~/.agents/logs/coordinator-guard.jsonl`.
+
+| Agent | Guard | Verified live (2026-10-02) |
+|---|---|---|
+| claude | `.claude/settings.local.json` PreToolUse | yes |
+| codex | `.codex/hooks.json` PreToolUse; launched with `--dangerously-bypass-hook-trust`, since Codex silently skips untrusted project hooks and every new checkout is untrusted (the hook comes from `~/.agents`, the director's repo) | yes (codex-cli 0.160.0) |
+| opencode | `.opencode/plugins/coordinator-guard.js` (in-process; OpenCode's shell tool filters env vars) | yes |
+| cursor | `.cursor/hooks.json` beforeShellExecution | adapter tested offline only; `cursor-agent -p` was not logged in |
+| antigravity, gemini | none: `orca-wait` and the skill rules only | — |
+
+`orca-wait` reports `guard: inactive` when the guard did not log its own call.
+
 ## When to use / not use
 
 | Situation | Action |
@@ -279,7 +295,9 @@ Fleet Progress:
           per checkout; that Creator is the integrator's. Never launch CocosCreator directly)
           → record the exact `<repo-id>::<path>` worktree id
           → `cd <wt> && node .cursor/skills/vibe-game-director/scripts/probe.mjs --only funplay`
-            must report `parity: true` before any Task starts (retry up to ~2 min while Creator boots)
+            must report `parity: true` before any Task starts. While Creator boots, wait with ONE
+            foreground `node ~/.agents/skills/new-cocos-game/scripts/bootstrap.mjs wait-mcp --path <wt> --timeout-ms 180000`
+            (it gates on this checkout's projectName) — never a retry or sleep loop
           → `cd <wt>` NOW and stay there: the PLAN, evidence and every file you write from here
             live in the worktree, never in the main checkout (a PLAN left untracked in main
             blocks the producer's merge later).
@@ -467,7 +485,7 @@ orca orchestration worker-start --task <task_id> --terminal "$H" --worktree id:<
 
 Trust dialogs are pre-seeded by `setup-orca-worktree.sh` (Cursor `.workspace-trusted`, Claude
 `hasTrustDialogAccepted` + `enabledMcpjsonServers`, Codex `trust_level`). If `tui-idle` never
-arrives on recipe B, `orca terminal read` the handle — do not attach blind.
+arrives on recipe B, `orca terminal read --terminal "$H" --screen` — do not attach blind.
 
 `worker-start` fails with `agent_prompt_stalled` (stage `dispatch_input`, prompt pasted but not
 sent) → run `clean_spec.py --check` on that spec file before any retry. If it finds characters,
@@ -489,13 +507,17 @@ Launch recovery: before switching a reviewer provider for localhost failure, ver
 ## Coordinator loop
 
 ```bash
-# first wait; every later wait acks the Delivery you just handled (step 5)
-orca orchestration check --wait --types worker_done,escalation,question --timeout-ms 540000 --json 2>/dev/null
+# first wait; every later wait acks the Delivery you just handled (step 5): coord --ack <delivery_id>
+node ~/.agents/skills/cocos-orca-fleet/scripts/orca-wait.mjs coord
 ```
 
-Run the wait **in the foreground** with `--timeout-ms` under your shell tool's hard cap (Claude
-Code Bash max is 600000 → `timeout: 600000` + `--timeout-ms 540000`), and re-enter it after
-every timeout — never end your turn while a Dispatch is live. A busy terminal is how the
+`orca-wait coord` wraps `orca orchestration check --wait --types worker_done,escalation,question`,
+stays under the shell cap (`--max-ms`, default 540000; give the Bash tool `timeout: 600000`) and
+prints one JSON line: `{delivery, count, messages:[{id,type,from,subject,task,dispatch,outcome,body}], full}`
+or `{timeout:true}`. Bodies are cut to two lines: read the `full` file before answering a question,
+an escalation, or a `worker_done` with `outcome: failed`. A `notes` field reports a stale cheatsheet or an inactive guard. Run it **in the
+foreground** and re-enter it after every timeout — never end your turn while a Dispatch is live.
+Raw `orca orchestration check --ack <id> --wait …` is the fallback only if the script is missing. A busy terminal is how the
 producer knows you are healthy; an idle one with live Dispatches reads as stalled. Never
 `nohup` / `&` / `disown` / `setsid` / `> file` / background-task the wait: the shell returns at
 once, nothing wakes you, and the result lands in a file nobody reads (S08 stalled ~3 h this

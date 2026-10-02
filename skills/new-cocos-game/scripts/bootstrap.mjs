@@ -31,6 +31,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync, execFileSync } from 'node:child_process';
 import os from 'node:os';
+import { fileURLToPath } from 'node:url';
 
 const GAMES_ROOT = '/Users/wikz/Works/games/CocosCreator';
 const TEMPLATES_DIR = '/Users/wikz/Works/games/template';
@@ -110,6 +111,9 @@ const CREATOR_SEARCH_ROOTS = [
 ];
 const DEFAULT_AGENT = 'cursor';
 const DEFAULT_MCP_PORT = 8765;
+// coordinator-guard (plan M2) lives at <repo>/hooks next to skills/; CC_GUARD_HOOKS_DIR overrides it in tests
+const GUARD_HOOKS_DIR =
+  process.env.CC_GUARD_HOOKS_DIR || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'hooks');
 const MCP_PORT_RANGE_END = 8799;
 const FUNPLAY_CONFIG_FILE = 'funplay-cocos-mcp.config.json';
 const MCP_SERVER_KEY = 'funplay_cocos';
@@ -161,6 +165,11 @@ const RSYNC_EXCLUDES = [
   '/.mcp.json',
   '/.codex/config.toml',
   '/opencode.json',
+  // coordinator guard hooks (agent-session --role coordinator|producer)
+  '/.claude/settings.local.json',
+  '/.codex/hooks.json',
+  '/.cursor/hooks.json',
+  '/.opencode/plugins/coordinator-guard.js',
 ];
 
 function die(msg, code = 1) {
@@ -630,6 +639,7 @@ function resolveAgentLaunchCommand(agent, model, effort) {
 // tools/token-report) and lets a fleet coordinator start without the editor's MCP tools. No role =
 // the launch command is exactly what it was before.
 const AGENT_ROLES = ['producer', 'coordinator', 'worker', 'judge'];
+const GUARDED_ROLES = ['producer', 'coordinator'];
 const LOCAL_URL_RE = /^https?:\/\/(127\.0\.0\.1|localhost|0\.0\.0\.0|\[::1\])(:\d+)?(\/|$)/i;
 
 function shellQuote(value) {
@@ -776,6 +786,9 @@ function applyLaunchRole(baseCmd, agentId, { role, slice, projectPath }) {
       mcp = { mode: 'unsupported', servers: [] };
     }
   }
+  // Codex skips an untrusted project hook without a word, and every new checkout path is untrusted:
+  // the coordinator guard that agent-session installs for these roles only runs with this flag.
+  if (id === 'codex' && GUARDED_ROLES.includes(role)) cmd += ' --dangerously-bypass-hook-trust';
   const prefix = Object.entries(env)
     .map(([k, v]) => `${k}=${shellQuote(v)}`)
     .join(' ');
@@ -791,6 +804,79 @@ function appendSpawnRegistry(entry) {
   } catch (err) {
     console.error(`new-cocos-game: warning: spawn registry not written: ${err?.message || err}`);
   }
+}
+
+/**
+ * Coordinator guard hooks (plan M2) for a producer / coordinator launch, written into the checkout the
+ * agent starts in — never into the global CLI configs Orca owns. Idempotent: our entry is found by
+ * its `coordinator-guard.mjs` command and replaced; every other hook stays. The guard itself acts only
+ * when CC_ROLE is set, so other sessions in the same checkout are untouched. Antigravity / Gemini have
+ * no adapter: layer 1 (orca-wait, runner) only.
+ */
+function installGuardHooks(projectPath, agentId) {
+  const { id } = parseAgentSpec(agentId);
+  const core = path.join(GUARD_HOOKS_DIR, 'coordinator-guard.mjs');
+  if (!fs.existsSync(core)) {
+    console.error(`new-cocos-game: warning: ${core} missing; the coordinator guard is not installed`);
+    return { cli: id, installed: [], skipped: 'guard core missing' };
+  }
+  const command = (cli) => `node ${shellQuote(core)} --cli ${cli}`;
+  const ours = (c) => typeof c === 'string' && c.includes('coordinator-guard.mjs');
+  const installed = [];
+  const writeJson = (rel, mutate) => {
+    const file = path.join(projectPath, rel);
+    let doc = {};
+    if (fs.existsSync(file)) {
+      doc = readJsonSafe(file);
+      if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
+        console.error(`new-cocos-game: warning: ${file} is not plain JSON; the coordinator guard is not added to it`);
+        return;
+      }
+    }
+    mutate(doc);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(doc, null, 2) + '\n');
+    ensureGitIgnored(projectPath, rel);
+    installed.push(rel);
+  };
+  const preToolUse = (cli, entry) => (doc) => {
+    doc.hooks = doc.hooks || {};
+    const keep = (doc.hooks.PreToolUse || []).filter((e) => !(e.hooks || []).some((h) => ours(h.command)));
+    doc.hooks.PreToolUse = [...keep, { ...entry, hooks: [{ type: 'command', command: command(cli), timeout: 10 }] }];
+  };
+  if (id === 'claude' || id === 'claude-agent-teams') {
+    writeJson(path.join('.claude', 'settings.local.json'), preToolUse('claude', { matcher: 'Bash|Edit|Write|MultiEdit' }));
+  } else if (id === 'codex') {
+    writeJson(path.join('.codex', 'hooks.json'), preToolUse('codex', {}));
+  } else if (id === 'cursor' || id === 'cursor-agent' || id === 'agent') {
+    writeJson(path.join('.cursor', 'hooks.json'), (doc) => {
+      doc.version = doc.version || 1;
+      doc.hooks = doc.hooks || {};
+      const keep = (doc.hooks.beforeShellExecution || []).filter((e) => !ours(e.command));
+      doc.hooks.beforeShellExecution = [...keep, { command: command('cursor'), timeout: 10 }];
+    });
+  } else if (id === 'opencode') {
+    const rel = path.join('.opencode', 'plugins', 'coordinator-guard.js');
+    const file = path.join(projectPath, rel);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const plugin = path.join(GUARD_HOOKS_DIR, 'adapters', 'opencode-plugin.js');
+    fs.writeFileSync(file, `// written by bootstrap.mjs agent-session --role (coordinator guard)\nexport { CoordinatorGuard } from ${JSON.stringify(plugin)};\n`);
+    ensureGitIgnored(projectPath, rel);
+    installed.push(rel);
+    // OpenCode installs .opencode/node_modules on its first start in a checkout and can miss project
+    // plugins during that start; install them now (no model call, ~4 s) so the guard is live at once.
+    // Tried once per checkout (marker), so an offline machine does not wait on every spawn.
+    const marker = path.join(projectPath, '.opencode', '.coordinator-guard-warmed');
+    if (!fs.existsSync(path.join(projectPath, '.opencode', 'node_modules')) && !fs.existsSync(marker)) {
+      const warm = spawnSync('opencode', ['debug', 'config'], { cwd: projectPath, encoding: 'utf8', timeout: 60000 });
+      fs.writeFileSync(marker, `${new Date().toISOString()} exit ${warm.status}\n`);
+      if (warm.status !== 0) console.error('new-cocos-game: warning: `opencode debug config` failed; the guard may miss the first OpenCode start');
+    }
+  } else {
+    console.error(`new-cocos-game: note: no coordinator-guard adapter for ${id}; layer 1 only (orca-wait, runner)`);
+    return { cli: id, installed: [], skipped: `no adapter for ${id}` };
+  }
+  return { cli: id, installed };
 }
 
 function isCursorAgent(agentId) {
@@ -1495,6 +1581,16 @@ async function createAgentSession({ projectPath, agent, model, effort, title, pr
     projectPath,
   });
   const agentCmd = launch.command;
+  let guardHooks = null;
+  if (GUARDED_ROLES.includes(role)) {
+    try {
+      guardHooks = installGuardHooks(projectPath, agentId);
+    } catch (err) {
+      // the guard is layer 2: a failed install must never stop the launch
+      console.error(`new-cocos-game: warning: coordinator guard not installed: ${err?.message || err}`);
+      guardHooks = { installed: [], skipped: `install failed: ${err?.message || err}` };
+    }
+  }
   const tabTitle = title || `implement-${path.basename(projectPath)}`;
 
   console.log('→ pre-trust Cursor + Claude + Codex workspace (skip trust dialog)');
@@ -1621,6 +1717,7 @@ async function createAgentSession({ projectPath, agent, model, effort, title, pr
     role: role || null,
     slice: slice || null,
     mcpLaunch: launch.mcp,
+    guardHooks,
     title: tabTitle,
     handle,
     mcpPort: isCc4Project(projectPath)

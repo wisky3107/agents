@@ -55,7 +55,7 @@ worktree on this project or the feature worktree you create from it.
    on that file, not on your terminal text.
 
 Run the DAG for this slice only. Coordinator only — never edit game files, never hold the editor
-lock. Wait loop: foreground `check --wait --timeout-ms 540000` (never nohup/&/background), ack
+lock. Wait loop: foreground `node ~/.agents/skills/cocos-orca-fleet/scripts/orca-wait.mjs coord [--ack <id>]` (never nohup/&/background), ack
 every Delivery you handled (heartbeats too), never end your turn while a Dispatch is live, and
 create every fix_routing row's Task in one pass with --deps. Decisions from me arrive as plain
 text; you resolve your own gates. End at "offer commit" (HANDOFF status offer_commit) and wait
