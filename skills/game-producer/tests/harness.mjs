@@ -192,6 +192,8 @@ export function fakes() {
   fs.writeFileSync(path.join(dir, 'orca'), FAKE_ORCA, { mode: 0o755 });
   fs.writeFileSync(path.join(dir, 'bootstrap.cjs'), FAKE_BOOTSTRAP);
   fs.writeFileSync(path.join(dir, 'judge'), FAKE_JUDGE, { mode: 0o755 });
+  // the director's desktop notification: logged, never shown
+  fs.writeFileSync(path.join(dir, 'notify'), `#!/bin/sh\nprintf '%s | %s\\n' "$1" "$2" >> "${dir}/notify.log"\n`, { mode: 0o755 });
   // the judge's Claude settings: a stand-in env block, never the real one (it holds the auth token)
   fs.writeFileSync(path.join(dir, 'claude-settings.json'), JSON.stringify({ env: { JUDGE_ROUTE_PROBE: 'via-settings' } }));
   fs.writeFileSync(path.join(dir, 'registry.jsonl'), '');
@@ -212,6 +214,7 @@ export function fakes() {
     closes: () => lines('closes.log').map((c) => c.handle),
     waits: () => lines('waits.log'),
     creates: () => lines('creates.log'),
+    notices: () => (fs.existsSync(path.join(dir, 'notify.log')) ? fs.readFileSync(path.join(dir, 'notify.log'), 'utf8').trim().split('\n') : []),
     judgeCalls: () => fs.readdirSync(dir).filter((f) => f.startsWith('judge-call-')).sort().map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'))),
   };
 }
@@ -224,6 +227,7 @@ const env = (root, fake) => ({
   PRODUCER_RUNNER_BOOTSTRAP: path.join(fake.dir, 'bootstrap.cjs'),
   PRODUCER_RUNNER_JUDGE_CMD: path.join(fake.dir, 'judge'),
   PRODUCER_RUNNER_CLAUDE_SETTINGS: path.join(fake.dir, 'claude-settings.json'),
+  PRODUCER_RUNNER_NOTIFY_CMD: path.join(fake.dir, 'notify'),
   CC_SPAWN_REGISTRY: path.join(fake.dir, 'registry.jsonl'),
   ORCA_MEMORY_BIN: path.join(fake.dir, 'no-orca-memory'),
   PRODUCER_RUNNER_WAIT_MS: '1500',
