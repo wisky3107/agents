@@ -2,7 +2,10 @@
 
 Replace `<PROJECT>`, `<Sxx>`, `<SLICE_FILE>`, `<ENGINE_LINE>`, `<DIRECTOR_DECISIONS>`, `<LITE>`
 (`true` when the slice's `assets` block is empty and `fleet_lite_when_no_assets` is on), `<BUDGET_MODE>`
-(`advisory` or `gate:<pct>`), `<FLEET_LOCKS>` (one line: `writer=<spec> reviewer=<spec> art=<backend> mesh=<backend> budget=<BUDGET_MODE> lite=<bool>`),
+(`advisory` or `gate:<pct>`), `<FLEET_LOCKS>` (one line: `writer=<spec> reviewer=<spec> scanner=<spec> art=<backend> mesh=<backend> budget=<BUDGET_MODE> lite=<bool> cursor=<on|off>`;
+`cursor` is the runner's one `agent-ready.mjs --agent cursor` probe, or `off` under policy `no_cursor`;
+when the runner moved Cursor specs to the director's substitute the line ends with
+` (Cursor roles above already moved by the director)`),
 `<RIP_STUDY>` (`<analysis_path>/slices/<Sxx>/ sha256=<manifest hash>`, or `none`),
 `<CONTEXT_PACK>` (absolute `memory-context.md` path from the Step 2c `hook plan`, or `none`).
 Do **not** tell the orchestrator to read `AGENT_NOTES.md` — you already resolved the yaml.

@@ -435,3 +435,13 @@ test('after a runner conflict, the director resolving the same merge by hand is 
   assert.equal(fs.readFileSync(path.join(root, 'src/b.ts'), 'utf8'), 'export const b = "resolved";\n');
   assert.equal(journal(root).steps.merge.conflict, true);
 });
+
+test('the merge verifier runs on the director\'s Cursor substitute, never on a Cursor that cannot log in', () => {
+  const notes = NOTES(POLICY, '{S01: in_progress}').replace('  writer_agent: claude --model sonnet --effort high\n', '  writer_agent: cursor --model auto\n');
+  const { f, root } = fleet({ notes });
+  fs.writeFileSync(path.join(root, '.cursor', 'producer-runner.json'), JSON.stringify({ slice: 'S01', step: 'lane', questions: [], cursor_substitute: 'claude --model sonnet --effort high' }));
+  f.queue([VERIFIED]);
+  const out = runner(root, f, 'start', '--once', { env: { PRODUCER_RUNNER_CURSOR: 'off' } }).out;
+  assert.ok(out.find((o) => o.merged));
+  assert.deepEqual(f.spawns().map((s) => [s.title.split('-')[0], s.agent]), [['verify', 'claude --model sonnet --effort high']]);
+});

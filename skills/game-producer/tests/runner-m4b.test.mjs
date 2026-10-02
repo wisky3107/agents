@@ -10,6 +10,7 @@ import { NOTES, POLICY, project, fakes, runner, evRel, ev, sliceState, clearCont
 
 // Lane state machines (plan M4b) against a fake orca / bootstrap (pretty-printed JSON, like the
 // real ones) and the real orca-wait.
+process.env.PRODUCER_RUNNER_CURSOR = 'on'; // in-process prompt builds: no real cursor-agent probe
 const H = evRel('S01', 'HANDOFF.json');
 const W = (status, extra = {}) => ({ [H]: { role: 'writer', status, detail: 'd', sha: null, ...extra } });
 const R = (status, verdict, runtime) => ({ [H]: { role: 'reviewer', status }, ...approvedEvidence('S01', verdict, runtime) });
@@ -91,6 +92,7 @@ test('single lane: INFRA_BLOCKED with the port up → cursor for the rest of the
   const server = spawn(process.execPath, ['-e', "const s=require('http').createServer((q,r)=>r.end('ok')).listen(0,'127.0.0.1',()=>console.log(s.address().port))"]);
   const port = await new Promise((r) => server.stdout.once('data', (d) => r(Number(String(d).trim()))));
   const infra = { [H]: { role: 'reviewer', status: 'infra_blocked' }, [evRel('S01', 'review.md')]: 'curl: 000\nINFRA_BLOCKED\n' };
+  const probeOff = (root, f) => runner(root, f, 'start', '--once', { env: { PRODUCER_RUNNER_CURSOR: 'off' } });
   try {
     const p = single();
     const f = fakes();
@@ -111,6 +113,13 @@ test('single lane: INFRA_BLOCKED with the port up → cursor for the rest of the
     const a = runner(n.root, g, 'start', '--once').out.at(-1);
     assert.deepEqual([a.waiting, a.kind], ['q1', 'infra_blocked']);
     assert.equal(g.spawns().length, 2);
+    // no policy, but the probe says Cursor cannot log in: the same ask, no Cursor reviewer
+    const po = single();
+    const pf = fakes();
+    pf.queue([{ write: { ...W('ready_for_review'), ...preview(port) } }, { name: 'infra', write: infra }]);
+    const b = probeOff(po.root, pf).out.at(-1);
+    assert.deepEqual([b.kind, pf.spawns().map((x) => x.agent)], ['infra_blocked', ['claude --model sonnet --effort high', 'claude --model opus']]);
+    assert.match(runnerFile(po.root).questions[0].text, /Cursor is off: PRODUCER_RUNNER_CURSOR/);
 
     const q = single();
     const h = fakes();
@@ -173,7 +182,7 @@ test('fleet lane: gate relayed as text (never resolved by the runner), takeover 
   assert.deepEqual(sp.map((s) => [s.role, s.agent]), [['coordinator', 'claude --model sonnet']]);
   assert.match(sp[0].prompt, /running slice S01/);
   assert.match(sp[0].prompt, /LITE: true/); // no assets and lite_when_no_assets on
-  assert.match(sp[0].prompt, /writer=claude --model sonnet --effort high reviewer=claude --model opus scanner=claude --model sonnet art=antigravity mesh=auto budget=advisory lite=true/);
+  assert.match(sp[0].prompt, /writer=claude --model sonnet --effort high reviewer=claude --model opus scanner=claude --model sonnet art=antigravity mesh=auto budget=advisory lite=true cursor=on/);
   assert.equal(sliceState(p.root, 'S01').run, 'run_1');
   // the branch main was on at selection is where the slice merges back (M4c)
   assert.equal(sliceState(p.root, 'S01').base_branch, spawnSync('git', ['-C', p.root, 'symbolic-ref', '--short', 'HEAD'], { encoding: 'utf8' }).stdout.trim());
@@ -347,7 +356,7 @@ test('resume safety: registry reattach, unsent outbox delivered once, adopt and 
   fs.writeFileSync(path.join(r.root, H), JSON.stringify({ status: 'ready_for_review' }));
   k.queue([{ name: 'idle on the stale file', result: 'idle' }, { name: 'odd', write: W('done') }]);
   const d = runner(r.root, k, 'start', '--once').out.at(-1);
-  assert.deepEqual([d.waiting, d.kind, d.options], ['q1', 'unknown_status', ['treat as ready_for_review', 'mark blocked', 'stop']]);
+  assert.deepEqual([d.waiting, d.kind, d.options], ['q1', 'unknown_status', ['treat as working, keep waiting', 'treat as ready_for_review', 'mark blocked', 'stop']]);
   assert.equal(k.spawns().length, 1); // no reviewer on the stale ready_for_review
   runner(r.root, k, 'answer', '--id', 'q1', '--choice', 'mark blocked');
   k.queue([]);
@@ -400,7 +409,7 @@ test('dry-run and status are read-only even with docs/brief-progress.json; the b
   assert.deepEqual(runner(p.root, f, 'start', '--dry-run').out[0].blockers, []);
 });
 
-test('locks: policy agents vs yaml, budget mode, lite flag, cc4, study pin, template guard, status aliases', () => {
+test('locks: policy agents vs yaml, budget mode, lite flag, cursor state, cc4, study pin, template guard, status aliases', async () => {
   assert.deepEqual(policyAgents('goal=end_to_end budget=advisory orchestrator=codex:gpt-6-luna-high:high scanner=claude:sonnet:high writer=claude:sonnet:high reviewer=codex:gpt-6.1-sol art=antigravity (director gate: S01 GIVEN, reviewer=x (nested) still inside)'), {
     orchestrator_agent: 'codex:gpt-6-luna-high:high', scanner_agent: 'claude:sonnet:high', writer_agent: 'claude:sonnet:high', reviewer_agent: 'codex:gpt-6.1-sol',
   });
@@ -427,6 +436,28 @@ test('locks: policy agents vs yaml, budget mode, lite flag, cc4, study pin, temp
   assert.equal(mode(POLICY.replace('budget=advisory', 'bump=15%'), 'gate'), 'gate:15');
   assert.equal(mode(POLICY.replace('budget=advisory', 'bump=15%')), 'advisory'); // legacy token alone
   assert.equal(mode(POLICY.replace('budget=advisory', 'budget=loose')), null);
+  // Cursor off: no_cursor (the director's override) moves every Cursor role; otherwise the runner's
+  // one cursor_off answer does — until then nothing is moved and the runner asks before spawning
+  const cur = (policy) => loadProject(project({ notes: NOTES(policy), slices: { S01: { needs: false, size: 'L' } } }).root);
+  const { fleetLocks, cursorUndecided } = await import('../scripts/lib/lanes.mjs');
+  const cursorFleet = (pj) => Object.assign(pj.fleet, { scanner_agent: 'cursor --model auto', reviewer_agent: 'cursor --model auto' }) && pj;
+  try {
+    process.env.PRODUCER_RUNNER_CURSOR = 'off';
+    const pj = cursorFleet(cur(POLICY));
+    assert.deepEqual(cursorUndecided(pj, 'fleet'), ['reviewer', 'scanner']);
+    assert.deepEqual(cursorUndecided(pj, 'single'), ['reviewer']);
+    fs.mkdirSync(path.join(pj.root, '.cursor'), { recursive: true });
+    fs.writeFileSync(path.join(pj.root, '.cursor', 'producer-runner.json'), JSON.stringify({ questions: [], cursor_substitute: 'claude --model sonnet --effort high' }));
+    assert.deepEqual(cursorUndecided(pj, 'fleet'), []);
+    assert.equal(fleetLocks(pj, 'advisory', true), 'writer=claude --model sonnet --effort high reviewer=claude --model sonnet --effort high scanner=claude --model sonnet --effort high art=antigravity mesh=auto budget=advisory lite=true cursor=off (Cursor roles above already moved by the director)');
+    const nc = cursorFleet(cur(`${POLICY} no_cursor=true`));
+    assert.deepEqual(cursorUndecided(nc, 'fleet'), []); // the policy decided
+    assert.match(fleetLocks(nc, 'advisory', true), /reviewer=claude --model sonnet --effort high .* cursor=off \(Cursor roles/);
+    process.env.PRODUCER_RUNNER_CURSOR = 'ON'; // normalised
+    assert.match(fleetLocks(cursorFleet(cur(POLICY)), 'advisory', true), /reviewer=cursor --model auto scanner=cursor --model auto .* cursor=on$/);
+  } finally {
+    process.env.PRODUCER_RUNNER_CURSOR = 'on';
+  }
   const lite = project({ notes: NOTES(`${POLICY} lite=false`), slices: { S01: { needs: false, size: 'L' } } });
   assert.equal(liteWhenNoAssets(loadProject(lite.root)), false);
   assert.match(prompts(loadProject(lite.root), 'S01').fleet(), /LITE: false/);
@@ -455,4 +486,6 @@ test('locks: policy agents vs yaml, budget mode, lite flag, cc4, study pin, temp
   assert.throws(() => fill('slice <Sxx> at <NEW_KEY>', { Sxx: 'S01' }), /unfilled placeholders: <NEW_KEY>/);
   assert.equal(fill('at <ISO> for <Sxx>', { Sxx: 'S01' }), 'at <ISO> for S01');
   assert.deepEqual(['READY_FOR_REVIEW', 'ready_for_independent_review', 'done', null].map(normalizeStatus), ['ready_for_review', 'ready_for_review', null, null]);
+  // a lane naming its step (pilot 1: "implementing") is working: the runner only waits on it
+  assert.deepEqual(['implementing', 'In_Progress', 'reviewing', 'shipped'].map(normalizeStatus), ['working', 'working', 'working', null]);
 });

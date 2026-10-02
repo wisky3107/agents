@@ -17,10 +17,14 @@ import { sliceFront, sliceSize, sliceWorktrees, budgetMode, liteWhenNoAssets, is
 import * as st from './state.mjs';
 import * as io from './orca.mjs';
 import { mergeStep, applyMergeAnswer, MERGE_KINDS } from './merge.mjs';
+import { ready as agentReady, family } from '../../../cocos-orca-fleet/scripts/agent-ready.mjs';
 
 const REF = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'reference');
 const KNOWN = new Set(['working', 'blocked', 'ready_for_review', 'infra_blocked', 'approved', 'changes_requested', 'offer_commit', 'committed']);
 const ALIASES = { ready_for_independent_review: 'ready_for_review', review_ready: 'ready_for_review', commit_offered: 'offer_commit' };
+// a lane naming its current step instead of "working" (pilot 1: "implementing"): the runner only
+// waits on working, so these can never trigger an action
+const PROGRESS = /^(?:in[_ -]?progress|running|started|scanning|planning|implementing|integrating|reviewing|verifying|fixing|dispatched|dispatching)$/;
 export const MAX_FIX_ROUNDS = 2;
 export const COMMIT_TEXT = 'approved — commit';
 const GATE_PATIENCE = 10; // idle pauses after relaying a gate decision before asking again
@@ -40,6 +44,7 @@ export function normalizeStatus(s) {
   if (!s || typeof s !== 'string') return null;
   const k = s.trim().toLowerCase();
   if (KNOWN.has(k)) return k;
+  if (PROGRESS.test(k)) return 'working';
   return ALIASES[k] || null;
 }
 
@@ -103,16 +108,102 @@ export function promptValues(project, id) {
     DIRECTOR_DECISIONS: project.policy?.directorGate || 'none recorded',
     LITE: String(lite),
     BUDGET_MODE: budget,
-    FLEET_LOCKS: `writer=${f.writer_agent} reviewer=${f.reviewer_agent} scanner=${f.scanner_agent || f.orchestrator_agent} ` +
-      `art=${f.art_backend || 'antigravity'} mesh=${f.mesh_backend || 'auto'} budget=${budget} lite=${lite}`,
+    FLEET_LOCKS: null, // built only for a fleet prompt (fleetLocks): it may probe Cursor
     RIP_STUDY: ripStudy(project, id, data).pin || 'none',
     CONTEXT_PACK: 'none',
     EVIDENCE_DIR: evidence,
     // no port recorded yet: the writer starts the preview and records it; the reviewer reads that file
     PORT: port ? String(port) : `(port of previewUrl in ${path.join(evidence, 'preview-startup.json')})`,
     'S|M': sliceSize(data) || 'M',
-    WRITER_LOCKS: `writer=${f.writer_agent} reviewer=${f.reviewer_agent} budget=${budget}`,
+    // the specs the lanes really run on (a Cursor moved by the director shows its substitute)
+    WRITER_LOCKS: `writer=${agentFor(project, f.writer_agent) || f.writer_agent} reviewer=${agentFor(project, f.reviewer_agent) || f.reviewer_agent} budget=${budget}`,
   };
+}
+
+export const CURSOR_FALLBACK = 'claude --model sonnet --effort high';
+let cursorProbe = null; // once per runner process
+
+/**
+ * Is Cursor usable for this run? Policy no_cursor → off. Otherwise one `cursor-agent -p` probe per
+ * runner process (agent-ready.mjs; `status` lies about the login); PRODUCER_RUNNER_CURSOR=on|off
+ * overrides it. → { state: 'on'|'off', reason }
+ */
+export function cursorState(project) {
+  if (project.policy?.tokens?.no_cursor === 'true') return { state: 'off', reason: 'policy no_cursor' };
+  const forced = String(process.env.PRODUCER_RUNNER_CURSOR || '').trim().toLowerCase();
+  if (forced === 'on' || forced === 'off') return { state: forced, reason: 'PRODUCER_RUNNER_CURSOR' };
+  if (!cursorProbe) {
+    const r = agentReady('cursor');
+    cursorProbe = { state: r.usable ? 'on' : 'off', reason: r.reason };
+  }
+  return cursorProbe;
+}
+
+/** After the director logged Cursor in: probe again on the next spawn. */
+export const resetCursorProbe = () => {
+  cursorProbe = null;
+};
+
+/**
+ * The agent a lane really gets. A Cursor spec while Cursor is off becomes the run's substitute:
+ * CURSOR_FALLBACK under policy no_cursor (the director's own override), otherwise the director's
+ * answer to the runner's one `cursor_off` question (producer-runner.json `cursor_substitute`).
+ * Templates ship Cursor defaults (scanner, reviewer), so "named" and "default" cannot be told
+ * apart — the director decides once per run, never per slice. → spec | null (still undecided)
+ */
+export function agentFor(project, spec) {
+  if (family(spec) !== 'cursor' || cursorState(project).state !== 'off') return spec;
+  if (project.policy?.tokens?.no_cursor === 'true') return CURSOR_FALLBACK;
+  return st.readRunner(project.root).cursor_substitute || null;
+}
+
+/** A spawn on a Cursor nobody decided about: the runner turns it into its `cursor_off` question. */
+export class CursorUndecided extends Error {
+  constructor(roles) {
+    super(`Cursor is off and undecided for: ${roles.join(', ')}`);
+    this.roles = roles;
+  }
+}
+
+/** The agent to spawn for a role — never a Cursor that cannot log in. Throws CursorUndecided. */
+export function agentOrAsk(project, spec, role) {
+  const a = agentFor(project, spec);
+  if (a === null) throw new CursorUndecided([role]);
+  return a;
+}
+
+/**
+ * The Cursor roles a lane (or the LLM producer) would start while Cursor is off and nothing is
+ * decided — including a run-wide Cursor reviewer switch from an earlier INFRA fallback. → [role]
+ */
+export function cursorUndecided(project, lane) {
+  const f = project.fleet;
+  const reviewer = st.readRunner(project.root).reviewer_override || f.reviewer_agent;
+  const roles = lane === 'fleet'
+    ? { coordinator: f.orchestrator_agent, writer: f.writer_agent, reviewer, scanner: f.scanner_agent || f.orchestrator_agent }
+    : lane === 'producer' ? { producer: f.orchestrator_agent } : { writer: f.writer_agent, reviewer };
+  return Object.entries(roles).filter(([, spec]) => spec && agentFor(project, spec) === null).map(([r]) => r);
+}
+
+/** A lite fleet slice runs no art Task (implement → integrate → review). */
+export const fleetIsLite = (project, id) => liteWhenNoAssets(project) && !hasAssets(sliceFront(project, id).data);
+
+/**
+ * art_backend: cursor with Cursor off, on a slice that makes art — an art backend has no claude
+ * substitute: the director picks one.
+ */
+export const cursorArtBlocked = (project, id) =>
+  project.fleet.art_backend === 'cursor' && !fleetIsLite(project, id) && cursorState(project).state === 'off';
+
+/** The fleet's locks line, `cursor=on|off` last so the coordinator need not probe again. */
+export function fleetLocks(project, budget, lite) {
+  const f = project.fleet;
+  const cursor = cursorState(project);
+  const pick = (spec) => agentFor(project, spec) || spec;
+  const swapped = [f.writer_agent, f.reviewer_agent, f.scanner_agent || f.orchestrator_agent].some((x) => pick(x) !== x);
+  return `writer=${pick(f.writer_agent)} reviewer=${pick(f.reviewer_agent)} scanner=${pick(f.scanner_agent || f.orchestrator_agent)} ` +
+    `art=${f.art_backend || 'antigravity'} mesh=${f.mesh_backend || 'auto'} budget=${budget} lite=${lite} cursor=${cursor.state}` +
+    (swapped ? ' (Cursor roles above already moved by the director)' : '');
 }
 
 export function prompts(project, id, pack = 'none') {
@@ -121,7 +212,7 @@ export function prompts(project, id, pack = 'none') {
   const [writerT, reviewerT] = fences('single-slice-prompt.md');
   return {
     values: v,
-    fleet: () => fill(fleetT, v),
+    fleet: () => fill(fleetT, { ...v, FLEET_LOCKS: fleetLocks(project, v.BUDGET_MODE, v.LITE) }),
     writer: () => fill(writerT, v),
     reviewer: (reviewPack = 'none') => fill(reviewerT, { ...v, CONTEXT_PACK: reviewPack }),
   };
@@ -367,7 +458,7 @@ function badHandoff(root, id, s, file) {
 
 /**
  * Advance one slice until it needs a human, reaches `merge`, or the control file says stop/pause.
- * ctx: { project, id, lane: 'single'|'fleet', autoCommit, noCursor, waitMs, idleMs, sleep }
+ * ctx: { project, id, lane: 'single'|'fleet', autoCommit, autoMerge, waitMs, idleMs, sleep }
  */
 export function runSlice(ctx) {
   const root = ctx.project.root;
@@ -388,13 +479,13 @@ export function runSlice(ctx) {
 
 /** What the merge journal borrows from the lanes (spawn, wait and question rules stay in one place). */
 const mergeKit = {
-  ask, PAUSE, spawnOnce, wait, orcaError, mtime, fill, setPhase,
+  ask, PAUSE, spawnOnce, wait, orcaError, mtime, fill, setPhase, agentOrAsk,
   worktreeOf: (root, id) => fleetHandoff(root, id).wt,
 };
 
 // ------------------------------------------------------------------ single lane
 
-const writerOpts = (ctx) => ({ role: 'worker', agent: ctx.project.fleet.writer_agent, title: `slice-${slug(ctx.project.root)}-${ctx.id}` });
+const writerOpts = (ctx) => ({ role: 'worker', agent: agentOrAsk(ctx.project, ctx.project.fleet.writer_agent, 'writer'), title: `slice-${slug(ctx.project.root)}-${ctx.id}` });
 
 function planPack(ctx, s, P) {
   if (s.context_pack) return s.context_pack;
@@ -405,7 +496,7 @@ function planPack(ctx, s, P) {
 }
 
 export function reviewerAgent(ctx) {
-  return st.readRunner(ctx.project.root).reviewer_override || ctx.project.fleet.reviewer_agent;
+  return agentOrAsk(ctx.project, st.readRunner(ctx.project.root).reviewer_override || ctx.project.fleet.reviewer_agent, 'reviewer');
 }
 
 /** Hung writer → resume lane. The phase is written first, so a kill resumes the respawn, not a wait on nothing. */
@@ -477,7 +568,7 @@ function singleStep(ctx, s, phase) {
       return resumeWriter(ctx, s, `stopped (${w.event}, idle_streak ${w.idle_streak})`);
     }
     if (h.fresh && !h.status) {
-      return ask(s, 'unknown_status', `writer HANDOFF status "${h.raw ?? '(none)'}" is not one the runner knows`, ['treat as ready_for_review', 'mark blocked', 'stop'], { obs: obs('unknown_status') });
+      return ask(s, 'unknown_status', `writer HANDOFF status "${h.raw ?? '(none)'}" is not one the runner knows`, ['treat as working, keep waiting', 'treat as ready_for_review', 'mark blocked', 'stop'], { obs: obs('unknown_status') });
     }
     if (h.status === 'blocked') return ask(s, 'lane_blocked', `writer HANDOFF blocked: ${h.detail || 'no detail'}`, LANE_BLOCKED_OPTIONS, { obs: obs('lane_blocked') });
     if (w.event === 'idle' && w.idle_streak === 2 && !s.nudged_writer) {
@@ -500,7 +591,8 @@ function singleStep(ctx, s, phase) {
     }
     // a provider switch is recorded in the slice state with the phase, then made run-wide
     if (s.reviewer_next && st.readRunner(root).reviewer_override !== s.reviewer_next) st.writeRunner(root, { reviewer_override: s.reviewer_next });
-    const agent = s.reviewer_next || reviewerAgent(ctx);
+    // a Cursor switch from an earlier INFRA fallback goes through the same Cursor decision
+    const agent = s.reviewer_next ? agentOrAsk(project, s.reviewer_next, 'reviewer') : reviewerAgent(ctx);
     const r = spawnOnce(ctx, 'reviewer', { role: 'worker', agent, title: `review-${slug(root)}-${id}`, prompt: P.reviewer(pack) });
     if (r.ask || r.pause) return r;
     setPhase(root, id, 'review');
@@ -542,7 +634,7 @@ function singleStep(ctx, s, phase) {
       return ask(s, 'reviewer_hung', `reviewer ${s.reviewer} stopped without a verdict (${w.event})`, ['spawn a fresh reviewer', 'mark blocked', 'stop'], { obs: obs(`reviewer_hung:${s.reviewer}`) });
     }
     if (h.fresh && !h.status) {
-      return ask(s, 'unknown_status', `reviewer HANDOFF status "${h.raw ?? '(none)'}" is not one the runner knows`, ['treat as approved', 'treat as changes_requested', 'mark blocked', 'stop'], { obs: obs('unknown_status') });
+      return ask(s, 'unknown_status', `reviewer HANDOFF status "${h.raw ?? '(none)'}" is not one the runner knows`, ['treat as working, keep waiting', 'treat as approved', 'treat as changes_requested', 'mark blocked', 'stop'], { obs: obs('unknown_status') });
     }
     return w.event === 'idle' ? PAUSE : null;
   }
@@ -571,12 +663,14 @@ function infraBlocked(ctx, s) {
   const code = port ? io.httpStatus(port) : 0;
   if (code === 200) {
     const current = s.reviewer_next || reviewerAgent(ctx);
-    if (!ctx.noCursor && current !== FALLBACK_REVIEWER) {
+    // the localhost fallback is Cursor: only when Cursor answers (policy no_cursor or a failed probe → ask)
+    const cursorOff = cursorState(ctx.project).state === 'off';
+    if (!cursorOff && current !== FALLBACK_REVIEWER) {
       st.log(root, ctx.id, `INFRA_BLOCKED while 127.0.0.1:${port} answers 200: reviewer ${current} → ${FALLBACK_REVIEWER} for the rest of the run`);
       setPhase(root, ctx.id, 'spawn-reviewer', { reviewer: null, reviewer_next: FALLBACK_REVIEWER });
       return null;
     }
-    return ask(s, 'infra_blocked', `reviewer ${current} cannot reach 127.0.0.1:${port} although it answers 200${ctx.noCursor ? ' (policy no_cursor: no cursor fallback)' : ''}`, ['spawn a fresh reviewer', 'mark blocked', 'stop']);
+    return ask(s, 'infra_blocked', `reviewer ${current} cannot reach 127.0.0.1:${port} although it answers 200${cursorOff ? ` (Cursor is off: ${cursorState(ctx.project).reason})` : ''}`, ['spawn a fresh reviewer', 'mark blocked', 'stop']);
   }
   if (!s.preview_restarts) {
     sendOnce(ctx, 'infra-restart', s.writer,
@@ -635,7 +729,7 @@ function fleetStep(ctx, s, phase) {
     const pack = planPack(ctx, s, prompts(project, id));
     if (s.handoff_base === undefined) st.writeSliceState(root, id, { handoff_base: mtime(handoffMain(root, id)) });
     const r = spawnOnce(ctx, 'coordinator', {
-      role: 'coordinator', agent: project.fleet.orchestrator_agent, title: `fleet-${slug(root)}-${id}`,
+      role: 'coordinator', agent: agentOrAsk(project, project.fleet.orchestrator_agent, 'coordinator'), title: `fleet-${slug(root)}-${id}`,
       prompt: prompts(project, id, pack).fleet(),
     });
     if (r.ask || r.pause) return r;
@@ -716,7 +810,7 @@ function fleetStep(ctx, s, phase) {
   }
   if (w.event === 'terminal-missing') return missing();
   if (h.fresh && !h.status) {
-    return ask(s, 'unknown_status', `fleet HANDOFF status "${h.raw ?? '(none)'}" is not one the runner knows`, ['treat as offer_commit', 'mark blocked', 'stop'], { obs: obs('unknown_status') });
+    return ask(s, 'unknown_status', `fleet HANDOFF status "${h.raw ?? '(none)'}" is not one the runner knows`, ['treat as working, keep waiting', 'treat as offer_commit', 'mark blocked', 'stop'], { obs: obs('unknown_status') });
   }
   if (h.status === 'blocked' || h.status === 'infra_blocked') {
     return ask(s, 'lane_blocked', `fleet HANDOFF ${h.status}: ${h.detail || 'no detail'}`, LANE_BLOCKED_OPTIONS, { obs: obs('lane_blocked') });
@@ -817,6 +911,7 @@ export function applyAnswer(ctx, q) {
       const who = q.answer.by === 'judge' ? `Answer from the producer's judge (per the contract line "${oneLine(q.answer.quote)}")` : "Director's answer to your question";
       return sendOnce(ctx, `answer:${q.id}`, laneHandle, `${who}: ${oneLine(q.answer.text)} — continue the slice; update HANDOFF.json when your status changes.`);
     }
+    case 'unknown_status:treat as working, keep waiting':
     case 'lane_blocked:answered in the lane, continue':
     case 'coordinator_missing:taken over, continue':
     case 'fleet_stall:nudged again, continue':

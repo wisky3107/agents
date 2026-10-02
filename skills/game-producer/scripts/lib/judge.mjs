@@ -26,7 +26,7 @@ const ALLOW = {
   // a gate's options are lane-written: the runner's own actions are never the judge's to pick
   fleet_gate: (o) => !['stop', 'mark blocked', 'skip this slice'].includes(o),
   lane_blocked: (o) => o === 'send this answer to the lane',
-  unknown_status: (o) => ['treat as ready_for_review', 'treat as changes_requested', 'treat as offer_commit'].includes(o),
+  unknown_status: (o) => ['treat as working, keep waiting', 'treat as ready_for_review', 'treat as changes_requested', 'treat as offer_commit'].includes(o),
   verdict_mismatch: (o) => ['treat as approved', 'treat as changes_requested'].includes(o),
 };
 export const JUDGE_KINDS = new Set(Object.keys(ALLOW));
