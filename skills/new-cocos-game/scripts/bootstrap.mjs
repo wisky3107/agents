@@ -5,7 +5,7 @@
  *   node bootstrap.mjs resolve --name <slug> [--template game|playable|cc4|<cc-*-template>|<abs>]
  *   node bootstrap.mjs create  --name <slug> [--template ...] [--open] [--no-orca] [--no-wait-mcp]
  *   node bootstrap.mjs orca-add --name <slug> | --path <abs>
- *   node bootstrap.mjs trust        --name <slug> | --path <abs>
+ *   node bootstrap.mjs trust        --name <slug> | --path <abs>   (linked git worktree: also turns Claude auto-memory off)
  *   node bootstrap.mjs claude-trust --name <slug> | --path <abs>   (alias of trust)
  *   node bootstrap.mjs mcp-config --path <abs> [--port N]   pin a Funplay port for this checkout + write project-local MCP client configs
  *   node bootstrap.mjs wait-mcp --path <abs> [--timeout-ms 180000] [--port N]
@@ -514,10 +514,39 @@ function ensureAntigravityWorkspaceTrusted(projectPath) {
   };
 }
 
+/**
+ * Fleet worktrees only: Claude auto-memory is keyed by cwd, so writer and reviewer in the same
+ * worktree would share one memory dir — a side channel past the reviewer's "no writer pack"
+ * rule, outside the curated orca-memory packs. Main checkouts keep their memory.
+ * `.claude/settings.local.json` is git-ignored globally; merge, never clobber.
+ */
+function ensureClaudeWorktreeMemoryOff(projectPath) {
+  const abs = path.resolve(projectPath);
+  const r = spawnSync('git', ['-C', abs, 'rev-parse', '--absolute-git-dir', '--git-common-dir'], {
+    encoding: 'utf8',
+  });
+  if (r.status !== 0) return { path: abs, linkedWorktree: false };
+  const [gitDir, commonDir] = r.stdout.trim().split('\n');
+  const real = (p) => fs.realpathSync(path.resolve(abs, p));
+  if (real(commonDir) === real(gitDir)) return { path: abs, linkedWorktree: false };
+  const dest = path.join(abs, '.claude', 'settings.local.json');
+  const data = fs.existsSync(dest) ? readJsonSafe(dest) : {};
+  if (!data) {
+    console.error(`new-cocos-game: warning: cannot parse ${dest}; auto-memory left as is`);
+    return { path: abs, linkedWorktree: true, autoMemory: 'unchanged', settings: dest };
+  }
+  if (data.autoMemoryEnabled === false) return { path: abs, linkedWorktree: true, autoMemory: 'off', settings: dest };
+  data.autoMemoryEnabled = false;
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.writeFileSync(dest, JSON.stringify(data, null, 2) + '\n');
+  return { path: abs, linkedWorktree: true, autoMemory: 'off', settings: dest };
+}
+
 function ensureAgentWorkspacesTrusted(projectPath) {
   return {
     cursor: ensureCursorWorkspaceTrusted(projectPath),
     claude: ensureClaudeWorkspaceTrusted(projectPath),
+    claudeMemory: ensureClaudeWorktreeMemoryOff(projectPath),
     codex: ensureCodexWorkspaceTrusted(projectPath),
     antigravity: ensureAntigravityWorkspaceTrusted(projectPath),
   };

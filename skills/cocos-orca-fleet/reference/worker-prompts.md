@@ -17,6 +17,10 @@ Before your first edit: run `pwd` and `git status`; the cwd must be worktree <WO
 Preserve unrelated dirty files listed in PLAN.forbidden_changes. Ask via `orca orchestration ask`
 only at real decision gates (behavior, scope, dependency, destructive, identity). Report with
 `worker_done`; use `--outcome failed` for any failure, never prose alone.
+Nobody answers prompts in this terminal: never open an interactive question menu or plan mode
+(Claude: AskUserQuestion, EnterPlanMode) — questions go through `orca orchestration ask`. Never
+spawn subagents, workflows or worktrees (Claude: Agent, Workflow, EnterWorktree) and never write
+agent auto-memory; reusable findings belong in your evidence files.
 Context discipline (this spec is your role card and is complete): read ONLY the PLAN, its slice
 file, docs/flows/docs-index.md + the flow docs it names for your paths, and the files this spec
 lists. Do NOT open .cursor/skills/**/SKILL.md or reference/*.md unless this spec names the file
