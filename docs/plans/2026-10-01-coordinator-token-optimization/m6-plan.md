@@ -78,3 +78,13 @@ Mặc định là `ask`; token `manual_required=` trên dòng policy cũng đư�
 - **Kiểm thật**, không ghi gì vào project:
   - dry-run trên lego-stack;
   - kiểm cú pháp `osacompile` cho AppleScript.
+
+## M6b — runner tự commit phần ghi chép (director 2026-10-02)
+
+- **Bước journal mới `notes_commit`**, chạy sau `record`, tạo commit `chore(producer): record <Sxx> merge — notes, evidence`. Commit gồm:
+  - `AGENT_NOTES.md`;
+  - các file evidence *đã track* của slice (bước evidence vừa làm mới);
+  - `lessons.jsonl`, nếu file này được track.
+- **Chỉ commit theo đường dẫn** (`git commit -- <files>`). Những thứ sau không bao giờ bị kéo vào: thay đổi khác của director (đã stage hay chưa), file chưa track (`.meta` do Editor tạo), file state của runner.
+- **Chạy lại không sinh commit thứ hai:** không còn gì đổi thì không commit.
+- **Commit lỗi** (hook từ chối, thiếu identity): chỉ ghi log, slice vẫn hoàn tất.

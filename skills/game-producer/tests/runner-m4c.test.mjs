@@ -123,9 +123,15 @@ test('fleet merge journal: harvest → evidence → close both Editors → merge
   assert.deepEqual(lessons.map((r) => r.event), ['fix_round', 'budget_bump', 'recipe_candidate']);
   assert.equal(lessons[1].ratio, 1.077);
   assert.deepEqual([lessons[2].candidate_id, lessons[2].evidence], [`${path.basename(root)}/T-S01/c1`, ['.cursor/evidence/tasks/T-S01/evidence/review.md']]);
-  assert.deepEqual(Object.keys(journal(root).steps), ['harvest', 'close_editors', 'merge', 'evidence', 'worktree_rm', 'reopen', 'verify', 'record']);
+  assert.deepEqual(Object.keys(journal(root).steps), ['harvest', 'close_editors', 'merge', 'evidence', 'worktree_rm', 'reopen', 'verify', 'record', 'notes_commit']);
+  // the runner commits its bookkeeping (M6): here AGENT_NOTES.md only — this project ignores its evidence
+  assert.equal(g(root, 'log', '-1', '--format=%s').stdout.trim(), 'chore(producer): record S01 merge — notes, evidence');
+  assert.deepEqual(g(root, 'show', '--name-only', '--format=', 'HEAD').stdout.trim().split('\n'), ['AGENT_NOTES.md']);
+  assert.equal(g(root, 'status', '--porcelain', '--', 'AGENT_NOTES.md').stdout, '');
   // a rerun changes nothing
+  const head = g(root, 'rev-parse', 'HEAD').stdout.trim();
   runner(root, f, 'start', '--once');
+  assert.equal(g(root, 'rev-parse', 'HEAD').stdout.trim(), head);
   assert.equal(merges(root), 1);
   assert.equal(fs.readFileSync(path.join(root, '.cursor', 'evidence', 'lessons.jsonl'), 'utf8').trim().split('\n').length, 3);
 });
