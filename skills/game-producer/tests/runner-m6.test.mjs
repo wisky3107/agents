@@ -1,0 +1,534 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawn, spawnSync } from 'node:child_process';
+import { loadProject } from '../scripts/lib/project.mjs';
+import { prompts, manualItems, FLEET_COMMIT_TEXT } from '../scripts/lib/lanes.mjs';
+import { textNeed, parseReply, menu, answerProblem } from '../scripts/lib/answer.mjs';
+import { NOTES, POLICY, RUNNER, project, fakes, runner, env, evRel, ev, sliceState, clearControl, approvedEvidence, commitStep, lastCommit } from './harness.mjs';
+import { reviewFiles } from '../scripts/lib/state.mjs';
+
+// Plan M6, after pilot 1: three ways to answer (terminal, dialog, `answer` menu), release.manual_required:
+// defer, and the runner stops that pilot 1 showed were not the director's (stale review.md, a passing
+// "terminal missing", a second gate asked before the coordinator acted, a fleet worktree kept as dirty,
+// a commit typed by hand).
+process.env.PRODUCER_RUNNER_CURSOR = 'on'; // in-process prompt builds: no real cursor-agent probe
+const DIALOG = new URL('../scripts/answer-dialog.mjs', import.meta.url).pathname;
+const H = evRel('S01', 'HANDOFF.json');
+const W = (status, extra = {}) => ({ [H]: { role: 'writer', status, detail: 'd', sha: null, ...extra } });
+const R = (status, verdict, runtime) => ({ [H]: { role: 'reviewer', status }, ...approvedEvidence('S01', verdict, runtime) });
+const preview = (port) => ({ [evRel('S01', 'preview-startup.json')]: { projectPath: '/p', previewUrl: `http://127.0.0.1:${port}/`, status: 'ready' } });
+const runnerFile = (root) => JSON.parse(fs.readFileSync(path.join(root, '.cursor', 'producer-runner.json'), 'utf8'));
+const question = (root, id) => runnerFile(root).questions.find((q) => q.id === id);
+const log = (root, id = 'S01') => fs.readFileSync(ev(root, id, 'producer-log.md'), 'utf8');
+const exited = (child) => new Promise((r) => child.on('exit', (code) => r(code)));
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+const GATE = { id: 'q1', key: 'S01:fleet_gate:g1', kind: 'fleet_gate', slice: 'S01', text: 'fleet gate g1: Approve PLAN?', options: ['approve', 'revise', 'stop'], ref: 'g1', answer: null };
+const LANE = { id: 'q2', key: 'S01:lane_blocked', kind: 'lane_blocked', slice: 'S01', text: 'fleet HANDOFF blocked: which material?', options: ['send this answer to the lane', 'answered in the lane, continue', 'mark blocked', 'stop'], ref: null, answer: null };
+const withQuestions = (qs) => {
+  const p = project({ slices: { S01: { needs: false } } });
+  fs.mkdirSync(path.join(p.root, '.cursor'), { recursive: true });
+  fs.writeFileSync(path.join(p.root, '.cursor', 'producer-runner.json'), JSON.stringify({ slice: 'S01', step: 'blocked:x', questions: qs }));
+  return p;
+};
+// a project whose first slice waits on the director gate (POLICY records only S02 GIVEN)
+const gated = () => project({ slices: { S01: { needs: true } } });
+
+// osascript stand-in: logs each run, sleeps on osa-sleep, prints osa-choice (choose) or osa-note (note), else "cancels"
+const FAKE_OSA = `#!/usr/bin/env node
+const fs = require('fs'), path = require('path');
+const D = process.env.FAKE_DIR, a = process.argv.slice(2);
+const script = a.filter((x, i) => a[i - 1] === '-e').join('\\n');
+const args = a.filter((x, i) => x !== '-e' && a[i - 1] !== '-e');
+const kind = script.includes('choose from list') ? 'choose' : 'note';
+fs.appendFileSync(path.join(D, 'osa.log'), JSON.stringify({ kind, args }) + '\\n');
+if (fs.existsSync(path.join(D, 'osa-sleep'))) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(fs.readFileSync(path.join(D, 'osa-sleep'), 'utf8')));
+const reply = path.join(D, kind === 'choose' ? 'osa-choice' : 'osa-note');
+if (!fs.existsSync(reply)) process.exit(1);
+process.stdout.write(fs.readFileSync(reply, 'utf8') + '\\n');
+`;
+function osa(f, { choice, note, sleepMs } = {}) {
+  const bin = path.join(f.dir, 'osascript-fake');
+  fs.writeFileSync(bin, FAKE_OSA, { mode: 0o755 });
+  for (const [file, v] of [['osa-choice', choice], ['osa-note', note], ['osa-sleep', sleepMs]]) {
+    if (v === undefined) fs.rmSync(path.join(f.dir, file), { force: true });
+    else fs.writeFileSync(path.join(f.dir, file), String(v));
+  }
+  return bin;
+}
+const osaRuns = (f) => (fs.existsSync(path.join(f.dir, 'osa.log')) ? fs.readFileSync(path.join(f.dir, 'osa.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : []);
+const dialog = (root, f, id, extraEnv = {}) =>
+  spawnSync(process.execPath, [DIALOG, '--project', root, '--id', id], { encoding: 'utf8', timeout: 20000, env: { ...env(root, f), ...extraEnv } });
+
+test('answer lib: which choices take a note, numbers with an inline note, the menu text', () => {
+  assert.deepEqual([textNeed(GATE, 'approve'), textNeed(GATE, 'stop'), textNeed({ kind: 'fleet_gate' }, 'answer with --text')], ['optional', null, 'required']);
+  assert.deepEqual([textNeed(LANE, 'send this answer to the lane'), textNeed(LANE, 'mark blocked')], ['required', null]);
+  assert.equal(textNeed({ kind: 'spawn_unconfirmed' }, 'reattach the handle given in --text'), 'required');
+  assert.deepEqual(parseReply(GATE, '2'), { choice: 'revise', text: '' });
+  assert.deepEqual(parseReply(GATE, ' 1  only the test file '), { choice: 'approve', text: 'only the test file' });
+  assert.deepEqual(parseReply(GATE, '1) yes'), { choice: 'approve', text: 'yes' });
+  assert.match(parseReply(GATE, '4').error, /1 to 3/);
+  assert.match(parseReply(GATE, 'approve').error, /number/);
+  assert.match(menu(LANE), /^q2 · lane_blocked · S01\nfleet HANDOFF blocked: which material\?\n\n {2}1\) send this answer to the lane {2}\(needs a note\)\n {2}2\) answered in the lane, continue\n/);
+  assert.equal(answerProblem(GATE, 'approve', ''), null);
+  assert.match(answerProblem({ ...GATE, options: ['answer with --text', 'stop'] }, 'answer with --text', ' '), /needs the decision/);
+  assert.match(answerProblem({ ...GATE, answer: { choice: 'approve' } }, 'revise'), /already answered \(approve\)/);
+  assert.match(answerProblem(GATE, 'yes'), /choice must be one of: approve, revise, stop/);
+});
+
+test('answer CLI: flags record as before; no flags and no terminal → an error naming the menu; the menu picks question and option', () => {
+  const p = withQuestions([GATE, LANE]);
+  const f = fakes();
+  assert.match(runner(p.root, f, 'answer').out[0].error, /numbered menu/);
+  // two waiting: question 2, option 1 needs a note — an empty note is refused, then asked again
+  const r = runner(p.root, f, 'answer', { env: { PRODUCER_RUNNER_TTY: '1' }, input: '2\n1\n\n1\nthe integrator makes the .mtl\n' });
+  assert.deepEqual(r.out.at(-1).answer && { id: r.out.at(-1).id, ...r.out.at(-1).answer, at: null }, { id: 'q2', choice: 'send this answer to the lane', text: 'the integrator makes the .mtl', by: 'human', via: 'menu', at: null });
+  assert.match(r.stderr, /question number: /);
+  assert.match(r.stderr, /give the answer for the lane as the note/);
+  // --id with no --choice: that question's menu; the note may follow the number
+  const g = runner(p.root, f, 'answer', '--id', 'q1', { env: { PRODUCER_RUNNER_TTY: '1' }, input: '2 smaller boards\n' }).out.at(-1);
+  assert.deepEqual([g.answer.choice, g.answer.text, g.answer.via], ['revise', 'smaller boards', 'menu']);
+  assert.deepEqual(runner(p.root, f, 'answer', { env: { PRODUCER_RUNNER_TTY: '1' }, input: '' }).out.at(-1), { none: 'no question is waiting' });
+  // the flags still work, and still refuse a second answer
+  const q = withQuestions([GATE]);
+  assert.deepEqual(runner(q.root, f, 'answer', '--id', 'q1', '--choice', 'approve', '--text', 'x').out[0].answer.by, 'human');
+  assert.match(runner(q.root, f, 'answer', '--id', 'q1', '--choice', 'revise').out[0].error, /already answered/);
+  // input that ends before an answer: an error, nothing recorded
+  const e = withQuestions([GATE]);
+  assert.match(runner(e.root, f, 'answer', { env: { PRODUCER_RUNNER_TTY: '1' }, input: 'x\n' }).out.at(-1).error, /input closed/);
+  assert.equal(question(e.root, 'q1').answer, null);
+});
+
+test('runner terminal: the question with numbered options on stderr; a line typed before it is dropped; the number answers it', async (t) => {
+  const p = gated();
+  const f = fakes();
+  const child = spawn(process.execPath, [RUNNER, 'start', '--project', p.root], { env: { ...env(p.root, f), PRODUCER_RUNNER_TTY: '1' }, stdio: ['pipe', 'pipe', 'pipe'] });
+  t.after(() => child.exitCode === null && child.kill('SIGKILL')); // a failed assertion must not leave the runner waiting
+  let err = '';
+  let out = '';
+  child.stderr.on('data', (d) => (err += d));
+  child.stdout.on('data', (d) => (out += d));
+  child.stdin.write('2\n'); // typed ahead ("skip this slice"): must never answer q1
+  for (let i = 0; i < 400 && !err.includes('q1 · director_gate · S01'); i++) await pause(25);
+  assert.match(err, /q1 · director_gate · S01\n.*\n\n {2}1\) decided, retry\n {2}2\) skip this slice\n {2}3\) stop/);
+  await pause(700);
+  assert.equal(question(p.root, 'q1').answer, null);
+  child.stdin.write('7\n'); // out of range: told, not recorded
+  child.stdin.write('3\n');
+  const code = await exited(child);
+  assert.equal(code, 0);
+  assert.match(err, /type a number from 1 to 3/);
+  assert.match(err, /recorded q1: stop/);
+  assert.deepEqual([question(p.root, 'q1').answer.choice, question(p.root, 'q1').answer.via], ['stop', 'terminal']);
+  assert.match(out, /"stopped":"the human chose stop"/);
+  assert.equal(loadProject(p.root).release.slices.S01, undefined); // "skip this slice" never applied
+});
+
+test('runner terminal: a choice that needs a note asks for it; the answer reaches the lane', async (t) => {
+  const p = project({ slices: { S01: { needs: false, size: 'L' } } });
+  const f = fakes();
+  f.queue([
+    { name: 'run', runs: [{ id: 'run_1', coordinator_handle: 'term_1' }], write: { [H]: { role: 'coordinator', status: 'working' } } },
+    { name: 'blocked', write: { [H]: { role: 'coordinator', status: 'blocked', detail: 'which material route?' } } },
+  ]);
+  const child = spawn(process.execPath, [RUNNER, 'start', '--project', p.root], { env: { ...env(p.root, f), PRODUCER_RUNNER_TTY: '1' }, stdio: ['pipe', 'pipe', 'pipe'] });
+  t.after(() => child.exitCode === null && child.kill('SIGKILL'));
+  let err = '';
+  child.stderr.on('data', (d) => (err += d));
+  for (let i = 0; i < 400 && !err.includes('q1 · lane_blocked · S01'); i++) await pause(25);
+  await pause(600);
+  child.stdin.write('1\n');
+  for (let i = 0; i < 200 && !err.includes('note for "send this answer to the lane": '); i++) await pause(25);
+  child.stdin.write('the integrator makes the .mtl\n');
+  await exited(child); // the queue runs out after the answer: the fake writes stop
+  assert.deepEqual([question(p.root, 'q1').answer.choice, question(p.root, 'q1').answer.text], ['send this answer to the lane', 'the integrator makes the .mtl']);
+  assert.match(f.sends().at(-1).text, /^Director's answer to your question: the integrator makes the \.mtl — continue the slice/);
+});
+
+test('dialog: choice + note go through the same answer path; Later and a cancelled required note record nothing', () => {
+  const p = withQuestions([GATE, LANE]);
+  const f = fakes();
+  const bin = osa(f, { choice: 'approve', note: 'only the test file' });
+  assert.equal(dialog(p.root, f, 'q1', { PRODUCER_RUNNER_OSASCRIPT: bin }).status, 0);
+  const a = question(p.root, 'q1').answer;
+  assert.deepEqual([a.choice, a.text, a.by, a.via], ['approve', 'only the test file', 'human', 'dialog']);
+  const [choose, note] = osaRuns(f);
+  assert.equal(choose.kind, 'choose');
+  assert.deepEqual(choose.args.slice(2), ['approve', 'revise', 'stop']);
+  assert.equal(choose.args[0], `producer-runner · ${path.basename(p.root)}`);
+  assert.match(choose.args[1], /^q1 · fleet_gate · S01\n\nfleet gate g1: Approve PLAN\?/);
+  assert.match(note.args[1], /optional/);
+  // Later
+  osa(f, { choice: '<<later>>' });
+  dialog(p.root, f, 'q2', { PRODUCER_RUNNER_OSASCRIPT: bin });
+  assert.equal(question(p.root, 'q2').answer, null);
+  // a required note, cancelled
+  osa(f, { choice: 'send this answer to the lane' });
+  dialog(p.root, f, 'q2', { PRODUCER_RUNNER_OSASCRIPT: bin });
+  assert.equal(question(p.root, 'q2').answer, null);
+  assert.match(osaRuns(f).at(-1).args[1], /required/);
+  // an already answered question opens no dialog
+  const n = osaRuns(f).length;
+  dialog(p.root, f, 'q1', { PRODUCER_RUNNER_OSASCRIPT: bin });
+  assert.equal(osaRuns(f).length, n);
+});
+
+test('dialog: stop-after is not a halt (the runner keeps waiting); stop closes it without an answer', () => {
+  const p = withQuestions([GATE]);
+  const f = fakes();
+  const bin = osa(f, { choice: 'approve', sleepMs: 1500 });
+  fs.writeFileSync(path.join(p.root, '.cursor', 'producer.control'), 'stop-after S05\n');
+  dialog(p.root, f, 'q1', { PRODUCER_RUNNER_OSASCRIPT: bin });
+  assert.equal(question(p.root, 'q1').answer.choice, 'approve');
+  const q = withQuestions([GATE]);
+  fs.writeFileSync(path.join(q.root, '.cursor', 'producer.control'), 'stop\n');
+  dialog(q.root, f, 'q1', { PRODUCER_RUNNER_OSASCRIPT: bin });
+  assert.equal(question(q.root, 'q1').answer, null);
+});
+
+test('runner-file lock: concurrent writers lose nothing; a stale lock is broken after 10 s', async () => {
+  const p = withQuestions([]);
+  const state = new URL('../scripts/lib/state.mjs', import.meta.url).href;
+  const writer = (n) => spawn(process.execPath, ['--input-type=module', '-e',
+    `const st = await import(${JSON.stringify(state)}); for (let i = 0; i < 15; i++) st.ask(${JSON.stringify(p.root)}, { key: 'w${n}:' + i, kind: 'k', text: 't', options: ['a'] });`], { stdio: 'ignore' });
+  const kids = Array.from({ length: 8 }, (_, n) => writer(n));
+  assert.deepEqual(await Promise.all(kids.map(exited)), Array(8).fill(0));
+  const qs = runnerFile(p.root).questions;
+  assert.equal(qs.length, 120);
+  assert.equal(new Set(qs.map((q) => q.id)).size, 120);
+  assert.equal(fs.existsSync(path.join(p.root, '.cursor', 'producer-runner.json.lock')), false);
+  // a writer killed inside the lock: the next one waits it out, then takes over
+  const lock = path.join(p.root, '.cursor', 'producer-runner.json.lock');
+  fs.mkdirSync(lock);
+  fs.writeFileSync(path.join(lock, 'owner'), 'killed-writer');
+  const old = (Date.now() - 11000) / 1000;
+  fs.utimesSync(lock, old, old);
+  const t0 = Date.now();
+  assert.equal(await exited(writer(9)), 0);
+  assert.ok(Date.now() - t0 < 8000, 'a stale lock is broken at once');
+  assert.equal(runnerFile(p.root).questions.length, 135);
+  assert.equal(fs.readdirSync(path.join(p.root, '.cursor')).filter((x) => x.includes('.lock')).length, 0);
+});
+
+test('dialog: answered another way while open → the dialog is closed and nothing is overwritten', async (t) => {
+  const p = withQuestions([GATE]);
+  const f = fakes();
+  const bin = osa(f, { choice: 'revise', sleepMs: 8000 });
+  const t0 = Date.now();
+  const child = spawn(process.execPath, [DIALOG, '--project', p.root, '--id', 'q1'], { env: { ...env(p.root, f), PRODUCER_RUNNER_OSASCRIPT: bin }, stdio: 'ignore' });
+  t.after(() => child.exitCode === null && child.kill('SIGKILL'));
+  for (let i = 0; i < 200 && !osaRuns(f).length; i++) await pause(25);
+  runner(p.root, f, 'answer', '--id', 'q1', '--choice', 'approve');
+  await exited(child);
+  assert.ok(Date.now() - t0 < 5000, 'closed, not waited out');
+  assert.equal(question(p.root, 'q1').answer.choice, 'approve');
+});
+
+test('dialog after a restart: reopened when the helper is gone, not after "Later"', async (t) => {
+  const p = gated();
+  const f = fakes();
+  const bin = osa(f, { choice: '<<later>>' });
+  const start = () => {
+    const c = spawn(process.execPath, [RUNNER, 'start', '--project', p.root], { env: { ...env(p.root, f), PRODUCER_RUNNER_DIALOG: '1', PRODUCER_RUNNER_OSASCRIPT: bin }, stdio: 'ignore' });
+    t.after(() => c.exitCode === null && c.kill('SIGKILL'));
+    return c;
+  };
+  let c = start();
+  for (let i = 0; i < 400 && !(fs.existsSync(path.join(p.root, '.cursor', 'producer-runner.json')) && question(p.root, 'q1')?.dialog_done); i++) await pause(25);
+  assert.equal(question(p.root, 'q1').dialog_done, 'later');
+  c.kill('SIGKILL');
+  await exited(c);
+  c = start(); // closed with Later: no second dialog
+  await pause(1500);
+  assert.equal(osaRuns(f).filter((x) => x.kind === 'choose').length, 1);
+  c.kill('SIGKILL');
+  await exited(c);
+  // a helper that died without an answer (pid gone, not Later): the next runner opens it again
+  const r = JSON.parse(fs.readFileSync(path.join(p.root, '.cursor', 'producer-runner.json'), 'utf8'));
+  delete r.questions[0].dialog_done;
+  r.questions[0].dialog_pid = 2 ** 22 + 12345; // no such process
+  fs.writeFileSync(path.join(p.root, '.cursor', 'producer-runner.json'), JSON.stringify(r));
+  fs.rmSync(path.join(p.root, '.cursor', 'producer.lock'), { force: true });
+  osa(f, { choice: 'stop' });
+  const out = runner(p.root, f, 'start', { env: { PRODUCER_RUNNER_DIALOG: '1', PRODUCER_RUNNER_OSASCRIPT: bin } }).out;
+  assert.match(out.at(-1).stopped, /the human chose stop/);
+  assert.equal(osaRuns(f).filter((x) => x.kind === 'choose').length, 2);
+});
+
+test('the runner opens the dialog once per question; the dialog answer is applied like any other', () => {
+  const p = gated();
+  const f = fakes();
+  const bin = osa(f, { choice: 'stop' });
+  const r = runner(p.root, f, 'start', { env: { PRODUCER_RUNNER_DIALOG: '1', PRODUCER_RUNNER_OSASCRIPT: bin } });
+  assert.deepEqual(r.out.at(-1), { stopped: 'the human chose stop', resume: 'producer-runner clear, then start' });
+  assert.deepEqual([question(p.root, 'q1').answer.choice, question(p.root, 'q1').answer.via], ['stop', 'dialog']);
+  assert.equal(osaRuns(f).filter((x) => x.kind === 'choose').length, 1);
+  // PRODUCER_RUNNER_DIALOG=0 (the harness default): no dialog
+  const q = gated();
+  const g = fakes();
+  osa(g, { choice: 'stop' });
+  runner(q.root, g, 'start', '--once');
+  assert.equal(osaRuns(g).length, 0);
+});
+
+test('manual_required: defer — APPROVED with only manual checks left merges, lists them, Notes and status show them', () => {
+  const p = project({ notes: NOTES(POLICY, '{}', '  manual_required: defer\n'), slices: { S01: { needs: false } } });
+  const f = fakes();
+  f.queue([
+    { name: 'ready', write: { ...W('ready_for_review'), ...preview(7461) } },
+    { name: 'approved, manual left', write: R('approved', 'APPROVED', { status: 'verified', manual_required: ['fps >= 55 on the named device', 'GP-22 spot-check'] }) },
+    commitStep('S01'),
+  ]);
+  const out = runner(p.root, f, 'start', '--once').out;
+  assert.deepEqual(out.find((o) => o.merged), { merged: 'S01', commit: lastCommit(f) });
+  const items = ['fps >= 55 on the named device', 'GP-22 spot-check'];
+  assert.deepEqual(JSON.parse(fs.readFileSync(ev(p.root, 'S01', 'evidence', 'manual-deferred.json'), 'utf8')).items, items);
+  assert.match(loadProject(p.root).notesText, /\n- S01 single merged fix_rounds=0 bump=none commit=\w{7} merged=y manual_deferred=2\n/);
+  assert.match(log(p.root), /manual_required deferred \(2\): fps >= 55 on the named device \| GP-22 spot-check/);
+  assert.deepEqual(runner(p.root, f, 'status').out[0].manual_deferred, { S01: items });
+  // what the items read like from other runtime-state shapes
+  assert.deepEqual(manualItems({ checks: [{ id: 'fps', result: 'manual_required' }] }), ['checks[0].result']);
+  assert.deepEqual(manualItems({ manual_required: { device: 'fps', gp22: true } }), ['device: fps', 'gp22: true']);
+  assert.deepEqual(manualItems({ status: 'manual_required', manual_required: false }), ['status']);
+});
+
+test('fleet: the newest review file is the verdict; defer never covers a review that is not APPROVED; the commit line names the runner', () => {
+  const p = project({ notes: NOTES(POLICY, '{}', '  manual_required: defer\n'), slices: { S01: { needs: false, size: 'L' } } });
+  const f = fakes();
+  const evidence = { [evRel('S01', 'final-report.md')]: 'x', [evRel('S01', 'stats.json')]: {} };
+  f.queue([
+    { name: 'round 1', runs: [{ id: 'run_1', coordinator_handle: 'term_1' }], write: { [H]: { role: 'coordinator', status: 'working' }, [evRel('S01', 'review.md')]: 'F1\n\nCHANGES_REQUESTED\n' } },
+    { name: 'round 3 offered', write: { ...evidence, [H]: { role: 'coordinator', status: 'offer_commit', manual_required: ['GP-22 spot-check'] }, [evRel('S01', 'review-r3.md')]: 'F2 waits for gate g1\n\nCHANGES_REQUESTED\n', [evRel('S01', 'runtime-state.json')]: { status: 'verified', manual_required: ['fps on the named device'] } } },
+  ]);
+  const a = runner(p.root, f, 'start', '--once').out.at(-1);
+  assert.deepEqual([a.waiting, a.kind], ['q1', 'approval_evidence']);
+  assert.match(question(p.root, 'q1').text, /review-r3\.md ends "CHANGES_REQUESTED", not APPROVED/);
+  assert.equal(fs.existsSync(ev(p.root, 'S01', 'evidence', 'manual-deferred.json')), false);
+  // the coordinator writes the final verdict as review.md (the newest file), naming gate g1 — but the
+  // runner never sent a decision for g1: the CHANGES_REQUESTED round cannot be overridden on its say-so
+  fs.writeFileSync(ev(p.root, 'S01', 'evidence', 'review.md'), 'F2 settled by the director (gate g1); no new review ran\n\nAPPROVED\n');
+  runner(p.root, f, 'answer', '--id', 'q1', '--choice', 'evidence fixed, check again');
+  const o = runner(p.root, f, 'start', '--once').out.at(-1);
+  assert.deepEqual([o.waiting, o.kind, o.options], ['q2', 'verdict_override', ['treat as approved', 'evidence fixed, check again', 'mark blocked', 'stop']]);
+  assert.match(question(p.root, 'q2').text, /review\.md ends APPROVED but the last review round \(review-r3\.md\) ended CHANGES_REQUESTED and review\.md names no gate decision the director sent \(none sent\)/);
+  // once g1's decision went out through the runner, the same review.md passes
+  fs.writeFileSync(ev(p.root, 'S01', 'producer-state.json'), JSON.stringify({ ...sliceState(p.root, 'S01'), relayed_gates: ['g1'] }));
+  runner(p.root, f, 'answer', '--id', 'q2', '--choice', 'evidence fixed, check again');
+  f.queue([{ name: 'committed', write: { [H]: { role: 'coordinator', status: 'committed', sha: 'f00d' } } }]);
+  const b = runner(p.root, f, 'start', '--once').out.at(-1);
+  assert.deepEqual(f.sends().at(-1), { to: 'term_1', text: FLEET_COMMIT_TEXT });
+  assert.equal(FLEET_COMMIT_TEXT, 'approved — commit (producer: Step 2d passed)');
+  assert.deepEqual([sliceState(p.root, 'S01').phase, b.kind], ['merge', 'merge_source_missing']);
+  assert.deepEqual(sliceState(p.root, 'S01').manual_deferred, ['fps on the named device', 'GP-22 spot-check']);
+});
+
+test('fleet: defer still asks about missing evidence first; review rounds order by number, not mtime', () => {
+  const p = project({ notes: NOTES(POLICY, '{}', '  manual_required: defer\n'), slices: { S01: { needs: false, size: 'L' } } });
+  const f = fakes();
+  f.queue([
+    { name: 'run', runs: [{ id: 'run_1', coordinator_handle: 'term_1' }], write: { [H]: { role: 'coordinator', status: 'working' } } },
+    { name: 'offered without stats', write: { [H]: { role: 'coordinator', status: 'offer_commit' }, [evRel('S01', 'review.md')]: 'F1\n\nAPPROVED\n', [evRel('S01', 'final-report.md')]: 'x', [evRel('S01', 'runtime-state.json')]: { status: 'manual_required' } } },
+  ]);
+  const a = runner(p.root, f, 'start', '--once').out.at(-1);
+  assert.deepEqual([a.waiting, a.kind], ['q1', 'approval_evidence']);
+  assert.match(question(p.root, 'q1').text, /evidence missing: stats\.json/);
+  assert.equal(fs.existsSync(ev(p.root, 'S01', 'evidence', 'manual-deferred.json')), false);
+  // rounds: r10 beats a later-touched r2; review.md wins only when written after the last round
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'review-files-'));
+  const put = (f2, t) => {
+    fs.writeFileSync(path.join(dir, f2), 'x\n');
+    fs.utimesSync(path.join(dir, f2), t, t);
+  };
+  put('review-r10.md', 1000);
+  put('review-r2.md', 3000);
+  assert.deepEqual(reviewFiles(dir), { verdict: path.join(dir, 'review-r10.md'), lastRound: path.join(dir, 'review-r10.md') });
+  put('review.md', 2000);
+  assert.equal(reviewFiles(dir).verdict, path.join(dir, 'review.md'));
+  put('review.md', 500);
+  assert.equal(reviewFiles(dir).verdict, path.join(dir, 'review-r10.md'));
+});
+
+test('fleet: a coordinator terminal Orca shows as closed (orphaned) is missing at once', () => {
+  const p = project({ slices: { S01: { needs: false, size: 'L' } } });
+  const f = fakes();
+  f.set('orphaned.json', ['term_1']);
+  f.queue([
+    { name: 'run', runs: [{ id: 'run_1', coordinator_handle: 'term_1' }], write: { [H]: { role: 'coordinator', status: 'working' } } },
+    { name: 'gone', result: 'missing' },
+  ]);
+  const a = runner(p.root, f, 'start', '--once').out.at(-1);
+  assert.deepEqual([a.waiting, a.kind], ['q1', 'coordinator_missing']);
+  assert.doesNotMatch(question(p.root, 'q1').text, /times in a row/);
+});
+
+test('fleet: "terminal missing" that terminal show disproves is waited on (logged); five in a row → the human', () => {
+  const p = project({ slices: { S01: { needs: false, size: 'L' } } });
+  const f = fakes();
+  f.queue([
+    { name: 'run', runs: [{ id: 'run_1', coordinator_handle: 'term_1' }], write: { [H]: { role: 'coordinator', status: 'working' } } },
+    { name: 'flaky wait', result: 'missing' },
+    { name: 'still working', write: { [H]: { role: 'coordinator', status: 'working', detail: 'implement running' } } },
+  ]);
+  const a = runner(p.root, f, 'start', '--once');
+  assert.equal(runnerFile(p.root).questions.length, 0);
+  assert.match(a.out.at(-1).stopped || '', /control file says stop/); // the queue ran out: the fake writes stop
+  assert.match(log(p.root), /orca-wait reported term_1 missing but terminal show finds it \(1\/5\): waiting on/);
+  assert.equal(sliceState(p.root, 'S01').missing_rechecks, 0); // a normal event resets the count
+  assert.match(fs.readFileSync(path.join(f.dir, 'calls.log'), 'utf8'), /terminal show --terminal term_1/);
+  clearControl(p.root);
+  f.queue(Array.from({ length: 5 }, (_, i) => ({ name: `missing ${i + 1}`, result: 'missing' })));
+  const b = runner(p.root, f, 'start', '--once').out.at(-1);
+  assert.deepEqual([b.waiting, b.kind], ['q1', 'coordinator_missing']);
+  assert.match(question(p.root, 'q1').text, /reported it missing 5 times in a row although terminal show still finds it/);
+});
+
+test('fleet gates: every pending gate in one question; the relay names the others; another gate is asked only after a settle', () => {
+  const p = project({ slices: { S01: { needs: false, size: 'L' } } });
+  const f = fakes();
+  const g1 = { id: 'g1', status: 'pending', question: 'Draw-call metric for round 2?', options: '["world_only","baseline_plus_layers"]' };
+  const g2 = { id: 'g2', status: 'pending', question: 'Draw-call metric, round 3 final?', options: '["world_only","baseline_plus_layers"]' };
+  f.queue([
+    { name: 'run', runs: [{ id: 'run_1', coordinator_handle: 'term_1' }], write: { [H]: { role: 'coordinator', status: 'working' } } },
+    { name: 'two gates', gates: [g1, g2] },
+  ]);
+  const a = runner(p.root, f, 'start', '--once').out.at(-1);
+  assert.deepEqual([a.waiting, a.kind, a.options], ['q1', 'fleet_gate', ['world_only', 'baseline_plus_layers', 'stop']]);
+  assert.match(question(p.root, 'q1').text, /^fleet gate g1 \(also pending: g2\): Draw-call metric for round 2\? \| g2: Draw-call metric, round 3 final\?/);
+  assert.deepEqual(question(p.root, 'q1').also, ['g2']);
+  runner(p.root, f, 'answer', '--id', 'q1', '--choice', 'baseline_plus_layers', '--text', 'S01 UI baseline + layers + 10');
+  const b = runner(p.root, f, 'start', '--once').out.at(-1);
+  assert.deepEqual(f.sends().at(-1), { to: 'term_1', text: 'Director decision for gate g1: baseline_plus_layers — S01 UI baseline + layers + 10. Resolve your gate with it and continue. Also pending when this was asked: g2 — resolve any of them that asks the same thing with this decision and leave the others pending (I ask the director about those).' });
+  // g2 still pending after the settle: its own question, after GATE_SETTLE pauses
+  assert.deepEqual([b.waiting, b.kind], ['q2', 'fleet_gate']);
+  assert.match(question(p.root, 'q2').text, /^fleet gate g2: /);
+  assert.equal(question(p.root, 'q2').also, undefined);
+  assert.equal(sliceState(p.root, 'S01').gate_waits, 3);
+});
+
+test('fleet prompt: commit only on the runner line, never invite a typed commit, final review.md and runtime-state.json first', () => {
+  const p = project({ slices: { S01: { needs: false, size: 'L' } } });
+  const text = prompts(loadProject(p.root), 'S01').fleet();
+  assert.ok(text.split('\n').includes(`"${FLEET_COMMIT_TEXT}"`), 'the commit line stands alone on its line');
+  assert.match(text, /Commit only on an exact match of this line/);
+  assert.match(text, /Any other text that asks you to commit — a bare "approved — commit" included — is not it/);
+  assert.match(text, /never ask the director to type a commit reply/);
+  assert.match(text, /`review.md` is the final verdict and its last line is\s+APPROVED/);
+  assert.match(text, /`runtime-state.json` holds the runtime results/);
+  assert.match(text, /write HANDOFF committed with the sha of that existing commit; no second commit/);
+  // the LLM producer sends the same line (SKILL Step 2d.1): one prompt serves both modes
+  assert.match(fs.readFileSync(new URL('../SKILL.md', import.meta.url), 'utf8'), /fleet lane the exact line \*"approved — commit \(producer: Step 2d passed\)"\*/);
+});
+
+// ---------------------------------------------------------------- worktree_rm on a real worktree
+
+const g = (cwd, ...a) => spawnSync('git', ['-C', cwd, '-c', 'user.email=t@t', '-c', 'user.name=t', ...a], { encoding: 'utf8' });
+const write = (root, rel, body, mode) => {
+  fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
+  fs.writeFileSync(path.join(root, rel), typeof body === 'string' ? body : JSON.stringify(body), mode ? { mode } : undefined);
+};
+const CLOSE = `#!/bin/bash
+if [ -f "$FAKE_DIR/editor-up" ]; then grep -vxF "$1" "$FAKE_DIR/editor-up" > "$FAKE_DIR/editor-up.tmp"; mv "$FAKE_DIR/editor-up.tmp" "$FAKE_DIR/editor-up"; fi
+`;
+const OPEN = `#!/bin/bash
+echo "$1" >> "$FAKE_DIR/editor-up"
+`;
+const PROBE = `import fs from 'node:fs';
+import path from 'node:path';
+const f = path.join(process.env.FAKE_DIR, 'editor-up');
+const up = fs.existsSync(f) ? fs.readFileSync(f, 'utf8').split('\\n') : [];
+const here = fs.realpathSync(process.cwd());
+const reachable = up.includes(here);
+console.log(JSON.stringify({ funplay: { url: 'http://127.0.0.1:1/', reachable, servedProject: reachable ? path.basename(here) : null, parity: reachable ? true : null } }, null, 2));
+`;
+
+/** A fleet slice committed with its evidence (as the fleet SKILL stages it), then HANDOFF rewritten. */
+function committedFleet() {
+  const p = project({ notes: NOTES(POLICY, '{S01: in_progress}'), slices: { S01: { needs: false, size: 'L' } } });
+  const f = fakes();
+  const root = p.root;
+  write(root, '.gitignore', '/.cursor/evidence/\n');
+  write(root, 'scripts/close-editor.sh', CLOSE, 0o755);
+  write(root, 'scripts/open-editor.sh', OPEN, 0o755);
+  write(root, '.cursor/skills/vibe-game-director/scripts/probe.mjs', PROBE);
+  write(root, 'funplay-cocos-mcp.config.json', '{"port": 1}');
+  g(root, 'add', '-A');
+  g(root, 'commit', '-qm', 'chore: template bits');
+  const wt = path.join(fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runner-wt-'))), 'S01-feature');
+  g(root, 'worktree', 'add', '-q', '-b', 'S01-feature', wt);
+  write(wt, 'src/b.ts', 'export const b = 2;\n');
+  const evw = (file, body) => write(wt, evRel('S01', file), body);
+  evw('HANDOFF.json', { role: 'coordinator', status: 'offer_commit' });
+  evw('review.md', 'F1\n\nAPPROVED\n');
+  evw('runtime-state.json', { status: 'verified' });
+  evw('final-report.md', 'x');
+  evw('stats.json', {});
+  g(wt, 'add', '-A');
+  g(wt, 'add', '-f', '.cursor/evidence/tasks/T-S01');
+  g(wt, 'commit', '-qm', 'feat(S01): b');
+  const sha = g(wt, 'rev-parse', 'HEAD').stdout.trim();
+  evw('HANDOFF.json', { role: 'coordinator', status: 'committed', sha }); // after the commit: tracked and modified
+  fs.mkdirSync(ev(root, 'S01'), { recursive: true });
+  const base = g(root, 'symbolic-ref', '--short', 'HEAD').stdout.trim();
+  fs.writeFileSync(ev(root, 'S01', 'producer-state.json'), JSON.stringify({ phase: 'merge', lane: 'fleet', commit_sha: sha, worktree: wt, coordinator: 'term_c', run: 'run_1', base_branch: base }));
+  fs.writeFileSync(path.join(root, '.cursor', 'producer-runner.json'), JSON.stringify({ slice: 'S01', step: 'lane', questions: [] }));
+  fs.writeFileSync(path.join(f.dir, 'editor-up'), `${wt}\n${root}\n`);
+  return { f, root, wt, sha };
+}
+const VERIFIED = { name: 'verified', write: { [evRel('S01', 'verify-main.json')]: { status: 'verified', detail: 'smoke green' } } };
+const journal = (root) => JSON.parse(fs.readFileSync(ev(root, 'S01', 'merge-journal.json'), 'utf8'));
+const rmLog = (f) => fs.readFileSync(path.join(f.dir, 'rm.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+
+test('worktree_rm: only the slice evidence changed (HANDOFF rewritten after the commit) → copied to main, then removed with --force', () => {
+  const { f, root, wt, sha } = committedFleet();
+  f.queue([VERIFIED]);
+  runner(root, f, 'start', '--once');
+  assert.equal(journal(root).steps.worktree_rm.kept, undefined);
+  assert.match(journal(root).steps.worktree_rm.note, /only its evidence files had changed, copied to main first/);
+  assert.equal(fs.existsSync(wt), false);
+  assert.equal(rmLog(f).at(-1).force, true);
+  // main has the rewritten HANDOFF (the evidence step ran before the removal)
+  assert.equal(JSON.parse(fs.readFileSync(ev(root, 'S01', 'evidence', 'HANDOFF.json'), 'utf8')).sha, sha);
+  assert.match(loadProject(root).notesText, /\n- S01 fleet merged fix_rounds=\? bump=none commit=\w{7} merged=y -\n/);
+});
+
+test('worktree_rm: an evidence file written after the evidence step is copied before the removal; a changed PNG keeps the worktree', () => {
+  const { f, root, wt, sha } = committedFleet();
+  // the journal as a runner killed right after its evidence step left it, then a late write in the worktree
+  const base = g(root, 'symbolic-ref', '--short', 'HEAD').stdout.trim();
+  g(root, 'merge', '--no-ff', '-q', '-m', 'Merge S01', 'S01-feature');
+  spawnSync('rsync', ['-a', '--exclude', '*.png', `${ev(wt, 'S01')}/`, `${ev(root, 'S01')}/`]);
+  const at = new Date().toISOString();
+  fs.writeFileSync(ev(root, 'S01', 'merge-journal.json'), JSON.stringify({ lane: 'fleet', sha, wt, branch: 'S01-feature', fix_rounds: null, bump: null, started: at, steps: {
+    harvest: { status: 0, failed: false, note: 'archived', done_at: at }, close_editors: { note: 'both Creators closed', done_at: at },
+    merge: { into: base, conflict: false, note: 'merged', done_at: at }, evidence: { note: 'rsync worktree → main (no PNGs)', done_at: at } } }));
+  fs.writeFileSync(path.join(f.dir, 'editor-up'), '');
+  write(wt, evRel('S01', 'late-note.md'), 'written after the copy\n');
+  f.queue([VERIFIED]);
+  runner(root, f, 'start', '--once');
+  assert.equal(fs.existsSync(wt), false);
+  assert.equal(fs.readFileSync(ev(root, 'S01', 'evidence', 'late-note.md'), 'utf8'), 'written after the copy\n');
+  // a tracked PNG changed in the evidence dir: the copy skips PNGs, so --force would lose it
+  const q = committedFleet();
+  write(q.wt, evRel('S01', 'preview.png'), 'PNG v1');
+  g(q.wt, 'add', '-f', evRel('S01', 'preview.png'));
+  g(q.wt, 'commit', '-qm', 'evidence: preview');
+  const sha2 = g(q.wt, 'rev-parse', 'HEAD').stdout.trim();
+  fs.writeFileSync(ev(q.root, 'S01', 'producer-state.json'), JSON.stringify({ ...sliceState(q.root, 'S01'), commit_sha: sha2 }));
+  write(q.wt, evRel('S01', 'preview.png'), 'PNG v2');
+  q.f.queue([VERIFIED]);
+  runner(q.root, q.f, 'start', '--once');
+  assert.equal(journal(q.root).steps.worktree_rm.kept, 'dirty');
+  assert.equal(fs.existsSync(q.wt), true);
+});
+
+test('worktree_rm: evidence plus any other change keeps the worktree (no --force)', () => {
+  const { f, root, wt } = committedFleet();
+  write(wt, 'src/b.ts', 'export const b = 3; // not committed\n');
+  f.queue([VERIFIED]);
+  runner(root, f, 'start', '--once');
+  assert.equal(journal(root).steps.worktree_rm.kept, 'dirty');
+  assert.equal(fs.existsSync(wt), true);
+  assert.equal(fs.existsSync(path.join(f.dir, 'rm.log')), false);
+});

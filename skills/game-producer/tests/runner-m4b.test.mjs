@@ -206,7 +206,8 @@ test('fleet lane: gate relayed as text (never resolved by the runner), takeover 
   const c = runner(p.root, f, 'start', '--once').out.at(-1);
   // committed: the merge journal starts; this fake commit has no branch to merge (M4c has the real ones)
   assert.deepEqual([sliceState(p.root, 'S01').phase, sliceState(p.root, 'S01').commit_sha, c.kind], ['merge', 'f00d', 'merge_source_missing']);
-  assert.deepEqual(f.sends().at(-1), { to: 'term_7', text: 'approved — commit' });
+  // the fleet's commit line names the runner: a bare "approved — commit" typed by hand is not it (M6)
+  assert.deepEqual(f.sends().at(-1), { to: 'term_7', text: 'approved — commit (producer: Step 2d passed)' });
   assert.equal(sliceState(p.root, 'S01').coordinator, 'term_7');
   assert.equal(f.spawns().length, 1); // a fleet coordinator is never respawned
 });
@@ -234,7 +235,8 @@ test('fleet lane: offer_commit with manual_required is not committed; idle → o
   clearControl(p.root);
   fs.writeFileSync(ev(p.root, 'S01', 'producer-state.json'), JSON.stringify({ ...sliceState(p.root, 'S01'), phase: 'fleet' }));
   fs.writeFileSync(path.join(p.root, H), JSON.stringify({ role: 'coordinator', status: 'working' }));
-  f.queue([{ name: 'gone', result: 'missing' }]);
+  // gone for Orca too (terminal show: stale) — a "missing" that terminal show disproves is M6's test
+  f.queue([{ name: 'gone', result: 'missing', dead: ['term_1'] }]);
   const c = runner(p.root, f, 'start', '--once').out.at(-1);
   assert.deepEqual([c.waiting, c.kind], ['q3', 'coordinator_missing']);
   assert.equal(f.spawns().length, 1);

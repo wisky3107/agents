@@ -347,7 +347,7 @@ export function preflight(project, id, { initial = false } = {}) {
   if (!project.policy) add('needs_policy', 'no policy line in ## Notes — game-producer: Step 0–1 has not run');
   const t = project.policy?.tokens || {};
   // the policy line is the lock; a yaml value changed since (director re-lock) must be re-locked, not guessed
-  for (const k of ['goal', 'auto_commit', 'auto_merge', 'deploy']) {
+  for (const k of ['goal', 'auto_commit', 'auto_merge', 'deploy', 'manual_required']) {
     const y = project.release[k];
     if (t[k] !== undefined && y !== undefined && String(y) !== t[k]) add('policy_conflict', `policy line ${k}=${t[k]} but AGENT_NOTES release.${k}=${y}: re-lock the policy line`);
   }

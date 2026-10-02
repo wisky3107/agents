@@ -8,22 +8,26 @@
  *   producer-runner.mjs status [--project <path>]
  *   producer-runner.mjs pause | stop | stop-after <Sxx> | clear   [--project <path>]
  *   producer-runner.mjs answer --id <qN> --choice <option> [--text "…"] [--project <path>]
+ *   producer-runner.mjs answer [--id <qN>] [--project <path>]   (in a terminal: a numbered menu)
  *   producer-runner.mjs launch [--project <path>]      (a visible Orca terminal running `start`)
  *   producer-runner.mjs handoff-reset [--project <path>] (forget the Step 0–1 / Step 3 LLM handoffs)
  *
  * One runner per project (.cursor/producer.lock; an LLM producer must not loop while it is held). Git is the truth
  * for merged slices; the AGENT_NOTES release: yaml is a cache the runner rewrites value by value.
  * Anything the runner cannot decide mechanically becomes one question with fixed options; a judge
- * (`judge_agent`, claude -p) may answer the few kinds the contracts settle, the rest wait for `answer`
- * (polling a local file, no model), or the runner exits with --once. It never guesses. Step 0–1 and
+ * (`judge_agent`, claude -p) may answer the few kinds the contracts settle, the rest wait for the
+ * director (polling a local file, no model) — a number typed in the runner's terminal, the macOS
+ * dialog, or `answer` — or the runner exits with --once. It never guesses. Step 0–1 and
  * Step 3 are handed to an LLM producer (reference/producer-step01-prompt.md, -step3-prompt.md).
  * Phase 1: max_parallel=1, no slice studies.
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import readline from 'node:readline';
+import { spawn, spawnSync } from 'node:child_process';
 import { loadProject, sliceStatuses, nextSlice, preflight, writeRelease } from './lib/project.mjs';
 import * as st from './lib/state.mjs';
+import { submit, menu, parseReply, textNeed, answerProblem, openQuestions } from './lib/answer.mjs';
 import { laneFor, runSlice, applyAnswer, cursorUndecided, cursorState, resetCursorProbe, agentOrAsk, cursorArtBlocked, CursorUndecided, CURSOR_FALLBACK } from './lib/lanes.mjs';
 import { currentBranch, appendLessons, lessonRows, readJournal } from './lib/merge.mjs';
 import { consult, judgeSpec, JUDGE_KINDS, MAX_JUDGED } from './lib/judge.mjs';
@@ -31,13 +35,17 @@ import * as io from './lib/orca.mjs';
 import { fileURLToPath } from 'node:url';
 
 const RUNNER = fileURLToPath(import.meta.url);
+const DIALOG = fileURLToPath(new URL('./answer-dialog.mjs', import.meta.url));
 const REF = new URL('../reference/', import.meta.url);
 
 const msEnv = (k, d) => Number(process.env[k]) || d;
 const WAIT_MS = msEnv('PRODUCER_RUNNER_WAIT_MS', 540000); // one orca-wait call (its own cap is 570000)
 const IDLE_MS = msEnv('PRODUCER_RUNNER_IDLE_MS', 60000); // pause before re-checking an idle lane
 const POLL_MS = msEnv('PRODUCER_RUNNER_POLL_MS', 5000); // answer polling
+const TYPE_AHEAD_MS = 500; // a line that arrives this soon after a menu was typed before it
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+// the director types answers here: a real terminal, or PRODUCER_RUNNER_TTY=1 (tests pipe stdin)
+const typing = () => process.env.PRODUCER_RUNNER_TTY === '1' || (process.env.PRODUCER_RUNNER_TTY !== '0' && Boolean(process.stdin.isTTY));
 
 function parseArgs(argv) {
   const [cmd, ...rest] = argv;
@@ -94,13 +102,26 @@ async function plan(root) {
   return { project, statuses, next, blockers };
 }
 
+/** Manual checks merged under `manual_required: defer` and not signed off yet, per slice (Step 3 signs them off). */
+function deferredManual(root) {
+  const base = path.join(root, '.cursor', 'evidence', 'tasks');
+  const out = {};
+  for (const d of fs.existsSync(base) ? fs.readdirSync(base).sort() : []) {
+    const f = st.readJson(path.join(base, d, 'evidence', 'manual-deferred.json'));
+    if (f?.items?.length && !f.signed_off) out[d.replace(/^T-/, '')] = f.items;
+  }
+  return out;
+}
+
 async function status(root) {
   const { next, blockers, statuses } = await plan(root);
   const runner = st.readRunner(root);
+  const manual = deferredManual(root);
   say({
     lock: st.lockHolder(root), control: st.readControl(root), runner, next, blockers,
     lane: runner.slice ? st.readSliceState(root, runner.slice) : null,
     slices: Object.fromEntries(Object.entries(statuses).map(([k, v]) => [k, v.source === 'cache' ? v.status : `${v.status} (${v.source})`])),
+    ...(Object.keys(manual).length ? { manual_deferred: manual } : {}),
   });
 }
 
@@ -111,6 +132,7 @@ function stopFor(root, slice, code, detail, extra = {}) {
   const key = `${slice || '-'}:${code}${extra.ref ? `:${extra.ref}` : ''}`;
   const { question, isNew } = st.ask(root, {
     key, slice, kind: code, text: `${q.text || ''} ${detail}`.trim(), options, ref: extra.ref || null, obs: extra.obs || null,
+    ...(extra.also?.length ? { also: extra.also } : {}),
   });
   if (slice) st.log(root, slice, `blocked ${code}: ${detail}${isNew ? ` (question ${question.id})` : ''}`);
   st.writeRunner(root, { slice, step: `blocked:${code}` });
@@ -269,32 +291,165 @@ function applyAnswers(root) {
  * Tell the director a question waits — once per question, also across restarts: a terminal bell
  * (stderr, so stdout stays JSON lines) and a desktop notification (macOS osascript, or
  * PRODUCER_RUNNER_NOTIFY_CMD <title> <body>; PRODUCER_RUNNER_NOTIFY=0 turns it off). Best effort.
+ * Sent, then marked: a kill in between tells the director twice rather than never.
  */
 function notify(root, q) {
   if (q.notified) return;
-  st.setQuestion(root, q.id, { notified: st.now() });
   process.stderr.write('\x07');
-  if (process.env.PRODUCER_RUNNER_NOTIFY === '0') return;
-  const title = `producer-runner · ${path.basename(root)}`;
-  const body = `${q.id} ${q.kind}${q.slice ? ` ${q.slice}` : ''}: ${String(q.text).replace(/\s+/g, ' ').slice(0, 180)}`;
+  if (process.env.PRODUCER_RUNNER_NOTIFY !== '0') {
+    const title = `producer-runner · ${path.basename(root)}`;
+    const body = `${q.id} ${q.kind}${q.slice ? ` ${q.slice}` : ''}: ${String(q.text).replace(/\s+/g, ' ').slice(0, 180)}`;
+    try {
+      if (process.env.PRODUCER_RUNNER_NOTIFY_CMD) spawnSync(process.env.PRODUCER_RUNNER_NOTIFY_CMD, [title, body], { timeout: 10000 });
+      else if (process.platform === 'darwin') spawnSync('osascript', ['-e', `display notification ${JSON.stringify(body)} with title ${JSON.stringify(title)} sound name "Glass"`], { timeout: 10000 });
+    } catch {
+      /* a missed notification never stops the runner */
+    }
+  }
+  st.setQuestion(root, q.id, { notified: st.now() });
+}
+
+const pidAlive = (pid) => {
   try {
-    if (process.env.PRODUCER_RUNNER_NOTIFY_CMD) spawnSync(process.env.PRODUCER_RUNNER_NOTIFY_CMD, [title, body], { timeout: 10000 });
-    else if (process.platform === 'darwin') spawnSync('osascript', ['-e', `display notification ${JSON.stringify(body)} with title ${JSON.stringify(title)} sound name "Glass"`], { timeout: 10000 });
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err.code === 'EPERM';
+  }
+};
+
+/**
+ * The macOS answer dialog (answer-dialog.mjs), detached so the runner keeps polling: on macOS with the
+ * stock notification, or wherever PRODUCER_RUNNER_OSASCRIPT names a stand-in; PRODUCER_RUNNER_DIALOG=0
+ * turns it off. One per question: a restarted runner opens it again only when the earlier helper
+ * (`dialog_pid`) is gone and the director did not close it with "Later" (`dialog_done`).
+ */
+function openDialog(root, q) {
+  if (process.env.PRODUCER_RUNNER_DIALOG === '0') return;
+  if (!process.env.PRODUCER_RUNNER_OSASCRIPT && (process.platform !== 'darwin' || process.env.PRODUCER_RUNNER_NOTIFY_CMD)) return;
+  const cur = st.readRunner(root).questions.find((x) => x.id === q.id);
+  if (!cur || cur.answer || cur.dialog_done || (cur.dialog_pid && pidAlive(cur.dialog_pid))) return;
+  try {
+    const child = spawn(process.execPath, [DIALOG, '--project', root, '--id', q.id], { detached: true, stdio: 'ignore' });
+    child.on('error', () => {}); // the terminal and `answer` still work
+    child.unref();
+    if (child.pid) st.setQuestion(root, q.id, { dialog_pid: child.pid });
   } catch {
-    /* a missed notification never stops the runner */
+    /* the terminal and `answer` still work */
   }
 }
 
+/**
+ * The runner's own terminal as a way to answer: the question with numbered options on stderr, the
+ * director's number (and a note, when the choice takes one) on stdin. Lines that arrive within
+ * TYPE_AHEAD_MS of the menu were typed before it existed: dropped, never an answer to this question.
+ * → close()
+ */
+function terminalPrompt(root, q) {
+  if (!typing()) return () => {};
+  process.stderr.write(`\n${menu(q)}\n> `);
+  const shown = Date.now();
+  process.stdin.ref?.();
+  const rl = readline.createInterface({ input: process.stdin, terminal: false });
+  let pending = null; // a choice that waits for its required note
+  const record = (choice, text) => {
+    try {
+      submit(root, q.id, choice, text, 'terminal');
+      process.stderr.write(`recorded ${q.id}: ${choice}${text ? ` — ${text}` : ''}\n`);
+    } catch (err) {
+      process.stderr.write(`${err.message}\n> `);
+    }
+  };
+  rl.on('line', (line) => {
+    if (Date.now() - shown < TYPE_AHEAD_MS) return;
+    if (pending) {
+      const choice = pending;
+      pending = null;
+      if (!line.trim()) return process.stderr.write(`no note: "${choice}" not recorded\n> `);
+      return record(choice, line.trim());
+    }
+    const r = parseReply(q, line);
+    if (r.error) return process.stderr.write(`${r.error}\n> `);
+    if (!r.text && textNeed(q, r.choice) === 'required') {
+      pending = r.choice;
+      return process.stderr.write(`note for "${r.choice}": `);
+    }
+    record(r.choice, r.text);
+  });
+  return () => {
+    rl.close();
+    // between questions stdin neither reads (input stays queued, then dropped as typed ahead) nor keeps the process alive
+    process.stdin.pause();
+    process.stdin.unref?.();
+  };
+}
+
 /** Wait for the human's answer: poll the runner file (no model, no tokens). false = stop/pause. */
-function waitForAnswer(root, q) {
+async function waitForAnswer(root, q) {
   say({ waiting: q.id, kind: q.kind, slice: q.slice, text: q.text, options: q.options, answer: `producer-runner answer --id ${q.id} --choice "<option>"` });
   notify(root, q);
-  for (;;) {
-    const c = st.readControl(root);
-    if (c?.cmd === 'stop' || c?.cmd === 'pause') return false;
-    const now = st.readRunner(root).questions.find((x) => x.id === q.id);
-    if (!now || now.answer) return true;
-    sleep(POLL_MS);
+  openDialog(root, q);
+  const close = terminalPrompt(root, q);
+  // a number typed here takes effect at once, not at the next poll of the file
+  const poll = typing() ? Math.min(POLL_MS, 250) : POLL_MS;
+  try {
+    for (;;) {
+      const c = st.readControl(root);
+      if (c?.cmd === 'stop' || c?.cmd === 'pause') return false;
+      const now = st.readRunner(root).questions.find((x) => x.id === q.id);
+      if (!now || now.answer) return true;
+      // a timer, not Atomics.wait: the terminal prompt's stdin events run in between
+      await new Promise((r) => setTimeout(r, poll));
+    }
+  } finally {
+    close();
+  }
+}
+
+/** `answer` with no --choice in a terminal: pick the question (when several wait) and the option by number. */
+async function answerMenu(root, id) {
+  const open = openQuestions(root).filter((q) => !id || q.id === id);
+  if (!open.length) return { none: id ? `${id} is not waiting for an answer` : 'no question is waiting' };
+  const rl = readline.createInterface({ input: process.stdin, output: process.stderr, terminal: false });
+  const lines = rl[Symbol.asyncIterator]();
+  const ask = async (prompt) => {
+    process.stderr.write(prompt);
+    const { value, done } = await lines.next();
+    if (done) throw new Error('no answer given (input closed)');
+    return value.trim();
+  };
+  try {
+    let q = open[0];
+    if (open.length > 1) {
+      process.stderr.write(`${open.map((x, i) => `  ${i + 1}) ${x.id} · ${x.kind}${x.slice ? ` · ${x.slice}` : ''}: ${String(x.text).replace(/\s+/g, ' ').slice(0, 100)}`).join('\n')}\n`);
+      for (;;) {
+        const n = Number(await ask('question number: '));
+        if (Number.isInteger(n) && open[n - 1]) {
+          q = open[n - 1];
+          break;
+        }
+        process.stderr.write(`type a number from 1 to ${open.length}\n`);
+      }
+    }
+    process.stderr.write(`${menu(q)}\n`);
+    for (;;) {
+      const r = parseReply(q, await ask('> '));
+      if (r.error) {
+        process.stderr.write(`${r.error}\n`);
+        continue;
+      }
+      let text = r.text;
+      const need = textNeed(q, r.choice);
+      if (!text && need) text = await ask(need === 'required' ? `note for "${r.choice}": ` : `note for "${r.choice}" (Enter for none): `);
+      const why = answerProblem(q, r.choice, text);
+      if (why) {
+        process.stderr.write(`${why}\n`);
+        continue;
+      }
+      return submit(root, q.id, r.choice, text, 'menu');
+    }
+  } finally {
+    rl.close();
   }
 }
 
@@ -345,7 +500,7 @@ async function start(root, { dryRun: dry, once }) {
     }
     if (open) {
       if (once) return say({ waiting: open.id, kind: open.kind, slice: open.slice, options: open.options });
-      if (!waitForAnswer(root, open)) continue;
+      await waitForAnswer(root, open);
       continue;
     }
 
@@ -412,6 +567,8 @@ async function start(root, { dryRun: dry, once }) {
       project, id, lane,
       autoCommit: String(t.auto_commit ?? project.release.auto_commit ?? 'true') === 'true',
       autoMerge: String(t.auto_merge ?? project.release.auto_merge ?? 'true') === 'true',
+      // the director's standing call: merge with only manual checks left, sign them off before ship
+      manualDefer: String(t.manual_required ?? project.release.manual_required ?? 'ask') === 'defer',
       waitMs: WAIT_MS, idleMs: IDLE_MS, sleep,
     };
     let r;
@@ -462,12 +619,12 @@ async function main() {
     return say({ launched: handle, command: `producer-runner.mjs start --project ${root}` });
   }
   if (cmd === 'answer') {
-    if (!v.id || !v.choice) throw new Error('answer needs --id and --choice');
-    const q = st.readRunner(root).questions.find((x) => x.id === v.id);
-    if (q?.kind === 'fleet_gate' && v.choice === 'answer with --text' && !v.text) throw new Error('this gate needs --text with the decision');
-    if (q?.kind === 'spawn_unconfirmed' && v.choice.startsWith('reattach') && !/^\S+$/.test(v.text || '')) throw new Error('give the terminal handle with --text');
-    if (v.choice === 'send this answer to the lane' && !v.text) throw new Error('give the answer for the lane with --text');
-    return say(st.answer(root, v.id, v.choice, v.text || ''));
+    if (v.choice) {
+      if (!v.id) throw new Error('answer needs --id with --choice');
+      return say(submit(root, v.id, v.choice, v.text || ''));
+    }
+    if (!typing()) throw new Error('answer needs --id and --choice (or run it in a terminal for a numbered menu)');
+    return say(await answerMenu(root, v.id));
   }
   throw new Error('usage: producer-runner.mjs start|resume|status|pause|stop|stop-after <Sxx>|clear|answer|launch|handoff-reset [--project <path>]');
 }

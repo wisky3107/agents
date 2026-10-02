@@ -160,11 +160,83 @@ export function readRunner(root) {
   return readJson(files(root).runner, { slice: null, step: null, questions: [], updated: null });
 }
 
+const LOCK_STALE_MS = 10000; // a writer holds the lock for milliseconds: older means it was killed
+const LOCK_WAIT_MS = 15000;
+const held = new Map(); // root → depth (re-entrant within one process)
+
+/**
+ * The runner file has three writers — the runner, the dialog helper, the `answer` CLI — so every
+ * read-modify-write of it runs under `.cursor/producer-runner.json.lock` (mkdir is atomic): two
+ * answers at once cannot both pass "not answered yet", and a runner write cannot drop an answer.
+ */
+function withRunnerLock(root, fn) {
+  if (held.get(root)) return fn();
+  const dir = `${files(root).runner}.lock`;
+  const token = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  fs.mkdirSync(path.dirname(dir), { recursive: true });
+  const t0 = Date.now();
+  for (;;) {
+    try {
+      fs.mkdirSync(dir);
+      fs.writeFileSync(path.join(dir, 'owner'), token);
+      break;
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err;
+      let age = 0;
+      try {
+        age = Date.now() - fs.statSync(dir).mtimeMs;
+      } catch {
+        continue; // released meanwhile
+      }
+      if (age > LOCK_STALE_MS) {
+        // move it aside under a unique name (atomic): of two writers breaking it, one wins, and a
+        // lock someone just took is never deleted
+        const aside = `${dir}.stale-${token}`;
+        try {
+          fs.renameSync(dir, aside);
+          fs.rmSync(aside, { recursive: true, force: true });
+        } catch {
+          /* another writer moved or released it */
+        }
+      } else if (Date.now() - t0 > LOCK_WAIT_MS) throw new Error(`${dir} is held by another writer`);
+      else Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+    }
+  }
+  held.set(root, 1);
+  try {
+    return fn();
+  } finally {
+    held.delete(root);
+    // only our own lock: a holder paused past LOCK_STALE_MS may have lost it to another writer
+    let owner = null;
+    try {
+      owner = fs.readFileSync(path.join(dir, 'owner'), 'utf8');
+    } catch {
+      /* already gone */
+    }
+    if (owner === token) fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 export function writeRunner(root, patch) {
   excludeOnce(root);
-  const next = { ...readRunner(root), ...patch, updated: now() };
-  writeJson(files(root).runner, next);
-  return next;
+  return withRunnerLock(root, () => {
+    const cur = readRunner(root);
+    const next = { ...cur, ...patch, updated: now() };
+    writeJson(files(root).runner, next);
+    return next;
+  });
+}
+
+/** One read-modify-write of the questions under the lock; fn(r) mutates r.questions and returns its result. */
+function editQuestions(root, fn) {
+  excludeOnce(root);
+  return withRunnerLock(root, () => {
+    const r = readRunner(root);
+    const out = fn(r);
+    writeJson(files(root).runner, { ...r, updated: now() });
+    return out;
+  });
 }
 
 export function readSliceState(root, id) {
@@ -196,6 +268,41 @@ export function archiveSliceState(root, id) {
   return moved;
 }
 
+/**
+ * The newest review verdict file of an evidence dir: review.md, or review-r<N>.md when a fleet keeps
+ * one file per round (pilot 1: rounds 2–3 went to review-r2/-r3.md while review.md kept round 1).
+ * Equal mtimes → review.md.
+ */
+export function reviewFile(dir) {
+  return reviewFiles(dir).verdict;
+}
+
+/**
+ * → { verdict, lastRound }: lastRound = the highest review-r<N>.md (null if none); verdict = review.md
+ * or lastRound, whichever was written later (equal → review.md). Round numbers order the rounds, so a
+ * checkout or restore that touches mtimes cannot put an old round ahead of a newer one.
+ */
+export function reviewFiles(dir) {
+  let names = [];
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    /* no evidence dir yet */
+  }
+  const rounds = names.map((f) => f.match(/^review-r(\d+)\.md$/)).filter(Boolean).sort((a, b) => Number(b[1]) - Number(a[1]));
+  const lastRound = rounds.length ? path.join(dir, rounds[0][0]) : null;
+  const main = path.join(dir, 'review.md');
+  const t = (f) => {
+    try {
+      return fs.statSync(f).mtimeMs;
+    } catch {
+      return -1;
+    }
+  };
+  const verdict = !lastRound ? main : t(main) >= t(lastRound) ? main : lastRound;
+  return { verdict, lastRound };
+}
+
 /** One line per event in producer-log.md — the SKILL's per-slice log, append only. */
 export function log(root, id, line) {
   const f = sliceFiles(root, id).log;
@@ -208,23 +315,27 @@ export function log(root, id, line) {
  * the choice once; the runner applies it once (`applied`).
  */
 export function ask(root, q) {
-  const r = readRunner(root);
-  const existing = r.questions.find((x) => x.key === q.key && !x.applied);
-  if (existing) return { question: existing, isNew: false };
-  const question = { id: `q${r.questions.length + 1}`, asked_at: now(), answer: null, ...q };
-  writeRunner(root, { questions: [...r.questions, question] });
-  return { question, isNew: true };
+  return editQuestions(root, (r) => {
+    const existing = r.questions.find((x) => x.key === q.key && !x.applied);
+    if (existing) return { question: existing, isNew: false };
+    const question = { id: `q${r.questions.length + 1}`, asked_at: now(), answer: null, ...q };
+    r.questions.push(question);
+    return { question, isNew: true };
+  });
 }
 
-export function answer(root, id, choice, text = '', meta = { by: 'human' }) {
-  const r = readRunner(root);
-  const q = r.questions.find((x) => x.id === id);
-  if (!q) throw new Error(`no question ${id}`);
-  if (q.answer) throw new Error(`${id} is already answered (${q.answer.choice})`);
-  if (!q.options.includes(choice)) throw new Error(`choice must be one of: ${q.options.join(', ')}`);
-  q.answer = { choice, text, at: now(), ...meta };
-  writeRunner(root, { questions: r.questions });
-  return q;
+/** `check(q)` → an error message refuses the answer (checked under the lock, against the file as it is). */
+export function answer(root, id, choice, text = '', meta = { by: 'human' }, check = null) {
+  return editQuestions(root, (r) => {
+    const q = r.questions.find((x) => x.id === id);
+    if (!q) throw new Error(`no question ${id}`);
+    if (q.answer) throw new Error(`${id} is already answered (${q.answer.choice})`);
+    if (!q.options.includes(choice)) throw new Error(`choice must be one of: ${q.options.join(', ')}`);
+    const why = check?.(q);
+    if (why) throw new Error(why);
+    q.answer = { choice, text, at: now(), ...meta };
+    return q;
+  });
 }
 
 /**
@@ -232,28 +343,28 @@ export function answer(root, id, choice, text = '', meta = { by: 'human' }) {
  * the judge ran wins: their answer stays, the verdict is only noted. → the question
  */
 export function judgeVerdict(root, id, v) {
-  const r = readRunner(root);
-  const q = r.questions.find((x) => x.id === id);
-  if (!q) throw new Error(`no question ${id}`);
-  q.judge = { at: now(), ...v, ...(q.answer && v.choice ? { superseded: 'the director answered first' } : {}) };
-  if (v.choice && !q.answer) q.answer = { choice: v.choice, text: v.text || '', at: now(), by: 'judge', reason: v.reason, ...(v.quote ? { quote: v.quote } : {}) };
-  writeRunner(root, { questions: r.questions });
-  return q;
+  return editQuestions(root, (r) => {
+    const q = r.questions.find((x) => x.id === id);
+    if (!q) throw new Error(`no question ${id}`);
+    q.judge = { at: now(), ...v, ...(q.answer && v.choice ? { superseded: 'the director answered first' } : {}) };
+    if (v.choice && !q.answer) q.answer = { choice: v.choice, text: v.text || '', at: now(), by: 'judge', reason: v.reason, ...(v.quote ? { quote: v.quote } : {}) };
+    return q;
+  });
 }
 
 /** Merge fields into one question. */
 export function setQuestion(root, id, patch) {
-  const r = readRunner(root);
-  const q = r.questions.find((x) => x.id === id);
-  if (!q) throw new Error(`no question ${id}`);
-  Object.assign(q, patch);
-  writeRunner(root, { questions: r.questions });
-  return q;
+  return editQuestions(root, (r) => {
+    const q = r.questions.find((x) => x.id === id);
+    if (!q) throw new Error(`no question ${id}`);
+    Object.assign(q, patch);
+    return q;
+  });
 }
 
 export function markApplied(root, id) {
-  const r = readRunner(root);
-  const q = r.questions.find((x) => x.id === id);
-  if (q) q.applied = now();
-  writeRunner(root, { questions: r.questions });
+  editQuestions(root, (r) => {
+    const q = r.questions.find((x) => x.id === id);
+    if (q) q.applied = now();
+  });
 }

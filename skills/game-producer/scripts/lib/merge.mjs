@@ -18,6 +18,30 @@ import * as st from './state.mjs';
 import * as io from './orca.mjs';
 
 const RUNNER_FILES = ['producer-state.json', 'producer-log.md', 'merge-journal.json', 'wait-*.json', '*.prev-*.json'];
+const RUNNER_FILE_RE = /^(?:producer-state\.json|producer-log\.md|merge-journal\.json|wait-.*\.json|.*\.prev-.*\.json)$/;
+
+/** The slice's evidence, worktree → main (no PNGs, no runner files). → null | error text */
+function copyEvidence(root, wt, id) {
+  const from = path.join(wt, '.cursor', 'evidence', 'tasks', `T-${id}`) + '/';
+  const to = path.join(root, '.cursor', 'evidence', 'tasks', `T-${id}`) + '/';
+  if (!fs.existsSync(from)) return null;
+  fs.mkdirSync(to, { recursive: true });
+  const r = spawnSync('rsync', ['-a', '--exclude', '*.png', ...RUNNER_FILES.flatMap((x) => ['--exclude', x]), from, to], { encoding: 'utf8' });
+  return r.status === 0 ? null : (r.stderr || '').trim().slice(-200) || `rsync exit ${r.status}`;
+}
+
+/** Every path `git status` reports in a checkout (untracked files listed one by one; a rename gives both). */
+function changedPaths(wt) {
+  const entries = git(wt, ['status', '--porcelain', '-z', '--untracked-files=all']).stdout.split('\0');
+  const out = [];
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    if (!e) continue;
+    out.push(e.slice(3));
+    if (e[0] === 'R' || e[0] === 'C') out.push(entries[++i]);
+  }
+  return out;
+}
 export const MERGE_KINDS = new Set(['evidence_copy_failed', 'editors_open', 'main_detached', 'main_branch', 'merge_blocked', 'merge_conflict',
   'merge_source_missing', 'commit_not_on_main', 'reopen_failed', 'verify_manual', 'verify_failed', 'verifier_hung', 'merge_by_director']);
 const EDITORS_NOTE = ' (both Editors are closed: reopen main with scripts/open-editor.sh if you stop here)';
@@ -44,13 +68,13 @@ export const currentBranch = (root) => {
 };
 const slug = (root) => path.basename(root).replace(/^cc4?-/, '');
 
-/** `budget_bump: 650→680` (or `->`) in the review or the integration notes; the last one wins. */
+/** `budget_bump: 650→680` (or `->`) in the integration notes or the newest review; the last one wins. */
 function budgetBump(dir) {
   let found = null;
-  for (const f of ['integration-notes.md', 'review.md']) {
+  for (const f of [path.join(dir, 'integration-notes.md'), st.reviewFile(dir)]) {
     let text = '';
     try {
-      text = fs.readFileSync(path.join(dir, f), 'utf8');
+      text = fs.readFileSync(f, 'utf8');
     } catch {
       continue;
     }
@@ -386,6 +410,7 @@ function record(ctx, s, j) {
     j.steps?.harvest?.failed ? 'memory harvest failed' : null,
     j.steps?.evidence?.not_copied ? 'evidence=not copied' : null,
     j.steps?.verify?.status && !['verified', undefined].includes(j.steps.verify.status) ? `verify=${j.steps.verify.status}` : null,
+    s.manual_deferred?.length ? `manual_deferred=${s.manual_deferred.length}` : null,
   ].filter(Boolean);
   const bump = j.bump ? `${j.bump.from}→${j.bump.to}` : 'none';
   writeSliceNote(loadProject(root), id, `- ${id} ${ctx.lane} merged fix_rounds=${j.fix_rounds ?? '?'} bump=${bump} commit=${String(j.sha).slice(0, 7)} merged=y ${blockers.join('; ') || '-'}`);
@@ -475,18 +500,13 @@ export function mergeStep(ctx, s, kit) {
       // after the merge and before any rm: copy over whatever the commit did not carry (gitignored evidence)
       if (!j.wt || !fs.existsSync(j.wt)) {
         // removed by hand before the runner copied it: say so in the Notes line unless main has it anyway
-        const inMain = fs.existsSync(path.join(root, evidenceRel(id), 'review.md'));
+        const inMain = fs.existsSync(st.reviewFile(path.join(root, evidenceRel(id))));
         stepDone(root, id, 'evidence', { not_copied: !inMain, note: inMain ? 'worktree gone; main has the evidence' : 'worktree gone before the copy: evidence not copied' });
         return null;
       }
-      const from = path.join(j.wt, '.cursor', 'evidence', 'tasks', `T-${id}`) + '/';
-      const to = path.join(root, '.cursor', 'evidence', 'tasks', `T-${id}`) + '/';
-      if (fs.existsSync(from)) {
-        fs.mkdirSync(to, { recursive: true });
-        const r = spawnSync('rsync', ['-a', '--exclude', '*.png', ...RUNNER_FILES.flatMap((x) => ['--exclude', x]), from, to], { encoding: 'utf8' });
-        if (r.status !== 0) return kit.ask(s, 'evidence_copy_failed', `rsync of the T-${id} evidence failed: ${(r.stderr || '').trim().slice(-200)}`, ['copied by hand, continue', 'mark blocked', 'stop']);
-      }
-      stepDone(root, id, 'evidence', { note: fs.existsSync(from) ? 'rsync worktree → main (no PNGs)' : 'the worktree has no evidence dir' });
+      const err = copyEvidence(root, j.wt, id);
+      if (err) return kit.ask(s, 'evidence_copy_failed', `rsync of the T-${id} evidence failed: ${err}`, ['copied by hand, continue', 'mark blocked', 'stop']);
+      stepDone(root, id, 'evidence', { note: fs.existsSync(path.join(j.wt, '.cursor', 'evidence', 'tasks', `T-${id}`)) ? 'rsync worktree → main (no PNGs)' : 'the worktree has no evidence dir' });
       return null;
     }
 
@@ -503,12 +523,32 @@ export function mergeStep(ctx, s, kit) {
       }
       let kept = j.steps.harvest?.failed ? 'harvest_failed' : null;
       if (!kept && !isAncestor(root, j.sha)) kept = 'commit_not_in_main'; // never: merge is done; belt and braces
-      if (!kept && git(j.wt, ['status', '--porcelain']).stdout.trim()) kept = 'dirty';
+      // the fleet commits its evidence dir and then rewrites HANDOFF.json (committed + sha), so a fleet
+      // worktree is never clean (pilot 1): changes only under this slice's evidence dir, already copied
+      // to main by the evidence step, may go; anything else keeps the worktree
+      let force = false;
       if (!kept) {
-        const r = io.orca(['worktree', 'rm', '--worktree', `path:${j.wt}`, '--run-hooks']);
+        const changed = changedPaths(j.wt);
+        if (changed.length) {
+          const ev = `${git(j.wt, ['rev-parse', '--show-prefix']).stdout.trim()}.cursor/evidence/tasks/T-${id}/`;
+          // only what copyEvidence carries: a PNG or a runner file there would be lost by --force
+          const carried = (f) => f.startsWith(ev) && !/\.png$/i.test(f) && !RUNNER_FILE_RE.test(path.basename(f));
+          if (j.steps.evidence?.not_copied || !changed.every(carried)) kept = 'dirty';
+          else force = true;
+        }
+      }
+      if (!kept) {
+        // copy again right before the removal: a file written after the evidence step (a resume hours
+        // later, the coordinator still writing) reaches main too — ignored files go with the worktree
+        const err = copyEvidence(root, j.wt, id);
+        if (err) kept = `evidence copy failed: ${err}`;
+      }
+      if (!kept) {
+        const r = io.orca(['worktree', 'rm', '--worktree', `path:${j.wt}`, '--run-hooks', ...(force ? ['--force'] : [])]);
         if (r.status !== 0 || r.parsed?.ok === false) kept = `rm failed: ${r.parsed?.error?.code || r.parsed?.error?.message || r.status}`;
       }
-      stepDone(root, id, 'worktree_rm', kept ? { kept, note: `worktree kept (${kept})` } : { note: 'removed (branch kept)' });
+      stepDone(root, id, 'worktree_rm', kept ? { kept, note: `worktree kept (${kept})` }
+        : { note: force ? 'removed: only its evidence files had changed, copied to main first (branch kept)' : 'removed (branch kept)' });
       return null;
     }
 

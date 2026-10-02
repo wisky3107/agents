@@ -114,13 +114,13 @@ if (cmd === 'terminal wait') {
   out({ ok: true, result: { wait: { satisfied: false } } });
 }
 if (cmd === 'worktree rm') {
-  // the real one runs the archive hook and removes the checkout; here: git worktree remove (no --force)
+  // the real one runs the archive hook and removes the checkout; here: git worktree remove (--force passed on)
   const wt = arg('--worktree').replace(/^path:/, '');
   log('rm.log', { wt, phase: 'start' });
   if (fs.existsSync(path.join(D, 'worktree-rm-sleep'))) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(fs.readFileSync(path.join(D, 'worktree-rm-sleep'), 'utf8')));
   if (fs.existsSync(path.join(D, 'worktree-rm-fail'))) out({ ok: false, error: { code: 'worktree_archive_hook_failed' } }, 1);
-  const r = require('child_process').spawnSync('git', ['-C', P, 'worktree', 'remove', wt], { encoding: 'utf8' });
-  log('rm.log', { wt, phase: 'done', status: r.status });
+  const r = require('child_process').spawnSync('git', ['-C', P, 'worktree', 'remove', ...(a.includes('--force') ? ['--force'] : []), wt], { encoding: 'utf8' });
+  log('rm.log', { wt, phase: 'done', status: r.status, ...(a.includes('--force') ? { force: true } : {}) });
   out(r.status === 0 ? { ok: true, result: { removed: wt } } : { ok: false, error: { code: 'worktree_remove_failed', message: r.stderr } }, r.status === 0 ? 0 : 1);
 }
 if (cmd === 'terminal create') {
@@ -130,6 +130,11 @@ if (cmd === 'terminal create') {
 if (cmd === 'terminal send') { log('sends.log', { to: arg('--terminal'), text: arg('--text') }); out({ ok: true }); }
 if (cmd === 'terminal close') { log('closes.log', { handle: arg('--terminal') }); out({ ok: true }); }
 if (cmd === 'terminal list') out({ ok: true, result: { terminals: [] } });
+// a handle not in dead.json is shown (dead ones were answered stale above); orphaned.json: closed but still shown
+if (cmd === 'terminal show') {
+  const orphan = read('orphaned.json', []).includes(arg('--terminal'));
+  out({ ok: true, result: { terminal: { handle: arg('--terminal'), connected: !orphan, orphaned: orphan } } });
+}
 if (cmd === 'orchestration run-list') out({ ok: true, result: { runs: read('runs.json', []) } });
 if (cmd === 'orchestration run-show') out({ ok: true, result: { run: read('runs.json', []).find((r) => r.id === arg('--id')) || null } });
 if (cmd === 'orchestration gate-list') out({ ok: true, result: { gates: read('gates.json', []) } });
@@ -219,7 +224,7 @@ export function fakes() {
   };
 }
 
-const env = (root, fake) => ({
+export const env = (root, fake) => ({
   ...process.env,
   PATH: `${fake.dir}:${process.env.PATH}`,
   FAKE_DIR: fake.dir,
@@ -228,6 +233,8 @@ const env = (root, fake) => ({
   PRODUCER_RUNNER_JUDGE_CMD: path.join(fake.dir, 'judge'),
   PRODUCER_RUNNER_CLAUDE_SETTINGS: path.join(fake.dir, 'claude-settings.json'),
   PRODUCER_RUNNER_NOTIFY_CMD: path.join(fake.dir, 'notify'),
+  PRODUCER_RUNNER_DIALOG: '0', // never a real dialog; tests that want one set it with a fake osascript
+  PRODUCER_RUNNER_TTY: '0', // no terminal prompt unless a test pipes one
   PRODUCER_RUNNER_CURSOR: 'on', // no real cursor-agent probe in tests
   CC_SPAWN_REGISTRY: path.join(fake.dir, 'registry.jsonl'),
   ORCA_MEMORY_BIN: path.join(fake.dir, 'no-orca-memory'),
@@ -253,15 +260,16 @@ export async function until(file, ms = 20000) {
 }
 
 /**
- * Run the runner CLI against a project with the fakes; a trailing `{ env }` adds variables.
- * → { status, out: [json lines], stderr }
+ * Run the runner CLI against a project with the fakes; a trailing `{ env, input }` adds variables
+ * and stdin. → { status, out: [json lines], stderr }
  */
 export function runner(root, fake, ...args) {
-  const extra = args.length && typeof args[args.length - 1] === 'object' ? args.pop().env || {} : {};
+  const opts = args.length && typeof args[args.length - 1] === 'object' ? args.pop() : {};
   const r = spawnSync(process.execPath, [RUNNER, ...args, '--project', root], {
     encoding: 'utf8',
     timeout: 90000,
-    env: { ...env(root, fake), ...extra },
+    env: { ...env(root, fake), ...(opts.env || {}) },
+    ...(opts.input !== undefined ? { input: opts.input } : {}),
   });
   const out = (r.stdout || '').trim().split('\n').filter(Boolean).map((l) => {
     try {

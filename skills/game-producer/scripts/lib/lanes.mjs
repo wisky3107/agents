@@ -27,7 +27,14 @@ const ALIASES = { ready_for_independent_review: 'ready_for_review', review_ready
 const PROGRESS = /^(?:in[_ -]?progress|running|started|scanning|planning|implementing|integrating|reviewing|verifying|fixing|dispatched|dispatching)$/;
 export const MAX_FIX_ROUNDS = 2;
 export const COMMIT_TEXT = 'approved — commit';
+// the fleet prompt commits on an exact match of this line only (runner and LLM producer both send it),
+// so a bare "approved — commit" typed into the coordinator cannot skip Step 2d (pilot 1); a coordinator
+// spawned with an older prompt still finds "approved — commit" in it
+export const FLEET_COMMIT_TEXT = 'approved — commit (producer: Step 2d passed)';
+const commitText = (ctx) => (ctx.lane === 'fleet' ? FLEET_COMMIT_TEXT : COMMIT_TEXT);
 const GATE_PATIENCE = 10; // idle pauses after relaying a gate decision before asking again
+const GATE_SETTLE = 3; // idle pauses after a relay before another pending gate becomes a question
+const MISSING_RECHECKS = 5; // "terminal missing" from orca-wait while `terminal show` finds it: ask after this many
 const BAD_JSON_PATIENCE = 3; // a HANDOFF caught mid-write parses on the next look
 export const FALLBACK_REVIEWER = 'cursor --model auto';
 export const STALL_NUDGE =
@@ -238,6 +245,8 @@ const readJsonFile = (f) => {
     return null;
   }
 };
+const reviewFile = st.reviewFile;
+
 /** Last line of review.md as a verdict: `**APPROVED**`, `_APPROVED_.` and `APPROVED` are the same. */
 const lastLine = (f) => {
   try {
@@ -277,18 +286,54 @@ const truthy = (x) =>
   (typeof x === 'string' && !/^(|false|none|no|0)$/i.test(x.trim())) || (x && typeof x === 'object' && !Array.isArray(x) && Object.keys(x).length > 0);
 
 /**
- * Step 2d APPROVED: review.md ends APPROVED, runtime-state.json present without manual_required,
- * evidence files present. → null | { code, detail }.
+ * What a manual_required verdict leaves to a human, as readable lines: the contents of `manual_required`
+ * fields (a string, list items, or `key: value` of an object), else the path of a "manual_required" value.
  */
-function approvalProblem(dir, required, verdictAccepted = false) {
-  const verdict = lastLine(path.join(dir, 'review.md'));
-  if (verdict !== 'APPROVED' && !verdictAccepted) return { code: 'approval_evidence', detail: `review.md ends "${verdict.slice(0, 80) || 'missing'}", not APPROVED` };
+export function manualItems(v, at = '') {
+  const show = (x) => (typeof x === 'string' ? x : JSON.stringify(x));
+  if (typeof v === 'string') return v.trim().toLowerCase() === 'manual_required' ? [at || 'manual_required'] : [];
+  if (Array.isArray(v)) return v.flatMap((x, i) => manualItems(x, `${at}[${i}]`));
+  if (!v || typeof v !== 'object') return [];
+  return Object.entries(v).flatMap(([k, x]) => {
+    if (k.toLowerCase() !== 'manual_required') return manualItems(x, at ? `${at}.${k}` : k);
+    if (!truthy(x)) return [];
+    if (Array.isArray(x)) return x.map(show);
+    if (x && typeof x === 'object') return Object.entries(x).map(([kk, vv]) => `${kk}: ${show(vv)}`);
+    return [typeof x === 'string' ? x : `${at ? `${at}.` : ''}manual_required: ${JSON.stringify(x)} (no details)`];
+  });
+}
+
+/**
+ * Step 2d APPROVED: the newest review file ends APPROVED, runtime-state.json present without
+ * manual_required, evidence files present. → [{ code, detail }] in asking order (empty = approved).
+ */
+function approvalProblems(dir, required, verdictAccepted = false, relayedGates = []) {
+  const out = [];
+  const { verdict: file, lastRound } = st.reviewFiles(dir);
+  const verdict = lastLine(file);
+  if (verdict !== 'APPROVED' && !verdictAccepted) out.push({ code: 'approval_evidence', detail: `${path.basename(file)} ends "${verdict.slice(0, 80) || 'missing'}", not APPROVED` });
+  // a final review.md that turns the last round's CHANGES_REQUESTED into APPROVED must rest on a
+  // director gate decision the runner relayed (fleet prompt rule 9), not on the coordinator's say-so
+  else if (!verdictAccepted && lastRound && file !== lastRound && lastLine(lastRound) === 'CHANGES_REQUESTED') {
+    let text = '';
+    try {
+      text = fs.readFileSync(file, 'utf8');
+    } catch {
+      /* unreadable: no gate named */
+    }
+    if (!relayedGates.some((g) => text.includes(g))) {
+      out.push({
+        code: 'verdict_override',
+        detail: `review.md ends APPROVED but the last review round (${path.basename(lastRound)}) ended CHANGES_REQUESTED and review.md names no gate decision the director sent (${relayedGates.join(', ') || 'none sent'})`,
+      });
+    }
+  }
   const runtime = readJsonFile(path.join(dir, 'runtime-state.json'));
-  if (!runtime) return { code: 'approval_evidence', detail: 'runtime-state.json is missing or unreadable' };
-  if (manualRequired(runtime)) return { code: 'manual_required', detail: 'runtime-state.json says manual_required (runtime not verified)' };
+  if (!runtime) out.push({ code: 'approval_evidence', detail: 'runtime-state.json is missing or unreadable' });
+  else if (manualRequired(runtime)) out.push({ code: 'manual_required', detail: 'runtime-state.json says manual_required (runtime not verified)', runtime });
   const missing = required.filter((f) => !fs.existsSync(path.join(dir, f)));
-  if (missing.length) return { code: 'approval_evidence', detail: `evidence missing: ${missing.join(', ')}` };
-  return null;
+  if (missing.length) out.push({ code: 'approval_evidence', detail: `evidence missing: ${missing.join(', ')}` });
+  return out;
 }
 
 /** Fleet HANDOFF lives in the feature worktree once the coordinator has created it. */
@@ -611,12 +656,13 @@ function singleStep(ctx, s, phase) {
     if (h.fresh && !h.ok) return badHandoff(root, id, s, handoff);
     parsedAgain(root, id, s, h);
     const obs = (code) => `${code}@${h.mtime || 0}`;
-    const verdict = lastLine(path.join(evidence, 'review.md'));
+    const verdictFile = reviewFile(evidence);
+    const verdict = lastLine(verdictFile);
     if (h.status === 'infra_blocked') return infraBlocked(ctx, s);
     if (h.status === 'approved' || h.status === 'changes_requested') {
       const want = h.status === 'approved' ? 'APPROVED' : 'CHANGES_REQUESTED';
       if (verdict !== want) {
-        return ask(s, 'verdict_mismatch', `HANDOFF says ${h.status} but review.md ends "${verdict.slice(0, 80)}"`, ['treat as approved', 'treat as changes_requested', 'mark blocked', 'stop'], { obs: obs('verdict_mismatch') });
+        return ask(s, 'verdict_mismatch', `HANDOFF says ${h.status} but ${path.basename(verdictFile)} ends "${verdict.slice(0, 80)}"`, ['treat as approved', 'treat as changes_requested', 'mark blocked', 'stop'], { obs: obs('verdict_mismatch') });
       }
       io.closeTerminal(s.reviewer);
       if (h.status === 'approved') {
@@ -625,7 +671,7 @@ function singleStep(ctx, s, phase) {
       }
       const rounds = s.fix_rounds || 0;
       if (rounds >= (s.max_fix_rounds || MAX_FIX_ROUNDS)) {
-        return ask(s, 'changes_after_rounds', `CHANGES_REQUESTED after ${rounds} fix rounds (${path.join(evidence, 'review.md')})`, ['one more fix round', 'mark blocked', 'stop'], { obs: obs('changes_after_rounds') });
+        return ask(s, 'changes_after_rounds', `CHANGES_REQUESTED after ${rounds} fix rounds (${verdictFile})`, ['one more fix round', 'mark blocked', 'stop'], { obs: obs('changes_after_rounds') });
       }
       fixRound(ctx, s);
       return null;
@@ -682,13 +728,26 @@ function infraBlocked(ctx, s) {
 }
 
 function accept(ctx, s, dir, required, manualOptions) {
-  const p = approvalProblem(dir, required, Boolean(s.verdict_accepted));
+  const problems = approvalProblems(dir, required, Boolean(s.verdict_accepted), s.relayed_gates || []);
+  // under defer a manual check is not a blocker: ask about the real one first
+  const p = (ctx.manualDefer && problems.find((x) => x.code !== 'manual_required')) || problems[0];
   if (!p) {
     setPhase(ctx.project.root, ctx.id, 'commit');
     return null;
   }
+  // release.manual_required: defer — APPROVED with every file present and only manual checks left:
+  // merge, and keep the checks for the director's sign-off before ship (manual-deferred.json, status)
+  if (problems.length === 1 && p.code === 'manual_required' && ctx.manualDefer) {
+    const handoff = readJsonFile(path.join(dir, 'HANDOFF.json'));
+    const items = [...new Set([...manualItems(p.runtime), ...manualItems({ manual_required: handoff?.manual_required })])];
+    st.writeJson(path.join(dir, 'manual-deferred.json'), { slice: ctx.id, at: st.now(), items, from: 'runtime-state.json + HANDOFF.json', policy: 'release.manual_required: defer' });
+    st.log(ctx.project.root, ctx.id, `manual_required deferred (${items.length}): ${items.join(' | ').slice(0, 300)}`);
+    setPhase(ctx.project.root, ctx.id, 'commit', { manual_deferred: items });
+    return null;
+  }
   // SKILL Step 2d: never commit or merge on manual_required or missing evidence
   if (p.code === 'manual_required') return ask(s, 'manual_required', `${p.detail} (${dir})`, manualOptions);
+  if (p.code === 'verdict_override') return ask(s, 'verdict_override', `${p.detail} (${dir})`, ['treat as approved', 'evidence fixed, check again', 'mark blocked', 'stop']);
   return ask(s, 'approval_evidence', `not APPROVED by Step 2d: ${p.detail} (${dir})`, ['evidence fixed, check again', 'mark blocked', 'stop']);
 }
 
@@ -697,7 +756,7 @@ const laneHandoff = (ctx) => (ctx.lane === 'fleet' ? fleetHandoff(ctx.project.ro
 function commit(ctx, s, handle) {
   if (!ctx.autoCommit) return ask(s, 'commit_approval', 'auto_commit=false: approve the commit of this slice', ['commit', 'mark blocked', 'stop']);
   // only a HANDOFF written after the commit request can say committed
-  sendOnce(ctx, 'commit', handle, COMMIT_TEXT, { phase: 'committing', commit_base: mtime(laneHandoff(ctx)) });
+  sendOnce(ctx, 'commit', handle, commitText(ctx), { phase: 'committing', commit_base: mtime(laneHandoff(ctx)) });
   return null;
 }
 
@@ -713,7 +772,7 @@ function committing(ctx, s, w, h) {
   const lane = ctx.lane === 'fleet' ? 'coordinator' : 'writer';
   if (h.status === 'blocked') return ask(s, 'lane_blocked', `commit blocked: ${h.detail || 'no detail'}`, LANE_BLOCKED_OPTIONS, { obs: `lane_blocked@${h.mtime}` });
   if (w.event === 'terminal-missing' || (w.event === 'idle' && w.idle_streak >= 3)) {
-    return ask(s, 'commit_stalled', `${lane} ${w.handle || ''} is ${w.event} after "${COMMIT_TEXT}"; HANDOFF is ${h.raw || 'missing'}${h.status === 'committed' ? ' without a sha' : ''}`,
+    return ask(s, 'commit_stalled', `${lane} ${w.handle || ''} is ${w.event} after "${commitText(ctx)}"; HANDOFF is ${h.raw || 'missing'}${h.status === 'committed' ? ' without a sha' : ''}`,
       ['resend commit', 'mark blocked', 'stop'], { obs: `commit_stalled@${h.mtime || 0}:${w.handle}` });
   }
   return w.event === 'idle' ? PAUSE : null;
@@ -766,6 +825,12 @@ function fleetStep(ctx, s, phase) {
   if (w.event === 'gate') {
     const relayed = s.relayed_gates || [];
     const open = w.pending_gates.filter((g) => !relayed.includes(g.id));
+    // just after a relay the coordinator is still acting on it: a gate it opened meanwhile may be the
+    // same decision and get resolved by it (pilot 1: q6 was asked 1 s after q5's relay, then resolved)
+    if (open.length && s.gate_settle && (s.gate_waits || 0) < GATE_SETTLE) {
+      st.writeSliceState(root, id, { gate_waits: (s.gate_waits || 0) + 1 });
+      return PAUSE;
+    }
     if (open.length) {
       const g = open[0];
       let options = g.options;
@@ -775,8 +840,12 @@ function fleetStep(ctx, s, phase) {
         options = null;
       }
       const choices = Array.isArray(options) && options.length ? options.map(String) : ['answer with --text'];
+      // every pending gate in one question; the decision is for the first, and the coordinator (who owns
+      // its gates) applies it to any other that asks the same thing
+      const also = open.slice(1).map((x) => x.id);
+      const others = open.slice(1).map((x) => ` | ${x.id}: ${oneLine(x.question).slice(0, 300)}`).join('');
       // the producer never resolves a lane's gate: the human's choice goes to the coordinator as text
-      return ask(s, 'fleet_gate', `fleet gate ${g.id}: ${g.question}`, [...choices, 'stop'], { ref: g.id });
+      return ask(s, 'fleet_gate', `fleet gate ${g.id}${also.length ? ` (also pending: ${also.join(', ')})` : ''}: ${g.question}${others}`, [...choices, 'stop'], { ref: g.id, also });
     }
     const waits = (s.gate_waits || 0) + 1;
     st.writeSliceState(root, id, { gate_waits: waits });
@@ -784,11 +853,24 @@ function fleetStep(ctx, s, phase) {
     const ids = w.pending_gates.map((g) => g.id).join(',');
     return ask(s, 'gate_unresolved', `gate ${ids} still pending after the decision was sent`, ['continue waiting', 'stop'], { obs: `gate_unresolved@${ids}` });
   }
-  if (s.gate_waits) st.writeSliceState(root, id, { gate_waits: 0 });
+  if (s.gate_waits || s.gate_settle) st.writeSliceState(root, id, { gate_waits: 0, gate_settle: false });
+  if (s.missing_rechecks && w.event !== 'terminal-missing') st.writeSliceState(root, id, { missing_rechecks: 0 });
 
-  const missing = () =>
+  const missing = () => {
+    // orca-wait's "missing" can be a passing `terminal wait` error (pilot 1, q3): the human is asked
+    // only when Orca no longer shows the terminal, or orca-wait keeps saying so
+    const alive = io.terminalAlive(coordinator);
+    if (alive === null) return orcaError(root, id, s, { error: `orca-wait reported ${coordinator} missing and \`terminal show\` did not answer` });
+    const rechecks = (s.missing_rechecks || 0) + 1;
+    if (alive && rechecks < MISSING_RECHECKS) {
+      st.writeSliceState(root, id, { missing_rechecks: rechecks });
+      st.log(root, id, `orca-wait reported ${coordinator} missing but terminal show finds it (${rechecks}/${MISSING_RECHECKS}): waiting on`);
+      return PAUSE;
+    }
     // a fleet coordinator is never respawned: a replacement needs a run-use takeover (the human's call)
-    ask(s, 'coordinator_missing', `fleet coordinator ${coordinator} is gone${run ? ` (Run ${run})` : ' and no Run exists yet'}`, ['taken over, continue', 'mark blocked', 'stop'], { obs: `coordinator_missing@${coordinator}` });
+    const why = alive ? ` — orca-wait reported it missing ${rechecks} times in a row although terminal show still finds it` : '';
+    return ask(s, 'coordinator_missing', `fleet coordinator ${coordinator} is gone${run ? ` (Run ${run})` : ' and no Run exists yet'}${why}`, ['taken over, continue', 'mark blocked', 'stop'], { obs: `coordinator_missing@${coordinator}` });
+  };
   if (phase === 'committing') {
     const c = readHandoff(handoff, s.commit_base);
     if (w.event === 'terminal-missing' && !(c.status === 'committed' && c.sha)) return missing();
@@ -863,10 +945,10 @@ export function applyAnswer(ctx, q) {
     case 'unknown_status:treat as offer_commit':
       return setPhase(root, id, 'accept');
     case 'commit_approval:commit':
-      return sendOnce(ctx, 'commit', laneHandle, COMMIT_TEXT, { phase: 'committing', commit_base: mtime(laneHandoff(ctx)) });
+      return sendOnce(ctx, 'commit', laneHandle, commitText(ctx), { phase: 'committing', commit_base: mtime(laneHandoff(ctx)) });
     case 'commit_stalled:resend commit':
       ack();
-      return sendOnce(ctx, `commit:${q.id}`, laneHandle, COMMIT_TEXT);
+      return sendOnce(ctx, `commit:${q.id}`, laneHandle, commitText(ctx));
     case 'lane_hung:spawn another resume lane':
       return resumeWriter(ctx, s, 'stopped (human: another resume lane)');
     case 'reviewer_hung:spawn a fresh reviewer':
@@ -877,7 +959,11 @@ export function applyAnswer(ctx, q) {
       return setPhase(root, id, 'spawn-reviewer', { reviewer: null });
     case 'approval_evidence:evidence fixed, check again':
     case 'manual_required:evidence fixed, check again':
+    case 'verdict_override:evidence fixed, check again':
       return setPhase(root, id, 'accept');
+    case 'verdict_override:treat as approved':
+      // the director read both verdicts: accept still checks runtime-state and the evidence files
+      return setPhase(root, id, 'accept', { verdict_accepted: true });
     case 'orca_error:retry':
       return st.writeSliceState(root, id, { orca_errors: 0 });
     case 'spawn_unconfirmed:no lane terminal exists, spawn it':
@@ -923,8 +1009,13 @@ export function applyAnswer(ctx, q) {
         const decision = oneLine(choice === 'answer with --text' ? q.answer.text : `${choice}${note}`);
         if (!decision) throw new Error('this gate needs --text with the decision');
         const who = q.answer.by === 'judge' ? `Decision for gate ${q.ref} (producer judge, per the contract line "${oneLine(q.answer.quote)}")` : `Director decision for gate ${q.ref}`;
-        return sendOnce(ctx, `gate:${q.ref}:${q.id}`, COORDINATOR, `${who}: ${decision}. Resolve your gate with it and continue.`,
-          { relayed_gates: [...(s.relayed_gates || []), q.ref], gate_waits: 0 });
+        // the director saw the other pending gates in the question; a judge answer rests on one contract
+        // line for one gate, so it is never carried over
+        const also = q.also?.length && q.answer.by !== 'judge'
+          ? ` Also pending when this was asked: ${q.also.join(', ')} — resolve any of them that asks the same thing with this decision and leave the others pending (I ask the director about those).`
+          : '';
+        return sendOnce(ctx, `gate:${q.ref}:${q.id}`, COORDINATOR, `${who}: ${decision}. Resolve your gate with it and continue.${also}`,
+          { relayed_gates: [...(s.relayed_gates || []), q.ref], gate_waits: 0, gate_settle: true });
       }
       throw new Error(`no action for ${q.kind}: ${choice}`);
   }
