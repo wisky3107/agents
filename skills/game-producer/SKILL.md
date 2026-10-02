@@ -350,7 +350,10 @@ when it was the only blocker/major, the verdict counts as APPROVED. `gate:<pct>`
 `INFRA_BLOCKED` (review.md last line): not a fix round, no notes entry beyond one line. Your own
 `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<port>/` → 200 ⇒ the reviewer agent
 cannot reach localhost: spawn the same review on `cursor --model auto` and lock that for the
-rest of the run. Non-200 ⇒ integrator recovery, then a fresh review.
+rest of the run. Non-200 ⇒ integrator recovery, then a fresh review. `producer-runner.mjs`
+launches every reviewer with bootstrap's current command, so there is no stale launch to correct
+first: its first 200-with-INFRA_BLOCKED moves straight to `cursor --model auto` (policy
+`no_cursor=true` → it asks instead).
 
 1. `auto_commit=true` → reply to the lane terminal: *"approved — commit"*; the lane runs
    `/commit-guard` in its checkout and sets HANDOFF `committed` + sha. `false` → mark

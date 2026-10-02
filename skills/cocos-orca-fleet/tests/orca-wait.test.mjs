@@ -59,6 +59,13 @@ test('coord: one compact line, full Delivery on disk, ack and cap passed through
 test('coord: timeout is a checkpoint; bad args fail fast', () => {
   const bin = fakeOrca({ check: { ok: true, result: { count: 0, timedOut: true, messages: [] } } });
   assert.equal(run(bin, ['coord', '--max-ms', '1000']).out.timeout, true);
+  // an ok:false timeout error is the same checkpoint, not an error
+  fs.writeFileSync(path.join(bin, 'check.json'), JSON.stringify({ ok: false, error: { code: 'timeout', message: 'timed out after 1000ms' } }));
+  const t = run(bin, ['coord', '--max-ms', '1000']);
+  assert.deepEqual([t.status, t.out.timeout], [0, true]);
+  // a network timeout of the runtime is an error, not a checkpoint
+  fs.writeFileSync(path.join(bin, 'check.json'), JSON.stringify({ ok: false, error: { code: 'ETIMEDOUT', message: 'connect ETIMEDOUT' } }));
+  assert.match(run(bin, ['coord', '--max-ms', '1000']).out.error, /ETIMEDOUT/);
   const bad = run(bin, ['coord', '--ack']);
   assert.equal(bad.status, 2);
   assert.match(bad.out.error, /--ack needs a value/);

@@ -128,6 +128,11 @@ function coord(v) {
   const started = Date.now();
   const r = orcaJson(args, limit + 30000);
   const res = r.parsed?.result;
+  // the documented shape is result.timedOut; an ok:false error whose code is a wait timeout is the same
+  // checkpoint (the code only: ETIMEDOUT and other runtime failures stay errors)
+  if (!res && /^(?:timeout|timed_out|wait_timeout)$/i.test(String(r.parsed?.error?.code || ''))) {
+    return { timeout: true, waited_ms: Date.now() - started };
+  }
   if (r.status !== 0 || !res) {
     return { error: (r.parsed?.error?.message || r.stderr.split('\n').filter((l) => l.trim() && !l.includes('_keepalive')).pop() || `orca exited ${r.status}`).slice(0, 300) };
   }
