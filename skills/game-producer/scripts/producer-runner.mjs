@@ -96,7 +96,6 @@ const AUTOPILOT = {
   lane_hung: 'spawn another resume lane',
   changes_after_rounds: 'one more fix round',
   orca_error: 'retry',
-  gate_unresolved: 'continue waiting',
 };
 function autopilotChoice(root, project, q) {
   if (String(project.policy?.tokens?.autopilot ?? project.release.autopilot ?? 'off') !== 'retry_once') return null;

@@ -313,14 +313,26 @@ test('single lane commit: the request says what to write; a lone commit without 
   f.queue([
     { name: 'ready', write: { ...W('ready_for_review'), ...preview(7461) } },
     { name: 'approved', write: R('approved', 'APPROVED') },
-    quiet('S01', 'feat(player): the slice'),
+    quiet('S01', 'feat(S01): the slice'),
     { name: 'writer idle', result: 'idle' },
   ]);
   const out = runner(p.root, f, 'start', '--once').out;
   assert.match(f.sends()[0].text, /^approved — commit: run \/commit-guard on this checkout, then write \/.+\/T-S01\/evidence\/HANDOFF\.json with "status": "committed" and "sha": the full sha of that commit\.$/);
   assert.deepEqual(out.find((o) => o.merged), { merged: 'S01', commit: lastCommit(f) });
   assert.equal(sliceState(p.root, 'S01').commit_found, true);
-  assert.match(log(p.root), /the writer committed \w{7} \("feat\(player\): the slice"\) without writing HANDOFF committed: taking it as the slice commit/);
+  assert.match(log(p.root), /the writer committed \w{7} \("feat\(S01\): the slice"\) without writing HANDOFF committed: taking it as the slice commit/);
+  // a lone commit that does not name the slice (a teammate's) is never taken: the director decides
+  const t = project({ slices: { S01: { needs: false } } });
+  const g1 = fakes();
+  g1.queue([
+    { name: 'ready', write: { ...W('ready_for_review'), ...preview(7461) } },
+    { name: 'approved', write: R('approved', 'APPROVED') },
+    quiet('S01', 'chore: teammate fixes the README'),
+    { result: 'idle' }, { result: 'idle' }, { result: 'idle' },
+  ]);
+  const n = runner(t.root, g1, 'start', '--once').out.at(-1);
+  assert.deepEqual([n.kind, n.options[0]], ['commit_stalled', 'the newest commit is the slice, continue']);
+  assert.notEqual(sliceState(t.root, 'S01').phase, 'merge');
   // two commits since the request: not guessed — the director picks (or resends)
   const q = project({ slices: { S01: { needs: false } } });
   const g2 = fakes();

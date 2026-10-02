@@ -780,17 +780,27 @@ function commit(ctx, s, handle) {
 
 const commitMarks = (ctx) => ({
   commit_base: mtime(laneHandoff(ctx)),
+  commit_idles: 0,
   ...(ctx.lane === 'single' ? { commit_head: gitOut(ctx.project.root, ['rev-parse', 'HEAD']) || null, commit_asked: st.now() } : {}),
 });
 
 /** Single lane: commits on main since the commit request, oldest first (first parent only). */
 function commitsSince(ctx, s) {
   if (ctx.lane !== 'single' || !s.commit_head) return [];
-  const out = gitOut(ctx.project.root, ['log', '--first-parent', '--reverse', '--format=%H %ct %s', `${s.commit_head}..HEAD`]);
+  const out = gitOut(ctx.project.root, ['log', '--first-parent', '--reverse', '--format=%H %P|%ct %s', `${s.commit_head}..HEAD`]);
   return out ? out.split('\n').map((l) => {
-    const [sha, ct, ...subject] = l.split(' ');
-    return { sha, at: Number(ct) * 1000, subject: subject.join(' ') };
+    const [head, rest] = [l.slice(0, l.indexOf('|')), l.slice(l.indexOf('|') + 1)];
+    const [sha, ...parents] = head.trim().split(' ');
+    const [ct, ...subject] = rest.split(' ');
+    return { sha, merge: parents.length > 1, at: Number(ct) * 1000, subject: subject.join(' ') };
   }) : [];
+}
+
+/** Does this commit name the slice — in its subject (`feat(S03)`) or a path it touches (`slices/S03-…`)? */
+function namesSlice(ctx, c) {
+  const id = new RegExp(`(?:^|[^A-Za-z0-9])${ctx.id}(?:[^0-9]|$)`, 'i');
+  if (id.test(c.subject)) return true;
+  return gitOut(ctx.project.root, ['show', '--name-only', '--format=', c.sha]).split('\n').some((f) => id.test(f));
 }
 
 function committing(ctx, s, w, h) {
@@ -804,16 +814,21 @@ function committing(ctx, s, w, h) {
   }
   const lane = ctx.lane === 'fleet' ? 'coordinator' : 'writer';
   if (h.status === 'blocked') return ask(s, 'lane_blocked', `commit blocked: ${h.detail || 'no detail'}`, LANE_BLOCKED_OPTIONS, { obs: `lane_blocked@${h.mtime}` });
+  // idles since the last commit request (a resend starts the count again): asked at 3
+  const idles = w.event === 'idle' ? (s.commit_idles || 0) + 1 : 0;
+  if (idles !== (s.commit_idles || 0)) st.writeSliceState(root, ctx.id, { commit_idles: idles });
   if (w.event === 'terminal-missing' || w.event === 'idle') {
-    // the writer committed on main but did not say so (pilot 2): exactly one new commit, made after
-    // the request, is the slice's — taken and logged; more than one is the director's to pick
-    const fresh = commitsSince(ctx, s).filter((c) => c.at >= Date.parse(s.commit_asked || 0) - 1000);
-    if (fresh.length === 1 && commitsSince(ctx, s).length === 1) {
-      st.log(root, ctx.id, `the writer committed ${fresh[0].sha.slice(0, 7)} ("${fresh[0].subject}") without writing HANDOFF committed: taking it as the slice commit`);
-      setPhase(root, ctx.id, 'merge', { commit_sha: fresh[0].sha, commit_found: true });
+    // the writer committed on main but did not say so (pilot 2): the only new commit since the request,
+    // not a merge, made after it and naming the slice (subject or a path) is taken and logged; anything
+    // else is the director's to pick
+    const all = commitsSince(ctx, s);
+    const c = all.length === 1 ? all[0] : null;
+    if (c && !c.merge && c.at >= Date.parse(s.commit_asked || 0) - 1000 && namesSlice(ctx, c)) {
+      st.log(root, ctx.id, `the writer committed ${c.sha.slice(0, 7)} ("${c.subject}") without writing HANDOFF committed: taking it as the slice commit`);
+      setPhase(root, ctx.id, 'merge', { commit_sha: c.sha, commit_found: true });
       return null;
     }
-    if (w.event === 'terminal-missing' || w.idle_streak >= 3) {
+    if (w.event === 'terminal-missing' || idles >= 3) {
       const found = commitsSince(ctx, s);
       // each send of the commit request is a new situation: a stall after "resend commit" is asked again
       const sends = Object.keys(s.outbox || {}).filter((k) => k === 'commit' || k.startsWith('commit:')).length;
@@ -899,7 +914,7 @@ function fleetStep(ctx, s, phase) {
     st.writeSliceState(root, id, { gate_waits: waits });
     if (waits < GATE_PATIENCE) return PAUSE;
     const ids = w.pending_gates.map((g) => g.id).join(',');
-    return ask(s, 'gate_unresolved', `gate ${ids} still pending after the decision was sent`, ['continue waiting', 'stop'], { obs: `gate_unresolved@${ids}` });
+    return ask(s, 'gate_unresolved', `gate ${ids} still pending after the decision was sent`, ['continue waiting', 'stop'], { obs: `gate_unresolved@${ids}:${s.gate_unresolved_waits || 0}` });
   }
   if (s.gate_waits || s.gate_settle) st.writeSliceState(root, id, { gate_waits: 0, gate_settle: false });
   if (s.missing_rechecks && w.event !== 'terminal-missing') st.writeSliceState(root, id, { missing_rechecks: 0 });
@@ -1001,7 +1016,7 @@ export function applyAnswer(ctx, q) {
       return setPhase(root, id, 'merge', { commit_sha: q.ref });
     case 'commit_stalled:resend commit':
       ack();
-      return sendOnce(ctx, `commit:${q.id}`, laneHandle, commitText(ctx));
+      return sendOnce(ctx, `commit:${q.id}`, laneHandle, commitText(ctx), { commit_idles: 0 });
     case 'lane_hung:spawn another resume lane':
       return resumeWriter(ctx, s, 'stopped (human: another resume lane)');
     case 'reviewer_hung:spawn a fresh reviewer':
@@ -1050,11 +1065,14 @@ export function applyAnswer(ctx, q) {
       const who = q.answer.by === 'judge' ? `Answer from the producer's judge (per the contract line "${oneLine(q.answer.quote)}")` : "Director's answer to your question";
       return sendOnce(ctx, `answer:${q.id}`, laneHandle, `${who}: ${oneLine(q.answer.text)} — continue the slice; update HANDOFF.json when your status changes.`);
     }
+    case 'gate_unresolved:continue waiting':
+      // another full patience window, then asked again (a bare ack waited in silence)
+      ack();
+      return st.writeSliceState(root, id, { gate_waits: 0, gate_unresolved_waits: (s.gate_unresolved_waits || 0) + 1 });
     case 'unknown_status:treat as working, keep waiting':
     case 'lane_blocked:answered in the lane, continue':
     case 'coordinator_missing:taken over, continue':
     case 'fleet_stall:nudged again, continue':
-    case 'gate_unresolved:continue waiting':
       return ack();
     default:
       if (MERGE_KINDS.has(q.kind)) return applyMergeAnswer(ctx, q);
