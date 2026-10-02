@@ -36,3 +36,11 @@ Project totals 2026-09-24 → 2026-10-02: producer 167.9M (27%), fleet-orch 196.
   - Runner dò một lần (`agent-ready.mjs`; `cursor-agent status` báo sai), rồi hỏi một câu `cursor_off` cho cả run trước mọi spawn chạy Cursor.
   - Fleet SKILL: art-manifest chuyển sang claude sonnet khi Cursor không dùng được.
   - Còn lại: `worker-prompts-art.md` và `worker-prompts.md` vẫn ghi Cursor cho art-manifest. Session khác đang sửa dở hai file này trên master, nên để sửa sau.
+- **12:20Z: `q3` coordinator_missing là báo động nhầm.**
+  - Coordinator `term_933390d6…` vẫn sống: còn trong `terminal list`, có output, và vẫn là `coordinator_handle` của Run.
+  - `orca-wait` nhận một lỗi tạm thời của `terminal wait` mà text khớp "missing", nên báo `terminal-missing`.
+  - Runner làm đúng luật: không spawn lại coordinator, chỉ hỏi người.
+  - Vì runner kẹt ở `q3`, nó không đưa được gate đang chờ (`gate_c71089f4f384`, mở rộng phạm vi test F3) lên cho director.
+  - 12:43Z director trả lời "taken over, continue". Runner đưa gate lên thành `q4` ngay lập tức.
+  - Đề xuất sửa: trước khi hỏi `coordinator_missing`, kiểm lại bằng `orca terminal list` / `run-show` hoặc thử lại một lần.
+- **12:44Z: `q4` fleet_gate, director chọn "yes"**, chỉ cho phép đúng 2 file test của gate. Runner gửi quyết định cho coordinator dưới dạng text, đúng một lần. Coordinator tự resolve gate; runner không gọi `gate-resolve`. HANDOFF xác nhận lúc 12:44:43Z. Fix round 1 đang chạy.
