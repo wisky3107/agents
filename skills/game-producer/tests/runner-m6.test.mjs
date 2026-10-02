@@ -110,16 +110,18 @@ test('runner terminal: the question with numbered options on stderr; a line type
   let out = '';
   child.stderr.on('data', (d) => (err += d));
   child.stdout.on('data', (d) => (out += d));
-  child.stdin.write('2\n'); // typed ahead ("skip this slice"): must never answer q1
+  child.stdin.write('3\n'); // typed ahead ("skip this slice"): must never answer q1
   for (let i = 0; i < 400 && !err.includes('q1 · director_gate · S01'); i++) await pause(25);
-  assert.match(err, /q1 · director_gate · S01\n.*\n\n {2}1\) decided, retry\n {2}2\) skip this slice\n {2}3\) stop/);
+  // where the run stands first (project, slice, release), then the question and its options
+  assert.match(err, new RegExp(`${path.basename(p.root)} · S01 x \\(planned\\)\nrelease: 0/1 merged\n\nq1 · director_gate · S01\n`));
+  assert.match(err, /q1 · director_gate · S01\n.*\n\n {2}1\) S01 GIVEN — record it on the policy line\n {2}2\) decided, retry\n {2}3\) skip this slice\n {2}4\) stop/);
   await pause(700);
   assert.equal(question(p.root, 'q1').answer, null);
   child.stdin.write('7\n'); // out of range: told, not recorded
-  child.stdin.write('3\n');
+  child.stdin.write('4\n');
   const code = await exited(child);
   assert.equal(code, 0);
-  assert.match(err, /type a number from 1 to 3/);
+  assert.match(err, /type a number from 1 to 4/);
   assert.match(err, /recorded q1: stop/);
   assert.deepEqual([question(p.root, 'q1').answer.choice, question(p.root, 'q1').answer.via], ['stop', 'terminal']);
   assert.match(out, /"stopped":"the human chose stop"/);
@@ -158,7 +160,7 @@ test('dialog: choice + note go through the same answer path; Later and a cancell
   assert.equal(choose.kind, 'choose');
   assert.deepEqual(choose.args.slice(2), ['approve', 'revise', 'stop']);
   assert.equal(choose.args[0], `producer-runner · ${path.basename(p.root)}`);
-  assert.match(choose.args[1], /^q1 · fleet_gate · S01\n\nfleet gate g1: Approve PLAN\?/);
+  assert.match(choose.args[1], new RegExp(`^${path.basename(p.root)} · S01 x \\(planned\\)\nrelease: 0/1 merged\n\nq1 · fleet_gate · S01\nfleet gate g1: Approve PLAN\\?`));
   assert.match(note.args[1], /optional/);
   // Later
   osa(f, { choice: '<<later>>' });
@@ -271,6 +273,36 @@ test('the runner opens the dialog once per question; the dialog answer is applie
   osa(g, { choice: 'stop' });
   runner(q.root, g, 'start', '--once');
   assert.equal(osaRuns(g).length, 0);
+});
+
+test('director_gate: "S01 GIVEN — record it" writes the decision on the policy line and the slice starts; an older open question gets the new choice', async () => {
+  const { editPolicyDecision, gateDecides } = await import('../scripts/lib/project.mjs');
+  const policy = '- policy: goal=end_to_end auto_commit=true (director mandate: finish through S07; keep S02-S07 planned until targeted expansion)';
+  const text = `${NOTES(policy)}\n`;
+  const r = editPolicyDecision(text, 'S02', 'try it (first)\nthen S03', '2026-10-03');
+  assert.equal(r.changed, true);
+  const line = r.text.split('\n').find((l) => l.startsWith('- policy:'));
+  assert.equal(line, `${policy} (director gate: S02 GIVEN — try it first then S03; recorded by producer-runner 2026-10-03)`);
+  assert.equal(gateDecides(line, 'S02'), true);
+  assert.equal(gateDecides(line, 'S03'), false); // the note never decides another slice
+  assert.equal(r.text.replace(line, policy), text); // nothing else changes
+  assert.equal(editPolicyDecision(r.text, 'S02').changed, false); // already decided
+  // the runner: an older runner's question (no GIVEN choice) is refreshed in place
+  const p = gated();
+  const f = fakes();
+  fs.mkdirSync(path.join(p.root, '.cursor'), { recursive: true });
+  fs.writeFileSync(path.join(p.root, '.cursor', 'producer-runner.json'), JSON.stringify({ slice: 'S01', step: 'blocked:director_gate', questions: [
+    { id: 'q1', key: 'S01:director_gate', kind: 'director_gate', slice: 'S01', text: 'Record the director decision for this slice in the policy line, then answer.', options: ['decided, retry', 'skip this slice', 'stop'], ref: null, answer: null } ] }));
+  const a = runner(p.root, f, 'start', '--once').out.at(-1);
+  assert.deepEqual([a.waiting, a.options], ['q1', ['S01 GIVEN — record it on the policy line', 'decided, retry', 'skip this slice', 'stop']]);
+  assert.equal(runnerFile(p.root).questions.length, 1);
+  assert.equal(question(p.root, 'q1').text, 'This slice waits for the director: approve it here (the runner writes "S01 GIVEN" on the policy line), or record your own decision on the policy line and retry.');
+  runner(p.root, f, 'answer', '--id', 'q1', '--choice', 'S01 GIVEN — record it on the policy line', '--text', 'go ahead');
+  runner(p.root, f, 'start', '--once');
+  assert.match(loadProject(p.root).policy.raw, /\(director gate: S01 GIVEN — go ahead; recorded by producer-runner \d{4}-\d{2}-\d{2}\)$/);
+  assert.match(log(p.root), /director decision recorded on the policy line: S01 GIVEN — go ahead/);
+  assert.deepEqual(f.spawns().map((x) => [x.role, x.slice]), [['worker', 'S01']]); // the gate is passed: the writer starts
+  assert.match(f.spawns()[0].prompt, /S01 GIVEN — go ahead/); // and its prompt carries the decision
 });
 
 test('manual_required: defer — APPROVED with only manual checks left merges, lists them, Notes and status show them', () => {

@@ -10,8 +10,13 @@ export function textNeed(q, choice) {
   if (choice === 'send this answer to the lane') return 'required';
   if (q?.kind === 'fleet_gate') return choice === 'answer with --text' ? 'required' : choice === 'stop' ? null : 'optional';
   if (q?.kind === 'spawn_unconfirmed' && choice.startsWith('reattach')) return 'required';
+  if (q?.kind === 'director_gate' && isGivenChoice(choice)) return 'optional'; // the note goes on the policy line
   return null;
 }
+
+/** director_gate's "approve it here" choice: the runner writes `<Sxx> GIVEN` on the policy line. */
+export const givenChoice = (id) => `${id} GIVEN — record it on the policy line`;
+export const isGivenChoice = (choice) => /^S\d{2}[a-z]? GIVEN — record it on the policy line$/.test(choice);
 
 /** Why this answer cannot be recorded, or null. */
 export function answerProblem(q, choice, text = '') {
@@ -37,9 +42,9 @@ export function submit(root, id, choice, text = '', via = null) {
 // lane-written text goes to a terminal: no control characters (escape sequences) but newline and tab
 const printable = (t) => String(t || '').replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, '');
 
-/** The question as the director reads it: header, full text, numbered options. */
-export function menu(q) {
-  const lines = [`${q.id} · ${q.kind}${q.slice ? ` · ${q.slice}` : ''}`, printable(q.text).trim(), ''];
+/** The question as the director reads it: where the run stands (context lines), header, full text, numbered options. */
+export function menu(q, context = []) {
+  const lines = [...context.map(printable), ...(context.length ? [''] : []), `${q.id} · ${q.kind}${q.slice ? ` · ${q.slice}` : ''}`, printable(q.text).trim(), ''];
   q.options.forEach((o, i) => lines.push(`  ${i + 1}) ${printable(o)}${textNeed(q, o) === 'required' ? '  (needs a note)' : ''}`));
   lines.push('', 'Type the number and Enter; a note may follow the number ("2 only the test file").');
   return lines.join('\n');
