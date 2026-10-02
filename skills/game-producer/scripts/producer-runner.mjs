@@ -19,6 +19,7 @@ import fs from 'node:fs';
 import { loadProject, sliceStatuses, nextSlice, preflight, writeRelease } from './lib/project.mjs';
 import * as st from './lib/state.mjs';
 import { laneFor, runSlice, applyAnswer } from './lib/lanes.mjs';
+import { currentBranch, appendLessons, lessonRows, readJournal } from './lib/merge.mjs';
 
 const msEnv = (k, d) => Number(process.env[k]) || d;
 const WAIT_MS = msEnv('PRODUCER_RUNNER_WAIT_MS', 540000); // one orca-wait call (its own cap is 570000)
@@ -105,14 +106,28 @@ function stopFor(root, slice, code, detail, extra = {}) {
 function markBlocked(root, slice, why) {
   if (!slice) return;
   writeRelease(loadProject(root), { slices: { [slice]: 'blocked' } });
-  st.writeSliceState(root, slice, { phase: 'blocked', blocked_reason: why });
-  st.log(root, slice, `marked blocked (${why}); lane terminals are left for the director`);
+  const s = st.writeSliceState(root, slice, { phase: 'blocked', blocked_reason: why });
+  // Notes discipline: a blocked slice's costs and candidates are collected too
+  const added = appendLessons(root, lessonRows(root, slice, s, readJournal(root, slice) || {}));
+  st.log(root, slice, `marked blocked (${why}); ${added} lessons row(s); lane terminals are left for the director`);
+}
+
+/**
+ * The runner's current slice when git already shows it merged but the runner's own commit/merge is
+ * not finished (a single-lane commit lands on main; a kill can fall after the merge). Earlier phases
+ * merged by git mean a human finished the slice: git wins there.
+ */
+function unfinished(root, statuses) {
+  const id = st.readRunner(root).slice;
+  if (!id || statuses[id]?.status !== 'merged') return null;
+  return ['committing', 'merge'].includes(st.readSliceState(root, id).phase) ? id : null;
 }
 
 function freshLane(root, id, project) {
   const moved = st.archiveSliceState(root, id);
   const lane = laneFor(project, id);
-  st.writeSliceState(root, id, { phase: lane === 'fleet' ? 'spawn-coordinator' : 'spawn-writer', lane, selected_at: st.now() });
+  // the branch main is on now is where this slice merges back (asked when main moved on meanwhile)
+  st.writeSliceState(root, id, { phase: lane === 'fleet' ? 'spawn-coordinator' : 'spawn-writer', lane, selected_at: st.now(), base_branch: currentBranch(root) });
   return { lane, moved };
 }
 
@@ -161,7 +176,9 @@ function waitForAnswer(root, q) {
 }
 
 async function dryRun(root) {
-  const { project, next, blockers } = await plan(root);
+  const { project, statuses, next, blockers } = await plan(root);
+  const finishing = unfinished(root, statuses);
+  if (finishing) return say({ slice: finishing, resume: true, phase: st.readSliceState(root, finishing).phase, would: 'finish its merge journal (verify, record) first' });
   if (next.done) return say({ done: next.reason });
   if (next.stuck) return say({ stuck: next.reason });
   const s = st.readSliceState(root, next.slice);
@@ -197,23 +214,29 @@ async function start(root, { dryRun: dry, once }) {
     }
 
     const { project, statuses, next, blockers } = await plan(root);
-    if (next.done) return say({ done: next.reason, next_step: 'Step 3 (ship / retro) is handed to an LLM producer (M4d)' });
-    if (next.stuck) {
-      stopFor(root, null, 'stuck', next.reason);
-      continue;
+    // a slice git already shows merged (single-lane commit on main, or a merge done before a kill)
+    // finishes its journal — verify, record — before anything else is selected or reported done
+    const finishing = unfinished(root, statuses);
+    if (!finishing) {
+      if (next.done) return say({ done: next.reason, next_step: 'Step 3 (ship / retro) is handed to an LLM producer (M4d)' });
+      if (next.stuck) {
+        stopFor(root, null, 'stuck', next.reason);
+        continue;
+      }
+      if (blockers.length) {
+        stopFor(root, next.slice, blockers[0].code, blockers[0].detail);
+        continue;
+      }
     }
-    if (blockers.length) {
-      stopFor(root, next.slice, blockers[0].code, blockers[0].detail);
-      continue;
-    }
-    const id = next.slice;
+    const id = finishing || next.slice;
+    const resume = Boolean(finishing) || next.resume;
     // stop-after Sxx: once Sxx is merged/shipped (or blocked), start nothing new
-    if (control?.cmd === 'stop-after' && control.arg && !next.resume && ['merged', 'shipped', 'blocked'].includes(statuses[control.arg]?.status)) {
+    if (control?.cmd === 'stop-after' && control.arg && !resume && ['merged', 'shipped', 'blocked'].includes(statuses[control.arg]?.status)) {
       return say({ stopped: `stop-after ${control.arg}: ${control.arg} is ${statuses[control.arg].status}; not starting ${id}` });
     }
 
     let s = st.readSliceState(root, id);
-    if (!next.resume) {
+    if (!resume) {
       const { lane, moved } = freshLane(root, id, project);
       s = st.readSliceState(root, id);
       writeRelease(project, { currentSlice: id, slices: { [id]: 'in_progress' } });
@@ -231,6 +254,7 @@ async function start(root, { dryRun: dry, once }) {
     const ctx = {
       project, id, lane: s.lane || laneFor(project, id),
       autoCommit: String(t.auto_commit ?? project.release.auto_commit ?? 'true') === 'true',
+      autoMerge: String(t.auto_merge ?? project.release.auto_merge ?? 'true') === 'true',
       noCursor: t.no_cursor === 'true', waitMs: WAIT_MS, idleMs: IDLE_MS, sleep,
     };
     let r;
@@ -245,11 +269,11 @@ async function start(root, { dryRun: dry, once }) {
       stopFor(root, id, r.ask.code, r.ask.detail, r.ask);
       continue;
     }
-    if (r.phase === 'merge') {
-      st.writeRunner(root, { slice: id, step: 'merge' });
-      return say({ slice: id, step: 'merge', commit: st.readSliceState(root, id).commit_sha, note: 'merge + record arrive in M4c' });
+    if (r.phase === 'done') {
+      st.writeRunner(root, { slice: id, step: 'done' });
+      say({ merged: id, commit: st.readSliceState(root, id).commit_sha });
     }
-    // phase blocked (marked by an answer): the yaml says blocked now, the next pass picks another slice
+    // done → the next pass picks the next slice; blocked (marked by an answer) → the yaml says blocked
   }
 }
 

@@ -1,7 +1,7 @@
-# M4 — producer runner: báo cáo (M4a + M4b)
+# M4 — producer runner: báo cáo (M4a + M4b + M4c)
 
-Ngày: 2026-10-02 · Branch `feat/coordinator-token-opt` · Sub-plan: [m4-plan.md](m4-plan.md) · Review độc lập: §4.
-M4c (merge journal) và M4d (judge, Step 0–1/3, "Runner mode" trong SKILL) chưa làm: runner hiện dừng ở bước `merge`.
+Ngày: 2026-10-02 · Branch `feat/coordinator-token-opt` · Sub-plan: [m4-plan.md](m4-plan.md) · Review độc lập: §4 (M4a+b), §7 (M4c).
+M4d (judge, Step 0–1/3, "Runner mode" trong SKILL) chưa làm.
 
 ## 1. Thay đổi
 
@@ -105,3 +105,53 @@ Cả bốn trường hợp dừng hoặc hỏi đều là dữ liệu hợp đ�
 - Dạng thật của `check --wait` khi timeout (`orca-wait coord` đã chấp nhận cả hai dạng).
 - `idle_streak` với runner (thời gian giữa hai lần chờ là `PRODUCER_RUNNER_IDLE_MS` = 60 s): nudge sau khoảng 1 phút idle, coi là hung sau khoảng 2 phút. Cần xem có nudge quá sớm với agent đang nghĩ lâu không.
 - Chế độ advisory: review liệt kê lố budget như một finding là đọc sai và phải bỏ finding đó (Step 2d). Việc này cần phán đoán, nên để judge ở M4d; hiện runner coi là một fix round.
+
+## 7. M4c — merge journal
+
+| File | Nội dung |
+|---|---|
+| `scripts/lib/merge.mjs` | Journal `T-<Sxx>/merge-journal.json`; mỗi bước tự kiểm trạng thái thật trước khi làm. **Fleet:** harvest → merge → evidence (rsync, không PNG, không file của runner) → `worktree rm` (bẩn, harvest lỗi hoặc commit không có trong main thì giữ; không xoá branch) → mở lại main (detached) + `wait-mcp --json` → lane verify trên main → ghi nhận. Bước merge: đã là ancestor thì xong; phải có branch thật và main phải ở `base_branch`; mỗi lần thử đều đóng và probe cả hai Editor; `merge --no-ff` với `LC_ALL=C`; hỏng thì không để lại `MERGE_HEAD`. **Single:** harvest → kiểm commit có trên main → ghi nhận |
+| `reference/verify-main-prompt.md` | Prompt cố định cho lane verify: Funplay parity, MissingScript, Feature Cropping `includeModules`, smoke trên preview; ghi `verify-main.json`. cc4 hoặc không có Funplay → runner hỏi người |
+| `scripts/lib/project.mjs` | `editSliceNote` / `writeSliceNote`: viết lại tại chỗ đúng một dòng của slice trong `## Notes — game-producer` |
+| `producer-runner.mjs` | Slice mà git đã thấy merged nhưng runner chưa ghi nhận xong (pha `committing` / `merge`) được chạy tiếp trước khi chọn slice mới hoặc báo done. Xong một slice thì chạy tiếp slice kế |
+| `tests/runner-m4c.test.mjs` | 19 test trên repo git thật có worktree thật. Gồm: luồng đầy đủ; Editor không đóng được, hoặc bị mở lại giữa hai lần thử; conflict; hook làm merge hỏng; file untracked bị đè; worktree bẩn; worktree ở detached HEAD; main ở branch khác; `worktree rm` lỗi; harvest lỗi; `wait-mcp` lỗi; verify `manual_required`; `auto_merge=false`; không Funplay; commit của lane single không có trên main; phát lại bước ghi nhận; kill tại 7 bước (gồm git bị kill giữa lúc merge); merge dở của người không bị đụng |
+
+**Ghi nhận khi xong slice:**
+- `release.slices.<Sxx>=merged`, `current_slice=""`.
+- Dòng Notes: `- <Sxx> <lane> merged fix_rounds=<n> bump=<from→to|none> commit=<sha7> merged=<y/n> <blocker|->`.
+- `lessons.jsonl`:
+  - các dòng chi phí (`fix_round`, `infra_blocked`, `respawn`, `merge_conflict`, `budget_bump` kèm `ratio`);
+  - `recipe_candidate` lấy từ `learning-candidates.json`, đường dẫn đổi về tương đối theo project;
+  - dedupe theo nội dung và theo `candidate_id`.
+- Đóng terminal của lane.
+
+**Review độc lập M4c:**
+- **Vòng 1:** CHANGES_REQUESTED, gồm 1 blocker, 3 major và các minor. Đã sửa hết:
+  - **Blocker:** worktree ở detached HEAD bị "merge" rỗng (merge tên `HEAD`) rồi bị xoá, làm mất commit.
+  - **Major:**
+    - Editor có thể đã mở lại giữa hai lần thử merge;
+    - merge hỏng mà không phải conflict thì để lại `MERGE_HEAD`;
+    - merge vào bất kỳ branch nào main đang checkout (khoảng một nửa số project đang ở branch khác).
+  - **Minor:**
+    - stash;
+    - `$&` trong dòng Notes;
+    - lane single không kiểm commit có trên main;
+    - terminal verifier còn mở;
+    - lessons khi slice blocked;
+    - nhận diện evidence dựa trên text của `git show --stat`.
+  - **Test thêm:** kill tại từng bước (harvest, đóng Editor, merge, `worktree rm`, mở lại, verify), phát lại bước ghi nhận, các nhánh hỏi còn thiếu.
+- **Vòng 2:** cả 13 điểm đã sửa đúng, nhưng có một regression mới (major). Bản sửa "không để lại `MERGE_HEAD`" lại có thể abort một merge mà **người** đang làm dở trong main, làm mất phần conflict họ đã giải. Đã sửa:
+  - runner chỉ abort merge dở của chính nó: journal có `merge_attempt` và `MERGE_HEAD` trỏ đúng commit của slice;
+  - git chết trong hook không để lại `MERGE_HEAD`, chỉ để lại kết quả đã stage cùng `AUTO_MERGE`. Runner chỉ hoàn tác khi cây của index trùng đúng `AUTO_MERGE`;
+  - merge của người khác thì runner hỏi và không đụng tới, kể cả Editor.
+  - Minor: `settleStash` chạy trước khi đánh dấu xong; ghi `evidence=not copied` khi worktree mất trước lúc chép; dòng lessons "blocked" chỉ ghi khi lane đã chạy.
+  - Test thêm: merge dở của người; kill cả cây tiến trình khi git đang merge; kill lúc rsync; `main_detached`; "merge into <branch>"; `base_branch` được ghi khi chọn slice.
+- **Vòng 3:** còn một lỗi trong đúng luồng conflict bình thường. Cờ `merge_attempt` sót lại sau lần merge của runner, nên khi director tự merge lại cùng branch, runner vẫn coi đó là merge của mình và abort. Đã sửa: cờ được xoá ngay khi `doMerge` trả về, nên chỉ còn lại khi runner bị kill giữa lúc merge. Có test cho đúng kịch bản này.
+- **Vòng 4:** **APPROVED**.
+
+**Khác với sub-plan / còn mở:**
+- **Evidence chép sau khi merge** (vẫn trước `rm`), không trước như thứ tự trong SKILL. Như vậy không phải đoán commit đã chứa evidence chưa; merge mang theo phần đã commit.
+- **Ghi merged khi verify thất bại:** chỉ khi người chọn "record merged anyway (verify=failed)", và dòng Notes ghi rõ `verify=failed`.
+- **`auto_merge=false`:** runner hỏi người. Sau khi director merge, runner để `worktree rm`, mở lại Editor và verify cho director; chỉ ghi nhận.
+- **Recipe reuse rows** (phần recipe results trong `review.md`) chưa ghi, vì định dạng chưa cố định.
+- **Tài liệu Orca chưa nói** `orca worktree rm` xử lý worktree bẩn và branch ra sao. Runner tự kiểm worktree bẩn và không xoá branch.

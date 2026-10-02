@@ -1,8 +1,9 @@
 /**
  * Lanes (plan M4b): fill the slice prompts from reference/*-slice-prompt.md and run one slice as a
  * state machine kept in T-<Sxx>/producer-state.json, so a kill at any point resumes at the same step.
- *   single: spawn-writer → writer → spawn-reviewer → review → (fix → writer)* → accept → commit → committing → merge
- *   fleet:  spawn-coordinator → fleet → accept → commit → committing → merge
+ *   single: spawn-writer → writer → spawn-reviewer → review → (fix → writer)* → accept → commit → committing → merge → done
+ *   fleet:  spawn-coordinator → fleet → accept → commit → committing → merge → done
+ * `merge` walks the merge journal (lib/merge.mjs).
  * Kill safety: a spawn records its intent first and is recovered from the spawn registry; a message
  * goes through the outbox (intent written with the state change, sent, marked sent), so a kill
  * delivers it at least once and never loses it. Waiting is orca-wait (never terminal-read polling);
@@ -15,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { sliceFront, sliceSize, sliceWorktrees, budgetMode, liteWhenNoAssets, isCc4, ripStudy } from './project.mjs';
 import * as st from './state.mjs';
 import * as io from './orca.mjs';
+import { mergeStep, applyMergeAnswer, MERGE_KINDS } from './merge.mjs';
 
 const REF = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'reference');
 const KNOWN = new Set(['working', 'blocked', 'ready_for_review', 'infra_blocked', 'approved', 'changes_requested', 'offer_commit', 'committed']);
@@ -373,13 +375,19 @@ export function runSlice(ctx) {
     if (blocked) return blocked;
     const s = st.readSliceState(root, ctx.id);
     const phase = s.phase || (ctx.lane === 'fleet' ? 'spawn-coordinator' : 'spawn-writer');
-    if (phase === 'merge' || phase === 'blocked') return { phase };
+    if (phase === 'done' || phase === 'blocked') return { phase };
     if (s.prompt_missing) return promptMissing(s);
-    const r = ctx.lane === 'fleet' ? fleetStep(ctx, s, phase) : singleStep(ctx, s, phase);
+    const r = phase === 'merge' ? mergeStep(ctx, s, mergeKit) : ctx.lane === 'fleet' ? fleetStep(ctx, s, phase) : singleStep(ctx, s, phase);
     if (r?.pause) ctx.sleep(ctx.idleMs);
     else if (r) return r;
   }
 }
+
+/** What the merge journal borrows from the lanes (spawn, wait and question rules stay in one place). */
+const mergeKit = {
+  ask, PAUSE, spawnOnce, wait, orcaError, mtime, fill, setPhase,
+  worktreeOf: (root, id) => fleetHandoff(root, id).wt,
+};
 
 // ------------------------------------------------------------------ single lane
 
@@ -784,7 +792,8 @@ export function applyAnswer(ctx, q) {
       return st.writeSliceState(root, id, { prompt_missing: null, prompt_unknown: null });
     case 'prompt_not_sent:close it and spawn again':
       if (s[q.ref]) io.closeTerminal(s[q.ref]);
-      return setPhase(root, id, SPAWN_PHASE[q.ref], { [q.ref]: null, prompt_missing: null, prompt_unknown: null });
+      // a lane terminal goes back to its spawn phase; the verifier is re-spawned inside the merge phase
+      return setPhase(root, id, SPAWN_PHASE[q.ref] || s.phase, { [q.ref]: null, prompt_missing: null, prompt_unknown: null });
     case 'send_failed:retry the send':
       return st.writeSliceState(root, id, { outbox: { ...s.outbox, [q.ref]: { ...s.outbox[q.ref], failed: null } } });
     case 'send_failed:drop the message': {
@@ -804,6 +813,7 @@ export function applyAnswer(ctx, q) {
     case 'gate_unresolved:continue waiting':
       return ack();
     default:
+      if (MERGE_KINDS.has(q.kind)) return applyMergeAnswer(ctx, q);
       if (q.kind === 'fleet_gate') {
         const decision = choice === 'answer with --text' ? q.answer.text : `${choice}${note}`;
         if (!decision) throw new Error('this gate needs --text with the decision');

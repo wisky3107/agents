@@ -164,7 +164,8 @@ export function writeSliceState(root, id, patch) {
 
 /**
  * A slice selected afresh must not inherit the lane state of an earlier attempt (handles, phase,
- * wait streaks): move producer-state.json and wait-*.json aside as *.prev-<ts>.json.
+ * wait streaks, merge journal): move producer-state.json, merge-journal.json and wait-*.json aside
+ * as *.prev-<ts>.json.
  */
 export function archiveSliceState(root, id) {
   const dir = sliceDir(root, id);
@@ -172,7 +173,7 @@ export function archiveSliceState(root, id) {
   const stamp = now().replace(/[:.]/g, '-');
   const moved = [];
   for (const f of fs.readdirSync(dir)) {
-    if (f !== 'producer-state.json' && !/^wait-[a-z]+\.json$/.test(f)) continue;
+    if (f !== 'producer-state.json' && f !== 'merge-journal.json' && !/^wait-[a-z]+\.json$/.test(f)) continue;
     const to = `${f.replace(/\.json$/, '')}.prev-${stamp}.json`;
     fs.renameSync(path.join(dir, f), path.join(dir, to));
     moved.push(to);

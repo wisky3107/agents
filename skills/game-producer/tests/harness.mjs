@@ -94,11 +94,30 @@ if (cmd === 'terminal wait') {
   }
   if (step.gates) fs.writeFileSync(path.join(D, 'gates.json'), JSON.stringify(step.gates));
   if (step.dead) fs.writeFileSync(path.join(D, 'dead.json'), JSON.stringify([...read('dead.json', []), ...step.dead]));
+  if (step.commit) {
+    // the lane commits on main for real (single lane), then reports the sha in its HANDOFF
+    const cp = require('child_process');
+    cp.spawnSync('git', ['-C', P, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-qm', step.commit.message]);
+    const sha = cp.spawnSync('git', ['-C', P, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+    const f = path.resolve(P, step.commit.handoff);
+    fs.writeFileSync(f, JSON.stringify({ role: 'writer', status: 'committed', sha }));
+    fs.writeFileSync(path.join(D, 'last-commit'), sha);
+  }
   if (step.runs) fs.writeFileSync(path.join(D, 'runs.json'), JSON.stringify(step.runs));
   if (step.result === 'idle') out({ ok: true, result: { wait: { handle: arg('--terminal'), satisfied: true } } });
   if (step.result === 'missing') out({ ok: false, error: { code: 'terminal_handle_stale' } }, 1);
   if (step.result === 'error') out({ ok: false, error: { code: 'runtime_unreachable', message: 'connect ECONNREFUSED' } }, 1);
   out({ ok: true, result: { wait: { satisfied: false } } });
+}
+if (cmd === 'worktree rm') {
+  // the real one runs the archive hook and removes the checkout; here: git worktree remove (no --force)
+  const wt = arg('--worktree').replace(/^path:/, '');
+  log('rm.log', { wt, phase: 'start' });
+  if (fs.existsSync(path.join(D, 'worktree-rm-sleep'))) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(fs.readFileSync(path.join(D, 'worktree-rm-sleep'), 'utf8')));
+  if (fs.existsSync(path.join(D, 'worktree-rm-fail'))) out({ ok: false, error: { code: 'worktree_archive_hook_failed' } }, 1);
+  const r = require('child_process').spawnSync('git', ['-C', P, 'worktree', 'remove', wt], { encoding: 'utf8' });
+  log('rm.log', { wt, phase: 'done', status: r.status });
+  out(r.status === 0 ? { ok: true, result: { removed: wt } } : { ok: false, error: { code: 'worktree_remove_failed', message: r.stderr } }, r.status === 0 ? 0 : 1);
 }
 if (cmd === 'terminal send') { log('sends.log', { to: arg('--terminal'), text: arg('--text') }); out({ ok: true }); }
 if (cmd === 'terminal close') { log('closes.log', { handle: arg('--terminal') }); out({ ok: true }); }
@@ -118,6 +137,14 @@ const D = process.env.FAKE_DIR, a = process.argv.slice(2);
 const arg = (f) => (a.includes(f) ? a[a.indexOf(f) + 1] : null);
 const mode = (f) => (fs.existsSync(path.join(D, f)) ? fs.readFileSync(path.join(D, f), 'utf8').trim() || '1' : null);
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(ms));
+if (a[0] === 'wait-mcp' && a.includes('--json')) {
+  fs.appendFileSync(path.join(D, 'wait-mcp.log'), arg('--path') + '\\n');
+  if (mode('bootstrap-sleep-wait')) sleep(1500);
+  const code = Number(mode('wait-mcp-exit') || 0);
+  const mcp = code ? { ok: false, error: 'timeout waiting for Funplay', hint: 'open the Editor' } : { ok: true, url: 'http://127.0.0.1:1/', projectName: path.basename(arg('--path')) };
+  process.stdout.write(JSON.stringify({ ok: !code, projectPath: arg('--path'), mcp }, null, 2) + '\\n');
+  process.exit(code);
+}
 if (a[0] !== 'agent-session' || !a.includes('--json')) { console.error('fake bootstrap: unexpected ' + a.join(' ')); process.exit(2); }
 fs.writeFileSync(path.join(D, 'bootstrap-started'), String(process.pid));
 if (mode('bootstrap-fail')) { console.error('boom'); process.exit(1); }
@@ -213,6 +240,10 @@ export const approvedEvidence = (id, verdict = 'APPROVED', runtime = { status: '
   [evRel(id, 'runtime-state.json')]: runtime,
   ...Object.fromEntries(['integration-notes.md', 'preflight.json', 'preview.png', 'stats.json', 'final-report.md'].map((f) => [evRel(id, f), f.endsWith('.json') ? {} : 'x'])),
 });
+
+/** A single-lane writer committing for real: `{ commit: … }` queue step. */
+export const commitStep = (id, message = `feat(${id}): slice`) => ({ name: 'committed', commit: { message, handoff: `.cursor/evidence/tasks/T-${id}/evidence/HANDOFF.json` } });
+export const lastCommit = (fake) => fs.readFileSync(path.join(fake.dir, 'last-commit'), 'utf8').trim();
 
 export const ev = (root, id, ...rel) => path.join(root, '.cursor', 'evidence', 'tasks', `T-${id}`, ...rel);
 export const evRel = (id, file) => `.cursor/evidence/tasks/T-${id}/evidence/${file}`;

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
-import { project, fakes, runner, runnerChild, until, evRel, sliceState, approvedEvidence } from './harness.mjs';
+import { project, fakes, runner, runnerChild, until, evRel, sliceState, approvedEvidence, commitStep, lastCommit } from './harness.mjs';
 
 // PLAN §6: real SIGKILLs at the runner's risky points, then a restart. Nothing may be spawned or sent twice.
 const H = evRel('S01', 'HANDOFF.json');
@@ -64,7 +64,7 @@ test('kill during bootstrap before the terminal exists: ask, never a blind secon
   assert.equal(f.spawns().length, 1);
 });
 
-test('kill (whole process group) during a lane wait: the restart resumes the same lanes to the merge step', async () => {
+test('kill (whole process group) during a lane wait: the restart resumes the same lanes through the record', async () => {
   const p = project({ slices: { S01: { needs: false } } });
   const f = fakes();
   f.queue([
@@ -72,7 +72,7 @@ test('kill (whole process group) during a lane wait: the restart resumes the sam
     { name: 'long wait', sleepMs: 4000 },
     { name: 'ready', write: { ...W('ready_for_review'), [evRel('S01', 'preview-startup.json')]: { previewUrl: 'http://127.0.0.1:7461/' } } },
     { name: 'approved', write: { [H]: { role: 'reviewer', status: 'approved' }, ...approvedEvidence('S01') } },
-    { name: 'committed', write: W('committed', { sha: 'k1ll' }) },
+    commitStep('S01'),
   ]);
   const real = runnerChild(p.root, f, 'start', '--once');
   await until(path.join(f.dir, 'waits.log'));
@@ -84,8 +84,8 @@ test('kill (whole process group) during a lane wait: the restart resumes the sam
   }
   real.kill('SIGKILL');
   await exited(real);
-  const out = runner(p.root, f, 'start', '--once').out.at(-1);
-  assert.deepEqual([out.step, out.commit], ['merge', 'k1ll']);
+  const out = runner(p.root, f, 'start', '--once').out;
+  assert.deepEqual(out.find((o) => o.merged), { merged: 'S01', commit: lastCommit(f) });
   assert.deepEqual(f.spawns().map((s) => s.role), ['worker', 'worker']); // one writer, one reviewer
   assert.deepEqual(f.sends(), [{ to: 'term_1', text: 'approved — commit' }]);
 });

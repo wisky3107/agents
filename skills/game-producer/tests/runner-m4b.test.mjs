@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { loadProject, preflight, policyAgents, sameSpec, budgetMode, liteWhenNoAssets, isCc4, ripStudy, sliceFront } from '../scripts/lib/project.mjs';
 import { fill, prompts, normalizeStatus, manualRequired } from '../scripts/lib/lanes.mjs';
-import { NOTES, POLICY, project, fakes, runner, evRel, ev, sliceState, clearControl, approvedEvidence } from './harness.mjs';
+import { NOTES, POLICY, project, fakes, runner, evRel, ev, sliceState, clearControl, approvedEvidence, commitStep, lastCommit } from './harness.mjs';
 
 // Lane state machines (plan M4b) against a fake orca / bootstrap (pretty-printed JSON, like the
 // real ones) and the real orca-wait.
@@ -18,17 +18,18 @@ const log = (root, id = 'S01') => fs.readFileSync(ev(root, id, 'producer-log.md'
 const single = () => project({ slices: { S01: { needs: false } } });
 const runnerFile = (root) => JSON.parse(fs.readFileSync(path.join(root, '.cursor', 'producer-runner.json'), 'utf8'));
 
-test('single lane: writer → fresh reviewer → Step 2d accept → commit → merge step; prompts filled, each lane spawned once', () => {
+test('single lane: writer → fresh reviewer → Step 2d accept → commit → recorded; prompts filled, each lane spawned once', () => {
   const p = single();
   const f = fakes();
   f.queue([
     { name: 'writer works', write: W('working') },
     { name: 'writer ready', write: { ...W('ready_for_review'), ...preview(7461) } },
     { name: 'review approved', write: R('approved', '**APPROVED**') }, // markdown around the verdict is the same verdict
-    { name: 'committed', write: W('committed', { sha: 'abc1234' }) },
+    commitStep('S01'),
   ]);
-  const last = runner(p.root, f, 'start', '--once').out.at(-1);
-  assert.deepEqual([last.step, last.commit], ['merge', 'abc1234']);
+  const out = runner(p.root, f, 'start', '--once').out;
+  assert.deepEqual(out.find((o) => o.merged), { merged: 'S01', commit: lastCommit(f) });
+  assert.match(out.at(-1).done, /release slice S01 is merged/);
   const sp = f.spawns();
   assert.deepEqual(sp.map((s) => [s.role, s.slice, s.agent]), [['worker', 'S01', 'claude --model sonnet --effort high'], ['worker', 'S01', 'claude --model opus']]);
   assert.match(sp[0].title, /^slice-runner-proj-\w+-S01$/);
@@ -41,11 +42,14 @@ test('single lane: writer → fresh reviewer → Step 2d accept → commit → m
   assert.match(sp[1].prompt, /http:\/\/127\.0\.0\.1:7461\//); // the reviewer gets the writer's port
   assert.match(sp[0].prompt, /"updatedAt":"<ISO>"/); // the agent's own placeholder stays
   assert.deepEqual(f.sends(), [{ to: 'term_1', text: 'approved — commit' }]);
-  assert.deepEqual(f.closes(), ['term_2']);
-  assert.equal(sliceState(p.root, 'S01').phase, 'merge');
-  assert.equal(loadProject(p.root).release.slices.S01, 'in_progress'); // merged only by M4c
-  // a rerun stops at the same merge step: no second writer, no second commit
-  assert.equal(runner(p.root, f, 'start', '--once').out.at(-1).step, 'merge');
+  assert.deepEqual(f.closes(), ['term_2', 'term_1']); // the reviewer at its verdict, the writer once recorded
+  assert.equal(sliceState(p.root, 'S01').phase, 'done');
+  // single lane: the commit is on main — harvest + record, no merge (M4c)
+  const proj = loadProject(p.root);
+  assert.deepEqual([proj.release.slices.S01, proj.release.current_slice], ['merged', '']);
+  assert.match(proj.notesText, new RegExp(`\\n- S01 single merged fix_rounds=0 bump=none commit=${lastCommit(f).slice(0, 7)} merged=y -\\n`));
+  // a rerun: done, no second writer, no second commit
+  assert.match(runner(p.root, f, 'start', '--once').out.at(-1).done, /S01 is merged/);
   assert.equal(f.spawns().length, 2);
   assert.equal(f.sends().length, 1);
 });
@@ -62,9 +66,9 @@ test('single lane: one nudge at idle 2, resume lane at idle 3; a stale review.md
     { name: 'fixed', write: W('ready_for_review') },
     { name: 'reviewer 2 idle before its verdict', result: 'idle' },
     { name: 'approved', write: R('approved', 'APPROVED') },
-    { name: 'committed', write: W('committed', { sha: 'beef' }) },
+    commitStep('S01'),
   ]);
-  assert.equal(runner(p.root, f, 'start', '--once').out.at(-1).step, 'merge');
+  assert.equal(runner(p.root, f, 'start', '--once').out.find((o) => o.merged)?.commit, lastCommit(f));
   assert.deepEqual(f.spawns().map((s) => [s.handle, s.agent.split(' ')[2]]), [['term_1', 'sonnet'], ['term_2', 'sonnet'], ['term_3', 'opus'], ['term_4', 'opus']]);
   assert.match(f.spawns()[1].prompt, /RESUME: a previous writer stopped\. Finish verify \+ evidence only/);
   const sends = f.sends();
@@ -72,9 +76,13 @@ test('single lane: one nudge at idle 2, resume lane at idle 3; a stale review.md
   assert.match(sends[0].text, /^Status check: .*preview-startup\.json/);
   assert.match(sends[1].text, /^Fix round 1: apply exactly the rows of the `## fix_routing` table/);
   assert.equal(sends[2].text, 'approved — commit');
-  assert.deepEqual(f.closes(), ['term_1', 'term_3', 'term_4']);
+  assert.deepEqual(f.closes().slice(0, 3), ['term_1', 'term_3', 'term_4']);
   const s = sliceState(p.root, 'S01');
-  assert.deepEqual([s.fix_rounds, s.respawns, s.commit_sha], [1, 1, 'beef']);
+  assert.deepEqual([s.fix_rounds, s.respawns, s.commit_sha], [1, 1, lastCommit(f)]);
+  // the costs go to lessons.jsonl once
+  const lessons = fs.readFileSync(path.join(p.root, '.cursor', 'evidence', 'lessons.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(lessons.map((r) => [r.event, r.count]), [['fix_round', 1], ['respawn', 1]]);
+  assert.match(loadProject(p.root).notesText, new RegExp(`- S01 single merged fix_rounds=1 bump=none commit=${lastCommit(f).slice(0, 7)} merged=y -`));
   assert.deepEqual(Object.values(s.outbox).map((e) => e.sent), [true, true, true]);
   assert.match(log(p.root), /writer term_1 stopped \(idle, idle_streak 3\): resume lane/);
 });
@@ -90,9 +98,9 @@ test('single lane: INFRA_BLOCKED with the port up → cursor for the rest of the
       { write: { ...W('ready_for_review'), ...preview(port) } },
       { name: 'infra', write: infra },
       { name: 'approved', write: R('approved', 'APPROVED') },
-      { write: W('committed', { sha: 'c0de' }) },
+      commitStep('S01'),
     ]);
-    assert.equal(runner(p.root, f, 'start', '--once').out.at(-1).step, 'merge');
+    assert.equal(runner(p.root, f, 'start', '--once').out.find((o) => o.merged)?.commit, lastCommit(f));
     // never the same sandboxed reviewer again (SKILL anti-pattern); the switch is locked run-wide
     assert.deepEqual(f.spawns().slice(1).map((s) => s.agent), ['claude --model opus', 'cursor --model auto']);
     assert.equal(runnerFile(p.root).reviewer_override, 'cursor --model auto');
@@ -167,6 +175,8 @@ test('fleet lane: gate relayed as text (never resolved by the runner), takeover 
   assert.match(sp[0].prompt, /LITE: true/); // no assets and lite_when_no_assets on
   assert.match(sp[0].prompt, /writer=claude --model sonnet --effort high reviewer=claude --model opus scanner=claude --model sonnet art=antigravity mesh=auto budget=advisory lite=true/);
   assert.equal(sliceState(p.root, 'S01').run, 'run_1');
+  // the branch main was on at selection is where the slice merges back (M4c)
+  assert.equal(sliceState(p.root, 'S01').base_branch, spawnSync('git', ['-C', p.root, 'symbolic-ref', '--short', 'HEAD'], { encoding: 'utf8' }).stdout.trim());
 
   runner(p.root, f, 'answer', '--id', 'q1', '--choice', 'approve', '--text', 'ship the 3 boards');
   // the gate stays pending (only the coordinator resolves it): after GATE_PATIENCE pauses → ask again
@@ -185,7 +195,8 @@ test('fleet lane: gate relayed as text (never resolved by the runner), takeover 
   ]);
   runner(p.root, f, 'answer', '--id', 'q2', '--choice', 'continue waiting');
   const c = runner(p.root, f, 'start', '--once').out.at(-1);
-  assert.deepEqual([c.step, c.commit], ['merge', 'f00d']);
+  // committed: the merge journal starts; this fake commit has no branch to merge (M4c has the real ones)
+  assert.deepEqual([sliceState(p.root, 'S01').phase, sliceState(p.root, 'S01').commit_sha, c.kind], ['merge', 'f00d', 'merge_source_missing']);
   assert.deepEqual(f.sends().at(-1), { to: 'term_7', text: 'approved — commit' });
   assert.equal(sliceState(p.root, 'S01').coordinator, 'term_7');
   assert.equal(f.spawns().length, 1); // a fleet coordinator is never respawned

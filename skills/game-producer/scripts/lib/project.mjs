@@ -480,3 +480,39 @@ export function writeRelease(project, change) {
   fs.renameSync(tmp, project.notesFile);
   return true;
 }
+
+// ------------------------------------------------------------------ the slice line in the Notes (write)
+
+/**
+ * Rewrite this slice's one line under `## Notes — game-producer` in place (SKILL Notes discipline:
+ * one line per slice, never a second one), or add it after the section's last line. Nothing else
+ * in the file changes. → { text, changed }
+ */
+export function editSliceNote(text, id, line) {
+  const head = text.match(/^##\s+Notes\s+[—–-]+\s+game-producer\s*$/m);
+  if (!head) throw new Error('AGENT_NOTES.md has no "## Notes — game-producer" section');
+  const start = head.index + head[0].length;
+  const nextHead = text.slice(start).search(/^##\s/m);
+  const end = nextHead < 0 ? text.length : start + nextHead;
+  const section = text.slice(start, end);
+  // `- S02 …` and the legacy `- S02: …` are the same slice line
+  const mine = new RegExp(`^- ${id}(?=[\\s:]).*$`, 'm');
+  let body;
+  if (mine.test(section)) body = section.replace(mine, () => line); // a function: `$&` in the line stays literal
+  else {
+    const trimmed = section.replace(/\s*$/, '');
+    body = `${trimmed}\n${line}${section.slice(trimmed.length) || '\n'}`;
+  }
+  const next = text.slice(0, start) + body + text.slice(end);
+  return { text: next, changed: next !== text };
+}
+
+export function writeSliceNote(project, id, line) {
+  const text = fs.readFileSync(project.notesFile, 'utf8');
+  const { text: next, changed } = editSliceNote(text, id, line);
+  if (!changed) return false;
+  const tmp = `${project.notesFile}.tmp-${process.pid}`;
+  fs.writeFileSync(tmp, next);
+  fs.renameSync(tmp, project.notesFile);
+  return true;
+}
