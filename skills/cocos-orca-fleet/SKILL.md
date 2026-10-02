@@ -132,6 +132,15 @@ to Source=generate. Review checks behavior parity scenarios as well as EXPECT vi
   Missing runtime evidence remains `manual_required` and blocks approval.
 - **Nested dispatch depth is 1.** Workers cannot dispatch. Reviewer findings come back to you;
   you create the fix Task.
+- **Claude Code built-ins stay off the fleet path** (coordinator and every worker on `claude`).
+  Every `ask` / gate in this skill is `orca orchestration ask` or `gate-create`, never
+  `AskUserQuestion` (a TUI menu: a producer driving this terminal cannot answer it and Orca keeps
+  no record — 10 such menus in block-out S02–S04 and monopoly S01). No plan mode, no `Agent`
+  subagents, `Workflow`, `EnterWorktree` or `ScheduleWakeup` — the coordinator reads files
+  itself and the loop below is its only wait. Auto-memory is off in fleet worktrees
+  (`bootstrap.mjs trust` sets `autoMemoryEnabled: false` in a linked worktree's
+  `.claude/settings.local.json`), so the reviewer never inherits a writer's memory; reusable
+  findings go to `learning-candidates.json`.
 - **Fleet ends at "offer commit".** Commit, push, close Creator, merge, `worktree rm` are the
   director's, via the `cocos-orca-worktree` finish sequence.
 

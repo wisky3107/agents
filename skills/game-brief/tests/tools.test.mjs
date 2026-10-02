@@ -227,6 +227,21 @@ test('a later slice adding a screen needs its own visual target',()=>{
   put(p,'docs/mockups/S02-settings.svg','<svg/>');
   assert.ok(!validate(p).errors.some(e=>e.code==='missing_screen_target'));
 });
+test('with the ui-popup kit offered, a popup slice installs the kit and never uses Canvas popup nodes',()=>{
+  const p=validProject(),f='slices/S01-slice.md',t=fs.readFileSync(path.join(p,f),'utf8');
+  const codes=()=>validate(p).errors.map(e=>e.code);
+  put(p,f,t.replace('scene_objects: []','scene_objects:\n  - assets/resources/prefab/ui/PopupResult.prefab'));
+  assert.ok(!codes().includes('popup_kit_missing'), 'no kit rule without the overview offering the kit');
+  put(p,'docs/flows/00-project-overview.md','Popups: the opt-in `ui-popup` kit.\n');
+  assert.ok(codes().includes('popup_kit_missing'));
+  put(p,f,t.replace('scene_objects: []','scene_objects:\n  - assets/resources/prefab/ui/PopupResult.prefab').replace('code:\n    - assets/S01.ts','code:\n    - assets/S01.ts\n    - assets/scripts/common/uiManager.ts'));
+  assert.ok(!codes().includes('popup_kit_missing'));
+  put(p,f,t.replace('scene_objects: []','scene_objects:\n  - Canvas/UI/PausePopup'));
+  assert.ok(codes().includes('popup_outside_kit'));
+  put(p,f,t.replace('scene_objects: []','scene_objects:\n  - Canvas/HUD/ScoreLabel\n  - assets/resources/prefab/ui/PopupResult.prefab'));
+  put(p,'assets/scripts/common/uiManager.ts','// installed');
+  const c=codes(); assert.ok(!c.includes('popup_kit_missing') && !c.includes('popup_outside_kit'));
+});
 test('contract validator catches missing root contracts', () => {
   const p = project(), r = validate(p);
   assert.equal(r.ok, false); assert.ok(r.errors.some(e => e.code === 'missing_root_contract'));

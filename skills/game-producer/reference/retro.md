@@ -15,6 +15,9 @@ is project-local proposals; shared-library curation uses existing director autho
   sections. Missing evidence is a finding, never an inferred PASS.
 - Recipe library INDEX/registry when available; read matching recipes to decide add vs merge.
   Use `cocos-playbook/references/workflow.md` and `recipe-format.md` for curation rules.
+- Kit candidates (when `<playbook>/kits/kit.mjs` exists): `node <playbook>/kits/kit.mjs candidates
+  --project <game dir name>`, plus `kit.mjs check <project> <files>` for each candidate group and
+  each `kit_signal` in learning-candidates. Read only the verdict lines; never open the other games.
 - Policy already resolved by producer; do not reread Notes history.
 - Optional memory (run only if `~/.orca-memory/bin/orca-memory` exists; use a pack only on
   `inject: true`): for each proposed operational fix or candidate topic, at most one
@@ -41,6 +44,9 @@ One project can supply a candidate; verified/default need the library's later-re
 - Recipe candidates: stable candidate id, proposed recipe id or merge target, applicability,
   evidence, limitations, decision (propose/published candidate/deferred) and library path.
 - Recipe reuse: pinned id/revision, project, actual pass/fail/manual_required, review evidence.
+- Kit proposals: feature files, `check` verdict (kit-ready / kit-possible / needs-extraction),
+  games it appears in, blockers, and target (new kit or new part of an existing kit). Forks of one
+  game do not count as independent reuse. Building a kit is curator work (kits/README.md).
 - Missing evidence and dropped items with reasons.
 - Stats rollup using only present data; list missing tasks, never invent zero retries.
 

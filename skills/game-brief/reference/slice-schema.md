@@ -35,6 +35,12 @@ authoring depth only; the S01 visual contract below is unchanged.
   not owned by an earlier slice) needs its own visual target: an existing reference image, or
   `docs/mockups/S<nn>-<screen>.svg`, linked in the slice or in an EXPECT line naming the slice id,
   plus layout metrics and PASS/FAIL checks in its acceptance/playtest. Its writer must not guess layout.
+- Popups (anything that opens over the screen and closes: result, pause, settings, shop, reward,
+  toast) are prefabs, not Canvas nodes, when `docs/flows/00-project-overview.md` offers the
+  `ui-popup` kit: `scene_objects` lists `assets/resources/prefab/ui/Popup<Name>.prefab`, `code`
+  lists `assets/scripts/modules/popup/<name>/Popup<Name>.ts` + `assets/scripts/constant/PopupDefine.ts`.
+  The first slice with a popup installs the kit (`scope.in` "install ui-popup kit", `code` lists
+  `assets/scripts/common/uiManager.ts`) unless the project already has that file. HUD stays on Canvas.
 - `size` decides the lane: `L` → `cocos-orca-fleet`; `S` / `M` → single agent
   (`vibe-game-director`). Prefer `L` for anything with new art + scene + code.
 
@@ -110,13 +116,14 @@ player_outcome: "After this slice the player can: die → see result → play ag
 release_items: [RC-03, RC-05, RC-06, RC-07, RC-10, RC-17, RC-22]
 
 scope:
-  in:  [death detection, FailPanel UI, restart flow, best-score persist]
+  in:  [death detection, install ui-popup kit, PopupFail, restart flow, best-score persist]
   out: [revive by ad, leaderboard, share]
 
 paths:                             # → PLAN.allowed_paths / allowed_scene_objects
-  code: [assets/scripts/systems/GameStateSystem.ts, assets/scripts/ui/FailPanel.ts]
+  code: [assets/scripts/systems/GameStateSystem.ts, assets/scripts/modules/popup/fail/PopupFail.ts,
+         assets/scripts/constant/PopupDefine.ts, assets/scripts/common/uiManager.ts]   # last = kit install
   art:  [assets/art/ui/fail/**]
-  scene_objects: [Canvas/UI/FailPanel, Canvas/HUD/ScoreLabel]
+  scene_objects: [assets/resources/prefab/ui/PopupFail.prefab, Canvas/HUD/ScoreLabel]
 
 assets:                            # → art-manifest rows (stem, P0|P1); refs ASSET_MANIFEST.md
   2d:    [{stem: fail_panel_bg, p: P0}, {stem: btn_restart, p: P0}]
@@ -127,7 +134,7 @@ assets:                            # → art-manifest rows (stem, P0|P1); refs A
 acceptance:                        # → PLAN.acceptance_criteria — observations, never logic
   - text: "Collision → ship breaks with particle burst, hit-stop ≈80 ms, light shake"
     evidence: OBSERVED (reference/<slug>/video/frames/t18.jpg)
-  - text: "FailPanel slides in from bottom ≤250 ms ease-out, shows score + best"
+  - text: "PopupFail slides in from bottom ≤250 ms ease-out, shows score + best"
     evidence: ASSUMPTION
   - text: "Tap Restart → gameplay in <500 ms, score reset, best kept"
     evidence: GIVEN (IDEA §4)
@@ -200,19 +207,20 @@ player_outcome: "After this slice the player can: open Settings, mute, reload th
 release_items: [RC-04, RC-09]      # RC rows this slice closes; release-polish takes the rest
 
 scope:
-  in:  [SettingsPanel open/close, sound toggle, SaveSystem schema v1, resume last level, corrupt-save fallback]
+  in:  [PopupSettings open/close, sound toggle, SaveSystem schema v1, resume last level, corrupt-save fallback]
   out: [cloud save, account, music volume slider, language picker]
 
 paths:                             # only what S05 touches; S01/S03 files it edits are listed too
   code:
     - assets/scripts/systems/SaveSystem.ts        # new  ~120
-    - assets/scripts/ui/SettingsPanel.ts          # new  ~140
+    - assets/scripts/modules/popup/settings/PopupSettings.ts   # new  ~140 (extends PopupBase)
+    - assets/scripts/constant/PopupDefine.ts      # edit ~1  (POPUP.SETTINGS)
     - assets/scripts/systems/AudioSystem.ts       # edit ~30
     - assets/scripts/ui/HudView.ts                # edit ~25 (gear button)
     - assets/scripts/GameController.ts            # edit ~40 (resume on boot)
     - tests/save-system.spec.ts                   # new  ~70
   art: [assets/art/ui/settings/**]
-  scene_objects: [Canvas/Panels/SettingsPanel, Canvas/HUD/GearButton]   # new screen → needs a visual target
+  scene_objects: [assets/resources/prefab/ui/PopupSettings.prefab, Canvas/HUD/GearButton]   # new popup → needs a visual target; kit installed in S01
 
 assets:
   2d:    [{stem: settings_panel_bg, p: P0}, {stem: toggle_on, p: P0}, {stem: toggle_off, p: P0}, {stem: icon_gear, p: P0}]
@@ -266,8 +274,11 @@ Self-check for any later slice before you save it:
 
 1. `depends_on` equals its `dag` entry; every `unlocks` id lists this slice in its own `dag` entry.
 2. Every `paths.code` file has a line estimate; `lines` = sum × 1.5 rounded up to 50.
-3. A new `Panel/Screen/Menu/Popup/Dialog/Overlay/Modal` in `scene_objects` → a visual target file
-   exists, is cited in acceptance, and playtest names its capture paths.
+3. A new `Panel/Screen/Menu/Popup/Dialog/Overlay/Modal` or `prefab/ui/Popup*` in `scene_objects` → a
+   visual target file exists, is cited in acceptance, and playtest names its capture paths. With the
+   `ui-popup` kit offered, popups are `prefab/ui/Popup*` (never `Canvas/.../*Popup|Dialog|Modal`) and
+   the kit is installed by this or an earlier slice (`validate-contracts`: `popup_kit_missing`,
+   `popup_outside_kit`).
 4. Every `feel_rows` ID appears in the first column of the EXPECT feel table.
 5. Count ASSUMPTION rows: ≥ 3 → `needs_director_ok: true` and each open choice is in `risks`.
 6. `release_items` are real `RC-nn` rows whose `closed_by` is this slice.
