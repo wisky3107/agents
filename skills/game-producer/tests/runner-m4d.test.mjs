@@ -324,3 +324,77 @@ test('judge: a fleet lane\'s worktree evidence is added to the sandbox; an unkno
     Object.assign(process.env, saved);
   }
 });
+
+test('Cursor off: one cursor_off question per run before any spawn; the answer moves every Cursor role', () => {
+  const notes = NOTES(POLICY).replace('  scanner_agent: claude --model sonnet\n', '  scanner_agent: cursor --model auto\n').replace('  reviewer_agent: claude --model opus\n', '  reviewer_agent: cursor --model auto\n');
+  const p = project({ notes, slices: { S01: { needs: false, size: 'L' }, S02: { needs: false } } });
+  const f = fakes();
+  const env = { PRODUCER_RUNNER_CURSOR: 'off' };
+  const a = runner(p.root, f, 'start', '--once', { env }).out.at(-1);
+  assert.deepEqual([a.waiting, a.kind], ['q1', 'cursor_off']);
+  assert.match(runnerFile(p.root).questions[0].text, /Cursor roles: reviewer, scanner/);
+  assert.equal(f.spawns().length, 0); // nothing started on a Cursor that cannot log in
+  runner(p.root, f, 'answer', '--id', 'q1', '--choice', 'use claude --model sonnet --effort high for every Cursor role');
+  f.queue([]);
+  runner(p.root, f, 'start', '--once', { env });
+  const sp = f.spawns();
+  assert.deepEqual([sp.length, sp[0].role, sp[0].agent], [1, 'coordinator', 'claude --model sonnet']);
+  assert.match(sp[0].prompt, /reviewer=claude --model sonnet --effort high scanner=claude --model sonnet --effort high .* cursor=off \(Cursor roles above already moved by the director\)/);
+  assert.equal(runnerFile(p.root).cursor_substitute, 'claude --model sonnet --effort high');
+  assert.equal(runnerFile(p.root).questions.filter((q) => q.kind === 'cursor_off').length, 1); // once per run
+});
+
+test('Cursor off, single lane and handoffs: asked before a spawn, retry probes again, no_cursor moves without asking, a Cursor art backend is asked', () => {
+  const off = { env: { PRODUCER_RUNNER_CURSOR: 'off' } };
+  const on = { env: { PRODUCER_RUNNER_CURSOR: 'on' } };
+  const cursorWriter = (policy = POLICY) => NOTES(policy).replace('  writer_agent: claude --model sonnet --effort high\n', '  writer_agent: cursor --model auto\n');
+  // single lane: one question before the writer; "logged in, retry" → the next runner probes again
+  const p = project({ notes: cursorWriter(), slices: { S01: { needs: false } } });
+  const f = fakes();
+  const a = runner(p.root, f, 'start', '--once', off).out.at(-1);
+  assert.deepEqual([a.kind, f.spawns().length], ['cursor_off', 0]);
+  assert.match(runnerFile(p.root).questions[0].text, /Cursor roles: writer/);
+  runner(p.root, f, 'answer', '--id', 'q1', '--choice', 'cursor logged in, retry');
+  f.queue([]);
+  runner(p.root, f, 'start', '--once', on);
+  assert.deepEqual(f.spawns().map((s) => s.agent), ['cursor --model auto']);
+  // policy no_cursor is the director's own decision: the writer moves, nobody is asked
+  const n = project({ notes: cursorWriter(`${POLICY} no_cursor=true`), slices: { S01: { needs: false } } });
+  const g = fakes();
+  g.queue([]);
+  runner(n.root, g, 'start', '--once');
+  assert.deepEqual(g.spawns().map((s) => s.agent), ['claude --model sonnet --effort high']);
+  assert.match(g.spawns()[0].prompt, /Locks already resolved \(do not open AGENT_NOTES\.md\): writer=claude --model sonnet --effort high/);
+  // the Step 0-1 producer on a Cursor orchestrator: asked, not spawned
+  const s01 = project({ notes: NOTES('').replace('  orchestrator_agent: claude --model sonnet       # launch spec\n', '  orchestrator_agent: cursor --model auto\n'), slices: { S01: { needs: false } } });
+  const h = fakes();
+  runner(s01.root, h, 'start', '--once', off);
+  runner(s01.root, h, 'answer', '--id', 'q1', '--choice', 'run Step 0-1 with an LLM producer');
+  const c = runner(s01.root, h, 'start', '--once', off).out.at(-1);
+  assert.deepEqual([c.kind, h.spawns().length], ['cursor_off', 0]);
+  assert.match(runnerFile(s01.root).questions[1].text, /Cursor roles: producer \(Step 0-1\)/);
+  // a fleet with art_backend: cursor that makes art: no claude substitute for an art backend
+  const artNotes = NOTES(POLICY).replace('  art_backend: antigravity\n', '  art_backend: cursor\n');
+  const art = project({ notes: artNotes, slices: { S01: { needs: false, size: 'L', assets: 'hero.png' } } });
+  const k = fakes();
+  const d = runner(art.root, k, 'start', '--once', off).out.at(-1);
+  assert.deepEqual([d.kind, k.spawns().length], ['cursor_art', 0]);
+  // a lite fleet (no assets) runs no art Task: no question about the art backend
+  const lite = project({ notes: artNotes, slices: { S01: { needs: false, size: 'L' } } });
+  const m = fakes();
+  m.queue([]);
+  runner(lite.root, m, 'start', '--once', off);
+  assert.deepEqual(m.spawns().map((x) => x.role), ['coordinator']);
+});
+
+test('a Cursor reviewer switch from an INFRA fallback follows the Cursor decision after a restart', () => {
+  const p = project({ notes: NOTES(POLICY, '{S01: in_progress}'), slices: { S01: { needs: false } } });
+  const f = fakes();
+  fs.mkdirSync(path.join(p.root, '.cursor', 'evidence', 'tasks', 'T-S01'), { recursive: true });
+  fs.writeFileSync(path.join(p.root, '.cursor', 'evidence', 'tasks', 'T-S01', 'producer-state.json'),
+    JSON.stringify({ phase: 'spawn-reviewer', lane: 'single', writer: 'term_w', reviewer: null, reviewer_next: 'cursor --model auto', handoff_base: 0 }));
+  fs.writeFileSync(path.join(p.root, '.cursor', 'producer-runner.json'), JSON.stringify({ slice: 'S01', step: 'lane', questions: [], reviewer_override: 'cursor --model auto', cursor_substitute: 'claude --model sonnet --effort high' }));
+  f.queue([]);
+  runner(p.root, f, 'start', '--once', { env: { PRODUCER_RUNNER_CURSOR: 'off' } });
+  assert.deepEqual(f.spawns().map((x) => [x.title.split('-')[0], x.agent]), [['review', 'claude --model sonnet --effort high']]);
+});

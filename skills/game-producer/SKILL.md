@@ -45,6 +45,15 @@ node ~/.agents/skills/game-producer/scripts/producer-runner.mjs start --dry-run 
   (`reference/judge-prompt.md`) answers fleet gates and lane questions the contracts already settle,
   unknown HANDOFF statuses and verdict-line mismatches; it can only pick an offered option or defer,
   never stop / block. Other providers are not verified yet: their questions go to the director.
+- **Cursor that cannot log in** (`cursor-agent status` can say "Logged in" while every run waits at
+  the login screen): the runner probes once per run (`cocos-orca-fleet/scripts/agent-ready.mjs`).
+  Cursor off and a lane, coordinator, verifier or LLM producer on a Cursor spec → before that spawn,
+  one `cursor_off` question for the whole run: move every Cursor role to
+  `claude --model sonnet --effort high` (kept as `cursor_substitute`) or log Cursor in and retry.
+  Policy `no_cursor=true` moves them without asking. `art_backend: cursor` → `cursor_art` (pick
+  another backend). Fleet locks end in `cursor=on|off`, plus a note when roles were moved.
+- **HANDOFF statuses:** one that only names a step (`implementing`, `reviewing`, …) counts as
+  `working`; any other unknown status is a question (with "treat as working, keep waiting").
 - **One producer per project:** the runner holds `.cursor/producer.lock` (a second `start` or a
   `launch` is refused). An LLM producer does not take that lock: never run an LLM slice loop while
   `producer-runner.mjs status` shows a live runner; the Step 0–1 / Step 3 producers never dispatch
@@ -390,8 +399,8 @@ when it was the only blocker/major, the verdict counts as APPROVED. `gate:<pct>`
 cannot reach localhost: spawn the same review on `cursor --model auto` and lock that for the
 rest of the run. Non-200 ⇒ integrator recovery, then a fresh review. `producer-runner.mjs`
 launches every reviewer with bootstrap's current command, so there is no stale launch to correct
-first: its first 200-with-INFRA_BLOCKED moves straight to `cursor --model auto` (policy
-`no_cursor=true` → it asks instead).
+first: its first 200-with-INFRA_BLOCKED moves straight to `cursor --model auto` — unless Cursor is
+off (policy `no_cursor=true` or the runner's probe), then it asks instead.
 
 1. `auto_commit=true` → reply to the lane terminal: *"approved — commit"*; the lane runs
    `/commit-guard` in its checkout and sets HANDOFF `committed` + sha. `false` → mark

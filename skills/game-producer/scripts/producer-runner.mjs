@@ -24,7 +24,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { loadProject, sliceStatuses, nextSlice, preflight, writeRelease } from './lib/project.mjs';
 import * as st from './lib/state.mjs';
-import { laneFor, runSlice, applyAnswer } from './lib/lanes.mjs';
+import { laneFor, runSlice, applyAnswer, cursorUndecided, cursorState, resetCursorProbe, agentOrAsk, cursorArtBlocked, CursorUndecided, CURSOR_FALLBACK } from './lib/lanes.mjs';
 import { currentBranch, appendLessons, lessonRows, readJournal } from './lib/merge.mjs';
 import { consult, judgeSpec, JUDGE_KINDS, MAX_JUDGED } from './lib/judge.mjs';
 import * as io from './lib/orca.mjs';
@@ -69,6 +69,8 @@ const QUESTION = {
   slice_file: { options: ['fixed, retry', 'stop'], text: 'The slice file is missing or unreadable.' },
   adopt: { options: ['no lane is running, start it', 'mark blocked', 'stop'], text: 'This slice is in progress but the runner did not start it; it will not spawn a second lane blind.' },
   blocked_resume: { options: ['start the slice fresh', 'mark blocked', 'stop'], text: 'The runner marked this slice blocked, but AGENT_NOTES says in_progress again.' },
+  cursor_off: { options: [`use ${CURSOR_FALLBACK} for every Cursor role`, 'cursor logged in, retry', 'stop'], text: 'Cursor is not usable on this machine and this lane would start it.' },
+  cursor_art: { options: ['art_backend changed, retry', 'cursor logged in, retry', 'stop'], text: 'art_backend is cursor but Cursor cannot log in; an art backend has no claude substitute — set fleet.art_backend to antigravity or gpt-image-gen.' },
   runner_error: { options: ['fixed, retry', 'stop'], text: 'The runner hit an error.' },
   stuck: { options: ['fixed, retry', 'stop'], text: 'The runner cannot pick a slice.' },
 };
@@ -179,8 +181,8 @@ function handToLlm(root, step) {
     save({ handle: reg.handle, at: st.now(), prompt_sent: 'unknown' });
     return { handle: reg.handle, again: true, prompt_sent: 'unknown' };
   }
-  const agent = project.fleet.orchestrator_agent;
-  if (!agent) throw new Error('AGENT_NOTES fleet.orchestrator_agent is empty: no agent for the LLM producer');
+  if (!project.fleet.orchestrator_agent) throw new Error('AGENT_NOTES fleet.orchestrator_agent is empty: no agent for the LLM producer');
+  const agent = agentOrAsk(project, project.fleet.orchestrator_agent, 'producer');
   const file = step === 'step01' ? 'producer-step01-prompt.md' : 'producer-step3-prompt.md';
   const tpl = fs.readFileSync(new URL(file, REF), 'utf8').match(/```text\n([\s\S]*?)\n```/)[1];
   const prompt = tpl.replace(/<PROJECT>/g, () => root).replace(/<RUNNER>/g, () => RUNNER);
@@ -232,8 +234,19 @@ function applyAnswers(root) {
         return { stop: q.id };
       }
       if (choice === 'mark blocked' || choice === 'skip this slice') markBlocked(root, q.slice, `${q.kind}: ${choice}`);
-      else if (q.kind === 'needs_policy' && choice === 'run Step 0-1 with an LLM producer') {
-        const h = handToLlm(root, 'step01');
+      else if (q.kind === 'cursor_off' || q.kind === 'cursor_art') {
+        // once per run: every later spawn (lanes, coordinator, verifier, LLM producer) uses it
+        if (choice.startsWith('use ')) st.writeRunner(root, { cursor_substitute: CURSOR_FALLBACK });
+        else resetCursorProbe();
+      } else if (q.kind === 'needs_policy' && choice === 'run Step 0-1 with an LLM producer') {
+        let h;
+        try {
+          h = handToLlm(root, 'step01');
+        } catch (err) {
+          if (!(err instanceof CursorUndecided)) throw err;
+          stopFor(root, null, 'cursor_off', `${cursorState(loadProject(root)).reason} — Cursor roles: producer (Step 0-1); answer, then pick the LLM producer again`);
+          return {};
+        }
         return { exit: handoffReport('step01', h, h.handle && h.prompt_sent !== false ? { note: 'the LLM producer launches the runner when the policy line is written' } : {}) };
       } else if (q.kind === 'adopt' || q.kind === 'blocked_resume') {
         const { lane, moved } = freshLane(root, q.slice, loadProject(root));
@@ -344,7 +357,13 @@ async function start(root, { dryRun: dry, once }) {
       if (next.done) {
         // runner mode owns the whole run: release and retro go to an LLM producer, once
         if (project.release.producer_mode !== 'runner') return say({ done: next.reason, next_step: 'Step 3 (ship / retro): run game-producer Step 3, or set release.producer_mode: runner' });
-        return say(handoffReport('step3', handToLlm(root, 'step3'), { done: next.reason }));
+        try {
+          return say(handoffReport('step3', handToLlm(root, 'step3'), { done: next.reason }));
+        } catch (err) {
+          if (!(err instanceof CursorUndecided)) throw err;
+          stopFor(root, null, 'cursor_off', `${cursorState(project).reason} — Cursor roles: producer (Step 3)`);
+          continue;
+        }
       }
       if (next.stuck) {
         stopFor(root, null, 'stuck', next.reason);
@@ -375,20 +394,33 @@ async function start(root, { dryRun: dry, once }) {
       stopFor(root, id, 'blocked_resume', `${id}: ${s.blocked_reason || 'blocked'}`);
       continue;
     }
+    // a lane that would start Cursor while Cursor cannot log in: the director decides once for the run
+    const lane = s.lane || laneFor(project, id);
+    const undecided = cursorUndecided(project, lane);
+    if (undecided.length) {
+      stopFor(root, id, 'cursor_off', `${cursorState(project).reason} — Cursor roles: ${undecided.join(', ')}`);
+      continue;
+    }
+    if (lane === 'fleet' && cursorArtBlocked(project, id)) {
+      stopFor(root, id, 'cursor_art', cursorState(project).reason);
+      continue;
+    }
     st.writeRunner(root, { slice: id, step: 'lane' });
 
     const t = project.policy?.tokens || {};
     const ctx = {
-      project, id, lane: s.lane || laneFor(project, id),
+      project, id, lane,
       autoCommit: String(t.auto_commit ?? project.release.auto_commit ?? 'true') === 'true',
       autoMerge: String(t.auto_merge ?? project.release.auto_merge ?? 'true') === 'true',
-      noCursor: t.no_cursor === 'true', waitMs: WAIT_MS, idleMs: IDLE_MS, sleep,
+      waitMs: WAIT_MS, idleMs: IDLE_MS, sleep,
     };
     let r;
     try {
       r = runSlice(ctx);
     } catch (err) {
-      stopFor(root, id, 'runner_error', err.message);
+      // a spawn that would start a Cursor nobody decided about (e.g. Cursor logged out mid-run)
+      if (err instanceof CursorUndecided) stopFor(root, id, 'cursor_off', `${cursorState(project).reason} — Cursor roles: ${err.roles.join(', ')}`);
+      else stopFor(root, id, 'runner_error', err.message);
       continue;
     }
     if (r.stopped) return say({ stopped: `control file says ${r.stopped}`, slice: id });

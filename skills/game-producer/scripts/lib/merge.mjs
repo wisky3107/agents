@@ -279,7 +279,7 @@ function verify(ctx, s, j, kit) {
   }
   const file = path.join(root, evidenceRel(id), 'verify-main.json');
   if (!s.verifier && !s.verifier_spawning) writeJournal(root, id, { verify_base: kit.mtime(file) });
-  const sp = kit.spawnOnce(ctx, 'verifier', { role: 'worker', agent: ctx.project.fleet.writer_agent, title: `verify-${slug(root)}-${id}`, prompt: verifyPrompt(ctx, j, kit.fill) });
+  const sp = kit.spawnOnce(ctx, 'verifier', { role: 'worker', agent: kit.agentOrAsk(ctx.project, ctx.project.fleet.writer_agent, 'verifier'), title: `verify-${slug(root)}-${id}`, prompt: verifyPrompt(ctx, j, kit.fill) });
   if (sp.ask || sp.pause) return sp;
   const verdict = () => {
     const fresh = kit.mtime(file) !== readJournal(root, id).verify_base;

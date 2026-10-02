@@ -185,7 +185,7 @@ same integrate gate with route=import verification. They do not trigger generati
 
 ```
 scan
-  ├─ art-manifest          (skeleton manifest.json incl. complexity per mesh; recipe A cursor --model auto)
+  ├─ art-manifest          (skeleton manifest.json incl. complexity per mesh; recipe A cursor --model auto, or claude sonnet / B when Cursor is off)
   ├─ art-2d *              (optional; locked art_backend; textures / sprites only)
   ├─ art-concept-<stem> ×N (ALWAYS antigravity / recipe C)  ─┐
   │         ↓ CONCEPT: PASS                                  │ parallel per stem
@@ -198,7 +198,7 @@ integrate ← all art-mesh + all art-anim + art-2d + implement
 
 | Task | Agent | Owns (disjoint) | Never |
 |---|---|---|---|
-| `art-manifest` | `cursor --model auto` | `art_paths/manifest.json` skeleton only (rows carry `complexity`, `tri_budget`) | concepts, meshes, evidence art |
+| `art-manifest` | `cursor --model auto` (Cursor off → `claude --model sonnet --effort high`) | `art_paths/manifest.json` skeleton only (rows carry `complexity`, `tri_budget`) | concepts, meshes, evidence art |
 | `art-concept-<stem>` | **always** `agy --dangerously-skip-permissions` | `art_paths/concepts/<stem>/**` + `evidence/art/<stem>/concept-check.md` | other stems' concepts, any `.glb`, `manifest.json` |
 | `art-mesh-<stem>` | locked `art_backend` (default antigravity) | `art_paths/gen_<stem>_*.py`, `art_paths/gen3d/<stem>/**`, `art_paths/<stem>.glb` (or PLAN name), `evidence/art/<stem>/**`, its `model-check.md`; may patch **only** its manifest row (`complexity`/`concepts`/`verify`) | other stems' files, Creator, `.meta` |
 | `art-anim-<stem>` | locked `art_backend` (needs local Blender + write access to `char_anim_home`) | `<char_anim_home>` files of id `<slug>-<stem>`, `art_paths/<stem>.fbx` (row `file`), `art_paths/<fbf_dir>/**`, `evidence/art/<stem>/anim/**`, `anim-check.md`; may patch **only** its row's `anim_verify` | other characters' pipeline files, pipeline code, Creator, `.meta` |
@@ -242,11 +242,12 @@ Generated 2D on `art_backend=antigravity` imports only with `evidence/art/2d/2d-
 Resolve `scanner_agent`, `planner_agent`, `writer_agent` and `reviewer_agent` **once**, together
 with `art_backend`, before any Task starts (prompt > the matching `AGENT_NOTES.md` `fleet.*`
 key > default). Record all four in `docs/plans/<feature>.md` and in the matching evidence specs.
-Never re-ask or switch mid-fleet.
+Never re-ask or switch mid-fleet, except the two environment failures this skill names: a Cursor
+that cannot log in (below) and a reviewer that cannot reach localhost (Coordinator loop, step 3).
 
 | Field | Default | Accepted values (launch spec) | Start recipe |
 |---|---|---|---|
-| `scanner_agent` | `cursor --model auto` | `cursor --model <m>` · `claude --model <m> [--effort <e>]` · `codex` · `antigravity` | `cursor` → **A**; anything else → **B** |
+| `scanner_agent` | `cursor --model auto` (Cursor off: see the rule below) | `cursor --model <m>` · `claude --model <m> [--effort <e>]` · `codex` · `antigravity` | `cursor` → **A**; anything else → **B** |
 | `planner_agent` | `claude --model opus --effort high` | `cursor --model <m>` · `claude --model <m> [--effort <e>]` · `codex` · `antigravity` | `cursor` → **A**; anything else → **B** |
 | `writer_agent` | `claude --model opus --effort high` | `cursor --model auto` · `claude --model <m> [--effort <e>]` · `codex` · `antigravity` | `cursor` → **A**; anything else → **B** |
 | `reviewer_agent` | `claude --model opus` | same set | same rule |
@@ -264,14 +265,30 @@ when `reviewer_agent` equals `writer_agent`. If the resolved CLI is not on PATH
 (`which cursor-agent|claude|codex|agy`), one `ask` for a substitute from the accepted set, then
 lock that.
 
+**Cursor must answer, not just be installed** (`cursor-agent status` can say "Logged in" while
+every run stops at "Press any key to log in…"). The producer's locks carry `cursor=on|off`: its
+runner probed once, asked the director once per run if any lock (or `art_backend`) was on Cursor,
+and already moved those specs (a trailing note then says so). Standalone, when any role resolves to Cursor, probe once at
+Step 0.2: `node ~/.agents/skills/cocos-orca-fleet/scripts/agent-ready.mjs --agent cursor`
+(`usable: false`, or no JSON line, means off). With Cursor off:
+- `art-manifest` — Cursor only by default, it has no lock field — runs on
+  `claude --model sonnet --effort high`, recipe **B** (boot per `agent-cmd` `needsBoot`; it is not an
+  art gen worker), named in the lock line (`art-manifest=claude sonnet (cursor: <reason>)`);
+- any other role whose spec is Cursor (scanner, planner, writer, reviewer, `art_backend: cursor`) →
+  one `ask` for the whole run at Step 0.2, before any dispatch: move every Cursor role to claude
+  sonnet, or log Cursor in. With the producer this never comes up — it resolved its locks and asked
+  about a Cursor `art_backend` before dispatch.
+If Cursor stops working mid-fleet (a worker at the login screen, an agent_readiness timeout), the
+same rule applies to that Task. A Cursor login is never a reason for a fleet `infra_blocked`.
+
 ## Role map
 
 | Fleet role | AGENTS.md hat | Agent | Owns | Never |
 |---|---|---|---|---|
 | coordinator | planner hat, **validation only** (AGENTS.md has no separate coordinator row; the "produce a PLAN" right is delegated to `plan` / the director / the slice) | this session — default spawn is `cursor --model auto` when the director did not name an agent (`/new-cocos-game` / `agent-session`; `AGENT_NOTES.md` `fleet.orchestrator_agent`) | Run, Tasks, DAG, gates, PLAN **validation**, final-report | files, Editor, lock, authoring a PLAN from scratch, re-deriving fix scope |
 | plan (branch C only) | planner | per locked `planner_agent` (default `claude --model opus --effort high`) | `docs/plans/<feature>.md`, `evidence/specs/plan-notes.md` | any other file, Editor, lock, Funplay |
-| scan | discover | per locked `scanner_agent` (default `cursor --model auto`) | `evidence/discovery.md`, `evidence/baseline/` | writes outside evidence dir |
-| art-manifest | writer (assets) | `cursor --model auto` | `art_paths/manifest.json` skeleton | concepts, meshes |
+| scan | discover | per locked `scanner_agent` (default `cursor --model auto`; Cursor off: Locks) | `evidence/discovery.md`, `evidence/baseline/` | writes outside evidence dir |
+| art-manifest | writer (assets) | `cursor --model auto`; `claude --model sonnet --effort high` when Cursor is off | `art_paths/manifest.json` skeleton | concepts, meshes |
 | art-concept-<stem> | writer (assets) | **always antigravity** | `concepts/<stem>/**`, concept-check block | meshes, other stems |
 | art-mesh-<stem> | writer (assets) | locked `art_backend` (default antigravity); route per `mesh_backend` (Blender script ∣ 3D Gen Studio ∣ fallback Blender) | generator or `gen3d/<stem>/**` + `.glb` for stem, iso/compare evidence, model-check block | other stems, Creator |
 | art-anim-<stem> | writer (assets) | locked `art_backend`; char-anim-pipeline (`char-anim` skill) | rigged FBX / FBF atlas for stem, anim evidence, anim-check block | other stems, pipeline code, Creator |
@@ -288,7 +305,10 @@ Fleet Progress:
 - [ ] 0.2 Extract ONLY the leading yaml fence of AGENT_NOTES.md (python/sed — do not load
           Notes sections). Lock art_backend (antigravity | cursor | gpt-image-gen),
           mesh_backend (auto | blender | 3dgenstudio), scanner_agent, planner_agent,
-          writer_agent, reviewer_agent once (prompt > AGENT_NOTES.md > default); if mesh_backend is
+          writer_agent, reviewer_agent once (prompt > AGENT_NOTES.md > default); Cursor state from
+          the producer's `cursor=on|off`, else — when any role, art-manifest included, is on
+          Cursor — `agent-ready.mjs --agent cursor` (Locks: off → art-manifest on claude sonnet,
+          any other Cursor role → one ask for the run now); if mesh_backend is
           auto/3dgenstudio and the PLAN has complex Source=generate meshes, run
           `python3 .cursor/skills/cocos-asset-gen/scripts/gen3d_studio.py --check`
           → studio_available; announce all locks in one line; never re-ask later
@@ -411,7 +431,7 @@ the director or reviewer evidence, and its limitations apply ("not recorded" mea
 |---|---|---|---|
 | plan (branch C only) | — | recipe A/B per `planner_agent` | PLAN on disk, passes validation, director gate approved; terminal closed (recipe B) or released (A) |
 | scan | plan (C) / — (A, B) | recipe A/B per `scanner_agent` | `discovery.md` + `baseline/`; `status` to implement + art-manifest |
-| art-manifest | scan | recipe **A** | `manifest.json` skeleton with every mesh/2D row (2D rows carry `method`); `status` to concept + mesh + implement handles |
+| art-manifest | scan | recipe **A** (Cursor) / **B** (Cursor off: claude sonnet) | `manifest.json` skeleton with every mesh/2D row (2D rows carry `method`); `status` to concept + mesh + implement handles |
 | art-import-<stem> (Source=import) | art-manifest | recipe A/B per writer_agent | copied/converted files, route=import check with source/hash + VERDICT PASS; anim-check when applicable |
 | art-concept-<stem> | art-manifest | recipe **C** **antigravity only** (no AGENTS.md boot) | concept PNGs on disk; `CONCEPT: PASS` in `concept-check.md`; `status` to matching mesh handle |
 | art-mesh-<stem> | art-concept-<stem> | recipe A (cursor) / **C** (antigravity · gpt-image-gen/codex) | `.glb` + generator; `contact-sheet` + `compare-sheet` + `VERDICT: PASS`; own manifest row `verify` set |
@@ -439,13 +459,14 @@ Pick the recipe by **role**, then by launch spec:
 
 | Role | Recipe |
 |---|---|
-| `art-manifest`, Cursor `scan` / `writer` / `reviewer` / `planner` | **A** |
-| `scan`, `plan`, `implement`, `review` on non-Cursor (`claude` / `codex` / `antigravity`) | **B** (conditional boot) |
+| `art-manifest` on Cursor, Cursor `scan` / `writer` / `reviewer` / `planner` | **A** |
+| `scan`, `plan`, `implement`, `review` on non-Cursor (`claude` / `codex` / `antigravity`), and `art-manifest` on the Cursor fallback | **B** (conditional boot) |
 | every art gen role (`art-concept-*`, `art-mesh-*`, `art-anim-*`, `art-2d`, legacy `art`) on non-Cursor | **C** (no AGENTS.md boot) |
 | art gen on `cursor` | **A** |
 
 The AGENTS.md startup prompt is for scan/code/plan/review sessions only. Art workers follow
-`cocos-asset-gen` + their art spec; do **not** send them the boot turn.
+`cocos-asset-gen` + their art spec; do **not** send them the boot turn. (`art-manifest` is not an
+art gen worker: on the Cursor fallback it takes recipe B like scan.)
 
 **A — Cursor worker (no boot turn needed).** `cursor-agent` reads `AGENTS.md` on its own and
 `worker-start` creates the terminal and injects the spec. When implement/review run on Cursor,
@@ -548,10 +569,11 @@ and wait again. Per Delivery:
    (recipe B/C terminals, which `worker-release` leaves open).
 3. `worker_done` failed from review with last line `INFRA_BLOCKED` → not a fix round. Read the
    curl lines in `review.md`: coordinator's own `curl 127.0.0.1:<port>` → 200 means the
-   reviewer environment cannot reach localhost → close that terminal and start the
-   **same** review Task on `cursor --model auto` (record `reviewer=<locked> → cursor auto
-   (localhost)` in the PLAN and final report — this is the one allowed lock change, it is a
-   observed environment failure, not a provider assumption). Coordinator's curl also fails → integrator
+   reviewer environment cannot reach localhost → close that terminal and, **when Cursor is on**
+   (locks `cursor=on` or the Step 0.2 probe), start the **same** review Task on `cursor --model auto`
+   (record `reviewer=<locked> → cursor auto (localhost)` in the PLAN and final report — one of the
+   two allowed lock changes: an observed environment failure, not a provider assumption). Cursor
+   off → one `ask` (a reviewer that can reach localhost), not a second stalled review. Coordinator's curl also fails → integrator
    recovery Task, then the same review on a fresh terminal once readiness is observed.
    `worker_done` succeeded with a `budget_bump: <from>→<to>` line → patch `max_lines` in the
    PLAN to `<to>` (a recorded fact), note it for the final report, continue as APPROVED.

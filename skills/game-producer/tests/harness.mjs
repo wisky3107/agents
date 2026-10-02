@@ -228,6 +228,7 @@ const env = (root, fake) => ({
   PRODUCER_RUNNER_JUDGE_CMD: path.join(fake.dir, 'judge'),
   PRODUCER_RUNNER_CLAUDE_SETTINGS: path.join(fake.dir, 'claude-settings.json'),
   PRODUCER_RUNNER_NOTIFY_CMD: path.join(fake.dir, 'notify'),
+  PRODUCER_RUNNER_CURSOR: 'on', // no real cursor-agent probe in tests
   CC_SPAWN_REGISTRY: path.join(fake.dir, 'registry.jsonl'),
   ORCA_MEMORY_BIN: path.join(fake.dir, 'no-orca-memory'),
   PRODUCER_RUNNER_WAIT_MS: '1500',
@@ -251,12 +252,16 @@ export async function until(file, ms = 20000) {
   }
 }
 
-/** Run the runner CLI against a project with the fakes. → { status, out: [json lines], stderr } */
+/**
+ * Run the runner CLI against a project with the fakes; a trailing `{ env }` adds variables.
+ * → { status, out: [json lines], stderr }
+ */
 export function runner(root, fake, ...args) {
+  const extra = args.length && typeof args[args.length - 1] === 'object' ? args.pop().env || {} : {};
   const r = spawnSync(process.execPath, [RUNNER, ...args, '--project', root], {
     encoding: 'utf8',
     timeout: 90000,
-    env: env(root, fake),
+    env: { ...env(root, fake), ...extra },
   });
   const out = (r.stdout || '').trim().split('\n').filter(Boolean).map((l) => {
     try {
