@@ -44,3 +44,8 @@ Project totals 2026-09-24 → 2026-10-02: producer 167.9M (27%), fleet-orch 196.
   - 12:43Z director trả lời "taken over, continue". Runner đưa gate lên thành `q4` ngay lập tức.
   - Đề xuất sửa: trước khi hỏi `coordinator_missing`, kiểm lại bằng `orca terminal list` / `run-show` hoặc thử lại một lần.
 - **12:44Z: `q4` fleet_gate, director chọn "yes"**, chỉ cho phép đúng 2 file test của gate. Runner gửi quyết định cho coordinator dưới dạng text, đúng một lần. Coordinator tự resolve gate; runner không gọi `gate-resolve`. HANDOFF xác nhận lúc 12:44:43Z. Fix round 1 đang chạy.
+- **13:24Z → 14:14Z: hai gate cho cùng một quyết định (F2-residual, draw calls), hỏi thành hai câu `q5` và `q6`.**
+  - 13:24Z runner đưa `gate_f1bd12b0342d` (review round 2) lên thành `q5`. Trong lúc `q5` chờ, coordinator chạy round 3 và mở thêm `gate_93bf04a886e8` cho cùng vấn đề, thay vì cập nhật gate cũ.
+  - Runner chỉ hỏi một câu mỗi lần, nên `q6` chỉ hiện ra sau khi `q5` được gửi (14:13:23Z), dù director đã ghi trong `q5` rằng quyết định áp dụng cho cả hai gate. Coordinator resolve cả hai gate từ câu trả lời của `q5`; `q6` được trả lời cùng lựa chọn chỉ để runner thôi chờ.
+  - Director chọn `baseline_plus_layers`: tổng draw call ≤ baseline UI của S01 (22) + số layer + 10.
+  - Đề xuất sửa: khi có nhiều gate đang chờ, gộp vào một câu hỏi; trước khi hỏi một gate, kiểm lại xem nó còn pending không.
