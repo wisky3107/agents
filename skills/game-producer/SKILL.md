@@ -60,6 +60,16 @@ node ~/.agents/skills/game-producer/scripts/producer-runner.mjs start --dry-run 
   lists them under `status` → `manual_deferred`; Step 3 shows them to the director before build or
   deploy and writes `signed_off` into each file once they are done or waived (`status` then drops
   them). Missing evidence or a review that is not APPROVED still asks — first, before any manual check.
+- **Bookkeeping commit:** after `record` (merge journal step `notes_commit`) the runner commits what it
+  changed on main — `AGENT_NOTES.md` (release cache, Notes line), the slice's *tracked* evidence files
+  the evidence step refreshed, a tracked `lessons.jsonl` — as `chore(producer): record <Sxx> merge —
+  notes, evidence`, by path: those files go in whole (a director's unstaged edit inside
+  `AGENT_NOTES.md`, e.g. the policy line, goes with them); every other file, untracked files (an
+  Editor's new `.meta`) and runner state files stay out. Skipped (noted in the journal) under
+  `auto_commit=false` or `auto_merge=false`, off the slice's base branch, or when a listed file has
+  staged changes. A failing commit (a hook, a 120 s timeout — SIGTERM, so git drops its index.lock) is
+  logged and left for the director — the
+  next slice's step retries it; the slice still finishes.
 - **Judge** (`judge_agent: claude --model <m>` in AGENT_NOTES): one `claude -p` read-only call
   (`reference/judge-prompt.md`) answers fleet gates and lane questions the contracts already settle,
   unknown HANDOFF statuses and verdict-line mismatches; it can only pick an offered option or defer,

@@ -18,6 +18,7 @@ import * as st from './state.mjs';
 import * as io from './orca.mjs';
 
 const RUNNER_FILES = ['producer-state.json', 'producer-log.md', 'merge-journal.json', 'wait-*.json', '*.prev-*.json'];
+const COMMIT_TIMEOUT_MS = Number(process.env.PRODUCER_RUNNER_COMMIT_TIMEOUT_MS) || 120000; // the bookkeeping commit's hooks
 const RUNNER_FILE_RE = /^(?:producer-state\.json|producer-log\.md|merge-journal\.json|wait-.*\.json|.*\.prev-.*\.json)$/;
 
 /** The slice's evidence, worktree → main (no PNGs, no runner files). → null | error text */
@@ -566,8 +567,54 @@ export function mergeStep(ctx, s, kit) {
     record(ctx, s, j);
     return null;
   }
+  if (!done('notes_commit')) {
+    notesCommit(ctx, s, j);
+    return null;
+  }
   kit.setPhase(root, id, 'done');
   return { phase: 'done' };
+}
+
+/**
+ * The runner commits its own bookkeeping on main (director 2026-10-02): AGENT_NOTES.md (release cache
+ * and Notes line), the slice's tracked evidence the evidence step refreshed (the fleet rewrites
+ * HANDOFF.json after its commit) and a tracked lessons.jsonl. By path: those files go in whole — a
+ * director's unstaged edit inside AGENT_NOTES.md (the policy line) goes with them — while every other
+ * file, untracked files (an Editor's new .meta) and runner state files stay out. Not under
+ * auto_commit=false / auto_merge=false (the director commits and finishes), not off the slice's base
+ * branch, not when a listed file has staged changes (someone is composing a commit). Idempotent after
+ * a kill (nothing changed → nothing to commit); a failed commit (a hook, no identity, a timeout) is
+ * logged and left for the director — the next slice's step retries it — never a stop.
+ */
+function notesCommit(ctx, s, j) {
+  const { root } = ctx.project;
+  const id = ctx.id;
+  const skip = (note) => stepDone(root, id, 'notes_commit', { skipped: true, note });
+  if (!ctx.autoCommit || !ctx.autoMerge) return skip(`auto_commit=${ctx.autoCommit} auto_merge=${ctx.autoMerge}: bookkeeping left for the director`);
+  const z = (args) => git(root, args).stdout.split('\0').filter(Boolean);
+  const paths = ['AGENT_NOTES.md', evidenceRel(id), path.join('.cursor', 'evidence', 'lessons.jsonl')];
+  // -z: names as they are (no quoting of non-ASCII); --no-renames: a moved file is its two paths
+  const files = z(['diff', '--name-only', '-z', '--no-renames', '--relative', 'HEAD', '--', ...paths]).filter((f) => !RUNNER_FILE_RE.test(path.basename(f)));
+  if (!files.length) return stepDone(root, id, 'notes_commit', { note: 'nothing to commit' });
+  const branch = currentBranch(root);
+  if (!branch) return skip('main is detached: bookkeeping left uncommitted');
+  const want = j.steps?.merge?.into || s.base_branch; // the branch the slice was merged into (the director may have picked it)
+  if (want && branch !== want) return skip(`main is on ${branch}, not ${want}: bookkeeping left uncommitted`);
+  const staged = z(['diff', '--cached', '--name-only', '-z', '--no-renames', '--relative', '--', ...files]);
+  if (staged.length) return skip(`${staged.join(', ')} has staged changes: bookkeeping left uncommitted`);
+  const body = `Producer runner, after merging ${id} (commit ${String(j.sha || '').slice(0, 7)}): ${files.join(', ')}`;
+  // a hook may hang (an interactive pre-commit): bounded, never --no-verify; SIGTERM so git removes its
+  // index.lock (a SIGKILL leaves it and every later git write on main fails)
+  const r = spawnSync('git', ['-C', root, 'commit', '-q', '-m', `chore(producer): record ${id} merge — notes, evidence`, '-m', body, '--', ...files],
+    { encoding: 'utf8', timeout: COMMIT_TIMEOUT_MS, killSignal: 'SIGTERM', env: { ...process.env, LC_ALL: 'C', LANG: 'C' } });
+  if (r.status !== 0) {
+    const why = r.error ? `git commit ${r.error.code === 'ETIMEDOUT' ? `timed out after ${COMMIT_TIMEOUT_MS / 1000} s` : r.error.message}` : (r.stderr || r.stdout).trim().split('\n').slice(-1)[0] || `exit ${r.status}`;
+    st.log(root, id, `bookkeeping commit failed (left uncommitted for the director): ${why}`);
+    return stepDone(root, id, 'notes_commit', { failed: true, files, note: `commit failed: ${why.slice(0, 200)}` });
+  }
+  const sha = git(root, ['rev-parse', 'HEAD']).stdout.trim();
+  st.log(root, id, `committed the bookkeeping on ${branch} as ${sha.slice(0, 7)}: ${files.join(', ')}`);
+  stepDone(root, id, 'notes_commit', { sha, files, note: `committed ${files.length} file(s)` });
 }
 
 /**

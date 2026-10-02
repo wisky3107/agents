@@ -523,6 +523,80 @@ test('worktree_rm: an evidence file written after the evidence step is copied be
   assert.equal(fs.existsSync(q.wt), true);
 });
 
+test('bookkeeping commit: AGENT_NOTES.md and the tracked evidence only, by path — other changes and untracked files stay out', () => {
+  const { f, root, sha } = committedFleet();
+  // the director's own edit of a tracked file (staged ones block the merge itself) and an Editor's new
+  // .meta must not ride along
+  fs.appendFileSync(path.join(root, 'MILESTONES.md'), '\n<!-- director note -->\n');
+  write(root, 'assets/new.json.meta', '{}');
+  f.queue([VERIFIED]);
+  runner(root, f, 'start', '--once');
+  assert.equal(g(root, 'log', '-1', '--format=%s').stdout.trim(), 'chore(producer): record S01 merge — notes, evidence');
+  const files = g(root, 'show', '--name-only', '--format=', 'HEAD').stdout.trim().split('\n').sort();
+  // the fleet committed its evidence (tracked), then rewrote HANDOFF.json: the refreshed copy is committed
+  assert.deepEqual(files, ['.cursor/evidence/tasks/T-S01/evidence/HANDOFF.json', 'AGENT_NOTES.md']);
+  assert.equal(JSON.parse(g(root, 'show', `HEAD:${evRel('S01', 'HANDOFF.json')}`).stdout).sha, sha);
+  assert.match(g(root, 'status', '--porcelain').stdout, /^ M MILESTONES\.md$/m); // still the director's, uncommitted
+  assert.match(g(root, 'status', '--porcelain', '--untracked-files=all').stdout, /^\?\? assets\/new\.json\.meta$/m);
+  assert.match(journal(root).steps.notes_commit.note, /committed 2 file\(s\)/);
+  assert.match(fs.readFileSync(ev(root, 'S01', 'producer-log.md'), 'utf8'), /committed the bookkeeping on \S+ as \w{7}: /);
+});
+
+test('bookkeeping commit: a failing commit hook is logged and the slice still finishes', () => {
+  const { f, root } = committedFleet();
+  const hooks = path.join(root, '.git', 'hooks');
+  fs.mkdirSync(hooks, { recursive: true });
+  fs.writeFileSync(path.join(hooks, 'pre-commit'), '#!/bin/sh\necho "hook says no" >&2\nexit 1\n', { mode: 0o755 });
+  f.queue([VERIFIED]);
+  const out = runner(root, f, 'start', '--once').out;
+  assert.ok(out.find((o) => o.merged));
+  assert.equal(journal(root).steps.notes_commit.failed, true);
+  assert.match(fs.readFileSync(ev(root, 'S01', 'producer-log.md'), 'utf8'), /bookkeeping commit failed \(left uncommitted for the director\): hook says no/);
+  assert.match(g(root, 'status', '--porcelain', '--', 'AGENT_NOTES.md').stdout, /^ M AGENT_NOTES\.md/);
+  assert.equal(sliceState(root, 'S01').phase, 'done');
+  // a hook that hangs: stopped at the timeout with SIGTERM, so git leaves no index.lock behind
+  const q = committedFleet();
+  const qh = path.join(q.root, '.git', 'hooks');
+  fs.mkdirSync(qh, { recursive: true });
+  fs.writeFileSync(path.join(qh, 'pre-commit'), '#!/bin/sh\nsleep 5\n', { mode: 0o755 });
+  q.f.queue([VERIFIED]);
+  runner(q.root, q.f, 'start', '--once', { env: { PRODUCER_RUNNER_COMMIT_TIMEOUT_MS: '700' } });
+  assert.match(journal(q.root).steps.notes_commit.note, /commit failed: git commit timed out after 0\.7 s/);
+  assert.equal(fs.existsSync(path.join(q.root, '.git', 'index.lock')), false);
+  assert.equal(sliceState(q.root, 'S01').phase, 'done');
+});
+
+test('bookkeeping commit: skipped with a note under auto_commit=false, and when a listed file has staged changes', () => {
+  // single lane, auto_commit=false: the director approves the slice commit and keeps the bookkeeping
+  const notes = NOTES(POLICY.replace('auto_commit=true', 'auto_commit=false')).replace('auto_commit: true', 'auto_commit: false');
+  const p = project({ notes, slices: { S01: { needs: false } } });
+  const f = fakes();
+  f.queue([{ name: 'ready', write: { ...W('ready_for_review'), ...preview(7461) } }, { name: 'approved', write: R('approved', 'APPROVED') }]);
+  assert.equal(runner(p.root, f, 'start', '--once').out.at(-1).kind, 'commit_approval');
+  runner(p.root, f, 'answer', '--id', 'q1', '--choice', 'commit');
+  f.queue([commitStep('S01')]);
+  runner(p.root, f, 'start', '--once');
+  assert.equal(sliceState(p.root, 'S01').phase, 'done');
+  assert.match(journal(p.root).steps.notes_commit.note, /auto_commit=false auto_merge=true: bookkeeping left for the director/);
+  assert.match(g(p.root, 'status', '--porcelain', '--', 'AGENT_NOTES.md').stdout, /^ M AGENT_NOTES\.md/);
+  // fleet, resumed after its merge with a staged AGENT_NOTES.md edit (someone composing a commit)
+  const { f: f2, root, sha } = committedFleet();
+  const base = g(root, 'symbolic-ref', '--short', 'HEAD').stdout.trim();
+  g(root, 'merge', '--no-ff', '-q', '-m', 'Merge S01', 'S01-feature');
+  const at = new Date().toISOString();
+  const done = (note) => ({ note, done_at: at });
+  fs.writeFileSync(ev(root, 'S01', 'merge-journal.json'), JSON.stringify({ lane: 'fleet', sha, wt: null, branch: 'S01-feature', fix_rounds: null, bump: null, started: at, steps: {
+    harvest: { status: 0, failed: false, ...done('archived') }, close_editors: done('closed'), merge: { into: base, conflict: false, ...done('merged') },
+    evidence: done('copied'), worktree_rm: done('already gone'), reopen: done('up'), verify: { status: 'verified', ...done('ok') } } }));
+  fs.appendFileSync(path.join(root, 'AGENT_NOTES.md'), '\n<!-- staged by the director -->\n');
+  g(root, 'add', 'AGENT_NOTES.md');
+  const head = g(root, 'rev-parse', 'HEAD').stdout.trim();
+  runner(root, f2, 'start', '--once');
+  assert.equal(g(root, 'rev-parse', 'HEAD').stdout.trim(), head);
+  assert.match(journal(root).steps.notes_commit.note, /AGENT_NOTES\.md has staged changes: bookkeeping left uncommitted/);
+  assert.equal(sliceState(root, 'S01').phase, 'done');
+});
+
 test('worktree_rm: evidence plus any other change keeps the worktree (no --force)', () => {
   const { f, root, wt } = committedFleet();
   write(wt, 'src/b.ts', 'export const b = 3; // not committed\n');
