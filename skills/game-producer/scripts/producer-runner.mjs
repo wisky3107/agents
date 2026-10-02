@@ -25,9 +25,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { spawn, spawnSync } from 'node:child_process';
-import { loadProject, sliceStatuses, nextSlice, preflight, writeRelease } from './lib/project.mjs';
+import { loadProject, sliceStatuses, nextSlice, preflight, writeRelease, writePolicyDecision } from './lib/project.mjs';
 import * as st from './lib/state.mjs';
-import { submit, menu, parseReply, textNeed, answerProblem, openQuestions } from './lib/answer.mjs';
+import { submit, menu, parseReply, textNeed, answerProblem, openQuestions, givenChoice, isGivenChoice } from './lib/answer.mjs';
+import { questionContext } from './lib/context.mjs';
 import { laneFor, runSlice, applyAnswer, cursorUndecided, cursorState, resetCursorProbe, agentOrAsk, cursorArtBlocked, CursorUndecided, CURSOR_FALLBACK } from './lib/lanes.mjs';
 import { currentBranch, appendLessons, lessonRows, readJournal } from './lib/merge.mjs';
 import { consult, judgeSpec, JUDGE_KINDS, MAX_JUDGED } from './lib/judge.mjs';
@@ -69,7 +70,7 @@ const QUESTION = {
   needs_policy: { options: ['run Step 0-1 with an LLM producer', 'stop'], text: 'No policy line: lock policy and run the director gate first.' },
   policy_conflict: { options: ['re-locked, retry', 'stop'], text: 'The policy line and AGENT_NOTES release: disagree. Re-lock the policy line, then answer.' },
   agent_conflict: { options: ['re-locked, retry', 'stop'], text: 'The policy line and AGENT_NOTES fleet: disagree on a lane agent (the runner spawns the yaml spec). Make them match, then answer.' },
-  director_gate: { options: ['decided, retry', 'skip this slice', 'stop'], text: 'Record the director decision for this slice in the policy line, then answer.' },
+  director_gate: { options: ['decided, retry', 'skip this slice', 'stop'], text: 'This slice waits for the director: approve it here (the runner writes "<Sxx> GIVEN" on the policy line), or record your own decision on the policy line and retry.' },
   contract_depth: { options: ['contracts expanded, retry', 'stop'], text: 'Contracts are playable-depth; run the targeted game-brief expansion first.' },
   brief_progress: { options: ['contracts final, retry', 'stop'], text: 'game-brief is not done (brief-progress); finish the contract gate first.' },
   needs_slice_study: { options: ['study recorded, retry', 'stop'], text: 'Port slice needs a reviewed slice study (rip-port-analysis); runner phase 1 does not run studies.' },
@@ -83,6 +84,21 @@ const QUESTION = {
   stuck: { options: ['fixed, retry', 'stop'], text: 'The runner cannot pick a slice.' },
 };
 const NOT_STARTED = new Set(['planned', 'pending', 'todo', '']);
+const LEGACY_GATE_TEXT = 'Record the director decision for this slice in the policy line, then answer.';
+
+/**
+ * A director_gate question still open from an older runner (asked before the "<Sxx> GIVEN — record
+ * it" choice existed) gets this runner's options and wording, under the same id. → the question
+ */
+function refreshQuestion(root, q) {
+  if (q.kind !== 'director_gate' || !q.slice || q.answer) return q;
+  const options = [givenChoice(q.slice), ...QUESTION.director_gate.options];
+  const head = QUESTION.director_gate.text.replace(/<Sxx>/g, q.slice);
+  const detail = q.detail ?? String(q.text).replace(head, '').replace(LEGACY_GATE_TEXT, '').trim();
+  const text = `${head} ${detail}`.trim();
+  if (JSON.stringify(q.options) === JSON.stringify(options) && q.text === text) return q;
+  return st.setQuestion(root, q.id, { options, text, detail });
+}
 
 /** Read-only: selection + preflight. Writes nothing (dry-run and status rely on it). */
 async function plan(root) {
@@ -128,12 +144,18 @@ async function status(root) {
 /** Stop for the human: record one question (deduplicated by key) and say it once. */
 function stopFor(root, slice, code, detail, extra = {}) {
   const q = QUESTION[code] || {};
-  const options = extra.options || q.options || QUESTION.stuck.options;
+  // director_gate: approving the slice here is the first choice (pilot 1: "decided, retry" alone recorded nothing)
+  const options = extra.options || (code === 'director_gate' && slice ? [givenChoice(slice), ...q.options] : q.options) || QUESTION.stuck.options;
   const key = `${slice || '-'}:${code}${extra.ref ? `:${extra.ref}` : ''}`;
-  const { question, isNew } = st.ask(root, {
-    key, slice, kind: code, text: `${q.text || ''} ${detail}`.trim(), options, ref: extra.ref || null, obs: extra.obs || null,
+  const text = `${(q.text || '').replace(/<Sxx>/g, slice || 'Sxx')} ${detail}`.trim();
+  let { question, isNew } = st.ask(root, {
+    key, slice, kind: code, text, detail, options, ref: extra.ref || null, obs: extra.obs || null,
     ...(extra.also?.length ? { also: extra.also } : {}),
   });
+  // the same question still open from an older runner: it gets this runner's options and wording
+  if (!isNew && !question.answer && (JSON.stringify(question.options) !== JSON.stringify(options) || question.text !== text)) {
+    question = st.setQuestion(root, question.id, { options, text });
+  }
   if (slice) st.log(root, slice, `blocked ${code}: ${detail}${isNew ? ` (question ${question.id})` : ''}`);
   st.writeRunner(root, { slice, step: `blocked:${code}` });
   say({ blocked: code, slice, detail, question: question.id, options: question.options, answer: `producer-runner answer --id ${question.id} --choice "<option>"` });
@@ -256,6 +278,13 @@ function applyAnswers(root) {
         return { stop: q.id };
       }
       if (choice === 'mark blocked' || choice === 'skip this slice') markBlocked(root, q.slice, `${q.kind}: ${choice}`);
+      else if (q.kind === 'director_gate' && isGivenChoice(choice)) {
+        if (choice !== givenChoice(q.slice)) throw new Error(`${choice} does not name ${q.slice}`);
+        // the next pass re-checks the gate and dispatches the slice
+        const changed = writePolicyDecision(loadProject(root), q.slice, q.answer.text);
+        const who = `${q.answer.by || 'human'}${q.answer.via ? ` via ${q.answer.via}` : ' via answer --choice'}`;
+        st.log(root, q.slice, changed ? `director decision recorded on the policy line (${who}): ${q.slice} GIVEN${q.answer.text ? ` — ${q.answer.text}` : ''}` : `${q.slice} was already decided on the policy line`);
+      }
       else if (q.kind === 'cursor_off' || q.kind === 'cursor_art') {
         // once per run: every later spawn (lanes, coordinator, verifier, LLM producer) uses it
         if (choice.startsWith('use ')) st.writeRunner(root, { cursor_substitute: CURSOR_FALLBACK });
@@ -298,7 +327,9 @@ function notify(root, q) {
   process.stderr.write('\x07');
   if (process.env.PRODUCER_RUNNER_NOTIFY !== '0') {
     const title = `producer-runner · ${path.basename(root)}`;
-    const body = `${q.id} ${q.kind}${q.slice ? ` ${q.slice}` : ''}: ${String(q.text).replace(/\s+/g, ' ').slice(0, 180)}`;
+    const where = questionContext(root, q)[0].replace(`${path.basename(root)} · `, '');
+    // the question's own detail (the fixed head of a runner question is long and the same each time)
+    const body = `${q.id} ${q.kind} · ${q.slice ? where : 'run'}: ${String(q.detail || q.text).replace(/\s+/g, ' ')}`.slice(0, 220);
     try {
       if (process.env.PRODUCER_RUNNER_NOTIFY_CMD) spawnSync(process.env.PRODUCER_RUNNER_NOTIFY_CMD, [title, body], { timeout: 10000 });
       else if (process.platform === 'darwin') spawnSync('osascript', ['-e', `display notification ${JSON.stringify(body)} with title ${JSON.stringify(title)} sound name "Glass"`], { timeout: 10000 });
@@ -347,7 +378,7 @@ function openDialog(root, q) {
  */
 function terminalPrompt(root, q) {
   if (!typing()) return () => {};
-  process.stderr.write(`\n${menu(q)}\n> `);
+  process.stderr.write(`\n${menu(q, questionContext(root, q))}\n> `);
   const shown = Date.now();
   process.stdin.ref?.();
   const rl = readline.createInterface({ input: process.stdin, terminal: false });
@@ -431,7 +462,7 @@ async function answerMenu(root, id) {
         process.stderr.write(`type a number from 1 to ${open.length}\n`);
       }
     }
-    process.stderr.write(`${menu(q)}\n`);
+    process.stderr.write(`${menu(q, questionContext(root, q))}\n`);
     for (;;) {
       const r = parseReply(q, await ask('> '));
       if (r.error) {
@@ -486,7 +517,8 @@ async function start(root, { dryRun: dry, once }) {
     const applied = applyAnswers(root);
     if (applied.stop) return say({ stopped: 'the human chose stop', resume: 'producer-runner clear, then start' });
     if (applied.exit) return say(applied.exit);
-    const open = st.readRunner(root).questions.find((q) => !q.answer);
+    const waiting = st.readRunner(root).questions.find((q) => !q.answer);
+    const open = waiting && refreshQuestion(root, waiting);
     if (open && !open.judge && JUDGE_KINDS.has(open.kind)) {
       // the judge first, once per question: an answer is applied like the director's, a defer waits for them
       const project = loadProject(root);

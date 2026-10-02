@@ -15,6 +15,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import * as st from './lib/state.mjs';
 import { submit, textNeed } from './lib/answer.mjs';
+import { questionContext } from './lib/context.mjs';
 
 const OSA = process.env.PRODUCER_RUNNER_OSASCRIPT || 'osascript';
 const CANCEL = '<<later>>';
@@ -79,7 +80,8 @@ function osa(lines, args) {
 const q = question();
 if (!q || q.answer) process.exit(0);
 const title = `producer-runner · ${path.basename(root)}`;
-const prompt = `${q.id} · ${q.kind}${q.slice ? ` · ${q.slice}` : ''}\n\n${String(q.text || '').trim().slice(0, 900)}`;
+// where the run stands first, then the question
+const prompt = `${questionContext(root, q).join('\n')}\n\n${q.id} · ${q.kind}${q.slice ? ` · ${q.slice}` : ''}\n${String(q.text || '').trim().slice(0, 900)}`;
 const picked = await osa(CHOOSE, [title, prompt, ...q.options]);
 // "Later": a restarted runner does not open this question's dialog again
 if (picked.code === 0 && picked.out === CANCEL && open()) st.setQuestion(root, id, { dialog_done: 'later' });
@@ -88,7 +90,8 @@ const choice = picked.out;
 let text = '';
 const need = textNeed(q, choice);
 if (need) {
-  const note = await osa(NOTE, [title, need === 'required' ? `Note for "${choice}" (required):` : `Note for "${choice}" (optional, sent with the decision):`, need === 'required' ? 'Cancel' : 'Skip']);
+  const where = q.kind === 'director_gate' ? 'written on the policy line' : 'sent with the decision';
+  const note = await osa(NOTE, [title, need === 'required' ? `Note for "${choice}" (required):` : `Note for "${choice}" (optional, ${where}):`, need === 'required' ? 'Cancel' : 'Skip']);
   if (note.code === 0) text = note.out.trim();
   else if (need === 'required') process.exit(0); // cancelled: no answer
 }
