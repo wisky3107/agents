@@ -18,7 +18,37 @@ Project totals 2026-09-24 → 2026-10-02: producer 167.9M (27%), fleet-orch 196.
 
 | Pilot | Slice | Size / lane | Setup | Producer tokens | Fleet-orch tokens | Runner stops (blocked / human / LLM) | Notes |
 |---|---|---|---|---|---|---|---|
-| 1 | S08 | L / fleet | `producer_mode: runner`, no judge, guard `shadow`, M1 roles + M3 cheatsheets live (master f5fc21e) | | | | started 2026-10-02 |
+| 1 | S08 | L / fleet | `producer_mode: runner`, no judge, guard `shadow`, M1 roles + M3 cheatsheets live (master f5fc21e; runner restarted onto 02c1541, e154671) | 0 (no LLM producer) + runner's verifier 1.2M (13 turns) | 82.9M (616 turns) | 7 / 7 / 0 | merged 2026-10-02 14:47Z (main b8dc783, commit cc223e7), verified; 3 review rounds, 2 fix rounds, 3 gates; 5 h 53 m wall |
+
+### Pilot 1 — kết quả
+
+token-report `--since 2026-10-02T08:54:00Z --project cc-lego-stack`, đến 14:49Z.
+
+| Role | S01 baseline | S08 pilot 1 | Δ context |
+|---|---|---|---|
+| producer (LLM) | 1 session, 1025 turns, 145.9M | 0 | −100% |
+| runner LLM handoff (verifier main) | — | 1 session, 13 turns, 1.2M | |
+| fleet-orch | 1 session, 191 turns, 24.8M | 1 session, 616 turns, 82.9M | +234% |
+| điều phối cộng lại (producer + runner + fleet-orch) | 170.7M | 84.1M | −51% |
+| fleet-worker | 15 sessions, 1072 turns, 225.0M | 13 sessions, 611 turns, 104.9M | −53% |
+
+- **Producer: đạt mục tiêu** (gate −60%, stretch −70%). Runner không gọi judge, và slice này không cần handoff Step 0–1 hay Step 3. LLM duy nhất phía producer là verifier sau merge. Không tính vào đây:
+  - 7 câu hỏi director phải trả lời;
+  - session theo dõi pilot (chạy trong `~/.agents`, ngoài project).
+- **Fleet coordinator: chưa đạt** (mục tiêu −40%), nếu so riêng fleet-orch.
+  - Context mỗi turn gần như không đổi: 134k so với khoảng 130k ở S01. Phần tăng đến từ số turn (gấp 3,2).
+  - S01 có số turn của producer lớn (1025) bên cạnh 191 turn của coordinator, nên so riêng fleet-orch dễ sai. Gộp cả khâu điều phối thì giảm 51%.
+  - Turn của coordinator: judgement 70%, chờ 17%, mechanical 10%. Phần script thay được tối đa là 28%.
+  - Context của turn đầu (trung vị) chỉ 17k nhờ M1 (coordinator chạy không có editor MCP).
+  - Cần một slice so sánh được hơn trước khi kết luận về mục tiêu −40%.
+- **Runner dừng 7 lần, cả 7 đều do người trả lời, judge trả lời 0 lần.**
+  - Chỉ 3 lần là quyết định thật: q1 (cách tạo material, C‍ursor), q4 và q5 (gate).
+  - 4 lần còn lại là do runner:
+    - q2: status "implementing" (đã sửa);
+    - q3: báo nhầm coordinator mất;
+    - q6: gate trùng;
+    - q7: runner chỉ đọc `review.md`.
+  - Tổng thời gian chờ người khoảng 3 h 23 m (q1 83 m, q5 49 m, q7 30 m, q3 23 m, q2 17 m). Trong lúc chờ q2, q3 và q5, fleet vẫn chạy tiếp.
 
 ### Pilot 1 — sự cố (ghi trong lúc chạy)
 
@@ -49,3 +79,25 @@ Project totals 2026-09-24 → 2026-10-02: producer 167.9M (27%), fleet-orch 196.
   - Runner chỉ hỏi một câu mỗi lần, nên `q6` chỉ hiện ra sau khi `q5` được gửi (14:13:23Z), dù director đã ghi trong `q5` rằng quyết định áp dụng cho cả hai gate. Coordinator resolve cả hai gate từ câu trả lời của `q5`; `q6` được trả lời cùng lựa chọn chỉ để runner thôi chờ.
   - Director chọn `baseline_plus_layers`: tổng draw call ≤ baseline UI của S01 (22) + số layer + 10.
   - Đề xuất sửa: khi có nhiều gate đang chờ, gộp vào một câu hỏi; trước khi hỏi một gate, kiểm lại xem nó còn pending không.
+- **14:17Z: `q7` approval_evidence. Runner đọc nhầm file review cũ, nhưng dừng là đúng.**
+  - Fleet ghi mỗi round review ra một file riêng (`review-r2.md`, `review-r3.md`). Runner chỉ đọc `review.md`, tức file của round 1, kết thúc bằng CHANGES_REQUESTED.
+  - Round 3 cũng kết thúc bằng CHANGES_REQUESTED vì còn chờ gate F2. Chữ APPROVED chỉ có trong HANDOFF và `final-report.md`, do coordinator ghi sau khi gate được resolve.
+  - Ở gốc evidence không có `runtime-state.json`. Fleet còn tự báo 2 việc `manual_required`: đo fps và thời gian mở trên máy thật, và director xem GP-22.
+  - Director bỏ qua bước đo trên máy thật và đã xem GP-22.
+  - Coordinator đổi tên `review.md` của round 1 thành `review-r1.md`, viết `review.md` cuối (dòng cuối APPROVED, ghi rõ không có review mới) và `runtime-state.json` (có `director_checks`, không có `manual_required`). Sau đó q7 được trả lời "evidence fixed, check again".
+  - Đề xuất sửa: runner đọc file review mới nhất của fleet. Prompt fleet cho runner mode ghi rõ phải có `runtime-state.json` và dòng verdict cuối cùng.
+- **14:43Z: slice được commit ngoài runner.**
+  - Trong lúc runner còn dừng ở q7, có người gõ `approved — commit` thẳng vào terminal của coordinator: outbox của runner không có lệnh này. `final-report.md` của fleet cũng mời director gõ đúng câu đó.
+  - Coordinator commit `cc223e7` trước khi Step 2d của runner qua.
+  - Không có hậu quả: sau khi q7 được trả lời, runner gửi lệnh commit, coordinator ghi lại HANDOFF `committed` với cùng sha (không commit lần hai), rồi runner merge.
+  - Rủi ro: gõ vào terminal của coordinator là bỏ qua được Step 2d.
+  - Đề xuất sửa: ở runner mode, prompt fleet chỉ cho commit khi runner yêu cầu, và `final-report.md` chỉ người đọc tới câu hỏi của runner.
+- **14:47Z → 14:49Z: merge, verify, record đều xong (`phase done`).**
+  - Merge `b8dc783` vào `main`, không conflict. Verifier chạy claude sonnet và mất 77 s.
+  - Worktree S08 được giữ lại vì còn file evidence sửa chưa commit.
+  - Trên `main` còn lại:
+    - `AGENT_NOTES.md` chưa commit: dòng ghi chú của runner, `S08: merged`, cùng hai dòng sửa trước pilot (`producer_mode`, reviewer);
+    - các file evidence tracked bị rsync ghi đè;
+    - 2 file untracked do Editor tạo khi mở lại: `assets/.meta`, `assets/scenes/game.scene.index.json.meta`.
+  - Chưa rõ SKILL muốn runner commit các file này hay để director commit.
+  - Runner chuyển ngay sang S02 và dừng ở `q8` (director_gate: S02 `needs_director_ok`, dòng policy chưa ghi quyết định).
