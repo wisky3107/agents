@@ -13,6 +13,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
+import { withSystem } from './attribution.mjs';
 import { loadProject, writeRelease, writeSliceNote, isCc4 } from './project.mjs';
 import * as st from './state.mjs';
 import * as io from './orca.mjs';
@@ -345,7 +346,8 @@ function verify(ctx, s, j, kit) {
 
 const LESSONS = (root) => path.join(root, '.cursor', 'evidence', 'lessons.jsonl');
 
-/** Append lessons rows once: cost rows deduped by content (minus `at`), candidates by candidate_id. */
+/** Append lessons rows once: cost rows deduped by content (minus `at` and `system`), candidates by
+ * candidate_id. Cost rows get their `system` here (lib/attribution.mjs). */
 export function appendLessons(root, rows) {
   const f = LESSONS(root);
   let text = '';
@@ -361,9 +363,10 @@ export function appendLessons(root, rows) {
       return [];
     }
   });
-  const key = (r) => (r.candidate_id ? `c:${r.candidate_id}` : JSON.stringify({ ...r, at: undefined }));
+  // `system` stays out of the key: a row recorded before S1 has none and must not come back twice
+  const key = (r) => (r.candidate_id ? `c:${r.candidate_id}` : JSON.stringify({ ...r, at: undefined, system: undefined }));
   const seen = new Set(existing.map(key));
-  const fresh = rows.filter((r) => !seen.has(key(r)) && seen.add(key(r)));
+  const fresh = rows.map(withSystem).filter((r) => !seen.has(key(r)) && seen.add(key(r)));
   if (fresh.length) {
     fs.mkdirSync(path.dirname(f), { recursive: true });
     fs.appendFileSync(f, `${text && !text.endsWith('\n') ? '\n' : ''}${fresh.map((r) => JSON.stringify(r)).join('\n')}\n`);

@@ -242,13 +242,17 @@ always append a `budget_bump` event with `"from"`, `"to"`, `"ratio"` when the di
 slice budget — game-brief calibrates future budgets from these):
 
 ```json
-{"slice":"S04","event":"infra_blocked","count":4,"cost":"4 review rounds, ~2.5h","cause":"codex sandbox cannot reach 127.0.0.1","fix_target":"template:AGENT_NOTES.md reviewer_agent","evidence":".cursor/evidence/tasks/T-S04/evidence/review.md","at":"2026-09-18T11:50:00Z"}
+{"slice":"S04","event":"infra_blocked","count":4,"cost":"4 review rounds, ~2.5h","minutes":150,"cause":"codex sandbox cannot reach 127.0.0.1","system":"agent:review","fix_target":"template:AGENT_NOTES.md reviewer_agent","evidence":".cursor/evidence/tasks/T-S04/evidence/review.md","at":"2026-09-18T11:50:00Z"}
 ```
 
 `event` ∈ `fix_round | infra_blocked | respawn | director_gate | budget_bump | script_fixed_by_hand |
 merge_conflict | evidence_lost | other`; `fix_target` ∈ `skill:<name> | template:<path> |
-contract:<Fable field> | none`. Facts only (what failed, what it cost, the file that proves it);
-no proposals here — those are the retro's job.
+contract:<Fable field> | none`; `system` ∈ `agent[:<role>] | orca | gateway | engine | brief |
+art[:<backend>] | ship | memory | other` — the part of the workflow that cost the time, not where
+to fix it (the runner sets it from the event; an LLM producer sets it from the cause). Optional:
+`origin_slice` when an earlier slice introduced the cause, `minutes` when the cost is known.
+`tools/workflow-scorecard` reads these as written. Facts only (what failed, what it cost, the file
+that proves it); no proposals here — those are the retro's job.
 
 ### Recipe learning
 

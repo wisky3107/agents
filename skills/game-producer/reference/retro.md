@@ -11,6 +11,8 @@ is project-local proposals; shared-library curation uses existing director autho
   Missing file means empty input; continue with the remaining sources.
 - `.cursor/evidence/tasks/T-*/**/learning-candidates.json` and `stats.json` (including files
   directly under the task). Dedupe candidate/reuse ids and count a task's stats once.
+- Workflow scorecard (when `~/.agents/logs/scorecard-latest.md` exists): per-system cost,
+  recurrence and runner stops for this project. Cite its rows instead of recounting by hand.
 - Integration/review evidence referenced by a candidate or reuse record. Read only relevant
   sections. Missing evidence is a finding, never an inferred PASS.
 - Recipe library INDEX/registry when available; read matching recipes to decide add vs merge.

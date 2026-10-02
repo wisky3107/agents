@@ -637,6 +637,10 @@ after a valid `worker_done`; never release on idle/heartbeat.
 ## Finish (coordinator)
 
 1. Assemble `evidence/final-report.md` (delta per `10-vibe-loop` REPORT) and `stats.json`.
+   `stats.json` always has `fix_rounds` (int), `review_rounds` (int) and `agents` (role → the
+   launch spec that actually ran, e.g. `{"implement": "claude --model opus --effort high",
+   "review": "cursor --model auto"}`, a swapped reviewer included); `tools/workflow-scorecard`
+   reads these three, every other key stays free-form.
    Preserve `learning-candidates.json` when there are concrete reusable findings and recipe
    results from review.md. Include successful patterns even without a fix round; producer
    collects these once before checkout cleanup. Standalone fleet reports candidate paths for
