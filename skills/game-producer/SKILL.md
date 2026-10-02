@@ -55,6 +55,16 @@ node ~/.agents/skills/game-producer/scripts/producer-runner.mjs start --dry-run 
   restarted runner reopens the dialog unless it is still open or was closed with "Later". Every
   question comes with where the run stands: project · slice title (lane and phase, or its status),
   release progress, the runner's last event.
+- **`release.autopilot: retry_once`** (default off; a policy token wins): the routine "try again"
+  answers come from the runner itself, once per slice and kind — commit_stalled → resend commit,
+  reviewer_hung → a fresh reviewer, lane_hung → another resume lane, changes_after_rounds → one more
+  fix round, orca_error → retry, gate_unresolved → keep waiting. The same stop again, or any other
+  question, waits for the director (or the judge). Logged as `autopilot on qN`.
+- **Single-lane commit (pilot 2):** the commit request says what to do — `/commit-guard` on the
+  checkout, then HANDOFF `committed` + the full sha. A writer that commits and says nothing: exactly
+  one new commit on main since the request is taken as the slice commit (logged); more than one →
+  `commit_stalled` lists them with "the newest commit is the slice, continue". A stall after "resend
+  commit" is asked again (it used to wait in silence).
 - **director_gate** (a `needs_director_ok` slice with no decision on the policy line): the first
   choice `<Sxx> GIVEN — record it on the policy line` makes the runner append
   `(director gate: <Sxx> GIVEN — <note>; recorded by producer-runner <date>)` to the policy line and

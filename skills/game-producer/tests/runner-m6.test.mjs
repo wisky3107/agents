@@ -306,6 +306,62 @@ test('director_gate: "S01 GIVEN — record it" writes the decision on the policy
   assert.match(f.spawns()[0].prompt, /S01 GIVEN — go ahead/); // and its prompt carries the decision
 });
 
+test('single lane commit: the request says what to write; a lone commit without HANDOFF is taken; two are the director\'s pick', () => {
+  const quiet = (id, message) => ({ name: `commit ${message}`, commit: { message, handoff: evRel(id, 'HANDOFF.json'), noHandoff: true } });
+  const p = project({ slices: { S01: { needs: false } } });
+  const f = fakes();
+  f.queue([
+    { name: 'ready', write: { ...W('ready_for_review'), ...preview(7461) } },
+    { name: 'approved', write: R('approved', 'APPROVED') },
+    quiet('S01', 'feat(player): the slice'),
+    { name: 'writer idle', result: 'idle' },
+  ]);
+  const out = runner(p.root, f, 'start', '--once').out;
+  assert.match(f.sends()[0].text, /^approved — commit: run \/commit-guard on this checkout, then write \/.+\/T-S01\/evidence\/HANDOFF\.json with "status": "committed" and "sha": the full sha of that commit\.$/);
+  assert.deepEqual(out.find((o) => o.merged), { merged: 'S01', commit: lastCommit(f) });
+  assert.equal(sliceState(p.root, 'S01').commit_found, true);
+  assert.match(log(p.root), /the writer committed \w{7} \("feat\(player\): the slice"\) without writing HANDOFF committed: taking it as the slice commit/);
+  // two commits since the request: not guessed — the director picks (or resends)
+  const q = project({ slices: { S01: { needs: false } } });
+  const g2 = fakes();
+  g2.queue([
+    { name: 'ready', write: { ...W('ready_for_review'), ...preview(7461) } },
+    { name: 'approved', write: R('approved', 'APPROVED') },
+    quiet('S01', 'wip: half'), quiet('S01', 'feat(player): the rest'),
+    { result: 'idle' }, { result: 'idle' }, { result: 'idle' },
+  ]);
+  const a = runner(q.root, g2, 'start', '--once').out.at(-1);
+  assert.deepEqual([a.kind, a.options], ['commit_stalled', ['the newest commit is the slice, continue', 'resend commit', 'mark blocked', 'stop']]);
+  assert.match(question(q.root, 'q1').text, /commits on main since the request: \w{7} "wip: half", \w{7} "feat\(player\): the rest"/);
+  runner(q.root, g2, 'answer', '--id', 'q1', '--choice', 'the newest commit is the slice, continue');
+  const b = runner(q.root, g2, 'start', '--once').out;
+  assert.deepEqual(b.find((o) => o.merged), { merged: 'S01', commit: lastCommit(g2) });
+});
+
+test('commit stalled: after "resend commit" a stall is asked again (pilot 2 waited in silence); autopilot resends once by itself', () => {
+  const p = project({ slices: { S01: { needs: false } } });
+  const f = fakes();
+  const stall = [{ result: 'idle' }, { result: 'idle' }, { result: 'idle' }];
+  f.queue([{ name: 'ready', write: { ...W('ready_for_review'), ...preview(7461) } }, { name: 'approved', write: R('approved', 'APPROVED') }, ...stall]);
+  assert.equal(runner(p.root, f, 'start', '--once').out.at(-1).kind, 'commit_stalled');
+  runner(p.root, f, 'answer', '--id', 'q1', '--choice', 'resend commit');
+  f.queue(stall);
+  const b = runner(p.root, f, 'start', '--once').out.at(-1);
+  assert.deepEqual([b.waiting, b.kind], ['q2', 'commit_stalled']);
+  assert.deepEqual(f.sends().map((x) => x.text.slice(0, 18)), ['approved — commit:', 'approved — commit:']);
+  // autopilot: retry_once — the first stall is resent by the runner, the second waits for the director
+  const q = project({ notes: NOTES(POLICY, '{}', '  autopilot: retry_once\n'), slices: { S01: { needs: false } } });
+  const g2 = fakes();
+  g2.queue([{ name: 'ready', write: { ...W('ready_for_review'), ...preview(7461) } }, { name: 'approved', write: R('approved', 'APPROVED') }, ...stall, ...stall]);
+  const c = runner(q.root, g2, 'start', '--once').out;
+  assert.deepEqual(c.find((o) => o.autopilot), { autopilot: 'q1', kind: 'commit_stalled', choice: 'resend commit' });
+  assert.deepEqual([question(q.root, 'q1').answer.by, c.at(-1).waiting, c.at(-1).kind], ['autopilot', 'q2', 'commit_stalled']);
+  assert.equal(g2.sends().length, 2);
+  assert.match(log(q.root), /autopilot on q1 \(commit_stalled\): resend commit — once for this slice/);
+  // {item, reason} manual items read as text
+  assert.deepEqual(manualItems({ manual_required: [{ item: 'V5 landscape screenshot', reason: 'state only' }, { check: 'GP-22' }] }), ['V5 landscape screenshot — state only', 'GP-22']);
+});
+
 test('manual_required: defer — APPROVED with only manual checks left merges, lists them, Notes and status show them', () => {
   const p = project({ notes: NOTES(POLICY, '{}', '  manual_required: defer\n'), slices: { S01: { needs: false } } });
   const f = fakes();
