@@ -513,22 +513,28 @@ export function editSliceNote(text, id, line) {
  * changes. The note follows the decision word, flattened (no newline, no parentheses), so
  * gateDecides reads `<Sxx> GIVEN` first. Already decided → unchanged. → { text, changed }
  */
-export function editPolicyDecision(text, id, note = '', day = new Date().toLocaleDateString('sv')) { // local YYYY-MM-DD
+export function editPolicyDecision(text, id, note = '', day = new Date().toLocaleDateString('sv'), others = []) { // day: local YYYY-MM-DD
   const fence = text.match(FENCE);
   const from = fence ? fence.index + fence[0].length : 0;
   const m = text.slice(from).match(/^(\s*(?:-\s*)?policy:\s*)(.+)$/m);
   if (!m) throw new Error('AGENT_NOTES.md has no policy line');
   if (gateDecides(m[2], id)) return { text, changed: false };
-  const clean = String(note || '').replace(/[()\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+  // the note decides nothing and fills nothing: slice ids lose their form ("S04 approved too" must not
+  // approve S04), no parentheses, newlines or <PLACEHOLDER> brackets (the lane prompt's fill() rejects them)
+  const clean = String(note || '').replace(/[()\r\n]+/g, ' ').replace(/</g, '‹').replace(/>/g, '›')
+    .replace(/\bS(\d{2}[a-z]?)\b/gi, 'slice $1').replace(/\s+/g, ' ').trim();
   const line = `${m[2].replace(/\s+$/, '')} (director gate: ${id} GIVEN${clean ? ` — ${clean}` : ''}; recorded by producer-runner ${day})`;
   if (!gateDecides(line, id)) throw new Error(`the policy line edit did not record ${id}`);
+  const flipped = others.filter((o) => o !== id && !gateDecides(m[2], o) && gateDecides(line, o));
+  if (flipped.length) throw new Error(`the policy line edit would also decide ${flipped.join(', ')}`);
   const at = from + m.index + m[1].length;
   return { text: text.slice(0, at) + line + text.slice(at + m[2].length), changed: true };
 }
 
 export function writePolicyDecision(project, id, note) {
   const text = fs.readFileSync(project.notesFile, 'utf8');
-  const { text: next, changed } = editPolicyDecision(text, id, note);
+  const ids = [...new Set([...project.milestones.slices, ...Object.keys(project.release.slices || {})])];
+  const { text: next, changed } = editPolicyDecision(text, id, note, undefined, ids);
   if (!changed) return false;
   const tmp = `${project.notesFile}.tmp-${process.pid}`;
   fs.writeFileSync(tmp, next);

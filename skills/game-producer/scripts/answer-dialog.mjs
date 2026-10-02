@@ -90,7 +90,8 @@ const choice = picked.out;
 let text = '';
 const need = textNeed(q, choice);
 if (need) {
-  const note = await osa(NOTE, [title, need === 'required' ? `Note for "${choice}" (required):` : `Note for "${choice}" (optional, sent with the decision):`, need === 'required' ? 'Cancel' : 'Skip']);
+  const where = q.kind === 'director_gate' ? 'written on the policy line' : 'sent with the decision';
+  const note = await osa(NOTE, [title, need === 'required' ? `Note for "${choice}" (required):` : `Note for "${choice}" (optional, ${where}):`, need === 'required' ? 'Cancel' : 'Skip']);
   if (note.code === 0) text = note.out.trim();
   else if (need === 'required') process.exit(0); // cancelled: no answer
 }

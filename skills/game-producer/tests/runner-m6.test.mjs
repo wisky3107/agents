@@ -279,12 +279,13 @@ test('director_gate: "S01 GIVEN — record it" writes the decision on the policy
   const { editPolicyDecision, gateDecides } = await import('../scripts/lib/project.mjs');
   const policy = '- policy: goal=end_to_end auto_commit=true (director mandate: finish through S07; keep S02-S07 planned until targeted expansion)';
   const text = `${NOTES(policy)}\n`;
-  const r = editPolicyDecision(text, 'S02', 'try it (first)\nthen S03', '2026-10-03');
+  const r = editPolicyDecision(text, 'S02', 'try it (first)\nthen S03 approved too, S04-S09 GIVEN, keep <TODO>', '2026-10-03', ['S02', 'S03', 'S04', 'S09']);
   assert.equal(r.changed, true);
   const line = r.text.split('\n').find((l) => l.startsWith('- policy:'));
-  assert.equal(line, `${policy} (director gate: S02 GIVEN — try it first then S03; recorded by producer-runner 2026-10-03)`);
+  assert.equal(line, `${policy} (director gate: S02 GIVEN — try it first then slice 03 approved too, slice 04-slice 09 GIVEN, keep ‹TODO›; recorded by producer-runner 2026-10-03)`);
   assert.equal(gateDecides(line, 'S02'), true);
-  assert.equal(gateDecides(line, 'S03'), false); // the note never decides another slice
+  for (const o of ['S03', 'S04', 'S07', 'S09']) assert.equal(gateDecides(line, o), false, `the note must not decide ${o}`);
+  assert.doesNotMatch(line, /<[A-Z]/); // nothing for the lane prompt's fill() to reject
   assert.equal(r.text.replace(line, policy), text); // nothing else changes
   assert.equal(editPolicyDecision(r.text, 'S02').changed, false); // already decided
   // the runner: an older runner's question (no GIVEN choice) is refreshed in place
@@ -300,7 +301,7 @@ test('director_gate: "S01 GIVEN — record it" writes the decision on the policy
   runner(p.root, f, 'answer', '--id', 'q1', '--choice', 'S01 GIVEN — record it on the policy line', '--text', 'go ahead');
   runner(p.root, f, 'start', '--once');
   assert.match(loadProject(p.root).policy.raw, /\(director gate: S01 GIVEN — go ahead; recorded by producer-runner \d{4}-\d{2}-\d{2}\)$/);
-  assert.match(log(p.root), /director decision recorded on the policy line: S01 GIVEN — go ahead/);
+  assert.match(log(p.root), /director decision recorded on the policy line \(human via answer --choice\): S01 GIVEN — go ahead/);
   assert.deepEqual(f.spawns().map((x) => [x.role, x.slice]), [['worker', 'S01']]); // the gate is passed: the writer starts
   assert.match(f.spawns()[0].prompt, /S01 GIVEN — go ahead/); // and its prompt carries the decision
 });

@@ -292,7 +292,7 @@ test('a runner waiting on a question survives a kill; the answer from another pr
   assert.equal(loadProject(p.root).release.slices.S01, 'blocked');
   // the director was told once, although two runners waited on q1
   assert.equal(f.notices().length, 1);
-  assert.match(f.notices()[0], /^producer-runner · runner-proj-\w+ \| q1 director_gate · S01 x \(planned\): This slice waits for the director/);
+  assert.match(f.notices()[0], /^producer-runner · runner-proj-\w+ \| q1 director_gate · S01 x \(planned\): S01 needs_director_ok and the policy line records no explicit decision/);
   assert.deepEqual(f.spawns().map((s) => s.slice), ['S02']);
 });
 

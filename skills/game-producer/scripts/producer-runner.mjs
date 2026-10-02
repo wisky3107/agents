@@ -279,9 +279,11 @@ function applyAnswers(root) {
       }
       if (choice === 'mark blocked' || choice === 'skip this slice') markBlocked(root, q.slice, `${q.kind}: ${choice}`);
       else if (q.kind === 'director_gate' && isGivenChoice(choice)) {
+        if (choice !== givenChoice(q.slice)) throw new Error(`${choice} does not name ${q.slice}`);
         // the next pass re-checks the gate and dispatches the slice
         const changed = writePolicyDecision(loadProject(root), q.slice, q.answer.text);
-        st.log(root, q.slice, changed ? `director decision recorded on the policy line: ${q.slice} GIVEN${q.answer.text ? ` — ${q.answer.text}` : ''}` : `${q.slice} was already decided on the policy line`);
+        const who = `${q.answer.by || 'human'}${q.answer.via ? ` via ${q.answer.via}` : ' via answer --choice'}`;
+        st.log(root, q.slice, changed ? `director decision recorded on the policy line (${who}): ${q.slice} GIVEN${q.answer.text ? ` — ${q.answer.text}` : ''}` : `${q.slice} was already decided on the policy line`);
       }
       else if (q.kind === 'cursor_off' || q.kind === 'cursor_art') {
         // once per run: every later spawn (lanes, coordinator, verifier, LLM producer) uses it
@@ -326,7 +328,8 @@ function notify(root, q) {
   if (process.env.PRODUCER_RUNNER_NOTIFY !== '0') {
     const title = `producer-runner · ${path.basename(root)}`;
     const where = questionContext(root, q)[0].replace(`${path.basename(root)} · `, '');
-    const body = `${q.id} ${q.kind} · ${q.slice ? where : 'run'}: ${String(q.text).replace(/\s+/g, ' ')}`.slice(0, 220);
+    // the question's own detail (the fixed head of a runner question is long and the same each time)
+    const body = `${q.id} ${q.kind} · ${q.slice ? where : 'run'}: ${String(q.detail || q.text).replace(/\s+/g, ' ')}`.slice(0, 220);
     try {
       if (process.env.PRODUCER_RUNNER_NOTIFY_CMD) spawnSync(process.env.PRODUCER_RUNNER_NOTIFY_CMD, [title, body], { timeout: 10000 });
       else if (process.platform === 'darwin') spawnSync('osascript', ['-e', `display notification ${JSON.stringify(body)} with title ${JSON.stringify(title)} sound name "Glass"`], { timeout: 10000 });
