@@ -22,8 +22,9 @@ already loaded; do not open .cursor/skills/** unless a step below names the file
 Task size is <S|M>. Touch only paths.code / paths.art / paths.scene_objects. Every acceptance
 row and feel_row is a verifiable observation you must meet.
 Popups (prefab/ui/Popup* in the slice): docs/flows/03-popup-system.md; when the slice lists
-assets/scripts/common/uiManager.ts and the file is missing, run the ui-popup kit's install.sh
-named in docs/flows/00-project-overview.md first, then refresh the asset-db.
+assets/scripts/common/uiManager.ts and the file is missing, run
+`node ~/.agents/skills/cocos-playbook/kits/kit.mjs install ui-popup .` first, then refresh the
+asset-db. New popup script + key: `kit.mjs scaffold ui-popup popup . <Name>`.
 For a port slice, its Port evidence reports and exact cited Unity source files are permitted
 reads; verify the pinned analysis manifest hash. Read ASSET_MANIFEST for import destinations.
 Implement RP-linked behavior/level mappings and declared deviations, import existing assets,

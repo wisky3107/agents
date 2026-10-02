@@ -192,11 +192,12 @@ Do:
    transition logic — all driven from code with @property hooks for the integrator.
    Skipping them because "mechanics work" is an incomplete task, not a FOLLOWUPS item.
 3. Expose scene wiring as @property refs; do NOT attach scripts, create nodes, or wire refs.
-   Popups: if the PLAN installs the `ui-popup` kit, run its `install.sh <worktree>` first (it
-   copies scripts/prefabs with their .meta and patches GameController — not a raw edit; the
-   integrator refreshes the asset-db). A new popup = script extending PopupBase + POPUP key,
-   opened only via `UIManager.instance.showDialog(POPUP.X)`; its prefab (duplicate of
-   PopupSample, root renamed to the key, component swapped) goes in integration-notes.
+   Kits: if the PLAN installs one, run `node ~/.agents/skills/cocos-playbook/kits/kit.mjs install
+   <kit> <worktree>` first (copies scripts/prefabs with their .meta, patches boot, records
+   .kits.json — not a raw edit; the integrator refreshes the asset-db), then read only the doc
+   `kit.mjs show <kit>` names. A new popup: `kit.mjs scaffold ui-popup popup <worktree> <Name>`
+   (script extending PopupBase + POPUP key), opened only via `UIManager.instance.showDialog(POPUP.X)`;
+   its prefab step (printed `next:`) goes in integration-notes for the integrator.
 4. Write evidence/integration-notes.md: exact nodes/components/refs the integrator must create
    or wire, in `{Kind} - {label}` form with parent path, ensure_* semantics, and which manifest
    asset goes where.
