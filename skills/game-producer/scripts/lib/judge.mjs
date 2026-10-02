@@ -5,7 +5,8 @@
  *   ignored), no MCP, no skills, no permission prompts (verified on claude 2.1.287);
  * - each kind offers the judge a fixed subset of options (never stop / block / skip / "answered");
  * - cost, budget, credit and PLAN-approval questions never reach it;
- * - "treat as approved" is offered only when review.md really ends APPROVED;
+ * - "treat as approved" is offered only when the newest review file (review.md, or review-r<N>.md)
+ *   really ends APPROVED;
  * - an answer from the contracts must quote a sentence (30+ characters, not front matter or a
  *   heading) that the runner finds in the slice file, SCOPE.md or MILESTONES.md;
  * - anything else — defer, error, an option outside the subset — goes to the human.
@@ -73,14 +74,14 @@ function evidenceDir(project, slice) {
 }
 
 /**
- * review.md's verdict is an unconditional APPROVED, markup aside: bare, or with one parenthetical
+ * The newest review file's verdict is an unconditional APPROVED, markup aside: bare, or with one parenthetical
  * note that carries no condition ("APPROVED (minor notes only)"). Anything else — "APPROVED pending…",
  * "APPROVED, needs follow-up", a dash note — is not the judge's to accept.
  */
 function verdictIsApproved(dir) {
   let last = '';
   try {
-    last = fs.readFileSync(path.join(dir, 'review.md'), 'utf8').trim().split('\n').pop();
+    last = fs.readFileSync(st.reviewFile(dir), 'utf8').trim().split('\n').pop();
   } catch {
     return false;
   }

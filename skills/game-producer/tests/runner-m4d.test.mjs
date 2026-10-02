@@ -276,7 +276,8 @@ test('a runner waiting on a question survives a kill; the answer from another pr
   const f = fakes();
   const first = runnerChild(p.root, f, 'start'); // no --once: it waits for the answer
   await until(path.join(p.root, '.cursor', 'producer-runner.json'));
-  for (let i = 0; i < 100 && !runnerFile(p.root).questions.length; i++) await new Promise((r) => setTimeout(r, 30));
+  // killed once it waits: the question asked and the director told (sent, then marked notified)
+  for (let i = 0; i < 200 && !runnerFile(p.root).questions[0]?.notified; i++) await new Promise((r) => setTimeout(r, 30));
   first.kill('SIGKILL');
   await exited(first);
   const second = runnerChild(p.root, f, 'start');

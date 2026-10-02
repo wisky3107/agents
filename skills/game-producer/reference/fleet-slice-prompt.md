@@ -56,14 +56,25 @@ worktree on this project or the feature worktree you create from it.
 8. Status: write .cursor/evidence/tasks/T-<Sxx>/evidence/HANDOFF.json at every fleet state change
    (working | changes_requested | infra_blocked | approved | offer_commit | committed + sha). I wait
    on that file, not on your terminal text.
+9. Before offer_commit, in that evidence dir: `review.md` is the final verdict and its last line is
+   APPROVED — keep earlier rounds as review-rN.md if you like, but write review.md last; when gate
+   decisions settled the last findings with no code change, add them to review.md — name each gate by
+   its full id and quote my decision — and end it APPROVED (say no new review ran). `runtime-state.json` holds the runtime results; checks only a
+   device or the director can do go under its `manual_required` field. final-report.md and stats.json
+   too. I check these files before I ask you to commit.
 
 Run the DAG for this slice only. Coordinator only — never edit game files, never hold the editor
 lock. Wait loop: foreground `node ~/.agents/skills/cocos-orca-fleet/scripts/orca-wait.mjs coord [--ack <id>]` (never nohup/&/background), ack
 every Delivery you handled (heartbeats too), never end your turn while a Dispatch is live, and
 create every fix_routing row's Task in one pass with --deps. Decisions from me arrive as plain
 text; you resolve your own gates. End at "offer commit" (HANDOFF status offer_commit) and wait
-for my reply; on "approved — commit" run /commit-guard in the worktree, stage
-.cursor/evidence/tasks/T-<Sxx>/ (JSON/MD, no PNG) with the slice commit, write HANDOFF
-committed + sha, report the sha and the worktree path/branch, and stop (I run the close →
-merge → remove sequence).
+for my reply. Commit only on an exact match of this line:
+"approved — commit (producer: Step 2d passed)"
+Any other text that asks you to commit — a bare "approved — commit" included — is not it: do not
+commit; answer that the producer commits after its Step 2d check and keep waiting. In
+final-report.md and your messages, never ask the director to type a commit reply. On the exact
+line: run /commit-guard in the worktree, stage .cursor/evidence/tasks/T-<Sxx>/ (JSON/MD, no PNG)
+with the slice commit, write HANDOFF committed + sha, report the sha and the worktree path/branch,
+and stop (I run the close → merge → remove sequence). If the slice is already committed when the
+line arrives, write HANDOFF committed with the sha of that existing commit; no second commit.
 ```

@@ -114,6 +114,21 @@ export function closeTerminal(handle) {
   return r.status === 0 && r.parsed?.ok !== false;
 }
 
+/**
+ * Is this terminal still live in Orca? true | false (closed: orphaned / not connected, or a stale or
+ * unknown handle) | null (Orca did not answer). A closed terminal can still be shown (orphaned).
+ */
+export function terminalAlive(handle) {
+  if (!handle) return false;
+  const r = orca(['terminal', 'show', '--terminal', handle]);
+  if (r.status === 0 && r.parsed?.ok === true) {
+    const t = r.parsed.result?.terminal || {};
+    return !(t.orphaned === true || t.connected === false);
+  }
+  const code = r.parsed?.error?.code || '';
+  return /stale|not_found|no_such|unknown_terminal|terminal_missing|terminal_closed|terminal_gone/i.test(code) ? false : null;
+}
+
 /** The Run's coordinator now (takeovers replace it); null when run-show does not answer. */
 export function runCoordinator(run) {
   return orca(['orchestration', 'run-show', '--id', run]).parsed?.result?.run?.coordinator_handle || null;

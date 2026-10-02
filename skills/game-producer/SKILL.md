@@ -31,6 +31,7 @@ spawned once by the runner at the stop condition). Default is `llm`: this whole 
 node ~/.agents/skills/game-producer/scripts/producer-runner.mjs launch --project <PROJECT>   # visible Orca terminal
 node ~/.agents/skills/game-producer/scripts/producer-runner.mjs status --project <PROJECT>
 node ~/.agents/skills/game-producer/scripts/producer-runner.mjs answer --project <PROJECT> --id q3 --choice "<option>" [--text "…"]
+node ~/.agents/skills/game-producer/scripts/producer-runner.mjs answer --project <PROJECT>   # in a terminal: numbered menu
 node ~/.agents/skills/game-producer/scripts/producer-runner.mjs pause|stop|stop-after S05|clear --project <PROJECT>
 node ~/.agents/skills/game-producer/scripts/producer-runner.mjs handoff-reset --project <PROJECT>   # forget a Step 0–1 / Step 3 handoff
 node ~/.agents/skills/game-producer/scripts/producer-runner.mjs start --dry-run --project <PROJECT>   # what it would do; writes nothing
@@ -41,6 +42,24 @@ node ~/.agents/skills/game-producer/scripts/producer-runner.mjs start --dry-run 
   Contract drift — a slice in progress that MILESTONES lacks, two slices in progress, a policy line
   that locks a different agent than `fleet:`, a director decision not written as `<Sxx> GIVEN|approved`
   — stops it with a question, never with an interpretation.
+- **Answering** — a new question rings, sends a desktop notification and (macOS) opens a dialog
+  listing the options (`scripts/answer-dialog.mjs`; "Later" closes it). Three ways in, one record
+  (the first answer wins, the runner applies it once):
+  - the runner's own terminal shows the question with numbered options: type the number + Enter
+    (`2 only the test file` adds a note; a choice that needs one asks for it);
+  - the dialog (a gate's choice asks for an optional note: it goes to the coordinator);
+  - `answer` — with `--id/--choice/--text`, or with no `--choice` in a terminal for the same menu.
+  `PRODUCER_RUNNER_DIALOG=0` / `PRODUCER_RUNNER_TTY=0` turn the dialog / terminal prompt off — set
+  `PRODUCER_RUNNER_TTY=0` when starting the runner in the background of a shell (`&`); an agent
+  answering for the director always passes `--id/--choice` (the menu waits for a keyboard). A
+  restarted runner reopens the dialog unless it is still open or was closed with "Later".
+- **`release.manual_required: defer`** (default `ask`; a `manual_required=` policy token wins): when
+  the only Step 2d problem is `manual_required` — the newest review ends APPROVED, `runtime-state.json`
+  and the evidence files are there — the runner commits and merges anyway, writes the items to
+  `T-<Sxx>/evidence/manual-deferred.json`, puts `manual_deferred=<n>` in the slice's Notes line and
+  lists them under `status` → `manual_deferred`; Step 3 shows them to the director before build or
+  deploy and writes `signed_off` into each file once they are done or waived (`status` then drops
+  them). Missing evidence or a review that is not APPROVED still asks — first, before any manual check.
 - **Judge** (`judge_agent: claude --model <m>` in AGENT_NOTES): one `claude -p` read-only call
   (`reference/judge-prompt.md`) answers fleet gates and lane questions the contracts already settle,
   unknown HANDOFF statuses and verdict-line mismatches; it can only pick an offered option or defer,
@@ -54,6 +73,16 @@ node ~/.agents/skills/game-producer/scripts/producer-runner.mjs start --dry-run 
   another backend). Fleet locks end in `cursor=on|off`, plus a note when roles were moved.
 - **HANDOFF statuses:** one that only names a step (`implementing`, `reviewing`, …) counts as
   `working`; any other unknown status is a question (with "treat as working, keep waiting").
+- **Fleet specifics (pilot 1):** the verdict is `review.md` or the highest `review-r<N>.md`,
+  whichever was written later; a final `review.md` that turns the last round's CHANGES_REQUESTED into
+  APPROVED must name a gate whose decision the runner sent (else `verdict_override` — a speed bump
+  against the coordinator's say-so, not proof: a new highest round file is read as a review round); a
+  "terminal missing" from orca-wait is checked with `orca terminal show` before `coordinator_missing`
+  (5 in a row while Orca still shows it → asked anyway); one gate question lists every pending gate,
+  the relay names the others (not for a judge answer), and after a relay another gate waits 3 idle
+  pauses for the coordinator; the commit line is `approved — commit (producer: Step 2d passed)`; a
+  merged worktree whose only changes are evidence files the copy carries (no PNG, no runner file) is
+  copied to main once more and removed with `--force`, any other change keeps it.
 - **One producer per project:** the runner holds `.cursor/producer.lock` (a second `start` or a
   `launch` is refused). An LLM producer does not take that lock: never run an LLM slice loop while
   `producer-runner.mjs status` shows a live runner; the Step 0–1 / Step 3 producers never dispatch
@@ -147,7 +176,8 @@ Producer:
          worktree rm (auto_merge) → slices[next] = merged
          INFRA_BLOCKED → not a fix round: swap reviewer to cursor auto / integrator recovery, re-review
          CHANGES_REQUESTED after lane's fix rounds → slices[next] = blocked → one `ask`
-         manual_required → slices[next] = blocked; reuse existing preview escalation (see Preview)
+         manual_required → slices[next] = blocked (release.manual_required: defer → merge, record
+         the checks; Step 2d); reuse existing preview escalation (see Preview)
       e. rewrite the slice's ONE line in `## Notes — game-producer`; collect cost events,
          learning candidates and reviewed recipe reuse once (see Notes discipline)
       f. goal=playable and next == v1_slice → break
@@ -386,7 +416,11 @@ Launch recovery: before switching a reviewer provider for localhost failure, ver
 ## Step 2d — accept, commit, merge
 
 APPROVED means: reviewer's `review.md` ends `APPROVED`, no `manual_required` in
-`runtime-state.json`, evidence files present, feel/VFX acceptance rows reviewed. A
+`runtime-state.json`, evidence files present, feel/VFX acceptance rows reviewed. Exception:
+`release.manual_required: defer` (the director's standing call) — APPROVED with everything else
+present and only `manual_required` checks left → commit and merge, record the checks in
+`T-<Sxx>/evidence/manual-deferred.json` and `manual_deferred=<n>` in the notes line; Step 3 shows
+them to the director before build or deploy. A
 `budget_bump: <from>→<to>` line above the verdict is still APPROVED — in `advisory` mode for any
 size of overrun; record it in the notes entry and `lessons.jsonl`, no gate, no ask. A review that
 lists a budget overrun as a finding in advisory mode is a misread: drop that finding (not a fix round);
@@ -402,7 +436,9 @@ launches every reviewer with bootstrap's current command, so there is no stale l
 first: its first 200-with-INFRA_BLOCKED moves straight to `cursor --model auto` — unless Cursor is
 off (policy `no_cursor=true` or the runner's probe), then it asks instead.
 
-1. `auto_commit=true` → reply to the lane terminal: *"approved — commit"*; the lane runs
+1. `auto_commit=true` → reply to the lane terminal: *"approved — commit"* (single lane), or for a
+   fleet lane the exact line *"approved — commit (producer: Step 2d passed)"* — the fleet prompt
+   commits on nothing else, so a director committing by hand types that line too; the lane runs
    `/commit-guard` in its checkout and sets HANDOFF `committed` + sha. `false` → mark
    `approved`, `ask` the director, wait.
 2. **Harvest evidence before anything is removed** (fleet lane): if the slice commit did not

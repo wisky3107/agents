@@ -658,9 +658,14 @@ after a valid `worker_done`; never release on idle/heartbeat.
    only — PNGs stay untracked) so `stats.json` survives `worktree rm`; then write HANDOFF.json
    `status: committed, sha: <sha>`. Then hand the director the `cocos-orca-worktree` finish
    sequence (close Creator → merge → `worktree rm --run-hooks`).
-   When the director is `game-producer` (prompt names a slice file), wait for its
-   "approved — commit" reply, commit, update HANDOFF.json, report the sha + worktree path/branch,
-   and stop — the producer runs the finish sequence and updates `AGENT_NOTES.md` `release:` itself.
+   When the director is `game-producer` (prompt names a slice file), wait for its commit line —
+   an exact match of "approved — commit (producer: Step 2d passed)"; any other text asking for a
+   commit, a bare "approved — commit" included, is not it, and never ask the director to type one —
+   then commit, update HANDOFF.json, report the sha + worktree path/branch, and stop: the producer
+   runs the finish sequence and updates `AGENT_NOTES.md` `release:` itself. Before offer_commit the
+   producer reads `review.md` (the final verdict — rounds may stay as `review-r<N>.md`, written
+   before it; turning the last round's CHANGES_REQUESTED into APPROVED needs a director gate decision
+   named in it) and `runtime-state.json` (device- or director-only checks under `manual_required`).
 
 ## Anti-patterns
 
