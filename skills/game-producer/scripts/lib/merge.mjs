@@ -426,6 +426,15 @@ function record(ctx, s, j) {
 
 // ------------------------------------------------------------------ the journal
 
+/** What the harvest really did: the hook exits 0 for off and nothing too, so the note reads its status line. */
+export function harvestNote(h) {
+  if (h.status !== 0) return 'failed: the worktree will be kept';
+  if (h.memory === 'harvested') return 'archived';
+  if (h.memory === 'off') return h.unregistered ? `off: ${h.unregistered} is not registered with orca-memory` : `off: ${h.reason || 'memory mode off'}`;
+  if (h.memory === 'nothing') return `nothing archived: ${h.reason || 'no evidence'}`;
+  return h.memory ? `exit 0, status ${h.memory}` : 'exit 0, no status line';
+}
+
 /**
  * One pass over the merge journal. → null (progress, call again) | PAUSE | { ask } | { phase: 'done' }.
  * kit: lane helpers from lanes.mjs (ask, PAUSE, spawnOnce, wait, orcaError, mtime, fill, setPhase).
@@ -452,7 +461,8 @@ export function mergeStep(ctx, s, kit) {
 
   if (!done('harvest')) {
     const h = io.memoryHarvest(j.wt || root, `T-${id}`, root);
-    stepDone(root, id, 'harvest', h.ran ? { status: h.status, failed: h.status !== 0, note: h.status ? 'failed: the worktree will be kept' : 'archived' } : { note: 'no orca-memory launcher' });
+    stepDone(root, id, 'harvest', h.ran ? { status: h.status, failed: h.status !== 0, memory: h.memory, note: harvestNote(h) } : { note: 'no orca-memory launcher' });
+    if (h.ran && h.status === 0 && h.memory !== 'harvested') st.log(root, id, `memory harvest: ${harvestNote(h)}`);
     return null;
   }
 

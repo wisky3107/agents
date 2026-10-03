@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { loadProject, editSliceNote } from '../scripts/lib/project.mjs';
+import { harvestNote } from '../scripts/lib/merge.mjs';
 import { NOTES, POLICY, project, fakes, runner, runnerChild, until, evRel, ev, sliceState } from './harness.mjs';
 
 // Merge journal (plan M4c) on a real git repo with a real slice worktree; the Editor scripts, the
@@ -198,6 +199,27 @@ test('a failed memory harvest keeps the worktree; wait-mcp failure and a manual 
   const c = runner(root, f, 'start', '--once').out;
   assert.ok(c.find((o) => o.merged));
   assert.match(loadProject(root).notesText, /merged=y worktree kept: harvest_failed; memory harvest failed\n/);
+});
+
+test('a harvest that exits 0 but printed off is not recorded as archived (lego-stack S08)', () => {
+  const { f, root, wt } = fleet();
+  const line = JSON.stringify({ stage: 'harvest', status: 'off', inject: false, reason: 'project not in trusted config', unregistered: root });
+  fs.writeFileSync(path.join(f.dir, 'no-orca-memory'), `#!/bin/sh\necho '${line}'\n`, { mode: 0o755 });
+  f.queue([VERIFIED]);
+  assert.ok(runner(root, f, 'start', '--once').out.find((o) => o.merged));
+  const h = journal(root).steps.harvest;
+  assert.deepEqual([h.status, h.failed, h.memory], [0, false, 'off']);
+  assert.equal(h.note, `off: ${root} is not registered with orca-memory`);
+  assert.equal(fs.existsSync(wt), false, 'off is not a failure: the worktree still goes');
+  assert.match(fs.readFileSync(ev(root, 'S01', 'producer-log.md'), 'utf8'), /runner: memory harvest: off: .* is not registered/);
+});
+
+test('harvestNote: reads the hook status line, not only the exit code', () => {
+  assert.equal(harvestNote({ status: 1, memory: null }), 'failed: the worktree will be kept');
+  assert.equal(harvestNote({ status: 0, memory: 'harvested' }), 'archived');
+  assert.equal(harvestNote({ status: 0, memory: 'off', reason: 'memory mode off' }), 'off: memory mode off');
+  assert.equal(harvestNote({ status: 0, memory: 'nothing', reason: 'no candidates, review, handoff or referenced image' }), 'nothing archived: no candidates, review, handoff or referenced image');
+  assert.equal(harvestNote({ status: 0, memory: null }), 'exit 0, no status line');
 });
 
 test('auto_merge=false: the director merges and owns the finish; no Funplay → verify is the human\'s', () => {
