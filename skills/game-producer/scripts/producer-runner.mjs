@@ -140,8 +140,9 @@ async function plan(root) {
 
 /**
  * Manual checks merged under `manual_required: defer` and not signed off yet, per slice (Step 3 signs
- * them off). Read again from the slice's runtime-state.json / HANDOFF.json when they are there, so a
- * file written by an older runner (JSON strings, a split `{reason, items}`) reads like a new one.
+ * them off), as deferred (`v: 2`). A file from an older runner (JSON strings, a split `{reason, items}`)
+ * is read again from the slice's runtime-state.json / HANDOFF.json — never a newer one: a fleet
+ * rewrites HANDOFF after its commit and would shorten the list.
  */
 function deferredManual(root) {
   const base = path.join(root, '.cursor', 'evidence', 'tasks');
@@ -150,6 +151,10 @@ function deferredManual(root) {
     const ev = path.join(base, d, 'evidence');
     const f = st.readJson(path.join(ev, 'manual-deferred.json'));
     if (!f?.items?.length || f.signed_off) continue;
+    if (f.v >= 2) {
+      out[d.replace(/^T-/, '')] = f.items;
+      continue;
+    }
     const runtime = st.readJson(path.join(ev, 'runtime-state.json'));
     const handoff = st.readJson(path.join(ev, 'HANDOFF.json'));
     const again = runtime ? manualItems(runtime, { manual_required: handoff?.manual_required }) : [];
@@ -533,9 +538,10 @@ async function dryRun(root) {
   const s = st.readSliceState(root, next.slice);
   const lane = blockers.some((b) => b.code === 'slice_file') ? null : laneFor(project, next.slice);
   const open = st.readRunner(root).questions.filter((q) => !q.answer).map((q) => q.id);
+  const resume = next.resume || ownsLive(root, next.slice); // a reverted cache resumes the live lane, as start does
   say({
-    slice: next.slice, resume: next.resume, lane, phase: s.phase || null, blockers, open_questions: open,
-    would: blockers.length ? 'ask the first blocker' : next.resume ? (s.phase ? `continue at ${s.phase}` : 'ask before adopting a lane it did not start') : `mark in_progress and spawn the ${lane} lane`,
+    slice: next.slice, resume, lane, phase: s.phase || null, blockers, open_questions: open,
+    would: blockers.length ? 'ask the first blocker' : resume ? (s.phase ? `continue at ${s.phase}` : 'ask before adopting a lane it did not start') : `mark in_progress and spawn the ${lane} lane`,
   });
 }
 
