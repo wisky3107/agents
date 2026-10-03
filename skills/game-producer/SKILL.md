@@ -112,6 +112,11 @@ node ~/.agents/skills/game-producer/scripts/producer-runner.mjs start --dry-run 
   pauses for the coordinator; the commit line is `approved — commit (producer: Step 2d passed)`; a
   merged worktree whose only changes are evidence files the copy carries (no PNG, no runner file) is
   copied to main once more and removed with `--force`, any other change keeps it.
+- **Restarting a slice from scratch:** answer "mark blocked", then set it `in_progress` in the release
+  cache and answer "start the slice fresh" on the `blocked_resume` question; or delete its
+  `T-<Sxx>/producer-state.json` while no runner holds the lock. Setting the cache back to
+  `planned` does not: the runner resumes its own live lane (a lane that reverts AGENT_NOTES.md must
+  never get a second writer).
 - **One producer per project:** the runner holds `.cursor/producer.lock` (a second `start` or a
   `launch` is refused). An LLM producer does not take that lock: never run an LLM slice loop while
   `producer-runner.mjs status` shows a live runner; the Step 0–1 / Step 3 producers never dispatch

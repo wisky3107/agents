@@ -404,6 +404,11 @@ test('a lane that puts AGENT_NOTES.md back (cache says planned) does not get a s
   assert.equal(f.spawns().length, 1); // the same writer, never a second one
   assert.equal(sliceState(p.root, 'S01').phase, 'writer');
   assert.deepEqual([loadProject(p.root).release.slices.S01, loadProject(p.root).release.current_slice], ['in_progress', 'S01']);
+  // dry-run says what start does (review round 9): resume, never "spawn the lane"
+  fs.writeFileSync(path.join(p.root, 'AGENT_NOTES.md'), notes);
+  clearControl(p.root);
+  const dry = runner(p.root, f, 'start', '--dry-run').out.at(-1);
+  assert.deepEqual([dry.resume, dry.would], [true, 'continue at writer']);
   assert.match(log(p.root), /release cache said planned while the runner is at writer \(AGENT_NOTES\.md put back by a lane\?\): rewritten in_progress, resuming/);
   assert.match(f.spawns()[0].prompt, /implementing slice S01/);
 });
@@ -449,7 +454,11 @@ test('manual_required: defer — APPROVED with only manual checks left merges, l
   assert.match(loadProject(p.root).notesText, /\n- S01 single merged fix_rounds=0 bump=none commit=\w{7} merged=y manual_deferred=2\n/);
   assert.match(log(p.root), /manual_required deferred \(2\): fps >= 55 on the named device \| GP-22 spot-check/);
   assert.deepEqual(runner(p.root, f, 'status').out[0].manual_deferred, { S01: items });
-  // a file an older runner wrote (JSON strings, a lone marker line) reads from the slice's runtime-state again
+  assert.equal(JSON.parse(fs.readFileSync(ev(p.root, 'S01', 'evidence', 'manual-deferred.json'), 'utf8')).v, 2);
+  // the list as deferred stays the list: a runtime-state or HANDOFF rewritten later does not shorten it
+  fs.writeFileSync(ev(p.root, 'S01', 'evidence', 'runtime-state.json'), JSON.stringify({ status: 'verified', manual_required: ['only this one now'] }));
+  assert.deepEqual(runner(p.root, f, 'status').out[0].manual_deferred, { S01: items });
+  // a file an older runner wrote (no v; JSON strings, a lone marker line) is read from runtime-state again
   fs.writeFileSync(ev(p.root, 'S01', 'evidence', 'manual-deferred.json'), JSON.stringify({ slice: 'S01', items: ['status', '{"item":"x","reason":"y"}'] }));
   fs.writeFileSync(ev(p.root, 'S01', 'evidence', 'runtime-state.json'), JSON.stringify({ status: 'manual_required', manual_required: [{ item: 'V5 landscape', reason: 'state only' }] }));
   assert.deepEqual(runner(p.root, f, 'status').out[0].manual_deferred, { S01: ['V5 landscape — state only'] });
@@ -464,6 +473,11 @@ test('manual_required: defer — APPROVED with only manual checks left merges, l
   assert.deepEqual(manualItems({ manual_required: true }), ['manual_required: true (no details)']);
   // runtime-state and HANDOFF together: listed once
   assert.deepEqual(manualItems({ status: 'manual_required', manual_required: ['GP-22'] }, { manual_required: ['GP-22', 'fps'] }), ['GP-22', 'fps']);
+  // never lost (review round 9): a bare marker in a list, a named check next to a listed one, every list
+  // key and every other pair of a manual_required object
+  assert.deepEqual(manualItems({ checks: ['pass', 'manual_required'] }), ['checks[1]: manual_required (no details)']);
+  assert.deepEqual(manualItems({ checks: [{ id: 'fps', result: 'manual_required' }], manual_required: ['GP-22'] }), ['fps', 'GP-22']);
+  assert.deepEqual(manualItems({ manual_required: { reason: 'r', items: ['a'], pending: ['b'], extra_check: 'c' } }), ['a', 'b', 'extra_check: c']);
 });
 
 test('fleet: the newest review file is the verdict; defer never covers a review that is not APPROVED; the commit line names the runner', () => {
