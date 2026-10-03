@@ -465,6 +465,32 @@ test('autopilot: unattended approves a gated slice itself and settles a verdict 
   // retry_once does neither: the gate waits for the director
   const r = project({ notes: NOTES(POLICY, '{}', '  autopilot: retry_once\n'), slices: { S01: { needs: true } } });
   assert.equal(runner(r.root, fakes(), 'start', '--once').out.at(-1).kind, 'director_gate');
+  // a review file from an earlier round never speaks for this one (review round 11): the director decides
+  const t = project({ notes, slices: { S01: { needs: false } } });
+  const g3 = fakes();
+  g3.queue([
+    { name: 'an earlier round left review.md', write: { ...W('working'), [evRel('S01', 'review.md')]: 'F1\n\nCHANGES_REQUESTED\n' } },
+    { name: 'ready', write: { ...W('ready_for_review'), ...preview(7461) } },
+    { name: 'handoff only', write: { [H]: { role: 'reviewer', status: 'approved' } } },
+    { result: 'idle' }, { result: 'idle' },
+  ]);
+  const o3 = runner(t.root, g3, 'start', '--once').out;
+  assert.equal(o3.find((o) => o.autopilot), undefined);
+  assert.deepEqual([o3.at(-1).waiting, o3.at(-1).kind], ['q1', 'verdict_mismatch']);
+});
+
+test('fleet, autopilot unattended: "keep waiting" on an odd status still leaves the stall rules (nudge, then the director)', () => {
+  const p = project({ notes: NOTES(POLICY, '{}', '  autopilot: unattended\n'), slices: { S01: { needs: false, size: 'L' } } });
+  const f = fakes();
+  f.queue([
+    { name: 'run', runs: [{ id: 'run_1', coordinator_handle: 'term_1' }], write: { [H]: { role: 'coordinator', status: 'working' } } },
+    { name: 'odd status', write: { [H]: { role: 'coordinator', status: 'waiting_for_assets' } } },
+    { name: 'idle 1', result: 'idle' }, { name: 'idle 2', result: 'idle' }, { name: 'idle 3', result: 'idle' },
+  ]);
+  const out = runner(p.root, f, 'start', '--once').out;
+  assert.deepEqual(out.find((o) => o.autopilot), { autopilot: 'q1', kind: 'unknown_status', choice: 'treat as working, keep waiting' });
+  assert.match(f.sends()[0].text, /^resume the cocos-orca-fleet Coordinator loop/); // the stall nudge still goes out
+  assert.deepEqual([out.at(-1).waiting, out.at(-1).kind], ['q2', 'fleet_stall']);
 });
 
 test('manual_required: defer — APPROVED with only manual checks left merges, lists them, Notes and status show them', () => {

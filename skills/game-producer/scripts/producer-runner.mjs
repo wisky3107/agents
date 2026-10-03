@@ -29,7 +29,7 @@ import { loadProject, sliceStatuses, nextSlice, preflight, writeRelease, writePo
 import * as st from './lib/state.mjs';
 import { submit, menu, parseReply, textNeed, answerProblem, openQuestions, givenChoice, isGivenChoice } from './lib/answer.mjs';
 import { questionContext } from './lib/context.mjs';
-import { laneFor, runSlice, applyAnswer, cursorUndecided, cursorState, resetCursorProbe, agentOrAsk, cursorArtBlocked, CursorUndecided, CURSOR_FALLBACK, manualItems, reviewVerdict } from './lib/lanes.mjs';
+import { laneFor, runSlice, applyAnswer, cursorUndecided, cursorState, resetCursorProbe, agentOrAsk, cursorArtBlocked, CursorUndecided, CURSOR_FALLBACK, manualItems, reviewVerdict, MAX_FIX_ROUNDS } from './lib/lanes.mjs';
 import { currentBranch, appendLessons, lessonRows, readJournal } from './lib/merge.mjs';
 import { consult, judgeSpec, JUDGE_KINDS, MAX_JUDGED } from './lib/judge.mjs';
 import * as io from './lib/orca.mjs';
@@ -114,8 +114,13 @@ function autopilotChoice(root, project, q) {
     if (q.kind === 'director_gate' && q.slice) pick = { choice: givenChoice(q.slice), text: 'autopilot: unattended (release.autopilot)' };
     else if (q.kind === 'unknown_status') pick = { choice: 'treat as working, keep waiting' };
     else if (q.kind === 'verdict_mismatch' && q.slice) {
-      const v = reviewVerdict(project, q.slice);
-      pick = v === 'APPROVED' ? { choice: 'treat as approved' } : v === 'CHANGES_REQUESTED' ? { choice: 'treat as changes_requested' } : null;
+      // only a review file written in this round speaks for it; a fix round only under the round cap
+      // ("treat as changes_requested" starts one directly) — otherwise the director decides
+      const { verdict, thisRound } = reviewVerdict(project, q.slice);
+      const s = st.readSliceState(root, q.slice);
+      const roomForFix = (s.fix_rounds || 0) < (s.max_fix_rounds || MAX_FIX_ROUNDS);
+      if (thisRound && verdict === 'APPROVED') pick = { choice: 'treat as approved' };
+      else if (thisRound && verdict === 'CHANGES_REQUESTED' && roomForFix) pick = { choice: 'treat as changes_requested' };
     } else if (AUTOPILOT[q.kind]) pick = { choice: AUTOPILOT[q.kind] };
   } else if (AUTOPILOT[q.kind] && !used) pick = { choice: AUTOPILOT[q.kind] };
   return pick && q.options.includes(pick.choice) ? { text: '', ...pick } : null;
