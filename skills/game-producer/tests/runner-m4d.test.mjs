@@ -126,6 +126,8 @@ test('judge: "treat as approved" only when review.md really ends APPROVED', () =
     f.queue([
       { write: { [H]: { role: 'writer', status: 'ready_for_review' }, [evRel('S01', 'preview-startup.json')]: { previewUrl: 'http://127.0.0.1:7461/' } } },
       { write: { [H]: { role: 'reviewer', status: 'approved' }, ...approvedEvidence('S01', verdict) } },
+      // the review file stays as it is for the runner's extra looks (M6: a late review file is waited for)
+      { result: 'idle' }, { result: 'idle' },
     ]);
     runner(p.root, f, 'start', '--once');
     return { p, f, q: runnerFile(p.root).questions[0] };

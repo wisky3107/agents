@@ -44,6 +44,7 @@ const GATE_PATIENCE = 10; // idle pauses after relaying a gate decision before a
 const GATE_SETTLE = 3; // idle pauses after a relay before another pending gate becomes a question
 const MISSING_RECHECKS = 5; // "terminal missing" from orca-wait while `terminal show` finds it: ask after this many
 const BAD_JSON_PATIENCE = 3; // a HANDOFF caught mid-write parses on the next look
+const VERDICT_PATIENCE = 2; // looks after a HANDOFF verdict before its review file disagreeing is a question
 export const FALLBACK_REVIEWER = 'cursor --model auto';
 export const STALL_NUDGE =
   'resume the cocos-orca-fleet Coordinator loop: `check --ack` the Delivery you last handled (bare `check` if none), ' +
@@ -681,7 +682,14 @@ function singleStep(ctx, s, phase) {
     if (h.status === 'approved' || h.status === 'changes_requested') {
       const want = h.status === 'approved' ? 'APPROVED' : 'CHANGES_REQUESTED';
       if (verdict !== want) {
-        return ask(s, 'verdict_mismatch', `HANDOFF says ${h.status} but ${path.basename(verdictFile)} ends "${verdict.slice(0, 80)}"`, ['treat as approved', 'treat as changes_requested', 'mark blocked', 'stop'], { obs: obs('verdict_mismatch') });
+        // the reviewer writes HANDOFF and then its review file (pilot S07: review.md landed 18 s after
+        // HANDOFF said approved): a couple more looks at the same HANDOFF before it is a question
+        const n = s.verdict_wait?.at === h.mtime ? s.verdict_wait.n + 1 : 1;
+        if (n <= VERDICT_PATIENCE) {
+          st.writeSliceState(root, id, { verdict_wait: { at: h.mtime, n } });
+          return PAUSE;
+        }
+        return ask(s, 'verdict_mismatch', `HANDOFF says ${h.status} but ${path.basename(verdictFile)} ends "${verdict.slice(0, 80)}" after ${VERDICT_PATIENCE} more looks`, ['treat as approved', 'treat as changes_requested', 'mark blocked', 'stop'], { obs: obs('verdict_mismatch') });
       }
       io.closeTerminal(s.reviewer);
       if (h.status === 'approved') {

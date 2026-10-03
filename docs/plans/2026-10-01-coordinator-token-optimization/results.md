@@ -22,6 +22,8 @@ Project totals 2026-09-24 → 2026-10-02: producer 167.9M (27%), fleet-orch 196.
 
 | 2 | S02 | M / single | runner sau M6/M6b + lựa chọn director_gate GIVEN; `manual_required: defer`; no judge | 0 (no LLM producer) | — (single lane: writer + 2 reviewers, 3 sessions, 238 turns, 39.5M) | 2 / 2 / 0 trong slice (+5 director_gate trước khi chọn) | merged 2026-10-02 19:52Z (`403f1d1`, bookkeeping `2ef8040`); 1 fix round; 5 manual deferred; kẹt 1 h 30 ở bước commit |
 
+| 3 | S03–S07 | 5 × M / single | runner sau pilot 2 (commit single lane, autopilot); `S03-S07 GIVEN`, judge sonnet, `autopilot: retry_once`, `manual_required: defer`; session theo dõi tự trả lời | 0 (judge + Step 3: 0.2M) | — (lane: 15 sessions, 928 turns, 149.4M) | 3 / 1 director + 2 session theo dõi / 0 judge | merged 2026-10-03 02:52Z; 5 slice, 6 fix round; 23 việc manual hoãn; Step 3 chờ director ký |
+
 ### Pilot 1 — kết quả
 
 token-report `--since 2026-10-02T08:54:00Z --project cc-lego-stack`, đến 14:49Z.
@@ -124,3 +126,32 @@ token-report `--since 2026-10-02T08:54:00Z --project cc-lego-stack`, đến 14:4
   - ghi `S03-S07 GIVEN` lên dòng policy;
   - bật `judge_agent: claude --model sonnet`;
   - bật `autopilot: retry_once` sau khi merge.
+
+### Pilot 3 — S03–S07 liên tục (2026-10-02 19:53Z → 2026-10-03 02:52Z)
+
+Director yêu cầu chạy hết các slice mà không bị chặn. Đã làm:
+- ghi `S03-S07 GIVEN` lên dòng policy;
+- bật `judge_agent: claude --model sonnet` và `autopilot: retry_once`;
+- cho session theo dõi kiểm tra mỗi 30 phút và tự trả lời câu hỏi của runner theo luật an toàn (không bao giờ chọn stop / mark blocked / skip).
+
+| Slice | Commit | Thời gian (UTC) | Fix round | Câu hỏi | Manual hoãn | Lane (sessions / turns / context) |
+|---|---|---|---|---|---|---|
+| S03 | `d76a55b` | 19:53 → 20:28 | 0 | q14 director_gate (trước khi chạy; session theo dõi trả lời sau khi có GIVEN) | 3 | 2 / 147 / 25.1M |
+| S04 | `f4e66f2` | 20:28 → 00:04 | 1 | q15 verdict_override — báo động nhầm, chờ director 2 h 45 | 4 | 3 / 202 / 31.6M |
+| S05 | `6c3e521` | 00:04 → 00:29 | 1 | — | 0 | 3 / 131 / 17.6M |
+| S06 | `b5edc04` | 00:29 → 01:13 | 1 | — | 7 | 3 / 173 / 30.6M |
+| S07 | `24d01e6` | 01:13 → 02:52 | 2 | q16 verdict_mismatch — race; judge chuyển cho director, session theo dõi trả lời sau 23 phút | 5 | 4 / 275 / 44.5M |
+
+- **Mỗi slice có thêm một bookkeeping commit** do runner tự tạo (`chore(producer): record <Sxx> merge`): `266f0d3`, `4bed25c`, `4ab8868`, `ea75c89`, `95cf2a2`. Không slice nào kẹt ở bước commit: bản sửa ở pilot 2 có tác dụng.
+- **Autopilot: 0 lần.** Judge: 1 lần, và lần đó judge chuyển cho director. Phía producer tốn 0.2M (judge và handoff Step 3).
+- **Thời gian:** cả chuỗi mất 7 h. Trừ 2 h 45 ở q15 thì còn khoảng 4 h 15, trung bình khoảng 50 phút cho một slice M.
+- **`manual_deferred`** liệt kê 24 dòng, nhưng thực chất có 23 việc. Vài dòng chỉ ghi `status`, `reason` hay `items` của một object bị tách ra; đây là lỗi hiển thị, chưa sửa.
+- **Step 3** do codex chạy. Nó trình các việc manual, và chưa build hay deploy cho tới khi director ký done/waived.
+
+Sự cố và cách sửa:
+- **S04, q15: báo động nhầm của `verdict_override`.** Reviewer giữ lại `review-r1.md` (CHANGES_REQUESTED) cạnh `review.md` APPROVED mới. Luật M6 vốn dành cho verdict do coordinator viết lại, nhưng lại chạy cả ở single lane. Đã sửa: luật này chỉ áp dụng cho fleet (`8db0556`).
+- **S07: writer đưa `AGENT_NOTES.md` về bản đã commit trong fix round 1.** Cache release lại ghi `S07: planned`. Nếu runner lập kế hoạch lại lúc đó, nó sẽ mở writer thứ hai.
+  - Session theo dõi đã ghi lại cache bằng tay.
+  - Đã sửa (`c7d27ce`): slice đang chạy của runner thắng cache bị ghi đè. Yêu cầu fix round cũng dặn writer không khôi phục `AGENT_NOTES.md` hay file của runner.
+- **S07, q16: race giữa HANDOFF và `review.md`.** Reviewer ghi HANDOFF `approved` lúc 02:27:39Z; `review.md` 18 giây sau mới kết thúc bằng APPROVED; runner hỏi đúng vào khoảng giữa. Đã sửa: runner nhìn thêm 2 lần trước khi hỏi `verdict_mismatch`.
+- **Restart giữa slice:** runner được restart 3 lần (S03 writer, S05 writer, S07 review) để nhận code mới. Lần nào cũng chạy tiếp đúng lane cũ, không spawn thêm.

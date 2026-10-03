@@ -99,7 +99,9 @@ node ~/.agents/skills/game-producer/scripts/producer-runner.mjs start --dry-run 
   Policy `no_cursor=true` moves them without asking. `art_backend: cursor` → `cursor_art` (pick
   another backend). Fleet locks end in `cursor=on|off`, plus a note when roles were moved.
 - **HANDOFF statuses:** one that only names a step (`implementing`, `reviewing`, …) counts as
-  `working`; any other unknown status is a question (with "treat as working, keep waiting").
+  `working`; any other unknown status is a question (with "treat as working, keep waiting"). A
+  reviewer's HANDOFF verdict whose review file still disagrees gets 2 more looks first (the review
+  file can land after HANDOFF), then `verdict_mismatch`.
 - **Fleet specifics (pilot 1):** the verdict is `review.md` or the highest `review-r<N>.md`,
   whichever was written later; a final `review.md` that turns the last round's CHANGES_REQUESTED into
   APPROVED must name a gate whose decision the runner sent (else `verdict_override` — a speed bump

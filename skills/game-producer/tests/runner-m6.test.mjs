@@ -408,6 +408,32 @@ test('a lane that puts AGENT_NOTES.md back (cache says planned) does not get a s
   assert.match(f.spawns()[0].prompt, /implementing slice S01/);
 });
 
+test('verdict race: HANDOFF says approved before review.md is rewritten — waited for, no question (pilot S07)', () => {
+  const p = project({ slices: { S01: { needs: false } } });
+  const f = fakes();
+  f.queue([
+    { name: 'ready', write: { ...W('ready_for_review'), ...preview(7461) } },
+    // HANDOFF first, review.md still the earlier round's
+    { name: 'handoff first', write: { ...R('approved', 'APPROVED'), [evRel('S01', 'review.md')]: 'F9 open\n\nCHANGES_REQUESTED\n' } },
+    { name: 'review.md lands', result: 'idle', write: { [evRel('S01', 'review.md')]: 'F9 re-verified\n\nAPPROVED\n' } },
+    commitStep('S01'),
+  ]);
+  const out = runner(p.root, f, 'start', '--once').out;
+  assert.deepEqual(out.find((o) => o.merged), { merged: 'S01', commit: lastCommit(f) });
+  assert.equal(runnerFile(p.root).questions.length, 0);
+  // a review file that never agrees is still asked, after the extra looks
+  const q = project({ slices: { S01: { needs: false } } });
+  const g2 = fakes();
+  g2.queue([
+    { name: 'ready', write: { ...W('ready_for_review'), ...preview(7461) } },
+    { name: 'disagree', write: R('approved', 'CHANGES_REQUESTED') },
+    { result: 'idle' }, { result: 'idle' },
+  ]);
+  const a = runner(q.root, g2, 'start', '--once').out.at(-1);
+  assert.deepEqual([a.waiting, a.kind], ['q1', 'verdict_mismatch']);
+  assert.match(question(q.root, 'q1').text, /HANDOFF says approved but review\.md ends "CHANGES_REQUESTED" after 2 more looks/);
+});
+
 test('manual_required: defer — APPROVED with only manual checks left merges, lists them, Notes and status show them', () => {
   const p = project({ notes: NOTES(POLICY, '{}', '  manual_required: defer\n'), slices: { S01: { needs: false } } });
   const f = fakes();
