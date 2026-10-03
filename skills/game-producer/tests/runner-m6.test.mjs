@@ -369,7 +369,7 @@ test('commit stalled: after "resend commit" a stall is asked again (pilot 2 wait
   assert.deepEqual(c.find((o) => o.autopilot), { autopilot: 'q1', kind: 'commit_stalled', choice: 'resend commit' });
   assert.deepEqual([question(q.root, 'q1').answer.by, c.at(-1).waiting, c.at(-1).kind], ['autopilot', 'q2', 'commit_stalled']);
   assert.equal(g2.sends().length, 2);
-  assert.match(log(q.root), /autopilot on q1 \(commit_stalled\): resend commit — once for this slice/);
+  assert.match(log(q.root), /autopilot on q1 \(commit_stalled\): resend commit — within its limit for this slice/);
   // {item, reason} manual items read as text
   assert.deepEqual(manualItems({ manual_required: [{ item: 'V5 landscape screenshot', reason: 'state only' }, { check: 'GP-22' }] }), ['V5 landscape screenshot — state only', 'GP-22']);
 });
@@ -437,6 +437,34 @@ test('verdict race: HANDOFF says approved before review.md is rewritten — wait
   const a = runner(q.root, g2, 'start', '--once').out.at(-1);
   assert.deepEqual([a.waiting, a.kind], ['q1', 'verdict_mismatch']);
   assert.match(question(q.root, 'q1').text, /HANDOFF says approved but review\.md ends "CHANGES_REQUESTED" after 2 more looks/);
+});
+
+test('autopilot: unattended approves a gated slice itself and settles a verdict mismatch from the review file', () => {
+  const notes = NOTES(POLICY, '{}', '  autopilot: unattended\n');
+  // director_gate: the runner records "<Sxx> GIVEN" as autopilot's and starts the slice
+  const p = project({ notes, slices: { S01: { needs: true } } });
+  const f = fakes();
+  f.queue([{ name: 'writer works', write: W('working') }]);
+  const out = runner(p.root, f, 'start', '--once').out;
+  assert.deepEqual(out.find((o) => o.autopilot), { autopilot: 'q1', kind: 'director_gate', choice: 'S01 GIVEN — record it on the policy line' });
+  assert.match(loadProject(p.root).policy.raw, /\(director gate: S01 GIVEN — autopilot: unattended release\.autopilot; recorded by producer-runner \d{4}-\d{2}-\d{2}\)$/);
+  assert.deepEqual(f.spawns().map((x) => x.slice), ['S01']);
+  assert.equal(runnerFile(p.root).questions.filter((q) => !q.answer).length, 0);
+  // HANDOFF says approved, the review file still says CHANGES_REQUESTED after the extra looks:
+  // the file wins → a fix round, no question for the director
+  const q = project({ notes, slices: { S01: { needs: false } } });
+  const g2 = fakes();
+  g2.queue([
+    { name: 'ready', write: { ...W('ready_for_review'), ...preview(7461) } },
+    { name: 'disagree', write: R('approved', 'CHANGES_REQUESTED') },
+    { result: 'idle' }, { result: 'idle' },
+  ]);
+  const o2 = runner(q.root, g2, 'start', '--once').out;
+  assert.deepEqual(o2.find((o) => o.autopilot), { autopilot: 'q1', kind: 'verdict_mismatch', choice: 'treat as changes_requested' });
+  assert.match(g2.sends().at(-1).text, /^Fix round 1: apply exactly the rows/);
+  // retry_once does neither: the gate waits for the director
+  const r = project({ notes: NOTES(POLICY, '{}', '  autopilot: retry_once\n'), slices: { S01: { needs: true } } });
+  assert.equal(runner(r.root, fakes(), 'start', '--once').out.at(-1).kind, 'director_gate');
 });
 
 test('manual_required: defer — APPROVED with only manual checks left merges, lists them, Notes and status show them', () => {

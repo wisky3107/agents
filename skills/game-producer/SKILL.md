@@ -55,11 +55,17 @@ node ~/.agents/skills/game-producer/scripts/producer-runner.mjs start --dry-run 
   restarted runner reopens the dialog unless it is still open or was closed with "Later". Every
   question comes with where the run stands: project · slice title (lane and phase, or its status),
   release progress, the runner's last event.
-- **`release.autopilot: retry_once`** (default off; a policy token wins): the routine "try again"
-  answers come from the runner itself, once per slice and kind — commit_stalled → resend commit,
-  reviewer_hung → a fresh reviewer, lane_hung → another resume lane, changes_after_rounds → one more
-  fix round, orca_error → retry. The same stop again, or any other
-  question, waits for the director (or the judge). Logged as `autopilot on qN`.
+- **`release.autopilot`** (default off; a policy token wins) — answers the runner gives itself,
+  logged as `autopilot on qN`:
+  - `retry_once`: the routine "try again" answers, once per slice and kind — commit_stalled → resend
+    commit, reviewer_hung → a fresh reviewer, lane_hung → another resume lane, changes_after_rounds →
+    one more fix round, orca_error → retry;
+  - `unattended`: `retry_once`, plus a director's standing "run every slice, answer for me" — every
+    director_gate → `<Sxx> GIVEN — record it` (the policy line says autopilot gave it), an unknown
+    status → keep waiting, verdict_mismatch → whatever the newest review file says (APPROVED or
+    CHANGES_REQUESTED), a second extra fix round. Only for a director who pre-approves every slice.
+  Never stop, mark blocked or skip; anything else, or past its limit, waits for the director (or the
+  judge).
 - **Single-lane commit (pilot 2):** the commit request says what to do — `/commit-guard` on the
   checkout, then HANDOFF `committed` + the full sha. A writer that commits and says nothing: the only
   new commit on main since the request — not a merge, naming the slice in its subject or a path it

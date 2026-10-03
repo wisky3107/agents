@@ -46,6 +46,12 @@ against current code before relying on it and cite the item ids you used in inte
 Status file: write <EVIDENCE_DIR>/HANDOFF.json on every state change
 {"role":"writer","status":"working|blocked|ready_for_review","detail":"<one line>","sha":null,"updatedAt":"<ISO>"}
 — the producer waits on this file, not on your terminal.
+Later the producer types into this terminal: fix rounds ("Fix round N: …") and, after an
+APPROVED review, the commit request (a line starting "approved — commit"). On that request, and
+only then, run /commit-guard on this checkout, then write HANDOFF.json with "status":"committed"
+and "sha" set to the full commit sha — the producer reads the sha from this file, not from your
+terminal. Never restore, revert or stash AGENT_NOTES.md or the producer's files (.cursor/producer*,
+producer-state.json, producer-log.md), even when cleaning up unrelated changes.
 
 Build:
 1. Code in paths.code; @property refs for scene wiring; tsc clean; no console.log.

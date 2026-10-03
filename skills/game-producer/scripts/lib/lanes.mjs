@@ -394,6 +394,12 @@ function approvalProblems(dir, required, verdictAccepted = false, relayedGates =
   return out;
 }
 
+/** The newest review file's verdict line for a slice (fleet: its worktree evidence). */
+export function reviewVerdict(project, id) {
+  const dir = laneFor(project, id) === 'fleet' ? path.dirname(fleetHandoff(project.root, id).file) : evidenceDir(project.root, id);
+  return lastLine(reviewFile(dir));
+}
+
 /** Fleet HANDOFF lives in the feature worktree once the coordinator has created it. */
 export function fleetHandoff(root, id) {
   const wt = sliceWorktrees(root)[id];
