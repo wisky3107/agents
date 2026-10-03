@@ -1,0 +1,77 @@
+[
+  {
+    "kind": "runner_stop",
+    "reason": "lane_blocked",
+    "match": "agent_readiness|Cursor|cursor",
+    "fixed_by": "agents a23c12e",
+    "fixed_at": "2026-10-02T11:08:16Z",
+    "note": "Cursor readiness probe and a run-wide cursor_off question; art-manifest falls back to claude sonnet"
+  },
+  {
+    "kind": "runner_stop",
+    "reason": "unknown_status",
+    "fixed_by": "agents a23c12e",
+    "fixed_at": "2026-10-02T11:08:16Z",
+    "note": "step-name HANDOFF statuses (implementing, reviewing…) count as working"
+  },
+  {
+    "kind": "runner_stop",
+    "reason": "coordinator_missing",
+    "fixed_by": "agents 79e4539",
+    "fixed_at": "2026-10-02T16:30:09Z",
+    "note": "terminal show recheck before asking (MISSING_RECHECKS)"
+  },
+  {
+    "kind": "runner_stop",
+    "reason": "approval_evidence",
+    "match": "review.md ends",
+    "fixed_by": "agents 79e4539",
+    "fixed_at": "2026-10-02T16:30:09Z",
+    "note": "the runner reads the last review round, not a stale review.md"
+  },
+  {
+    "kind": "runner_stop",
+    "reason": "commit_stalled",
+    "fixed_by": "agents f579d10",
+    "fixed_at": "2026-10-02T19:59:49Z",
+    "note": "single-lane commits no longer stall; autopilot retries once"
+  },
+  {
+    "kind": "runner_stop",
+    "reason": "verdict_override",
+    "fixed_by": "agents df9e630",
+    "fixed_at": "2026-10-03T00:08:33Z",
+    "note": "verdict_override only for coordinator-written verdicts (pilot S04)"
+  },
+  {
+    "kind": "runner_stop",
+    "reason": "verdict_mismatch",
+    "fixed_by": "agents 191cc35",
+    "fixed_at": "2026-10-03T04:50:28Z",
+    "note": "a review file landing after HANDOFF gets two more looks before verdict_mismatch (pilot S07)"
+  },
+  {
+    "kind": "fix_target",
+    "project": "cc-block-out",
+    "fix_target": "contract:Fable change_budget counting note",
+    "fixed_by": "cc-block-out ac18915, templates 903b210/2df08a9/521f2a0, agents slice-schema",
+    "fixed_at": "2026-10-03T04:46:15Z",
+    "note": "code_only counter leaves out docs/evidence, binary files and budget_exclude/linguist-generated output"
+  },
+  {
+    "kind": "budget_bump",
+    "project": "cc-block-out",
+    "match": "code_only counter",
+    "fixed_by": "cc-block-out ac18915",
+    "fixed_at": "2026-10-03T04:46:15Z",
+    "note": "these ratios measured the counter bug; recounted with check-change-budget.sh --range they fall from median x2.64 to about x1.58 — the rest is the estimate (scenario specs), addressed in game-brief slice-schema.md",
+    "recount": {
+      "S13": 1.256,
+      "S14": 1.364,
+      "S15": 1.567,
+      "S16": 1.576,
+      "S17": 1.714,
+      "S18": 1.86
+    }
+  }
+]

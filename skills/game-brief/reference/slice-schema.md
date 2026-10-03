@@ -92,13 +92,21 @@ while budget-only findings cost a fix round or a director gate each. Aim the est
 *expected* diff so the number stays useful for sizing and splitting:
 
 - Estimate the hand-authored lines per file you list in `paths.code` (new file ≈ 80–160, edit ≈
-  20–60, test ≈ 40–80, `docs/flows` ≈ 30), sum, **multiply by 1.5, round up to the next 50**.
-- `lines` counts code/config/tests/`docs/flows` only — never `.scene`/`.prefab`/`.index.json`/
-  `.meta`/`docs/plans`/evidence. State this in SCOPE.md as `budget_count: code_only` (template default).
+  20–60, unit test ≈ 40–80, a per-slice scenario/regression spec ≈ 200–300, smoke check ≈ 25 each,
+  `docs/flows` ≈ 30), sum, **multiply by 1.5, round up to the next 50**. (cc-block-out S13–S18: the
+  scenario spec alone was 250–330 lines a slice.)
+- `lines` counts hand-authored code/config/tests/`docs/flows` only — never `.scene`/`.prefab`/
+  `.index.json`/`.meta`/`docs/plans`/`docs/evidence`/`.cursor`, binary files, or generated output.
+  State this in SCOPE.md as `budget_count: code_only` (template default). When a slice adds or runs
+  a generator (a level importer, a fixture writer), list its output paths in SCOPE.md as
+  `budget_exclude: <glob>, <glob>` (or mark them `linguist-generated` in `.gitattributes`): the
+  counter reports them separately and never budgets them.
 - `files` = every path you list + 2; `nodes` = authored nodes at max population + 20 %.
 - If previous projects have `budget_bump` events in `.cursor/evidence/lessons.jsonl` (or
   `.cursor/evidence/tasks/*/stats.json`), use their median `to / from` (`diff_lines / max_lines`)
-  ratio instead of 1.5.
+  ratio instead of 1.5. Bumps recorded before 2026-10-03 came from a counter that also counted
+  `docs/evidence`, binary files and generated output; recount such a slice with
+  `check-change-budget.sh --range <base>..<merge>` before trusting its ratio.
 - Add `budget_mode: advisory` to SCOPE.md. A slice whose estimate is far beyond its siblings is a
   signal to split it — decide that here, not in review.
 

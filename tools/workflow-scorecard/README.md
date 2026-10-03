@@ -50,6 +50,20 @@ rewritten by `daily`:
 "so được" only when every arm has ≥5 slices **and** some project ran more than one arm; arms
 that are just different projects compare projects, not configurations.
 
+## Resolutions
+
+`resolutions.json` records fixes: a runner stop reason, a project's `fix_target`, or budget bumps
+measured by a broken counter, each with `fixed_by` and `fixed_at` (UTC). An occurrence before
+`fixed_at` is corrected (`recount`) or left out of the KPI's residual. A red or yellow KPI takes the
+residual's colour, or reads "ĐÃ SỬA · chờ xác nhận" when the residual is fine. A repeat after
+`fixed_at` counts again, so a regression shows. Add an entry when a fix lands; never delete one.
+
+Runner stops split into decisions (`director_gate`, `fleet_gate`: the director's time, KPI
+`orca.director_wait_min`) and avoidable stops (everything else, KPI `orca.runner_avoidable_wait`);
+only stops inside the slice's own window (`selected_at` → `record`) count toward its share.
+OmniRoute's `connection-test` probes are kept out of the gateway error rate and feed
+`gateway.dead_connections` instead.
+
 ## Caveats
 
 - Orca marks a CHANGES_REQUESTED review, a stalled dispatch and a task superseded by its retry all

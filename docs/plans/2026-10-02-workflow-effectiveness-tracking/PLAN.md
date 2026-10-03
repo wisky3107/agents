@@ -310,3 +310,18 @@ Test: scorecard 23, game-producer 81 (gồm 3 test S1).
   - Reviewer: các nhánh có dưới 5 slice.
   - Writer và art backend: mỗi nhánh trùng với một project riêng.
 - **Để có phép so đầu tiên:** trong một project pilot, đổi `reviewer_agent` giữa hai cấu hình, mỗi cấu hình ≥5 slice. Fleet ghi `stats.json` `agents` (S1), nên mỗi slice tự mang nhãn của mình.
+
+### Sửa 4 mục ĐỎ — 2026-10-03
+
+| Mục ĐỎ | Nguyên nhân gốc | Đã làm | Trạng thái sau |
+|---|---|---|---|
+| Runner chờ 57% e2e (cc-lego-stack) | KPI gộp quyết định của director với lần dừng tránh được, và tính cả gate hỏi trước khi chọn slice. Mọi lần dừng tránh được đều đã được phiên token-opt sửa: Cursor chưa đăng nhập, status lạ (a23c12e); báo nhầm coordinator mất, đọc review cũ (79e4539); commit kẹt (f579d10); verdict_override (df9e630); verdict_mismatch (191cc35) | KPI tách `orca.runner_avoidable_wait` / `orca.director_wait_min`, cắt theo khung slice; các fix ghi vào `resolutions.json` | ĐÃ SỬA · chờ xác nhận |
+| Lỗi agy 5% | Toàn bộ là health-check `connection-test` của OmniRoute; traffic agy thật không qua gateway. Một tài khoản agy bị "Access denied" | Gateway KPI bỏ health-check; KPI mới `gateway.dead_connections` | Lỗi agy hết. Tài khoản hỏng thành VÀNG: cần đăng nhập lại hoặc gỡ trong OmniRoute (việc của người dùng) |
+| Budget cc-block-out median ×2,64 | Bộ đếm `code_only` đếm cả `docs/evidence`, tính mỗi PNG là một file, và đếm output của importer, trái với định nghĩa của chính nó | Sửa `check-change-budget.sh` (3 template + cc-block-out; thêm `budget_exclude` và `--range`). SCOPE.md của cc-block-out liệt kê output importer. `slice-schema.md`: test scenario 200–300 dòng, cảnh báo ratio cũ | ĐỎ → VÀNG: đếm lại S14–S18 ra ×1,58. Phần còn lại là ước lượng, đã sửa trong hướng dẫn cho brief sau |
+| `contract:Fable change_budget counting note` lặp 6 slice | Như trên | Như trên + resolution | ĐÃ SỬA · chờ xác nhận |
+
+Cũng sửa:
+- parser `fix_routing` (bảng có cột severity),
+- tỷ lệ cache (OmniRoute `tokens_in` đã gồm cache read).
+
+Mục ĐỎ mới hiện ra: `agent.first_pass` cc-lego-stack 1/8 slice không cần fix. Gần như mọi finding có owner `code` (writer claude sonnet). Đây là ứng viên cho thí nghiệm S3 về writer.

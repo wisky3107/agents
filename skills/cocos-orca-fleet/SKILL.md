@@ -374,7 +374,8 @@ In branch B every key is read from the slice file through the slice-to-plan mapp
 pointer PLAN itself only carries locks:
 
 - Every key of `plan-schema.md` is present (B: resolvable via `plan_source`); `task_size: L`.
-- `change_budget` is understood as **code_only** (scene/prefab/index/meta/plan lines never count);
+- `change_budget` is understood as **code_only** (scene/prefab/index/meta/plan/evidence lines, binary
+  files and SCOPE.md `budget_exclude` / `linguist-generated` output never count);
   `budget_mode` resolved (producer lock > AGENT_NOTES `release:` > SCOPE.md > `advisory`) and written
   into the PLAN; `gate` also resolves `budget_auto_bump_pct` (default 15).
 - `allowed_paths` split into `code_paths` / `art_paths`; every path is under `SCOPE.md`'s

@@ -37,6 +37,8 @@ WORKSPACES_ROOT = os.path.join(HOME, 'orca', 'workspaces')
 DB_PATH = os.environ.get('SCORECARD_DB', os.path.join(HOME, '.agents', 'logs', 'scorecard.sqlite'))
 LATEST_REPORT = os.path.join(HOME, '.agents', 'logs', 'scorecard-latest.md')
 SPAWN_REGISTRY = os.path.join(HOME, '.agents', 'logs', 'spawns.jsonl')
+RESOLUTIONS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resolutions.json')
+HEALTH_MODEL = 'connection-test'  # OmniRoute's own account probes: not agent traffic
 GUARD_LOG = os.path.join(HOME, '.agents', 'logs', 'coordinator-guard.jsonl')
 OMNI_DB = os.path.join(HOME, '.omniroute', 'storage.sqlite')
 OMNI_LOGS = os.path.join(HOME, '.omniroute', 'call_logs')
@@ -70,6 +72,9 @@ CREATE TABLE IF NOT EXISTS llm_daily (
 CREATE TABLE IF NOT EXISTS llm_errors (
   day TEXT, provider TEXT, error TEXT, count INTEGER,
   PRIMARY KEY (day, provider, error));
+CREATE TABLE IF NOT EXISTS llm_health (
+  day TEXT, provider TEXT, connection TEXT, checks INTEGER, failures INTEGER, last_error TEXT,
+  PRIMARY KEY (day, provider, connection));
 CREATE TABLE IF NOT EXISTS llm_session_daily (
   day TEXT, session_id TEXT, provider TEXT, project TEXT,
   calls INTEGER, errors INTEGER, tokens_in INTEGER, tokens_out INTEGER, cache_read INTEGER,
@@ -255,7 +260,7 @@ def snapshot_gateway(con, omni_db: str = OMNI_DB, logs_dir: str = OMNI_LOGS, pro
     cols = {r[1] for r in src.execute('PRAGMA table_info(call_logs)')}
     want = ['timestamp', 'status', 'provider', 'model', 'api_key_name', 'duration', 'ttft_ms',
             'tokens_in', 'tokens_out', 'tokens_cache_read', 'tokens_cache_creation', 'error_type',
-            'error_summary', 'artifact_relpath', 'has_request_body']
+            'error_summary', 'artifact_relpath', 'has_request_body', 'connection_id']
     sel = ', '.join(c if c in cols else f'NULL AS {c}' for c in want)
     rows = src.execute(f'SELECT {sel} FROM call_logs').fetchall()
     src.close()
@@ -265,12 +270,21 @@ def snapshot_gateway(con, omni_db: str = OMNI_DB, logs_dir: str = OMNI_LOGS, pro
     sessions: dict[tuple, list[int]] = {}
     sess_idx = claude_session_index(projects)
     days = set()
-    for (ts, status, provider, model, key, dur, ttft, tin, tout, cr, cc, etype, esum, rel, has_body) in rows:
+    health: dict[tuple, list] = {}
+    for (ts, status, provider, model, key, dur, ttft, tin, tout, cr, cc, etype, esum, rel, has_body, conn) in rows:
         day = (ts or '')[:10]
         if not day:
             continue
-        days.add(day)
         provider, model, key = provider or '?', model or '?', key or ''
+        if model == HEALTH_MODEL:
+            # account probes: their failures say an account is dead, not that agents hit errors
+            h = health.setdefault((day, provider, (conn or '?')[:8]), [0, 0, None])
+            h[0] += 1
+            if status and status >= 400:
+                h[1] += 1
+                h[2] = (esum or etype or f'HTTP {status}')[:120]
+            continue
+        days.add(day)
         g = groups.setdefault((day, provider, model, key), {
             'calls': 0, 'errors': 0, 'in': 0, 'out': 0, 'cr': 0, 'cc': 0,
             'dur': [0] * len(BUCKETS), 'ttft': [0] * len(BUCKETS), 'ttft_n': 0})
@@ -321,6 +335,12 @@ def snapshot_gateway(con, omni_db: str = OMNI_DB, logs_dir: str = OMNI_LOGS, pro
             json.dumps(g['dur']), json.dumps(g['ttft']), g['ttft_n']))
     for (day, provider, label), n in errors.items():
         con.execute('INSERT INTO llm_errors VALUES (?,?,?,?)', (day, provider, label[:120], n))
+    for day in {k[0] for k in health}:
+        con.execute('DELETE FROM llm_health WHERE day=?', (day,))
+    for (day, provider, conn), (checks, fails, last) in health.items():
+        con.execute('INSERT INTO llm_health VALUES (?,?,?,?,?,?)', (day, provider, conn, checks, fails, last))
+    # rows snapshotted before health checks were split out
+    con.execute('DELETE FROM llm_daily WHERE model=?', (HEALTH_MODEL,))
     # Bodies live ~3 days; only overwrite session rows for days that still have them.
     sess_calls = collections.Counter()
     for (day, *_), v in sessions.items():
@@ -444,12 +464,27 @@ def order_reviews(names: list[str]) -> list[str]:
     return plain + [n for _, n in numbered]
 
 
-FIX_ROW_RE = re.compile(r'^\|\s*(F[\w.,\s-]*?)\s*\|\s*([a-z][\w-]*)\s*\|', re.M)
 
 
 def fix_owners(text: str) -> collections.Counter:
+    """Owner column of the review's fix_routing table, found by its header (some tables put a
+    severity column before it); the second column when there is no `owner` header."""
     m = re.search(r'^## fix_routing\s*$(.*?)(?=^## |\Z)', text, re.M | re.S)
-    return collections.Counter(o for _, o in FIX_ROW_RE.findall(m.group(1))) if m else collections.Counter()
+    if not m:
+        return collections.Counter()
+    rows = [[c.strip() for c in l.strip().strip('|').split('|')] for l in m.group(1).splitlines() if l.strip().startswith('|')]
+    if not rows:
+        return collections.Counter()
+    head = [c.lower() for c in rows[0]]
+    col = head.index('owner') if 'owner' in head else 1
+    out = collections.Counter()
+    for r in rows[1:]:
+        if re.fullmatch(r'[\s:|-]*', '|'.join(r)) or len(r) <= col or not re.match(r'F[\w.,\s-]*$', r[0]):
+            continue
+        owner = re.match(r'[a-z][\w-]*', r[col].lower())
+        if owner:
+            out[owner.group(0)] += 1
+    return out
 
 
 GATE_RE = re.compile(r'\b(ART2D|CONCEPT|VERDICT|ANIM)\b\W{0,6}:?\W{0,6}\b(PASS|FAIL)\b')
@@ -504,10 +539,15 @@ def merges_and_e2e(log: list[tuple[str, str, str]]) -> dict[str, dict]:
 # --------------------------------------------------------------------------- producer runner
 
 STOP_CATEGORY = {
-    'fleet_gate': 'director', 'director_gate': 'director', 'approval_evidence': 'review',
-    'lane_blocked': 'lane', 'unknown_status': 'runner', 'coordinator_missing': 'runner',
-    'bad_handoff': 'runner', 'policy_conflict': 'config', 'agent_conflict': 'config',
+    'fleet_gate': 'director', 'director_gate': 'director',
+    'approval_evidence': 'review', 'verdict_override': 'review', 'verdict_mismatch': 'review',
+    'lane_blocked': 'lane', 'commit_stalled': 'lane', 'gate_unresolved': 'lane',
+    'unknown_status': 'runner', 'coordinator_missing': 'runner', 'bad_handoff': 'runner', 'orca_error': 'runner',
+    'policy_conflict': 'config', 'agent_conflict': 'config', 'cursor_off': 'config',
 }
+# A director stop is a real decision: its wait is the director's time, not a defect. Every other
+# stop is one the workflow could have avoided.
+DECISION_CATEGORIES = {'director'}
 LOG_RE = re.compile(r'^(\S+Z) runner: (.*)$')
 
 
@@ -1110,14 +1150,39 @@ def report(con, projects: list[str]) -> str:
     md.append(table(['project', 'system', 'sự cố'], unk))
     return '\n'.join(md)
 
+# --------------------------------------------------------------------------- resolutions
+
+
+def load_resolutions(path: str | None = None) -> list[dict]:
+    data = read_json(path or RESOLUTIONS, [])
+    return data if isinstance(data, list) else []
+
+
+def resolution_for(res: list[dict], kind: str, at: str | None, **fields) -> dict | None:
+    """The fix that covers an occurrence at `at`: same kind, every given field equal, `match`
+    (regex) found in `text`, and the occurrence before `fixed_at`. A repeat after the fix is not
+    covered, so a regression shows again."""
+    text = fields.pop('text', '') or ''
+    for r in res:
+        if r.get('kind') != kind or any(k in r and r[k] != v for k, v in fields.items()):
+            continue
+        if r.get('match') and not re.search(r['match'], text):
+            continue
+        if at and r.get('fixed_at') and at >= r['fixed_at']:
+            continue
+        return r
+    return None
+
 # --------------------------------------------------------------------------- S2: thresholds
 
 # (warn, crit, direction, min_n). direction 'high' = bigger is worse. Plan §4 sets the numbers;
 # below min_n a KPI reads "chưa đủ dữ liệu" instead of a colour (§2.4: small N is a signal only).
 THRESHOLDS = {
     'orca.task_fail': (0.08, 0.15, 'high', 10),
-    'orca.runner_wait_share': (0.20, 0.40, 'high', 1),
+    'orca.runner_avoidable_wait': (0.20, 0.40, 'high', 1),
+    'orca.director_wait_min': (60, None, 'high', 3),  # yellow-only: the director's time, shown so it is seen
     'gateway.error_rate': (0.02, 0.03, 'high', 200),
+    'gateway.dead_connections': (1, None, 'high', 1),  # yellow-only: an account to re-login or remove
     'agent.first_pass': (0.50, 0.30, 'low', 5),
     'agent.infra_blocked': (1, 3, 'high', 1),
     'engine.funplay_reach': (0.95, 0.80, 'low', 5),
@@ -1131,8 +1196,10 @@ THRESHOLDS = {
 }
 ACTIONS = {
     'orca.task_fail': 'retro mục fix_target skill:cocos-orca-fleet; xem task stalled',
-    'orca.runner_wait_share': 'xem các lần runner dừng lâu nhất; gỡ nguyên nhân chờ người',
+    'orca.runner_avoidable_wait': 'xem các lần dừng tránh được lâu nhất; sửa nguyên nhân rồi ghi vào resolutions.json',
+    'orca.director_wait_min': 'quyết định chờ director lâu: bật thông báo runner / gom câu hỏi trước slice',
     'gateway.error_rate': 'đổi combo / fallback provider trong OmniRoute',
+    'gateway.dead_connections': 'đăng nhập lại hoặc gỡ tài khoản đó trong OmniRoute',
     'agent.first_pass': 'xem fix_routing owner; cân nhắc đổi writer/reviewer (§4.3, S3)',
     'agent.infra_blocked': 'reviewer không tới được preview: đổi reviewer hoặc sửa preflight',
     'engine.funplay_reach': 'sửa setup hook / pin port',
@@ -1144,7 +1211,7 @@ ACTIONS = {
     'memory.recurrence': 'lỗi lặp: sửa gốc ở fix_target, đưa vào playbook',
     'memory.promotion': 'nhắc curator review candidate',
 }
-STATUS_LABEL = {'good': 'XANH', 'warning': 'VÀNG', 'critical': 'ĐỎ', 'na': 'chưa đủ dữ liệu'}
+STATUS_LABEL = {'good': 'XANH', 'warning': 'VÀNG', 'critical': 'ĐỎ', 'fixed': 'ĐÃ SỬA · chờ xác nhận', 'na': 'chưa đủ dữ liệu'}
 CATEGORY_OF = {'orca': '1. Điều phối', 'gateway': '2. Gateway', 'agent': '3. Agent', 'engine': '4. Engine/MCP',
                'brief': '5. Đầu vào & hợp đồng', 'art': '6. Art', 'ship': '7. Ship', 'memory': '8. Học/memory'}
 
@@ -1163,11 +1230,24 @@ def evaluate(con, projects: list[str]) -> list[dict]:
     q = lambda sql, *a: con.execute(sql, a).fetchall()  # noqa: E731
     out = []
 
-    def add(kpi, scope, value, n, text):
+    res = load_resolutions()
+
+    def add(kpi, scope, value, n, text, residual=None, fixes=(), fmt=None):
+        """`residual`: the value once occurrences covered by a recorded fix are corrected or left
+        out. A red/yellow KPI takes the residual's colour; one whose residual is fine reads 'fixed'
+        until new data confirms it."""
         warn, crit, direction, min_n = THRESHOLDS[kpi]
         cmp = '≥' if direction == 'high' else '≤'
+        status = judge(kpi, value, n)
+        if status in ('critical', 'warning') and fixes and residual is not None:
+            after = judge(kpi, residual, max(n, min_n))
+            rank = {'critical': 0, 'warning': 1, 'good': 2}
+            if rank.get(after, 0) > rank[status]:
+                status = 'fixed' if after == 'good' else after
+                shown = fmt(residual) if fmt else (f'{residual:.0%}' if isinstance(residual, float) and residual <= 1 else f'{residual:g}')
+                text += f' → {shown} sau phần đã sửa (' + ', '.join(sorted({f["fixed_by"] for f in fixes})) + ')'
         out.append({'kpi': kpi, 'category': CATEGORY_OF[kpi.split('.')[0]], 'scope': scope, 'value': value,
-                    'n': n, 'text': text, 'status': judge(kpi, value, n),
+                    'n': n, 'text': text, 'status': status,
                     'threshold': f'vàng {cmp} {warn:g}' + (f', đỏ {cmp} {crit:g}' if crit is not None else '') + f', n ≥ {min_n}',
                     'action': ACTIONS[kpi]})
 
@@ -1177,11 +1257,30 @@ def evaluate(con, projects: list[str]) -> list[dict]:
         bad = c.get('stalled', 0) + c.get('failed', 0)
         if settled:
             add('orca.task_fail', p, bad / settled, settled, pct(bad, settled))
-        wait, e2e, n = q('''SELECT SUM(w), SUM(e), COUNT(*) FROM (SELECT r.e2e_min e,
-                              (SELECT COALESCE(SUM(wait_min), 0) FROM runner_stops s WHERE s.project=r.project AND s.slice=r.slice) w
-                            FROM runner_slices r WHERE r.project=? AND r.e2e_min > 0)''', p)[0]
-        if n:
-            add('orca.runner_wait_share', p, wait / e2e, n, f'{wait:.0f}/{e2e:.0f} phút ({wait / e2e:.0%})')
+        rs = q('SELECT slice, selected_at, recorded_at, e2e_min FROM runner_slices WHERE project=? AND e2e_min > 0', p)
+        if rs:
+            e2e = sum(r[3] for r in rs)
+            avoid = left = 0.0
+            fixes = []
+            for sl, sel, rec, _ in rs:
+                for reason, cat, opened, wait, detail in q('''SELECT reason, category, opened_at, wait_min, detail FROM runner_stops
+                                                              WHERE project=? AND slice=? AND wait_min IS NOT NULL''', p, sl):
+                    # only time inside the slice; a director gate asked before selection is not slice time
+                    if cat in DECISION_CATEGORIES or opened < sel or (rec and opened > rec):
+                        continue
+                    avoid += wait
+                    fx = resolution_for(res, 'runner_stop', opened, reason=reason, text=detail)
+                    if fx:
+                        fixes.append(fx)
+                    else:
+                        left += wait
+            add('orca.runner_avoidable_wait', p, avoid / e2e, len(rs),
+                f'{avoid:.0f}/{e2e:.0f} phút ({avoid / e2e:.0%}), {len(rs)} slice', left / e2e, fixes, lambda v: f'còn {v:.0%}')
+        dw = [w for w, in q('''SELECT wait_min FROM runner_stops WHERE project=? AND wait_min IS NOT NULL
+                               AND category IN ('director')''', p)]
+        if dw:
+            m = statistics.median(dw)
+            add('orca.director_wait_min', p, m, len(dw), f'median {m:.0f} phút / {len(dw)} quyết định')
 
         sl = q('SELECT fix_rounds, first_verdict FROM slices WHERE project=? AND (fix_rounds IS NOT NULL OR review_rounds > 0)', p)
         if sl:
@@ -1200,15 +1299,39 @@ def evaluate(con, projects: list[str]) -> list[dict]:
         if nsl:
             add('engine.incidents_per_slice', p, ne / nsl, nsl, f'{ne} / {nsl} slice')
 
-        ratios = [x for x, in q('''SELECT ratio FROM events WHERE project=? AND event='budget_bump' AND ratio IS NOT NULL
-                                    ORDER BY line DESC LIMIT 5''', p)]
-        if ratios:
+        bumps = q('''SELECT ratio, cause, at, slice FROM events WHERE project=? AND event='budget_bump' AND ratio IS NOT NULL
+                     ORDER BY line DESC LIMIT 5''', p)
+        if bumps:
+            ratios = [b[0] for b in bumps]
             m = statistics.median(ratios)
-            add('brief.budget_ratio', p, m, len(ratios), f'median ×{m:.2f} ({len(ratios)} slice gần nhất)')
-        rec = q('''SELECT fix_target, COUNT(DISTINCT slice) FROM events WHERE project=? AND system='brief'
-                   AND fix_target NOT IN ('', 'none') GROUP BY 1 ORDER BY 2 DESC LIMIT 1''', p)
-        if rec:
-            add('brief.contract_recur', p, rec[0][1], 1, f'{rec[0][1]} slice: {rec[0][0][:50]}')
+            fixes, corrected = [], []
+            for ratio, cause, at, sl in bumps:
+                fx = resolution_for(res, 'budget_bump', at, project=p, text=cause)
+                if fx:
+                    fixes.append(fx)
+                    # a recount under the fixed counter replaces the ratio; without one the row drops out
+                    if sl in (fx.get('recount') or {}):
+                        corrected.append(fx['recount'][sl])
+                else:
+                    corrected.append(ratio)
+            add('brief.budget_ratio', p, m, len(ratios), f'median ×{m:.2f} ({len(ratios)} slice gần nhất)',
+                statistics.median(corrected) if corrected else None, fixes, lambda v: f'đếm lại ×{v:.2f}')
+
+        def recurrence(kpi, brief_only):
+            cond = "system = 'brief'" if brief_only else "system != 'brief'"
+            rows = q(f'''SELECT fix_target, slice, at FROM events WHERE project=? AND {cond}
+                         AND fix_target NOT IN ('', 'none')''', p)
+            by = collections.defaultdict(list)
+            for ft, sl, at in rows:
+                by[ft].append((sl, at))
+            if not by:
+                return
+            ft, occ = max(by.items(), key=lambda kv: len({sl for sl, _ in kv[1]}))
+            n_sl = len({sl for sl, _ in occ})
+            fx = [f for sl, at in occ if (f := resolution_for(res, 'fix_target', at, project=p, fix_target=ft))]
+            after = len({sl for sl, at in occ if not resolution_for(res, 'fix_target', at, project=p, fix_target=ft)})
+            add(kpi, p, n_sl, 1, f'{n_sl} slice: {ft[:50]}', after, fx, lambda v: f'còn {v:g} slice lặp')
+        recurrence('brief.contract_recur', True)
 
         files = q('''SELECT file, GROUP_CONCAT(result) FROM (SELECT file, result FROM gates WHERE project=? ORDER BY file, gate, seq)
                      GROUP BY file''', p)
@@ -1218,16 +1341,22 @@ def evaluate(con, projects: list[str]) -> list[dict]:
         r = q('SELECT COUNT(*), SUM(ok) FROM ship WHERE project=?', p)[0]
         if r[0]:
             add('ship.success', p, (r[1] or 0) / r[0], r[0], pct(r[1] or 0, r[0]))
-        rec = q('''SELECT fix_target, COUNT(DISTINCT slice) FROM events WHERE project=? AND fix_target NOT IN ('', 'none')
-                   AND system != 'brief' GROUP BY 1 ORDER BY 2 DESC LIMIT 1''', p)  # contract repeats: brief.contract_recur
-        if rec:
-            add('memory.recurrence', p, rec[0][1], 1, f'{rec[0][1]} slice: {rec[0][0][:50]}')
+        recurrence('memory.recurrence', False)  # contract repeats are brief.contract_recur
 
     days = [d for d, in q('SELECT DISTINCT day FROM llm_daily ORDER BY day DESC LIMIT 7')]
     if days:
         ph = ','.join('?' * len(days))
         for prov, calls, errs in q(f'SELECT provider, SUM(calls), SUM(errors) FROM llm_daily WHERE day IN ({ph}) GROUP BY 1', *days):
             add('gateway.error_rate', f'provider {prov}', errs / calls if calls else None, calls, pct(errs, calls))
+    hdays = [d for d, in q('SELECT DISTINCT day FROM llm_health ORDER BY day DESC LIMIT 2')]
+    if hdays:
+        # two days, so a dead account still shows early in the day; ≥3 probes, at least half failing
+        ph2 = ','.join('?' * len(hdays))
+        for prov, total, dead in q(f'''SELECT provider, COUNT(*), SUM(c >= 3 AND f * 2 >= c) FROM
+                                       (SELECT provider, connection, SUM(checks) c, SUM(failures) f FROM llm_health
+                                        WHERE day IN ({ph2}) GROUP BY 1, 2) GROUP BY 1''', *hdays):
+            add('gateway.dead_connections', f'provider {prov}', dead or 0, total,
+                f'{dead or 0}/{total} tài khoản lỗi health-check ({min(hdays)}→{max(hdays)})')
     if os.path.exists(PLAYBOOK_REGISTRY):
         reg = read_json(PLAYBOOK_REGISTRY, [])
         recs = reg.get('recipes', reg) if isinstance(reg, dict) else reg
@@ -1305,12 +1434,13 @@ def scorecard_md(con, projects: list[str], flags: list[dict], exps: list[dict]) 
           f'Tạo lúc {now_iso()}. Ngưỡng: `THRESHOLDS` trong scorecard.py (plan §4). '
           'Dưới số mẫu tối thiểu, KPI ghi "chưa đủ dữ liệu".\n']
     count = collections.Counter(f['status'] for f in flags)
-    md.append(f"Tổng: ĐỎ {count['critical']} · VÀNG {count['warning']} · XANH {count['good']} · chưa đủ dữ liệu {count['na']}\n")
-    order = {'critical': 0, 'warning': 1, 'good': 2, 'na': 3}
+    md.append(f"Tổng: ĐỎ {count['critical']} · VÀNG {count['warning']} · ĐÃ SỬA (chờ xác nhận) {count['fixed']} · "
+              f"XANH {count['good']} · chưa đủ dữ liệu {count['na']}\n")
+    order = {'critical': 0, 'warning': 1, 'fixed': 2, 'good': 3, 'na': 4}
     md.append('## KPI theo hạng mục\n')
     md.append(table(['hạng mục', 'KPI', 'phạm vi', 'trạng thái', 'giá trị', 'n', 'ngưỡng', 'hành động khi đỏ/vàng'],
                     [[f['category'], f['kpi'], f['scope'], STATUS_LABEL[f['status']], f['text'], f['n'], f['threshold'],
-                      f['action'] if f['status'] in ('critical', 'warning') else '']
+                      f['action'] if f['status'] in ('critical', 'warning') else ('chờ slice mới xác nhận' if f['status'] == 'fixed' else '')]
                      for f in sorted(flags, key=lambda f: (f['category'], order[f['status']], f['scope']))]))
     ph = ','.join('?' * len(projects))
     week_start = datetime.now(timezone.utc).date().fromordinal(datetime.now(timezone.utc).date().toordinal() - 7).isoformat()
@@ -1364,6 +1494,7 @@ h1 { font-size: 22px; margin: 0 0 4px; } h2 { font-size: 16px; margin: 32px 0 8p
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
 .good .dot { background: var(--good); } .warning .dot { background: var(--warning); }
 .critical .dot { background: var(--critical); } .na .dot { background: transparent; border: 2px solid var(--na); }
+.fixed .dot { background: var(--na); }
 .wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
 th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -1372,7 +1503,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 tr:last-child td { border-bottom: none; }
 .muted { color: var(--text-muted); }
 """
-ICON = {'good': '✓', 'warning': '▲', 'critical': '✖', 'na': '–'}
+ICON = {'good': '✓', 'warning': '▲', 'critical': '✖', 'fixed': '↻', 'na': '–'}
 
 
 def esc(x) -> str:
@@ -1399,8 +1530,8 @@ def dashboard_html(con, projects: list[str], flags: list[dict], exps: list[dict]
     q = lambda sql, *a: con.execute(sql, a).fetchall()  # noqa: E731
     ph = ','.join('?' * len(projects))
     count = collections.Counter(f['status'] for f in flags)
-    order = {'critical': 0, 'warning': 1, 'good': 2, 'na': 3}
-    hot = [f for f in sorted(flags, key=lambda f: (order[f['status']], f['category'])) if f['status'] in ('critical', 'warning')]
+    order = {'critical': 0, 'warning': 1, 'fixed': 2, 'good': 3, 'na': 4}
+    hot = [f for f in sorted(flags, key=lambda f: (order[f['status']], f['category'])) if f['status'] in ('critical', 'warning', 'fixed')]
     tiles = ''.join(
         f'<div class="tile"><div class="k">{esc(f["category"])} · {esc(f["kpi"])} · {esc(f["scope"])}</div>'
         f'<div class="v">{esc(f["text"])}</div>{badge(f["status"])}<div class="s">{esc(f["action"])}</div></div>' for f in hot)
@@ -1410,7 +1541,7 @@ def dashboard_html(con, projects: list[str], flags: list[dict], exps: list[dict]
         f'<title>Workflow scorecard</title><style>{DASHBOARD_CSS}</style></head><body><main>',
         '<h1>Workflow scorecard</h1>',
         f'<p class="sub">Cập nhật {esc(now_iso())} · dự án: {esc(", ".join(projects))} · số nhỏ là tín hiệu định hướng</p>',
-        '<div class="totals">' + ''.join(f'{badge(s)} <span class="muted">{count[s]}</span>' for s in ('critical', 'warning', 'good', 'na')) + '</div>',
+        '<div class="totals">' + ''.join(f'{badge(s)} <span class="muted">{count[s]}</span>' for s in ('critical', 'warning', 'fixed', 'good', 'na')) + '</div>',
         '<h2>Cần xử lý</h2>', f'<div class="tiles">{tiles}</div>' if tiles else '<p class="muted">Không có KPI đỏ hoặc vàng.</p>',
         '<h2>Tất cả KPI</h2>',
         html_table(['hạng mục', 'KPI', 'phạm vi', 'trạng thái', 'giá trị', 'n', 'ngưỡng'],
