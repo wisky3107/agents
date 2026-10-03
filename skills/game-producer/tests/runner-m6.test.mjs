@@ -374,6 +374,21 @@ test('commit stalled: after "resend commit" a stall is asked again (pilot 2 wait
   assert.deepEqual(manualItems({ manual_required: [{ item: 'V5 landscape screenshot', reason: 'state only' }, { check: 'GP-22' }] }), ['V5 landscape screenshot — state only', 'GP-22']);
 });
 
+test('single lane: a review-r1.md kept by the reviewer next to the fresh APPROVED review.md is no verdict_override (pilot S04)', () => {
+  const p = project({ slices: { S01: { needs: false } } });
+  const f = fakes();
+  f.queue([
+    { name: 'ready', write: { ...W('ready_for_review'), ...preview(7461) } },
+    { name: 'changes', write: { ...R('changes_requested', 'CHANGES_REQUESTED'), [evRel('S01', 'review-r1.md')]: 'F1\n\nCHANGES_REQUESTED\n' } },
+    { name: 'fixed', write: W('ready_for_review') },
+    { name: 'approved', write: R('approved', 'APPROVED') },
+    commitStep('S01'),
+  ]);
+  const out = runner(p.root, f, 'start', '--once').out;
+  assert.deepEqual(out.find((o) => o.merged), { merged: 'S01', commit: lastCommit(f) });
+  assert.equal(runnerFile(p.root).questions.filter((q) => q.kind === 'verdict_override').length, 0);
+});
+
 test('manual_required: defer — APPROVED with only manual checks left merges, lists them, Notes and status show them', () => {
   const p = project({ notes: NOTES(POLICY, '{}', '  manual_required: defer\n'), slices: { S01: { needs: false } } });
   const f = fakes();

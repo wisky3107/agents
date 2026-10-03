@@ -324,14 +324,16 @@ export function manualItems(v, at = '') {
  * Step 2d APPROVED: the newest review file ends APPROVED, runtime-state.json present without
  * manual_required, evidence files present. → [{ code, detail }] in asking order (empty = approved).
  */
-function approvalProblems(dir, required, verdictAccepted = false, relayedGates = []) {
+function approvalProblems(dir, required, verdictAccepted = false, relayedGates = [], coordinatorVerdict = false) {
   const out = [];
   const { verdict: file, lastRound } = st.reviewFiles(dir);
   const verdict = lastLine(file);
   if (verdict !== 'APPROVED' && !verdictAccepted) out.push({ code: 'approval_evidence', detail: `${path.basename(file)} ends "${verdict.slice(0, 80) || 'missing'}", not APPROVED` });
-  // a final review.md that turns the last round's CHANGES_REQUESTED into APPROVED must rest on a
-  // director gate decision the runner relayed (fleet prompt rule 9), not on the coordinator's say-so
-  else if (!verdictAccepted && lastRound && file !== lastRound && lastLine(lastRound) === 'CHANGES_REQUESTED') {
+  // fleet: a final review.md that turns the last round's CHANGES_REQUESTED into APPROVED must rest on a
+  // director gate decision the runner relayed (fleet prompt rule 9), not on the coordinator's say-so.
+  // Not single lane: there the verdict is the runner's own fresh reviewer, checked in the review phase
+  // (pilot S04: a review-r1.md kept by the reviewer stopped an approved slice for 2 h 45)
+  else if (coordinatorVerdict && !verdictAccepted && lastRound && file !== lastRound && lastLine(lastRound) === 'CHANGES_REQUESTED') {
     let text = '';
     try {
       text = fs.readFileSync(file, 'utf8');
@@ -745,7 +747,7 @@ function infraBlocked(ctx, s) {
 }
 
 function accept(ctx, s, dir, required, manualOptions) {
-  const problems = approvalProblems(dir, required, Boolean(s.verdict_accepted), s.relayed_gates || []);
+  const problems = approvalProblems(dir, required, Boolean(s.verdict_accepted), s.relayed_gates || [], ctx.lane === 'fleet');
   // under defer a manual check is not a blocker: ask about the real one first
   const p = (ctx.manualDefer && problems.find((x) => x.code !== 'manual_required')) || problems[0];
   if (!p) {
