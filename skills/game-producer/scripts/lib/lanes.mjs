@@ -574,7 +574,7 @@ function fixRound(ctx, s) {
   const rounds = s.fix_rounds || 0;
   const reviewMd = path.join(evidenceDir(ctx.project.root, ctx.id), 'review.md');
   sendOnce(ctx, `fix:${rounds + 1}`, s.writer,
-    `Fix round ${rounds + 1}: apply exactly the rows of the \`## fix_routing\` table in ${reviewMd} (no other changes), re-verify, update the evidence, then set HANDOFF.json ready_for_review.`,
+    `Fix round ${rounds + 1}: apply exactly the rows of the \`## fix_routing\` table in ${reviewMd} (no other changes), re-verify, update the evidence, then set HANDOFF.json ready_for_review. Never restore, revert or stash AGENT_NOTES.md or the runner's files (.cursor/producer*, producer-state.json, producer-log.md), even when cleaning up: they are the producer's.`,
     { phase: 'writer', fix_rounds: rounds + 1, reviewer: null, nudged_writer: false });
   st.log(ctx.project.root, ctx.id, `fix round ${rounds + 1}`);
 }

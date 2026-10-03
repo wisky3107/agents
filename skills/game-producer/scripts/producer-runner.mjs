@@ -131,7 +131,7 @@ async function plan(root) {
     const initial = Object.values(statuses).every((v) => NOT_STARTED.has(v.status));
     blockers = preflight(project, next.slice, { initial });
     // a slice the runner already dispatched is past its start gates: only runner-level locks still stop it
-    if (next.resume && st.readSliceState(root, next.slice).phase) {
+    if ((next.resume || ownsLive(root, next.slice)) && st.readSliceState(root, next.slice).phase) {
       blockers = blockers.filter((b) => ['needs_policy', 'policy_conflict', 'agent_conflict', 'max_parallel', 'slice_file'].includes(b.code));
     }
   }
@@ -147,6 +147,17 @@ function deferredManual(root) {
     if (f?.items?.length && !f.signed_off) out[d.replace(/^T-/, '')] = f.items;
   }
   return out;
+}
+
+/**
+ * The runner's current slice with a live lane state: resumed even when the release cache says otherwise
+ * (pilot S07: a single-lane writer on main put AGENT_NOTES.md back to its committed text, so the cache
+ * said planned again — a fresh selection would have spawned a second writer).
+ */
+function ownsLive(root, id) {
+  if (!id || st.readRunner(root).slice !== id) return false;
+  const phase = st.readSliceState(root, id).phase;
+  return Boolean(phase) && !['done', 'blocked'].includes(phase);
 }
 
 async function status(root) {
@@ -595,7 +606,12 @@ async function start(root, { dryRun: dry, once }) {
       }
     }
     const id = finishing || next.slice;
-    const resume = Boolean(finishing) || next.resume;
+    let resume = Boolean(finishing) || next.resume;
+    if (!resume && ownsLive(root, id)) {
+      writeRelease(project, { currentSlice: id, slices: { [id]: 'in_progress' } });
+      st.log(root, id, `release cache said ${statuses[id]?.status || '?'} while the runner is at ${st.readSliceState(root, id).phase} (AGENT_NOTES.md put back by a lane?): rewritten in_progress, resuming`);
+      resume = true;
+    }
     // stop-after Sxx: once Sxx is merged/shipped (or blocked), start nothing new
     if (control?.cmd === 'stop-after' && control.arg && !resume && ['merged', 'shipped', 'blocked'].includes(statuses[control.arg]?.status)) {
       return say({ stopped: `stop-after ${control.arg}: ${control.arg} is ${statuses[control.arg].status}; not starting ${id}` });
