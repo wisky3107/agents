@@ -257,7 +257,7 @@ class S1Sources(unittest.TestCase):
             os.makedirs(t)
             with open(os.path.join(t, 'stats.json'), 'w') as fh:
                 json.dump({'fix_rounds': 1, 'review_rounds': 2,
-                           'agents': {'implement': 'claude --model opus', 'review': 'cursor --model auto'}}, fh)
+                           'agents': {'writer': 'claude --model opus', 'reviewer': 'cursor --model auto', 'planner': 'skipped:slice'}}, fh)
             with open(os.path.join(ev, 'ship-log.jsonl'), 'w') as fh:
                 fh.write(json.dumps({'at': 'a1', 'step': 'build', 'ok': True, 'exit': 0, 'sec': 40, 'sha': 'abc', 'size_kib': 9000, 'url': ''}) + '\n')
                 fh.write(json.dumps({'at': 'a2', 'step': 'deploy', 'ok': False, 'exit': 1, 'sec': 5, 'sha': 'abc', 'size_kib': None, 'url': ''}) + '\n')
@@ -316,6 +316,19 @@ class S2S3(unittest.TestCase):
             self.assertTrue(all(e['ready'].startswith('chưa (mỗi nhánh') for e in rev))
             self.assertEqual({e['arm']: e['own'] for e in rev}, {'claude opus': 5, 'cursor auto': 5})
 
+    def test_experiment_shared_project_needs_five_each(self):
+        with tempfile.TemporaryDirectory() as d:
+            # cc-a has both arms (5 + 1); the opus arm reaches 5 only by adding cc-b: still not comparable
+            rows = [('cc-a', f'S{i:02}', 1, 'claude --model sonnet') for i in range(5)] + [('cc-a', 'S09', 2, 'claude --model opus')] + \
+                   [('cc-b', f'S{i:02}', 0, 'claude --model opus') for i in range(4)]
+            con = sc.connect(os.path.join(d, 'sc.sqlite'))
+            for p, s_, fr, w in rows:
+                con.execute('INSERT INTO slices (project, slice, review_rounds, fix_rounds) VALUES (?,?,?,?)', (p, s_, 1, fr))
+                con.execute('INSERT INTO slice_agents VALUES (?,?,?,?)', (p, s_, 'implement', w))
+            con.commit()
+            wr = [e for e in sc.experiments(con, ['cc-a', 'cc-b'], []) if e['dim'] == 'writer']
+            self.assertTrue(all(e['ready'].startswith('chưa (trong cc-a') for e in wr))
+
     def test_experiment_ready(self):
         with tempfile.TemporaryDirectory() as d:
             rows = [('cc-a', f'S{i:02}', 0, 'claude --model opus') for i in range(5)] + \
@@ -339,6 +352,9 @@ class S2S3(unittest.TestCase):
             self.assertEqual(arms, {'claude sonnet': 1, 'claude opus': 1})
             arms = {e['arm']: e['n'] for e in sc.experiments(con, ['cc-a'], []) if e['dim'] == 'writer'}
             self.assertEqual(arms, {'claude opus': 2})  # without the record, the old slice is relabelled
+            reg = sc.registered_experiments(con, sw)
+            self.assertEqual([(e['arm'], e['side'], e['slices']) for e in reg],
+                             [('claude sonnet', 'trước', 'S08'), ('claude opus', 'sau', 'S09')])
 
     def test_outputs(self):
         with tempfile.TemporaryDirectory() as d:

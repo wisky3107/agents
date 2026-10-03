@@ -552,6 +552,7 @@ DECISION_CATEGORIES = {'director'}
 LOG_RE = re.compile(r'^(\S+Z) runner: (.*)$')
 SPAWN_RE = re.compile(r'^spawned (\w+) \S+ \(([^,)]+)')
 SPAWN_ROLE = {'writer': 'implement', 'reviewer': 'review', 'coordinator': 'coordinator', 'verifier': 'verifier'}
+STATS_ROLE = {'writer': 'implement', 'integrator': 'integrate', 'reviewer': 'review'}
 
 
 def runner_spawns(log_text: str) -> dict[str, str]:
@@ -812,9 +813,11 @@ def collect_project(con, project: str, root: str | None = None) -> str:
         reviewer = stats.get('reviewer') if isinstance(stats.get('reviewer'), str) else None
         agents = stats.get('agents') if isinstance(stats.get('agents'), dict) else {}
         for role, spec in agents.items():
-            if isinstance(spec, str):
+            # fleets name roles their own way ("writer", "integrator", "reviewer"); one name per role here
+            role = STATS_ROLE.get(role, role)
+            if isinstance(spec, str) and not spec.startswith('skipped'):
                 con.execute('INSERT OR REPLACE INTO slice_agents VALUES (?,?,?,?)', (project, s, role, spec))
-        reviewer = agents.get('review') if isinstance(agents.get('review'), str) else reviewer
+        reviewer = next((agents[k] for k in ('review', 'reviewer') if isinstance(agents.get(k), str)), reviewer)
         n_reviews = stats['review_rounds'] if isinstance(stats.get('review_rounds'), int) else len(verdicts)
         con.execute('INSERT INTO slices VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', (
             project, s, n_reviews, verdicts[0] if verdicts else None, final, vsrc, infra, fr, frs,
@@ -1439,12 +1442,20 @@ def experiments(con, projects: list[str], switches: list[dict] | None = None) ->
     for (dim, arm), rows in arms.items():
         by_dim[dim].append((arm, rows))
     for dim, lst in sorted(by_dim.items()):
-        # an arm that is just another project compares projects, not configurations
-        seen = collections.Counter(p for _, rows in lst for p in {r['project'] for r in rows})
-        enough = len(lst) >= 2 and all(len(rows) >= 5 for _, rows in lst)
-        mixed = any(n >= 2 for n in seen.values())
-        ready = 'có' if enough and mixed else ('chưa (cần ≥5 slice/nhánh)' if not enough
-                                               else 'chưa (mỗi nhánh là một project khác: đổi cấu hình trong cùng project)')
+        # comparable only inside one project: some project with ≥5 slices in each of ≥2 arms. Arms
+        # that are just different projects compare projects, not configurations.
+        per = collections.defaultdict(collections.Counter)  # project -> arm -> slices
+        for arm, rows in lst:
+            for r in rows:
+                per[r['project']][arm] += 1
+        shared = {p: c for p, c in per.items() if len(c) >= 2}
+        if any(sum(1 for n in c.values() if n >= 5) >= 2 for c in shared.values()):
+            ready = 'có'
+        elif shared:
+            ready = 'chưa (trong ' + ', '.join(f'{p}: ' + ' / '.join(f'{n}' for n in c.values()) for p, c in shared.items()) + \
+                    ' slice; cần ≥5 mỗi nhánh)'
+        else:
+            ready = 'chưa (mỗi nhánh là một project khác: đổi cấu hình trong cùng project)'
         for arm, rows in sorted(lst, key=lambda x: -len(x[1])):
             fixes = [r['fix'] for r in rows if r['fix'] is not None]
             e2es = [r['e2e'] for r in rows if r['e2e']]
@@ -1453,6 +1464,48 @@ def experiments(con, projects: list[str], switches: list[dict] | None = None) ->
                         'fix_median': statistics.median(fixes) if fixes else None,
                         'e2e_median': statistics.median(e2es) if e2es else None,
                         'own': sum(r['own'] for r in rows), 'ready': ready})
+    return out
+
+def registered_experiments(con, switches: list[dict] | None = None) -> list[dict]:
+    """Each experiments.json switch, compared inside its own project: slices labelled `from`
+    against slices labelled `to`."""
+    q = lambda sql, *a: con.execute(sql, a).fetchall()  # noqa: E731
+    switches = read_json(EXPERIMENTS, []) if switches is None else switches
+    role = {'writer': 'implement', 'reviewer': 'review', 'art_backend': 'art'}
+    out = []
+    for sw in switches:
+        p, dim = sw.get('project'), sw.get('dim')
+        arms = {short_agent(sw['from']): [], short_agent(sw['to']): []}
+        for sl, fr, fv, e2e, owners, own, done in q('''
+                SELECT s.slice, s.fix_rounds, s.first_verdict, s.e2e_min, s.fix_owners, a.agent, COALESCE(r.recorded_at, s.merged_at)
+                FROM slices s LEFT JOIN slice_agents a ON a.project=s.project AND a.slice=s.slice AND a.role=?
+                LEFT JOIN runner_slices r ON r.project=s.project AND r.slice=s.slice
+                WHERE s.project=? AND (s.fix_rounds IS NOT NULL OR s.review_rounds > 0)''', role.get(dim, dim), p):
+            if own:
+                arm = short_agent(own)
+            elif done:  # no label of its own: the lock that held when it finished
+                arm = short_agent(sw['from'] if parse_ts(done) < parse_ts(sw['switched_at']) else sw['to'])
+            else:
+                arm = None
+            if arm not in arms:
+                continue  # no label and not provably before the switch, or another configuration
+            wait = q('''SELECT COALESCE(SUM(wait_min), 0) FROM runner_stops WHERE project=? AND slice=?
+                        AND category NOT IN ('director')''', p, sl)[0][0]
+            arms[arm].append({'slice': sl, 'fix': fr, 'first': fr == 0 if fr is not None else fv == 'APPROVED', 'e2e': e2e,
+                              'owners': json.loads(owners) if owners else {}, 'wait': wait})
+        for arm, rows in arms.items():
+            fixes = [r['fix'] for r in rows if r['fix'] is not None]
+            e2es = [r['e2e'] for r in rows if r['e2e']]
+            owners = collections.Counter()
+            for r in rows:
+                owners.update(r['owners'])
+            out.append({'project': p, 'dim': dim, 'arm': arm, 'side': 'trước' if arm == short_agent(sw['from']) else 'sau',
+                        'slices': ', '.join(r['slice'] for r in rows), 'n': len(rows),
+                        'first_pass': f"{sum(r['first'] for r in rows)}/{len(rows)}" if rows else '—',
+                        'fix_median': statistics.median(fixes) if fixes else None,
+                        'e2e_median': statistics.median(e2es) if e2es else None,
+                        'owners': ', '.join(f'{k} {v}' for k, v in owners.most_common()),
+                        'ready': 'có' if all(len(v) >= 5 for v in arms.values()) else 'chưa (cần ≥5 slice mỗi nhánh)'})
     return out
 
 # --------------------------------------------------------------------------- S2: weekly + dashboard
@@ -1485,6 +1538,13 @@ def scorecard_md(con, projects: list[str], flags: list[dict], exps: list[dict]) 
                       projects).fetchall()
     md.append('## Top 3 fix_target lặp lại\n')
     md.append(table(['project', 'fix_target', 'số slice'], rec))
+    reg = registered_experiments(con)
+    if reg:
+        md.append('## Thí nghiệm đã đăng ký (experiments.json, so trong cùng project)\n')
+        md.append(table(['project', 'chiều', 'nhánh', 'trước/sau', 'slice', 'không cần fix', 'median fix rounds',
+                         'median e2e phút', 'owner finding', 'so được?'],
+                        [[e['project'], e['dim'], e['arm'], e['side'], e['slices'], e['first_pass'], e['fix_median'],
+                          e['e2e_median'], e['owners'], e['ready']] for e in reg]))
     md.append('## Thí nghiệm theo cấu hình (S3)\n')
     md.append('So sánh chỉ có nghĩa khi mọi nhánh của một chiều có ≥5 slice.\n')
     md.append('"nhãn từ slice" = số slice có cấu hình ghi trong chính slice (stats.json `agents` / reviewer); '
@@ -1586,7 +1646,12 @@ def dashboard_html(con, projects: list[str], flags: list[dict], exps: list[dict]
         html_table(['loại', 'lý do', 'lần', 'phút chờ'],
                    q(f'''SELECT category, reason, COUNT(*), ROUND(SUM(wait_min)) FROM runner_stops WHERE project IN ({ph})
                          GROUP BY 1, 2 ORDER BY 4 DESC''', *projects), {2, 3}),
-        '<h2>Thí nghiệm theo cấu hình (S3)</h2><p class="sub">So sánh chỉ có nghĩa khi mọi nhánh của một chiều có ≥5 slice.</p>',
+        '<h2>Thí nghiệm đã đăng ký</h2><p class="sub">experiments.json: so trong cùng project, mỗi nhánh cần ≥5 slice.</p>',
+        html_table(['project', 'chiều', 'nhánh', 'trước/sau', 'slice', 'không cần fix', 'median fix rounds', 'median e2e phút',
+                    'owner finding', 'so được?'],
+                   [[e['project'], e['dim'], e['arm'], e['side'], e['slices'], e['first_pass'], e['fix_median'], e['e2e_median'],
+                     e['owners'], e['ready']] for e in registered_experiments(con)], {6, 7}),
+        '<h2>Thí nghiệm theo cấu hình (S3)</h2><p class="sub">Chỉ so được khi trong cùng một project mỗi nhánh có ≥5 slice.</p>',
         html_table(['chiều', 'nhánh', 'slice', 'nhãn từ slice', 'project', 'qua review không cần fix', 'median fix rounds',
                     'median e2e phút', 'so được?'],
                    [[e['dim'], e['arm'], e['n'], e['own'], ', '.join(e['projects']), f"{e['first_pass']:.0%}", e['fix_median'],
