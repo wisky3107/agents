@@ -477,7 +477,10 @@ test('manual_required: defer — APPROVED with only manual checks left merges, l
   // key and every other pair of a manual_required object
   assert.deepEqual(manualItems({ checks: ['pass', 'manual_required'] }), ['checks[1]: manual_required (no details)']);
   assert.deepEqual(manualItems({ checks: [{ id: 'fps', result: 'manual_required' }], manual_required: ['GP-22'] }), ['fps', 'GP-22']);
-  assert.deepEqual(manualItems({ manual_required: { reason: 'r', items: ['a'], pending: ['b'], extra_check: 'c' } }), ['a', 'b', 'extra_check: c']);
+  assert.deepEqual(manualItems({ manual_required: { reason: 'r', items: ['a'], pending: ['b'], extra_check: 'c', count: 3 } }), ['a', 'b', 'extra_check: c']);
+  // a named document's own status is not a check (review round 10)
+  assert.deepEqual(manualItems({ id: 'S03', status: 'manual_required', manual_required: ['iOS unlock'] }), ['iOS unlock']);
+  assert.deepEqual(manualItems({ title: 'Runtime state', status: 'manual_required' }), ['status: manual_required (no details)']);
 });
 
 test('fleet: the newest review file is the verdict; defer never covers a review that is not APPROVED; the commit line names the runner', () => {

@@ -294,7 +294,8 @@ const truthy = (x) =>
   x === true || (typeof x === 'number' && x > 0) || (Array.isArray(x) && x.length > 0) ||
   (typeof x === 'string' && !/^(|false|none|no|0)$/i.test(x.trim())) || (x && typeof x === 'object' && !Array.isArray(x) && Object.keys(x).length > 0);
 
-const MANUAL_META = new Set(['status', 'reason', 'why', 'note', 'notes', 'detail', 'summary']);
+const MANUAL_META = new Set(['status', 'reason', 'why', 'note', 'notes', 'detail', 'summary', 'count', 'total']);
+const MANUAL_RESULT = new Set(['result', 'state', 'outcome', 'verdict']); // a check's own outcome (`status` is the document's)
 const MANUAL_LISTS = ['items', 'checks', 'list', 'pending', 'remaining'];
 
 /** One manual check as a line: a string, or `{item|check|name|id|title, reason|why|note|detail}` → "item — reason". */
@@ -347,9 +348,9 @@ export function manualItems(...sources) {
         if (listed.length) items.push(...listed);
         else if (truthy(v)) marks.push(`${here}: ${JSON.stringify(v)} (no details)`);
       } else if (isMark(v)) {
-        // a named check (`{id: fps, result: manual_required}`) is a real item; an anonymous summary
-        // marker (`status: manual_required`) only stands in when nothing else is listed
-        if ([x.item, x.check, x.name, x.id, x.title].some((n) => typeof n === 'string')) items.push(manualLine({ ...x, [k]: undefined }));
+        // a named check's own outcome (`{id: fps, result: manual_required}`) is a real item; a summary
+        // marker (`status: manual_required`, even on a named document) only stands in when nothing else is listed
+        if (MANUAL_RESULT.has(k.toLowerCase()) && [x.item, x.check, x.name, x.id, x.title].some((n) => typeof n === 'string')) items.push(manualLine({ ...x, [k]: undefined }));
         else marks.push(`${here}: manual_required (no details)`);
       } else walk(v, here);
     }
