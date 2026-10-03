@@ -325,3 +325,14 @@ Cũng sửa:
 - tỷ lệ cache (OmniRoute `tokens_in` đã gồm cache read).
 
 Mục ĐỎ mới hiện ra: `agent.first_pass` cc-lego-stack 1/8 slice không cần fix. Gần như mọi finding có owner `code` (writer claude sonnet). Đây là ứng viên cho thí nghiệm S3 về writer.
+
+### S3 — thí nghiệm writer cc-lego-stack, bắt đầu 2026-10-03
+
+- **Hướng:** đổi writer từ thời điểm này trở đi, không chạy lại slice cũ và không bịa thêm slice.
+- **Nhánh A — claude sonnet effort high:**
+  - S01–S08. Riêng S02–S07 có nhãn lấy từ dòng `spawned writer` trong producer-log của runner.
+  - 1/6 slice runner qua review mà không cần fix; finding gần như đều có owner `code`.
+- **Nhánh B — claude opus effort high:** áp dụng từ `cc-lego-stack e49982c` (12:18Z), đổi cả hai khóa (`fleet.writer_agent` và dòng policy). Task size L do director gửi ngày 2026-10-03 là slice đầu tiên của nhánh B.
+- **Ghi nhận mốc đổi:** `tools/workflow-scorecard/experiments.json`. Slice không có nhãn riêng (vd. S08 fleet) được gán theo khóa lúc slice xong, nên không bị đổi nhãn.
+- **Khi nào kết luận được:** khi mỗi nhánh có ≥5 slice trong cc-lego-stack. Trước đó scorecard chỉ hiện tín hiệu định hướng.
+- **Theo dõi khi so:** độ khó các slice có thể khác nhau (S09+ là task mới). Nên đọc kèm `fix_routing` owner và e2e, không chỉ dựa vào tỷ lệ first-pass.

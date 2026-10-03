@@ -38,6 +38,7 @@ DB_PATH = os.environ.get('SCORECARD_DB', os.path.join(HOME, '.agents', 'logs', '
 LATEST_REPORT = os.path.join(HOME, '.agents', 'logs', 'scorecard-latest.md')
 SPAWN_REGISTRY = os.path.join(HOME, '.agents', 'logs', 'spawns.jsonl')
 RESOLUTIONS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resolutions.json')
+EXPERIMENTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'experiments.json')
 HEALTH_MODEL = 'connection-test'  # OmniRoute's own account probes: not agent traffic
 GUARD_LOG = os.path.join(HOME, '.agents', 'logs', 'coordinator-guard.jsonl')
 OMNI_DB = os.path.join(HOME, '.omniroute', 'storage.sqlite')
@@ -549,6 +550,21 @@ STOP_CATEGORY = {
 # stop is one the workflow could have avoided.
 DECISION_CATEGORIES = {'director'}
 LOG_RE = re.compile(r'^(\S+Z) runner: (.*)$')
+SPAWN_RE = re.compile(r'^spawned (\w+) \S+ \(([^,)]+)')
+SPAWN_ROLE = {'writer': 'implement', 'reviewer': 'review', 'coordinator': 'coordinator', 'verifier': 'verifier'}
+
+
+def runner_spawns(log_text: str) -> dict[str, str]:
+    """producer-log.md `spawned <role> term_… (<launch spec>, --role …)` → role → the spec that
+    first ran it in this slice. The slice's own record, so a later AGENT_NOTES change does not
+    relabel it (S3 arms)."""
+    out: dict[str, str] = {}
+    for line in log_text.splitlines():
+        m = LOG_RE.match(line.strip())
+        sp = SPAWN_RE.match(m.group(2)) if m else None
+        if sp:
+            out.setdefault(SPAWN_ROLE.get(sp.group(1), sp.group(1)), sp.group(2).strip())
+    return out
 
 
 def runner_stops(log_text: str) -> list[dict]:
@@ -786,10 +802,13 @@ def collect_project(con, project: str, root: str | None = None) -> str:
             log = os.path.join(d, 'producer-log.md')
             if os.path.exists(log):
                 with open(log, encoding='utf-8', errors='replace') as fh:
-                    for i, st in enumerate(runner_stops(fh.read()), 1):
-                        con.execute('INSERT OR REPLACE INTO runner_stops VALUES (?,?,?,?,?,?,?,?,?,?)', (
-                            project, s, i, st['reason'], st['category'], st['opened_at'], st['closed_at'],
-                            st['wait_min'], int(st['answered']), st['detail']))
+                    log_text = fh.read()
+                for role, spec in runner_spawns(log_text).items():
+                    con.execute('INSERT OR IGNORE INTO slice_agents VALUES (?,?,?,?)', (project, s, role, spec))
+                for i, st in enumerate(runner_stops(log_text), 1):
+                    con.execute('INSERT OR REPLACE INTO runner_stops VALUES (?,?,?,?,?,?,?,?,?,?)', (
+                        project, s, i, st['reason'], st['category'], st['opened_at'], st['closed_at'],
+                        st['wait_min'], int(st['answered']), st['detail']))
         reviewer = stats.get('reviewer') if isinstance(stats.get('reviewer'), str) else None
         agents = stats.get('agents') if isinstance(stats.get('agents'), dict) else {}
         for role, spec in agents.items():
@@ -1384,15 +1403,20 @@ def short_agent(spec: str | None) -> str | None:
     return ' '.join(head[:1] + [t.split('/')[-1] for t in head[1:]])
 
 
-def experiments(con, projects: list[str]) -> list[dict]:
+def experiments(con, projects: list[str], switches: list[dict] | None = None) -> list[dict]:
     """Slices grouped by the configuration that ran them (S3). Each arm needs ≥5 slices before a
-    comparison means anything; below that the row says so."""
+    comparison means anything; below that the row says so. A slice without its own label takes the
+    lock that held when it finished: experiments.json records each switch, so a slice done before a
+    switch keeps the old arm instead of the current AGENT_NOTES value."""
     q = lambda sql, *a: con.execute(sql, a).fetchall()  # noqa: E731
+    switches = read_json(EXPERIMENTS, []) if switches is None else switches
     arms: dict[tuple, list] = collections.defaultdict(list)
     for p in projects:
         facts = {k: json.loads(v) for k, v in q('SELECT key, value FROM project_facts WHERE project=?', p)}
-        for s, fr, fv, e2e, reviewer in q('''SELECT slice, fix_rounds, first_verdict, e2e_min, reviewer FROM slices
-                                             WHERE project=? AND (fix_rounds IS NOT NULL OR review_rounds > 0)''', p):
+        for s, fr, fv, e2e, reviewer, done in q('''SELECT s.slice, s.fix_rounds, s.first_verdict, s.e2e_min, s.reviewer,
+                                                         COALESCE(r.recorded_at, s.merged_at)
+                                                  FROM slices s LEFT JOIN runner_slices r ON r.project=s.project AND r.slice=s.slice
+                                                  WHERE s.project=? AND (s.fix_rounds IS NOT NULL OR s.review_rounds > 0)''', p):
             ag = dict(q('SELECT role, agent FROM slice_agents WHERE project=? AND slice=?', p, s))
             # (label, from the slice itself?) — the AGENT_NOTES lock is only what the project asked for
             dims = {
@@ -1401,6 +1425,11 @@ def experiments(con, projects: list[str]) -> list[dict]:
                 'art_backend': (ag.get('art'), facts.get('art_backend')),
             }
             for dim, (own, locked) in dims.items():
+                if not own and done:
+                    for sw in switches:
+                        if sw.get('project') == p and sw.get('dim') == dim and parse_ts(done) < parse_ts(sw['switched_at']):
+                            locked = sw['from']
+                            break
                 arm = short_agent(own) if own else (short_agent(locked) if dim != 'art_backend' else locked)
                 if arm:
                     arms[(dim, arm)].append({'project': p, 'slice': s, 'first': fr == 0 if fr is not None else fv == 'APPROVED',

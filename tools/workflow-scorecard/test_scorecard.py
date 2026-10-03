@@ -201,6 +201,15 @@ class Runner(unittest.TestCase):
         st = sc.runner_stops('2026-10-02T09:00:00Z runner: blocked fleet_gate: pick one')
         self.assertEqual((st[0]['category'], st[0]['wait_min'], st[0]['closed_at']), ('director', None, None))
 
+    def test_spawns(self):
+        log = ('2026-10-03T01:13:07.741Z runner: spawned writer term_77 (claude --model sonnet --effort high, --role worker)\n'
+               '2026-10-03T01:37:37.030Z runner: spawned reviewer term_e5 (claude --model opus --effort medium, --role worker)\n'
+               '2026-10-03T02:00:00.000Z runner: spawned writer term_88 (claude --model opus, --role worker)\n'
+               '2026-10-02T08:54:20.783Z runner: spawned coordinator term_93 (codex --model gpt-6-luna-high --effort high, --role coordinator)\n')
+        self.assertEqual(sc.runner_spawns(log), {'implement': 'claude --model sonnet --effort high',
+                                                 'review': 'claude --model opus --effort medium',
+                                                 'coordinator': 'codex --model gpt-6-luna-high --effort high'})
+
     def test_slice(self):
         with tempfile.TemporaryDirectory() as d:
             with open(os.path.join(d, 'producer-state.json'), 'w') as fh:
@@ -315,6 +324,21 @@ class S2S3(unittest.TestCase):
             self.assertTrue(all(e['ready'] == 'có' for e in rev))
             got = {e['arm']: (e['first_pass'], e['fix_median']) for e in rev}
             self.assertEqual(got, {'claude opus': (1.0, 0), 'cursor auto': (0.0, 2)})
+
+    def test_switch_keeps_old_arm(self):
+        with tempfile.TemporaryDirectory() as d:
+            con = sc.connect(os.path.join(d, 'sc.sqlite'))
+            for sl, done in (('S08', '2026-10-02T21:47:14+07:00'), ('S09', '2026-10-04T10:00:00Z')):
+                con.execute('INSERT INTO slices (project, slice, review_rounds, fix_rounds, merged_at) VALUES (?,?,?,?,?)',
+                            ('cc-a', sl, 1, 1, done))
+            con.execute("INSERT INTO project_facts VALUES ('cc-a', 'writer_agent', ?)", (json.dumps('claude --model opus --effort high'),))
+            con.commit()
+            sw = [{'project': 'cc-a', 'dim': 'writer', 'switched_at': '2026-10-03T12:18:00Z',
+                   'from': 'claude --model sonnet --effort high', 'to': 'claude --model opus --effort high'}]
+            arms = {e['arm']: e['n'] for e in sc.experiments(con, ['cc-a'], sw) if e['dim'] == 'writer'}
+            self.assertEqual(arms, {'claude sonnet': 1, 'claude opus': 1})
+            arms = {e['arm']: e['n'] for e in sc.experiments(con, ['cc-a'], []) if e['dim'] == 'writer'}
+            self.assertEqual(arms, {'claude opus': 2})  # without the record, the old slice is relabelled
 
     def test_outputs(self):
         with tempfile.TemporaryDirectory() as d:

@@ -50,6 +50,12 @@ rewritten by `daily`:
 "so được" only when every arm has ≥5 slices **and** some project ran more than one arm; arms
 that are just different projects compare projects, not configurations.
 
+A slice's label comes from its own record first: stats.json `agents`, then the producer runner's
+`spawned <role> term_… (<spec>, …)` lines in producer-log.md. A slice with neither takes the lock
+that held when it finished: `experiments.json` records each switch (`project`, `dim`,
+`switched_at`, `from`, `to`), so changing AGENT_NOTES never relabels older slices. Add an entry
+whenever a lock changes for an experiment.
+
 ## Resolutions
 
 `resolutions.json` records fixes: a runner stop reason, a project's `fix_target`, or budget bumps
