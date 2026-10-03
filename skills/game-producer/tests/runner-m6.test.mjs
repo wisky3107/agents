@@ -389,6 +389,25 @@ test('single lane: a review-r1.md kept by the reviewer next to the fresh APPROVE
   assert.equal(runnerFile(p.root).questions.filter((q) => q.kind === 'verdict_override').length, 0);
 });
 
+test('a lane that puts AGENT_NOTES.md back (cache says planned) does not get a second writer (pilot S07)', () => {
+  const notes = NOTES(POLICY);
+  const p = project({ notes, slices: { S01: { needs: false } } });
+  const f = fakes();
+  f.queue([{ name: 'writer works', write: W('working') }]);
+  runner(p.root, f, 'start', '--once'); // the queue runs out: stopped while the writer works
+  clearControl(p.root);
+  assert.equal(loadProject(p.root).release.slices.S01, 'in_progress');
+  fs.writeFileSync(path.join(p.root, 'AGENT_NOTES.md'), notes); // the writer "cleans up": committed text again
+  assert.equal(loadProject(p.root).release.slices.S01, undefined);
+  f.queue([{ name: 'still working', write: W('working', { detail: 'more' }) }]);
+  runner(p.root, f, 'start', '--once');
+  assert.equal(f.spawns().length, 1); // the same writer, never a second one
+  assert.equal(sliceState(p.root, 'S01').phase, 'writer');
+  assert.deepEqual([loadProject(p.root).release.slices.S01, loadProject(p.root).release.current_slice], ['in_progress', 'S01']);
+  assert.match(log(p.root), /release cache said planned while the runner is at writer \(AGENT_NOTES\.md put back by a lane\?\): rewritten in_progress, resuming/);
+  assert.match(f.spawns()[0].prompt, /implementing slice S01/);
+});
+
 test('manual_required: defer — APPROVED with only manual checks left merges, lists them, Notes and status show them', () => {
   const p = project({ notes: NOTES(POLICY, '{}', '  manual_required: defer\n'), slices: { S01: { needs: false } } });
   const f = fakes();
