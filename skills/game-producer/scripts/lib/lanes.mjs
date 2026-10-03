@@ -394,6 +394,18 @@ function approvalProblems(dir, required, verdictAccepted = false, relayedGates =
   return out;
 }
 
+/**
+ * The newest review file's verdict line for a slice (fleet: its worktree evidence), and whether that
+ * file was written in this review round (after the reviewer was spawned: single lane's review_base).
+ * → { verdict, thisRound }
+ */
+export function reviewVerdict(project, id) {
+  const fleet = laneFor(project, id) === 'fleet';
+  const file = reviewFile(fleet ? path.dirname(fleetHandoff(project.root, id).file) : evidenceDir(project.root, id));
+  const base = fleet ? 0 : st.readSliceState(project.root, id).review_base || 0;
+  return { verdict: lastLine(file), thisRound: mtime(file) > base };
+}
+
 /** Fleet HANDOFF lives in the feature worktree once the coordinator has created it. */
 export function fleetHandoff(root, id) {
   const wt = sliceWorktrees(root)[id];
@@ -1006,7 +1018,9 @@ function fleetStep(ctx, s, phase) {
   }
   if (w.event === 'terminal-missing') return missing();
   if (h.fresh && !h.status) {
-    return ask(s, 'unknown_status', `fleet HANDOFF status "${h.raw ?? '(none)'}" is not one the runner knows`, ['treat as working, keep waiting', 'treat as offer_commit', 'mark blocked', 'stop'], { obs: obs('unknown_status') });
+    const q = ask(s, 'unknown_status', `fleet HANDOFF status "${h.raw ?? '(none)'}" is not one the runner knows`, ['treat as working, keep waiting', 'treat as offer_commit', 'mark blocked', 'stop'], { obs: obs('unknown_status') });
+    // answered "keep waiting": the stall rules below still apply to that coordinator (nudge, then ask)
+    if (q !== PAUSE) return q;
   }
   if (h.status === 'blocked' || h.status === 'infra_blocked') {
     return ask(s, 'lane_blocked', `fleet HANDOFF ${h.status}: ${h.detail || 'no detail'}`, LANE_BLOCKED_OPTIONS, { obs: obs('lane_blocked') });

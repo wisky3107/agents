@@ -29,7 +29,7 @@ import { loadProject, sliceStatuses, nextSlice, preflight, writeRelease, writePo
 import * as st from './lib/state.mjs';
 import { submit, menu, parseReply, textNeed, answerProblem, openQuestions, givenChoice, isGivenChoice } from './lib/answer.mjs';
 import { questionContext } from './lib/context.mjs';
-import { laneFor, runSlice, applyAnswer, cursorUndecided, cursorState, resetCursorProbe, agentOrAsk, cursorArtBlocked, CursorUndecided, CURSOR_FALLBACK, manualItems } from './lib/lanes.mjs';
+import { laneFor, runSlice, applyAnswer, cursorUndecided, cursorState, resetCursorProbe, agentOrAsk, cursorArtBlocked, CursorUndecided, CURSOR_FALLBACK, manualItems, reviewVerdict, MAX_FIX_ROUNDS } from './lib/lanes.mjs';
 import { currentBranch, appendLessons, lessonRows, readJournal } from './lib/merge.mjs';
 import { consult, judgeSpec, JUDGE_KINDS, MAX_JUDGED } from './lib/judge.mjs';
 import * as io from './lib/orca.mjs';
@@ -86,9 +86,15 @@ const QUESTION = {
 const NOT_STARTED = new Set(['planned', 'pending', 'todo', '']);
 
 /**
- * `release.autopilot: retry_once` (or the policy token): the routine "try again" answers, given by
- * the runner itself once per slice and kind; the same stop a second time — or any other question —
- * waits for the director (or the judge).
+ * `release.autopilot` (or the policy token) — answers the runner gives itself, recorded by:'autopilot':
+ *   retry_once  the routine "try again" answers, once per slice and kind;
+ *   unattended  retry_once, plus what a director's standing "run every slice, answer for me" gives
+ *               (pilot 3's monitoring rules): director_gate → "<Sxx> GIVEN — record it" (the policy
+ *               line records it as autopilot's); an unknown status → keep waiting; verdict_mismatch →
+ *               what the newest review file says, when it says APPROVED or CHANGES_REQUESTED; a
+ *               second extra fix round.
+ * Never stop, mark blocked or skip; everything else — and any answer over its limit — waits for the
+ * director (or the judge).
  */
 const AUTOPILOT = {
   commit_stalled: 'resend commit',
@@ -97,12 +103,27 @@ const AUTOPILOT = {
   changes_after_rounds: 'one more fix round',
   orca_error: 'retry',
 };
+const UNATTENDED_LIMIT = { changes_after_rounds: 2, unknown_status: 3, verdict_mismatch: 2, director_gate: 1 };
 function autopilotChoice(root, project, q) {
-  if (String(project.policy?.tokens?.autopilot ?? project.release.autopilot ?? 'off') !== 'retry_once') return null;
-  const choice = AUTOPILOT[q.kind];
-  if (!choice || q.answer || !q.options.includes(choice)) return null;
-  const used = st.readRunner(root).questions.some((x) => x.id !== q.id && x.slice === q.slice && x.kind === q.kind && x.answer?.by === 'autopilot');
-  return used ? null : choice;
+  const mode = String(project.policy?.tokens?.autopilot ?? project.release.autopilot ?? 'off');
+  if ((mode !== 'retry_once' && mode !== 'unattended') || q.answer) return null;
+  const used = st.readRunner(root).questions.filter((x) => x.id !== q.id && x.slice === q.slice && x.kind === q.kind && x.answer?.by === 'autopilot').length;
+  let pick = null;
+  if (mode === 'unattended') {
+    if (used >= (UNATTENDED_LIMIT[q.kind] || 1)) return null;
+    if (q.kind === 'director_gate' && q.slice) pick = { choice: givenChoice(q.slice), text: 'autopilot: unattended (release.autopilot)' };
+    else if (q.kind === 'unknown_status') pick = { choice: 'treat as working, keep waiting' };
+    else if (q.kind === 'verdict_mismatch' && q.slice) {
+      // only a review file written in this round speaks for it; a fix round only under the round cap
+      // ("treat as changes_requested" starts one directly) — otherwise the director decides
+      const { verdict, thisRound } = reviewVerdict(project, q.slice);
+      const s = st.readSliceState(root, q.slice);
+      const roomForFix = (s.fix_rounds || 0) < (s.max_fix_rounds || MAX_FIX_ROUNDS);
+      if (thisRound && verdict === 'APPROVED') pick = { choice: 'treat as approved' };
+      else if (thisRound && verdict === 'CHANGES_REQUESTED' && roomForFix) pick = { choice: 'treat as changes_requested' };
+    } else if (AUTOPILOT[q.kind]) pick = { choice: AUTOPILOT[q.kind] };
+  } else if (AUTOPILOT[q.kind] && !used) pick = { choice: AUTOPILOT[q.kind] };
+  return pick && q.options.includes(pick.choice) ? { text: '', ...pick } : null;
 }
 const LEGACY_GATE_TEXT = 'Record the director decision for this slice in the policy line, then answer.';
 
@@ -577,11 +598,12 @@ async function start(root, { dryRun: dry, once }) {
       }
     }
     if (open && !open.answer) {
-      const choice = autopilotChoice(root, loadProject(root), open);
-      if (choice) {
+      const pick = autopilotChoice(root, loadProject(root), open);
+      if (pick) {
+        const { choice } = pick;
         try {
-          st.answer(root, open.id, choice, '', { by: 'autopilot' });
-          if (open.slice) st.log(root, open.slice, `autopilot on ${open.id} (${open.kind}): ${choice} — once for this slice; the next one waits for the director`);
+          st.answer(root, open.id, choice, pick.text, { by: 'autopilot' });
+          if (open.slice) st.log(root, open.slice, `autopilot on ${open.id} (${open.kind}): ${choice} — within its limit for this slice; past it, the director decides`);
           say({ autopilot: open.id, kind: open.kind, choice });
         } catch {
           /* answered meanwhile */
