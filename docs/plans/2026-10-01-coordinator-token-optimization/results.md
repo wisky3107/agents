@@ -145,7 +145,7 @@ Director yêu cầu chạy hết các slice mà không bị chặn. Đã làm:
 - **Mỗi slice có thêm một bookkeeping commit** do runner tự tạo (`chore(producer): record <Sxx> merge`): `266f0d3`, `4bed25c`, `4ab8868`, `ea75c89`, `95cf2a2`. Không slice nào kẹt ở bước commit: bản sửa ở pilot 2 có tác dụng.
 - **Autopilot: 0 lần.** Judge: 1 lần, và lần đó judge chuyển cho director. Phía producer tốn 0.2M (judge và handoff Step 3).
 - **Thời gian:** cả chuỗi mất 7 h. Trừ 2 h 45 ở q15 thì còn khoảng 4 h 15, trung bình khoảng 50 phút cho một slice M.
-- **`manual_deferred`** liệt kê 24 dòng, nhưng thực chất có 23 việc. Vài dòng chỉ ghi `status`, `reason` hay `items` của một object bị tách ra; đây là lỗi hiển thị, chưa sửa.
+- **`manual_deferred`** từng liệt kê 24 dòng cho 23 việc: dấu `status: manual_required` thành một dòng riêng, và `{reason, items}` bị tách đôi. Đã sửa: `manualItems` chỉ đọc danh sách trong các trường `manual_required`, còn dấu trần chỉ hiện khi không có gì khác; `status` đọc lại runtime-state của từng slice, nên các slice cũ cũng hiển thị đúng.
 - **Step 3** do codex chạy. Nó trình các việc manual, và chưa build hay deploy cho tới khi director ký done/waived.
 
 Sự cố và cách sửa:

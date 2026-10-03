@@ -449,10 +449,21 @@ test('manual_required: defer — APPROVED with only manual checks left merges, l
   assert.match(loadProject(p.root).notesText, /\n- S01 single merged fix_rounds=0 bump=none commit=\w{7} merged=y manual_deferred=2\n/);
   assert.match(log(p.root), /manual_required deferred \(2\): fps >= 55 on the named device \| GP-22 spot-check/);
   assert.deepEqual(runner(p.root, f, 'status').out[0].manual_deferred, { S01: items });
+  // a file an older runner wrote (JSON strings, a lone marker line) reads from the slice's runtime-state again
+  fs.writeFileSync(ev(p.root, 'S01', 'evidence', 'manual-deferred.json'), JSON.stringify({ slice: 'S01', items: ['status', '{"item":"x","reason":"y"}'] }));
+  fs.writeFileSync(ev(p.root, 'S01', 'evidence', 'runtime-state.json'), JSON.stringify({ status: 'manual_required', manual_required: [{ item: 'V5 landscape', reason: 'state only' }] }));
+  assert.deepEqual(runner(p.root, f, 'status').out[0].manual_deferred, { S01: ['V5 landscape — state only'] });
   // what the items read like from other runtime-state shapes
-  assert.deepEqual(manualItems({ checks: [{ id: 'fps', result: 'manual_required' }] }), ['checks[0].result']);
+  assert.deepEqual(manualItems({ checks: [{ id: 'fps', result: 'manual_required' }] }), ['fps']);
   assert.deepEqual(manualItems({ manual_required: { device: 'fps', gp22: true } }), ['device: fps', 'gp22: true']);
-  assert.deepEqual(manualItems({ status: 'manual_required', manual_required: false }), ['status']);
+  assert.deepEqual(manualItems({ status: 'manual_required', manual_required: false }), ['status: manual_required (no details)']);
+  // the shapes pilot 3's reviewers wrote: a `status` marker never stands next to the real checks as a line
+  assert.deepEqual(manualItems({ status: 'manual_required', manual_required: { reason: 'no audio in automation', items: ['iOS unlock', 'tab hide'] } }), ['iOS unlock', 'tab hide']);
+  assert.deepEqual(manualItems({ status: 'manual_required', manual_required: ['V5 landscape', 'real notch'] }), ['V5 landscape', 'real notch']);
+  assert.deepEqual(manualItems({ manual_required: { reason: 'device only' } }), ['device only']);
+  assert.deepEqual(manualItems({ manual_required: true }), ['manual_required: true (no details)']);
+  // runtime-state and HANDOFF together: listed once
+  assert.deepEqual(manualItems({ status: 'manual_required', manual_required: ['GP-22'] }, { manual_required: ['GP-22', 'fps'] }), ['GP-22', 'fps']);
 });
 
 test('fleet: the newest review file is the verdict; defer never covers a review that is not APPROVED; the commit line names the runner', () => {

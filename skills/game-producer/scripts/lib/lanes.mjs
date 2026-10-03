@@ -294,31 +294,60 @@ const truthy = (x) =>
   x === true || (typeof x === 'number' && x > 0) || (Array.isArray(x) && x.length > 0) ||
   (typeof x === 'string' && !/^(|false|none|no|0)$/i.test(x.trim())) || (x && typeof x === 'object' && !Array.isArray(x) && Object.keys(x).length > 0);
 
+const MANUAL_META = new Set(['status', 'reason', 'why', 'note', 'notes', 'detail', 'summary']);
+const MANUAL_LISTS = ['items', 'checks', 'list', 'pending', 'remaining'];
+
+/** One manual check as a line: a string, or `{item|check|name|id|title, reason|why|note|detail}` → "item — reason". */
+function manualLine(x) {
+  if (typeof x === 'string') return x.trim();
+  const what = x && typeof x === 'object' && !Array.isArray(x) && [x.item, x.check, x.name, x.id, x.title].find((v) => typeof v === 'string');
+  if (what) {
+    const why = [x.reason, x.why, x.note, x.detail].find((v) => typeof v === 'string' && v);
+    return why ? `${what} — ${why}` : what;
+  }
+  return JSON.stringify(x);
+}
+
+/** The checks a `manual_required` field lists: a string, a list, `{reason, items: […]}`, or `{key: value}` pairs. */
+function manualField(x) {
+  if (typeof x === 'string') return x.trim().toLowerCase() === 'manual_required' || !x.trim() ? [] : [x.trim()];
+  if (Array.isArray(x)) return x.flatMap((e) => (Array.isArray(e) ? manualField(e) : [manualLine(e)])).filter(Boolean);
+  if (!x || typeof x !== 'object') return []; // true / a count: no details
+  const list = MANUAL_LISTS.find((k) => Array.isArray(x[k]));
+  if (list) return manualField(x[list]);
+  if ([x.item, x.check, x.name, x.title].some((v) => typeof v === 'string')) return [manualLine(x)];
+  const rest = Object.entries(x).filter(([k]) => !MANUAL_META.has(k.toLowerCase()));
+  if (rest.length) return rest.map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`);
+  const why = [x.reason, x.detail, x.note].find((v) => typeof v === 'string' && v);
+  return why ? [why] : [];
+}
+
 /**
- * What a manual_required verdict leaves to a human, as readable lines: the contents of `manual_required`
- * fields (a string, list items, or `key: value` of an object), else the path of a "manual_required" value.
+ * What manual_required verdicts leave to a human, as readable lines, from any number of sources
+ * (runtime-state.json, HANDOFF.json): the checks their `manual_required` fields list. A bare
+ * "manual_required" marker (`status: manual_required`, `{id: fps, result: manual_required}`) shows only
+ * when no field lists anything (pilot: `status` stood next to the real items as a line of its own).
  */
-export function manualItems(v, at = '') {
-  // `{item, reason}` (pilot 2's reviewer) reads "item — reason"
-  const show = (x) => {
-    if (typeof x === 'string') return x;
-    const what = x && typeof x === 'object' && (x.item || x.check || x.name || x.id);
-    if (typeof what === 'string') {
-      const why = x.reason || x.why || x.note || x.detail;
-      return typeof why === 'string' && why ? `${what} — ${why}` : what;
+export function manualItems(...sources) {
+  const items = [];
+  const marks = [];
+  const walk = (x, at) => {
+    if (Array.isArray(x)) return x.forEach((e, i) => walk(e, `${at}[${i}]`));
+    if (!x || typeof x !== 'object') return;
+    for (const [k, v] of Object.entries(x)) {
+      const here = at ? `${at}.${k}` : k;
+      if (k.toLowerCase() === 'manual_required') {
+        const listed = manualField(v);
+        if (listed.length) items.push(...listed);
+        else if (truthy(v)) marks.push(`${here}: ${JSON.stringify(v)} (no details)`);
+      } else if (typeof v === 'string' && v.trim().toLowerCase() === 'manual_required') {
+        const named = [x.item, x.check, x.name, x.id, x.title].some((n) => typeof n === 'string');
+        marks.push(named ? manualLine({ ...x, [k]: undefined }) : `${here}: manual_required (no details)`);
+      } else walk(v, here);
     }
-    return JSON.stringify(x);
   };
-  if (typeof v === 'string') return v.trim().toLowerCase() === 'manual_required' ? [at || 'manual_required'] : [];
-  if (Array.isArray(v)) return v.flatMap((x, i) => manualItems(x, `${at}[${i}]`));
-  if (!v || typeof v !== 'object') return [];
-  return Object.entries(v).flatMap(([k, x]) => {
-    if (k.toLowerCase() !== 'manual_required') return manualItems(x, at ? `${at}.${k}` : k);
-    if (!truthy(x)) return [];
-    if (Array.isArray(x)) return x.map(show);
-    if (x && typeof x === 'object') return Object.entries(x).map(([kk, vv]) => `${kk}: ${show(vv)}`);
-    return [typeof x === 'string' ? x : `${at ? `${at}.` : ''}manual_required: ${JSON.stringify(x)} (no details)`];
-  });
+  for (const src of sources) walk(src, '');
+  return [...new Set(items.length ? items : marks)];
 }
 
 /**
@@ -766,7 +795,7 @@ function accept(ctx, s, dir, required, manualOptions) {
   // merge, and keep the checks for the director's sign-off before ship (manual-deferred.json, status)
   if (problems.length === 1 && p.code === 'manual_required' && ctx.manualDefer) {
     const handoff = readJsonFile(path.join(dir, 'HANDOFF.json'));
-    const items = [...new Set([...manualItems(p.runtime), ...manualItems({ manual_required: handoff?.manual_required })])];
+    const items = manualItems(p.runtime, { manual_required: handoff?.manual_required });
     st.writeJson(path.join(dir, 'manual-deferred.json'), { slice: ctx.id, at: st.now(), items, from: 'runtime-state.json + HANDOFF.json', policy: 'release.manual_required: defer' });
     st.log(ctx.project.root, ctx.id, `manual_required deferred (${items.length}): ${items.join(' | ').slice(0, 300)}`);
     setPhase(ctx.project.root, ctx.id, 'commit', { manual_deferred: items });

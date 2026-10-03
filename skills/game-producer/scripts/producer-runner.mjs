@@ -29,7 +29,7 @@ import { loadProject, sliceStatuses, nextSlice, preflight, writeRelease, writePo
 import * as st from './lib/state.mjs';
 import { submit, menu, parseReply, textNeed, answerProblem, openQuestions, givenChoice, isGivenChoice } from './lib/answer.mjs';
 import { questionContext } from './lib/context.mjs';
-import { laneFor, runSlice, applyAnswer, cursorUndecided, cursorState, resetCursorProbe, agentOrAsk, cursorArtBlocked, CursorUndecided, CURSOR_FALLBACK } from './lib/lanes.mjs';
+import { laneFor, runSlice, applyAnswer, cursorUndecided, cursorState, resetCursorProbe, agentOrAsk, cursorArtBlocked, CursorUndecided, CURSOR_FALLBACK, manualItems } from './lib/lanes.mjs';
 import { currentBranch, appendLessons, lessonRows, readJournal } from './lib/merge.mjs';
 import { consult, judgeSpec, JUDGE_KINDS, MAX_JUDGED } from './lib/judge.mjs';
 import * as io from './lib/orca.mjs';
@@ -138,13 +138,22 @@ async function plan(root) {
   return { project, statuses, next, blockers };
 }
 
-/** Manual checks merged under `manual_required: defer` and not signed off yet, per slice (Step 3 signs them off). */
+/**
+ * Manual checks merged under `manual_required: defer` and not signed off yet, per slice (Step 3 signs
+ * them off). Read again from the slice's runtime-state.json / HANDOFF.json when they are there, so a
+ * file written by an older runner (JSON strings, a split `{reason, items}`) reads like a new one.
+ */
 function deferredManual(root) {
   const base = path.join(root, '.cursor', 'evidence', 'tasks');
   const out = {};
   for (const d of fs.existsSync(base) ? fs.readdirSync(base).sort() : []) {
-    const f = st.readJson(path.join(base, d, 'evidence', 'manual-deferred.json'));
-    if (f?.items?.length && !f.signed_off) out[d.replace(/^T-/, '')] = f.items;
+    const ev = path.join(base, d, 'evidence');
+    const f = st.readJson(path.join(ev, 'manual-deferred.json'));
+    if (!f?.items?.length || f.signed_off) continue;
+    const runtime = st.readJson(path.join(ev, 'runtime-state.json'));
+    const handoff = st.readJson(path.join(ev, 'HANDOFF.json'));
+    const again = runtime ? manualItems(runtime, { manual_required: handoff?.manual_required }) : [];
+    out[d.replace(/^T-/, '')] = again.length ? again : f.items;
   }
   return out;
 }
