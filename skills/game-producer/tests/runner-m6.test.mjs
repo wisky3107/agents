@@ -192,7 +192,7 @@ test('dialog: the whole question, then why the judge left it to the director; on
   assert.ok(shown.endsWith(why));
   dialog(p.root, f, 'q2', { PRODUCER_RUNNER_OSASCRIPT: bin });
   const cut = osaRuns(f)[1].args[1];
-  assert.ok(cut.endsWith(`${'y'.repeat(1800)}… (the whole question: the runner terminal)\n\n${why}`));
+  assert.ok(cut.endsWith(`${'y'.repeat(1800)}… (the whole question: the runner terminal, or \`answer\` in a terminal)\n\n${why}`));
   assert.ok(!cut.includes('y'.repeat(1801)));
 });
 

@@ -84,7 +84,7 @@ if (!q || q.answer) process.exit(0);
 const title = `producer-runner · ${path.basename(root)}`;
 // where the run stands first, then the whole question, then why the judge left it to the director
 const body = String(q.text || '').trim();
-const shown = body.length > PROMPT_CHARS ? `${body.slice(0, PROMPT_CHARS)}… (the whole question: the runner terminal)` : body;
+const shown = body.length > PROMPT_CHARS ? `${body.slice(0, PROMPT_CHARS)}… (the whole question: the runner terminal, or \`answer\` in a terminal)` : body;
 const why = q.judge?.defer ? `\n\n${String(q.judge.defer).trim()}` : '';
 const prompt = `${questionContext(root, q).join('\n')}\n\n${q.id} · ${q.kind}${q.slice ? ` · ${q.slice}` : ''}\n${shown}${why}`;
 const picked = await osa(CHOOSE, [title, prompt, ...q.options]);
