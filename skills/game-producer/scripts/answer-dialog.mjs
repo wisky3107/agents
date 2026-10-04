@@ -19,6 +19,8 @@ import { questionContext } from './lib/context.mjs';
 
 const OSA = process.env.PRODUCER_RUNNER_OSASCRIPT || 'osascript';
 const CANCEL = '<<later>>';
+// the prompt label never scrolls: past this the dialog would outgrow a laptop screen
+const PROMPT_CHARS = 1800;
 // arguments go in as `argv` of the run handler: no quoting of question text into AppleScript source
 const CHOOSE = [
   'on run argv',
@@ -80,8 +82,11 @@ function osa(lines, args) {
 const q = question();
 if (!q || q.answer) process.exit(0);
 const title = `producer-runner · ${path.basename(root)}`;
-// where the run stands first, then the question
-const prompt = `${questionContext(root, q).join('\n')}\n\n${q.id} · ${q.kind}${q.slice ? ` · ${q.slice}` : ''}\n${String(q.text || '').trim().slice(0, 900)}`;
+// where the run stands first, then the whole question, then why the judge left it to the director
+const body = String(q.text || '').trim();
+const shown = body.length > PROMPT_CHARS ? `${body.slice(0, PROMPT_CHARS)}… (the whole question: the runner terminal, or \`answer\` in a terminal)` : body;
+const why = q.judge?.defer ? `\n\n${String(q.judge.defer).trim()}` : '';
+const prompt = `${questionContext(root, q).join('\n')}\n\n${q.id} · ${q.kind}${q.slice ? ` · ${q.slice}` : ''}\n${shown}${why}`;
 const picked = await osa(CHOOSE, [title, prompt, ...q.options]);
 // "Later": a restarted runner does not open this question's dialog again
 if (picked.code === 0 && picked.out === CANCEL && open()) st.setQuestion(root, id, { dialog_done: 'later' });
@@ -91,7 +96,7 @@ let text = '';
 const need = textNeed(q, choice);
 if (need) {
   const where = q.kind === 'director_gate' ? 'written on the policy line' : 'sent with the decision';
-  const note = await osa(NOTE, [title, need === 'required' ? `Note for "${choice}" (required):` : `Note for "${choice}" (optional, ${where}):`, need === 'required' ? 'Cancel' : 'Skip']);
+  const note = await osa(NOTE, [title, need === 'required' ? `Note for "${choice}" (required, ${where} word for word):` : `Note for "${choice}" (optional, ${where} word for word; leave empty for none):`, need === 'required' ? 'Cancel' : 'Skip']);
   if (note.code === 0) text = note.out.trim();
   else if (need === 'required') process.exit(0); // cancelled: no answer
 }

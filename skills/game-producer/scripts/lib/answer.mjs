@@ -46,7 +46,7 @@ const printable = (t) => String(t || '').replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/
 export function menu(q, context = []) {
   const lines = [...context.map(printable), ...(context.length ? [''] : []), `${q.id} · ${q.kind}${q.slice ? ` · ${q.slice}` : ''}`, printable(q.text).trim(), ''];
   q.options.forEach((o, i) => lines.push(`  ${i + 1}) ${printable(o)}${textNeed(q, o) === 'required' ? '  (needs a note)' : ''}`));
-  lines.push('', 'Type the number and Enter; a note may follow the number ("2 only the test file").');
+  lines.push('', 'Type the number and Enter. A note may follow the number ("2 <note>"); it is passed on word for word.');
   return lines.join('\n');
 }
 

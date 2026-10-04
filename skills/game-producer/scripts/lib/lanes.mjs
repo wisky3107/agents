@@ -979,9 +979,9 @@ function fleetStep(ctx, s, phase) {
       // every pending gate in one question; the decision is for the first, and the coordinator (who owns
       // its gates) applies it to any other that asks the same thing
       const also = open.slice(1).map((x) => x.id);
-      const others = open.slice(1).map((x) => ` | ${x.id}: ${oneLine(x.question).slice(0, 300)}`).join('');
+      const others = open.slice(1).map((x) => ` | ${x.id}: ${oneLine(x.question)}`).join('');
       // the producer never resolves a lane's gate: the human's choice goes to the coordinator as text
-      return ask(s, 'fleet_gate', `fleet gate ${g.id}${also.length ? ` (also pending: ${also.join(', ')})` : ''}: ${g.question}${others}`, [...choices, 'stop'], { ref: g.id, also });
+      return ask(s, 'fleet_gate', `fleet gate ${g.id}${also.length ? ` (also pending: ${also.join(', ')})` : ''}: ${oneLine(g.question)}${others}`, [...choices, 'stop'], { ref: g.id, also });
     }
     const waits = (s.gate_waits || 0) + 1;
     st.writeSliceState(root, id, { gate_waits: waits });

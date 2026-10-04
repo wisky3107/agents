@@ -46,7 +46,7 @@ node ~/.agents/skills/game-producer/scripts/producer-runner.mjs start --dry-run 
   listing the options (`scripts/answer-dialog.mjs`; "Later" closes it). Three ways in, one record
   (the first answer wins, the runner applies it once):
   - the runner's own terminal shows the question with numbered options: type the number + Enter
-    (`2 only the test file` adds a note; a choice that needs one asks for it);
+    (`2 <note>` adds a note, passed on word for word; a choice that needs one asks for it);
   - the dialog (a gate's choice asks for an optional note: it goes to the coordinator);
   - `answer` — with `--id/--choice/--text`, or with no `--choice` in a terminal for the same menu.
   `PRODUCER_RUNNER_DIALOG=0` / `PRODUCER_RUNNER_TTY=0` turn the dialog / terminal prompt off — set

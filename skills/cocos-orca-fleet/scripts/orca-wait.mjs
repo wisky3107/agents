@@ -16,6 +16,8 @@
  *     --max-ms (`timeout`, a checkpoint). --max-ms is clamped to 570000 (ORCA_WAIT_CAP_MS).
  *     → {"event","handle","handle_changed","status","detail","sha","handoff_changed","idle_streak",
  *        "pending_gates","unread_to_run","waited_ms"}
+ *     pending_gates carry each gate's whole question (up to GATE_CHARS): the producer relays it to the
+ *     director, who must see all of it to decide (the runner's dialog showed a 200-char cut, 2026-10-04).
  *     --state keeps idle_streak / last HANDOFF mtime across calls and restarts; keep it in the main
  *     checkout (T-<Sxx>/producer-state.json), never in the lane's evidence dir.
  *
@@ -72,6 +74,9 @@ const maxMs = (v) => {
   if (!(n > 0)) fail('--max-ms must be a positive number');
   return Math.min(n, CAP_MS);
 };
+
+/** A gate question for the producer: every non-empty line (joined with " / "), cut only past this many characters. */
+const GATE_CHARS = 4000;
 
 function firstLines(text, n = 2, cap = 200) {
   const s = String(text || '').split('\n').filter((l) => l.trim()).slice(0, n).join(' / ');
@@ -199,7 +204,7 @@ function lane(v) {
       const gl = orcaJson(['orchestration', 'gate-list', '--run', v.run]);
       const gates = gl.parsed?.result?.gates || gl.parsed?.result || [];
       pendingGates = (Array.isArray(gates) ? gates : []).filter((g) => g.status === 'pending')
-        .map((g) => ({ id: g.id, question: firstLines(g.question, 1, 200), options: g.options }));
+        .map((g) => ({ id: g.id, question: firstLines(g.question, Infinity, GATE_CHARS), options: g.options }));
       if (pendingGates.length) {
         event = 'gate';
         break;
