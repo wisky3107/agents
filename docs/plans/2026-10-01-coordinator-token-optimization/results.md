@@ -24,6 +24,8 @@ Project totals 2026-09-24 → 2026-10-02: producer 167.9M (27%), fleet-orch 196.
 
 | 3 | S03–S07 | 5 × M / single | runner sau pilot 2 (commit single lane, autopilot); `S03-S07 GIVEN`, judge sonnet, `autopilot: retry_once`, `manual_required: defer`; session theo dõi tự trả lời | 0 (judge + Step 3: 0.2M) | — (lane: 15 sessions, 928 turns, 149.4M) | 3 / 1 director + 2 session theo dõi / 0 judge | merged 2026-10-03 02:52Z; 5 slice, 6 fix round; 23 việc manual hoãn; Step 3 chờ director ký |
 
+| 4 | S09 | L / fleet | runner (M6–M6b, autopilot `retry_once`, judge sonnet, `manual_required: defer`), codex coordinator, session theo dõi tự trả lời; evidence-only `worktree rm --force` | 0.1M (judge) | 122.0M (878 turns) | 3 / 1 director + 2 session theo dõi / 0 judge | merged 2026-10-03 18:01Z (`14d813a`, merge `8fcc149`, bookkeeping `b80d3fa`); 3 review rounds, 2 fix rounds, 1 gate; 18 manual hoãn; 4 h 47 |
+
 ### Pilot 1 — kết quả
 
 token-report `--since 2026-10-02T08:54:00Z --project cc-lego-stack`, đến 14:49Z.
@@ -155,3 +157,29 @@ Sự cố và cách sửa:
   - Đã sửa (`c7d27ce`): slice đang chạy của runner thắng cache bị ghi đè. Yêu cầu fix round cũng dặn writer không khôi phục `AGENT_NOTES.md` hay file của runner.
 - **S07, q16: race giữa HANDOFF và `review.md`.** Reviewer ghi HANDOFF `approved` lúc 02:27:39Z; `review.md` 18 giây sau mới kết thúc bằng APPROVED; runner hỏi đúng vào khoảng giữa. Đã sửa: runner nhìn thêm 2 lần trước khi hỏi `verdict_mismatch`.
 - **Restart giữa slice:** runner được restart 3 lần (S03 writer, S05 writer, S07 review) để nhận code mới. Lần nào cũng chạy tiếp đúng lane cũ, không spawn thêm.
+
+### Pilot 4 — S09 toon-ui-outline (L, fleet), 2026-10-03 13:14Z → 18:01Z
+
+Slice do director yêu cầu: làm lại UI theo phong cách cartoon và chỉ vẽ viền cho 3 lớp kế tiếp, khử nét khuất. Contract và 7 mock được duyệt trước khi chạy (`ac5ec23`).
+
+| Role | S01 (baseline) | S08 (pilot 1) | S09 (pilot 4) |
+|---|---|---|---|
+| fleet-orch | 1 session, 191 turns, 24.8M | 1 / 616 / 82.9M | 1 / 878 / 122.0M (trung bình 139k/turn; turn đầu 17k) |
+| fleet-worker | 15 / 1072 / 225.0M | 13 / 611 / 104.9M | 16 / 996 / 237.3M |
+| producer (LLM) | 145.9M | 0 | 0.1M (judge) |
+
+- **Mục tiêu −40% cho coordinator: vẫn chưa đạt.** S09 tốn hơn S01 392%, hơn S08 47%.
+  - Context mỗi turn gần như không đổi qua cả ba slice: khoảng 130k, 134k, 139k. Chi phí đi theo **số turn**, và số turn tăng theo số vòng review và số task fix: S09 có 3 vòng review và 12 task.
+  - Turn split của coordinator: judgement 71%, chờ 20%, mechanical 7%. Phần script thay được tối đa là 25%.
+  - Kết luận: M1 (turn đầu 17k) và M2/M3 không giảm được chi phí mỗi turn. Muốn đạt −40% phải giảm số turn của coordinator. Hướng đi: gom nhiều task fix thành một dispatch, rút ngắn vòng chờ, hoặc chuyển phần điều phối mechanical sang runner.
+- **Runner hoạt động đúng trên fleet:**
+  - Hỏi 3 câu:
+    - q17: director_gate; director chọn GIVEN qua session theo dõi.
+    - q18: gate về lỗi ES5 `Map` có từ S08 trong `LayerMeshBuilder.ts`; session theo dõi chọn sửa trong đường dẫn đã cho phép của slice.
+    - q19: `lane_blocked`; preview không chạy rAF; session theo dõi trả lời "dùng recipe stepped-clock của slice, reviewer claude".
+  - Một lần orca-wait báo nhầm coordinator mất; runner kiểm lại bằng `terminal show`, không hỏi.
+  - Merge chạy trọn: lần đầu dùng thật đường xoá worktree khi chỉ còn evidence (`--force` sau khi chép lại); verify đạt; bookkeeping commit 4 file. Không phải dọn tay.
+- **Sự cố hoặc bài học:**
+  - Coordinator chuyển review sang `cursor --model auto` dù Cursor đang tắt; luật fleet chỉ cho làm vậy khi `cursor=on`. Session theo dõi phải trả lời để kéo review về claude.
+  - 18 việc được hoãn theo `manual_required: defer`, trong đó có trùng lặp và vài dòng **không phải kiểm thủ công** — "A-09-04 outline-only volume (blocked by F1)", "rerun the whole round-2 review…". Một acceptance row chưa kiểm được đã đi qua dưới dạng "manual". Đề xuất: defer chỉ nhận việc cần máy thật hoặc mắt người; dòng nhắc tới acceptance ID ở trạng thái "blocked" thì phải hỏi director.
+  - Lỗi ES5 `Map` (crash ở mọi lần chuyển level trên bản web) có từ S08, tức đã có trong preview v1.0.0. S09 đã sửa.
