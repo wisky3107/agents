@@ -3,8 +3,8 @@
  * checkout and record it. One T-<Sxx>/merge-journal.json holds every step; a step checks the real
  * state first (ancestor of main, worktree present, Editor up), so a kill at any point resumes without
  * a second merge or rm.
- *   fleet:  harvest → merge (close + probe both Editors on every attempt) → evidence → worktree_rm →
- *           reopen → verify → record
+ *   fleet:  memory_review (only when the coordinator wrote no review pack) → harvest → merge (close +
+ *           probe both Editors on every attempt) → evidence → worktree_rm → reopen → verify → record
  *   single: harvest → record (the commit is on main — checked — and the reviewer verified it there)
  * Nothing is merged with an Editor open or into a branch the slice did not start from; a worktree is
  * removed only when its commit is in main and its evidence copied; nothing is recorded merged before
@@ -435,6 +435,31 @@ export function harvestNote(h) {
   return h.memory ? `exit 0, status ${h.memory}` : 'exit 0, no status line';
 }
 
+const CODE = /\.(?:ts|tsx|js|mjs|cjs)$/;
+const TEST = /(?:^|\/)tests?\/|\.(?:test|spec)\.[cm]?[jt]sx?$/;
+
+/**
+ * Fleet lane: the coordinator owns the reviewer's `hook review` and skipped it on every pilot slice
+ * (block-out S19–S21, lego-stack S09), so the runner records one before the harvest unless a pack is
+ * already there. In shadow this is the measurement; an assist pack written now reaches no reviewer.
+ * Advisory: nothing here blocks the merge.
+ */
+export function fleetMemoryReview(ctx, j) {
+  const { root } = ctx.project;
+  const rel = path.join(evidenceRel(ctx.id), 'memory', 'review', 'memory-context.json');
+  if ([j.wt, root].some((d) => d && fs.existsSync(path.join(d, rel)))) return { note: 'coordinator wrote the review pack' };
+  const slice = ctx.project.sliceFiles?.[ctx.id];
+  if (!slice || !j.sha) return { note: !slice ? 'no slice file: review pack skipped' : 'no commit: review pack skipped' };
+  const files = git(root, ['diff', '--name-only', `${j.sha}^`, j.sha]).stdout.split('\n').filter(Boolean);
+  const code = files.filter((f) => CODE.test(f) && !TEST.test(f));
+  const changed = code.length ? code : files;
+  const h = io.memoryReview(`T-${ctx.id}`, path.join(root, slice), changed, path.join(root, evidenceRel(ctx.id), 'memory', 'review'), root);
+  if (!h.ran) return { note: 'no orca-memory launcher' };
+  if (h.status !== 0) return { status: h.status, memory: h.memory, note: `failed (exit ${h.status}): ${h.reason || 'see the hook log'}` };
+  const note = h.memory === 'off' ? harvestNote(h) : `recorded after the lane: ${h.memory ?? 'no status line'}, ${changed.length} changed files`;
+  return { status: 0, memory: h.memory, note };
+}
+
 /**
  * One pass over the merge journal. → null (progress, call again) | PAUSE | { ask } | { phase: 'done' }.
  * kit: lane helpers from lanes.mjs (ask, PAUSE, spawnOnce, wait, orcaError, mtime, fill, setPhase).
@@ -458,6 +483,11 @@ export function mergeStep(ctx, s, kit) {
   const done = (step) => Boolean(j.steps?.[step]);
   const cc4 = isCc4(ctx.project);
   const short = String(j.sha).slice(0, 7);
+
+  if (ctx.lane === 'fleet' && !done('memory_review')) {
+    stepDone(root, id, 'memory_review', fleetMemoryReview(ctx, j));
+    return null;
+  }
 
   if (!done('harvest')) {
     const h = io.memoryHarvest(j.wt || root, `T-${id}`, root);

@@ -124,7 +124,7 @@ test('fleet merge journal: harvest → evidence → close both Editors → merge
   assert.deepEqual(lessons.map((r) => r.event), ['fix_round', 'budget_bump', 'recipe_candidate']);
   assert.equal(lessons[1].ratio, 1.077);
   assert.deepEqual([lessons[2].candidate_id, lessons[2].evidence], [`${path.basename(root)}/T-S01/c1`, ['.cursor/evidence/tasks/T-S01/evidence/review.md']]);
-  assert.deepEqual(Object.keys(journal(root).steps), ['harvest', 'close_editors', 'merge', 'evidence', 'worktree_rm', 'reopen', 'verify', 'record', 'notes_commit']);
+  assert.deepEqual(Object.keys(journal(root).steps), ['memory_review', 'harvest', 'close_editors', 'merge', 'evidence', 'worktree_rm', 'reopen', 'verify', 'record', 'notes_commit']);
   // the runner commits its bookkeeping (M6): here AGENT_NOTES.md only — this project ignores its evidence
   assert.equal(g(root, 'log', '-1', '--format=%s').stdout.trim(), 'chore(producer): record S01 merge — notes, evidence');
   assert.deepEqual(g(root, 'show', '--name-only', '--format=', 'HEAD').stdout.trim().split('\n'), ['AGENT_NOTES.md']);
@@ -220,6 +220,41 @@ test('harvestNote: reads the hook status line, not only the exit code', () => {
   assert.equal(harvestNote({ status: 0, memory: 'off', reason: 'memory mode off' }), 'off: memory mode off');
   assert.equal(harvestNote({ status: 0, memory: 'nothing', reason: 'no candidates, review, handoff or referenced image' }), 'nothing archived: no candidates, review, handoff or referenced image');
   assert.equal(harvestNote({ status: 0, memory: null }), 'exit 0, no status line');
+});
+
+// a launcher that logs its arguments and answers like a shadow project
+const memoryFake = (f) => fs.writeFileSync(path.join(f.dir, 'no-orca-memory'), `#!/bin/sh
+echo "$*" >> "${f.dir}/memory.log"
+case "$2" in
+  review) echo '{"stage":"review","status":"ok","inject":false}' ;;
+  harvest) echo '{"stage":"harvest","status":"harvested","inject":false}' ;;
+esac
+`, { mode: 0o755 });
+const memoryCalls = (f) => fs.readFileSync(path.join(f.dir, 'memory.log'), 'utf8').trim().split('\n');
+
+test('fleet lane: the runner records the review pack the coordinator skipped, before the harvest', () => {
+  const { f, root } = fleet();
+  memoryFake(f);
+  f.queue([VERIFIED]);
+  assert.ok(runner(root, f, 'start', '--once').out.find((o) => o.merged));
+  const calls = memoryCalls(f);
+  assert.equal(calls.length, 2);
+  const slice = loadProject(root).sliceFiles.S01;
+  assert.equal(calls[0], `hook review --task T-S01 --acceptance ${path.join(root, slice)} --changed src/b.ts --out ${path.join(root, evRel('S01', 'memory/review'))}`);
+  assert.match(calls[1], /^hook harvest --wt /);
+  const steps = journal(root).steps;
+  assert.deepEqual(Object.keys(steps).slice(0, 2), ['memory_review', 'harvest']);
+  assert.deepEqual([steps.memory_review.memory, steps.memory_review.note], ['ok', 'recorded after the lane: ok, 1 changed files']);
+});
+
+test('fleet lane: a review pack the coordinator already wrote is not made again', () => {
+  const { f, root, wt } = fleet();
+  memoryFake(f);
+  write(wt, evRel('S01', 'memory/review/memory-context.json'), { status: 'ok' });
+  f.queue([VERIFIED]);
+  assert.ok(runner(root, f, 'start', '--once').out.find((o) => o.merged));
+  assert.deepEqual(memoryCalls(f).map((c) => c.split(' ')[1]), ['harvest']);
+  assert.equal(journal(root).steps.memory_review.note, 'coordinator wrote the review pack');
 });
 
 test('auto_merge=false: the director merges and owns the finish; no Funplay → verify is the human\'s', () => {

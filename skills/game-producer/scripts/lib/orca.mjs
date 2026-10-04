@@ -157,12 +157,21 @@ export function memoryPack(kind, args, cwd) {
   return r.status === 0 && /inject["':\s]+true/.test(r.stdout) && fs.existsSync(pack) ? pack : 'none';
 }
 
-export function memoryHarvest(wt, task, cwd) {
+/** One orca-memory hook call with its status line read: exit 0 also covers `off` and `nothing`. */
+function memoryHook(args, cwd, timeout) {
   const bin = MEMORY_BIN;
   if (!fs.existsSync(bin)) return { ran: false, status: 0 };
-  const r = spawnSync(bin, ['hook', 'harvest', '--wt', wt, '--task', task], { encoding: 'utf8', timeout: 300000, cwd });
-  // exit 0 also covers `off` (mode off, or a checkout no project claims) and `nothing`: read the line
+  const r = spawnSync(bin, ['hook', ...args], { encoding: 'utf8', timeout, cwd });
   let line = null;
   try { line = JSON.parse((r.stdout || '').trim().split('\n').at(-1)); } catch { /* no status line */ }
   return { ran: true, status: r.status, memory: line?.status ?? null, reason: line?.reason ?? null, unregistered: line?.unregistered ?? null, out: (r.stdout || '').slice(-300) };
+}
+
+export function memoryHarvest(wt, task, cwd) {
+  return memoryHook(['harvest', '--wt', wt, '--task', task], cwd, 300000);
+}
+
+/** A reviewer pack recorded at merge time for a lane whose coordinator ran no `hook review`. */
+export function memoryReview(task, acceptance, changed, out, cwd) {
+  return memoryHook(['review', '--task', task, '--acceptance', acceptance, '--changed', changed.join(','), '--out', out], cwd, 120000);
 }
