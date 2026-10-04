@@ -45,8 +45,8 @@ explicitly limited coverage. User-requested crawl-only stops at collection as be
 | Producer | `<project>/.cursor/skills/game-producer` (default handoff; runs slices per `AGENT_NOTES.md` `release.goal`) |
 | Fleet | `<project>/.cursor/skills/cocos-orca-fleet` (one slice only, when the user asks for just that) |
 | Art backend default | `antigravity` |
-| Orchestrator default | `cursor --model auto` (`cursor-agent --yolo --model auto`); user may name agent + model, e.g. `claude --model opus` → stored in `AGENT_NOTES.md` `fleet.orchestrator_agent`, passed to `agent-session --agent` |
-| Fleet workers default | `scanner_agent: cursor --model auto`, `planner_agent: claude --model opus --effort high`, `writer_agent: claude --model opus --effort high`, `reviewer_agent: claude --model opus` (from the `AGENT_NOTES.md` skeleton; override only if user names one) |
+| Agent combo | Step 1c — `new-cocos-game` Step 0b with the store pack as the brief: probe `~/.agents/skills/new-cocos-game/scripts/agent-status.mjs`, 5 combos, director picks (+ notes); skipped when the request already names agents. Settles brief, analyst, orchestrator and `fleet:` roles |
+| Orchestrator / fleet workers fallback | Only when Step 1c is skipped: `AGENT_NOTES.md` skeleton (`orchestrator_agent` / `scanner_agent: cursor --model auto`, `planner_agent` / `writer_agent: claude --model opus --effort high`, `reviewer_agent: claude --model opus`). A named agent + model is a launch spec (`claude --model opus`) stored in `fleet.orchestrator_agent`, passed to `agent-session --agent` |
 | Agent handoff file | `<project>/AGENT_NOTES.md` — this skill fills `store_clone:` + `fleet:` overrides in the yaml block and `## Notes — store-game-clone`; `game-brief` fills `brief:`; the fleet reads `fleet:` (prompt > file > skill default) |
 
 ## Progress checklist
@@ -56,6 +56,7 @@ Store Game Clone:
 - [ ] 0. Intake (store URL, slug, orientation?, design res?, implement?, goal=end_to_end|playable, art backend?, fleet workers?, rip pack?, gameplay notes?, gameplay video?)
 - [ ] 1. Crawl App Store → assets/<slug>/ (+ optional <slug>-brief/STORE_DATA.md)
 - [ ] 1b. Rip pack given → merge-rip-pack.mjs → assets/<slug>/rip/ + models/ (skip when none)
+- [ ] 1c. Agent combo: pre-noted → use it; else agent-status + store pack → 5 combos → wait for the director's pick (+ notes)
 - [ ] 2. Bootstrap cc-<slug> via new-cocos-game (MCP gate = projectName match)
 - [ ] 3. Seed reference/<slug>/ into the project; fill AGENT_NOTES.md; initial commit if not done
 - [ ] 3b. Rip supplied → rip-port-analysis on one or more source projects; validate reports
@@ -84,15 +85,17 @@ Ask only what's missing:
    `end_to_end` (all slices then ship); `playable` when they say "bản chơi được trước" /
    "playable first" / "v1 thôi" / "prototype". `release.deploy` default `preview`
    ("lên prod" → `prod`, "không deploy" → `none`).
-5. **Art backend** — default `antigravity`; honor `cursor` / `gpt-image-gen` if named
-6. **Brief agent** — pass any explicit override to `game-brief`; otherwise use its saved-agent
-   resolution and Fable 5.1 default. Honor explicit override
+Agent items 5–7 and the analyst in item 8 are never asked: a value the user named is
+**pre-noted** for Step 1c (no advice, used as is); everything else is settled by the Step 1c combo.
+
+5. **Art backend** — honor `antigravity` / `cursor` / `gpt-image-gen` if named
+6. **Brief agent** — pass any explicit override to `game-brief`; otherwise the Step 1c combo
+   (fallback: its saved-agent resolution and Fable 5.1 default)
 7. **Fleet workers** — never ask. Only when the user names an agent for the fleet's
    scanner / writer / reviewer / "workers" ("fleet chạy cursor agent", "reviewer dùng opus", …):
    record `scanner_agent` / `writer_agent` / `reviewer_agent` / `planner_agent` as launch specs (`cursor agent` → `cursor --model auto`;
-   bare `claude` → `claude --model opus`). Unnamed → keep the `AGENT_NOTES.md` skeleton defaults
-   (`claude --model opus …`). Note that the orchestrator (item in Step 6, default `cursor`) is a
-   different knob from the workers.
+   bare `claude` → `claude --model opus`). Unnamed → Step 1c. Note that the orchestrator
+   (launched in Step 6) is a different knob from the workers; a named orchestrator is pre-noted too.
 8. **Rip pack/project** — never ask when absent. Accept when the user gives a folder path and says "assets rip",
    "ripped assets", "unity-apk-rip output", "xài thêm assets rip", or the path ends in `/output`
    and contains `manifest.json` + one of `images_ingame/` `meshes/` `levels/` `briefs/`.
@@ -109,7 +112,7 @@ Ask only what's missing:
    Multiple rip projects: retain separate source IDs and version identity; merge the canonical
    output through Step 1b and stage other outputs under `reference/<slug>/rip-sources/<id>/`.
    Never flatten competing versions into the same `rip/` or `models/` files. Pass all sources
-   and any analyst-agent override to Step 3b. Analyst default is `cursor --model auto`.
+   and any analyst-agent override to Step 3b. Analyst = override → Step 1c combo → `cursor --model auto`.
 9. **Gameplay notes** — accept supplied chat text or files describing firsthand play,
    mechanics, edge cases, or desired changes. Optional; never ask for them when absent.
    Follow [gameplay-notes.md](../game-brief/reference/gameplay-notes.md) for capture and IDs;
@@ -192,9 +195,35 @@ rewrite, not rubber-stamp.
 
 ---
 
+## Step 1c — Agent combo (before Step 2; the only planned stop after intake)
+
+Run [new-cocos-game Step 0b](../new-cocos-game/SKILL.md) (skip rules, probe, 5 combos, hard
+rules, reply handling, lock) with these store-specific inputs:
+
+- **Brief** = the pack from Steps 1–1b: `manifest.json` (genre, size, IAP), screenshots and
+  trailer frames already read, `STORE_DATA.md`, gameplay notes / video when given, and for a
+  rip `rip/RIP_PACK.json` (P0 GLB count → 3D import vs 2D sprites, levels).
+- **Mode** from intake item 4: implement + producer by default → every producer row.
+  Crawl-only → skip (nothing launched). Brief-only → only `brief` (+ `analyst`).
+- **Extra column `analyst`** when a rip pack/project was given → `rip_port.analyst_agent`.
+  rip-port-analysis wants a mid-tier agent (cursor auto, claude sonnet, codex); never an
+  `unavailable` one.
+- **art**: a rip with P0 GLBs / ripped sprites means most art is imported — the art backend
+  matters less, say so in the `why` cell instead of spending a strong agent on it.
+- Pre-noted = any agent named for items 5–8 (orchestrator, workers, art, brief, analyst).
+  Same rule as Step 0b: a noted role on an `unavailable` provider is used with one warning;
+  an un-noted default on one (orchestrator / scanner / analyst = cursor auto) gets one short
+  question, not the combo table.
+
+Send the combo message after the crawl summary, then stop and wait. Step 2 does **not** run
+new-cocos-game Step 0b again — the lock from here is its pre-noted combo.
+
+---
+
 ## Step 2 — Bootstrap Cocos
 
-Follow **`new-cocos-game`** end-to-end (read that skill; do not reimplement rsync/MCP pinning):
+Follow **`new-cocos-game`** end-to-end (read that skill; do not reimplement rsync/MCP pinning;
+its Step 0b is already settled by Step 1c — never advise twice):
 
 ```bash
 node ~/.agents/skills/new-cocos-game/scripts/bootstrap.mjs resolve --name cc-<slug>
@@ -244,22 +273,22 @@ already wrote `bootstrap:` — do not touch it):
   by `game-brief` in Step 4.)
 - For any rip source initialize `rip_port.enabled: true`,
   `rip_port.analysis_path: reference/<slug>/rip-port/`, `rip_port.status: pending`,
-  `rip_port.analyst_agent` from explicit override → saved value → `cursor --model auto`,
+  `rip_port.analyst_agent` from explicit override → Step 1c combo `analyst` → saved value → `cursor --model auto`,
   `rip_port.depth: auto` (inventory picks full vs lightweight), and
   `rip_port.sources` per the analysis skill. It owns subsequent analysis status/coverage.
   Keep original absolute Unity paths in that block (`unity_project` = `.../ripped/UnityProject/ExportedProject`,
   `primary_content` = `.../ripped/PrimaryContent`, never bare `ripped/`); do not copy the large `ripped/` tree.
-- yaml `fleet:` → set `art_backend` from intake item 5, and `scanner_agent` / `writer_agent` / `reviewer_agent` /
-  `planner_agent` **only** if intake item 7 named them; otherwise leave the skeleton defaults untouched.
-  `orchestrator_agent` stays whatever `new-cocos-game` wrote unless the user named one — then
-  write it as a launch spec (`claude --model opus`, `cursor --model gpt-5 --effort high`); Step 6
-  passes that string to `agent-session --agent`.
-- yaml `release:` → `goal` + `deploy` from intake item 4b. Leave `auto_commit` / `auto_merge`
+- yaml `fleet:` → the Step 1c lock (combo or pre-noted): `orchestrator_agent`, every `*_agent`,
+  `art_backend`, `mesh_backend` it set, as launch specs (`claude --model opus`,
+  `cursor --model gpt-5 --effort high`); roles it did not set keep the skeleton defaults. Its
+  Step 6 passes `orchestrator_agent` to `agent-session --agent`.
+- yaml `release:` → `goal` + `deploy` from intake item 4b; `judge_agent` from the Step 1c combo when it set one. Leave `auto_commit` / `auto_merge`
   at skeleton defaults unless asked; never touch `current_slice` / `slices` / `*_url`
   (owned by `game-producer`).
 - `## Notes — store-game-clone` → 3–6 bullets: what was OBSERVED (screenshots/trailer frames
   read) vs ASSUMED, what the crawl could not fetch (no trailer, no m3u8, lookup country),
-  whether `models/` exists, and that Fable contracts are pending (update this bullet after
+  whether `models/` exists, one `agent combo:` line (`#<n> <name>` + notes applied, or
+  `pre-noted` / `skipped`, plus `unavailable` / `degraded` providers), and that Fable contracts are pending (update this bullet after
   Step 4 with the file list Fable produced). With a rip pack add one bullet: source path,
   `format`, dirs merged / excluded (`images/` dump skipped?), P0 GLB count in `models/`, which
   rip briefs/guides exist, and "rip briefs = seed, Fable rewrites".
@@ -309,8 +338,9 @@ Read `~/.agents/skills/game-brief/SKILL.md` and follow it end-to-end with:
   `game-brief`; it fills the optional notes prompt block and checks GP coverage. These are
   director input, separate from the research seed that the author rewrites.
 - `<STORE_URL>` filled in the `store` source block; orientation / design res from intake item 3
-- explicit brief agent from intake item 6, if given; otherwise let `game-brief` resolve the
-  saved `brief.brief_agent` or its default `claude --model claude-fable-5-1`
+- explicit brief agent from intake item 6 or the Step 1c combo `brief`; only when neither
+  exists let `game-brief` resolve the saved `brief.brief_agent` or its default
+  `claude --model claude-fable-5-1`
 - **rip pack present** (`reference/<slug>/rip/RIP_PACK.json` exists) → that skill detects it from
   `store_clone.rip_path`, fills `<RIP_BLOCK>` in the Fable prompt, and adds the rip gate rows
   (ASSET_MANIFEST `import` vs `generate` column, level schema in HOW_TO when v1 loads levels).
@@ -401,8 +431,8 @@ Name `slices/S01-*.md` in the prompt so the fleet copies its PLAN from it.
 
 | User ask | Stop after |
 |----------|------------|
-| Crawl / screenshots / trailer only | Step 1 (+ 1b if a rip pack was given) |
-| Brief docs only (no Cocos) | Step 1 (+ 1b), run rip-port-analysis in the research workspace when rip exists, then write docs into `<slug>-brief/`; no editor/bootstrap |
+| Crawl / screenshots / trailer only | Step 1 (+ 1b if a rip pack was given); no Step 1c |
+| Brief docs only (no Cocos) | Step 1 (+ 1b), Step 1c with `brief` (+ `analyst`) only, run rip-port-analysis in the research workspace when rip exists, then write docs into `<slug>-brief/`; no editor/bootstrap |
 | Rip pack/project only, no store URL | Bootstrap through new-cocos-game if needed, then game-brief mode `media` with its mandatory rip-port-analysis gate |
 | Project + contracts, no implement | Through Step 5 |
 | Playable first | Through Step 6 with `release.goal: playable` (producer stops after `v1_slice`) |
@@ -423,6 +453,7 @@ Name `slices/S01-*.md` in the prompt so the fleet copies its PLAN from it.
 | Fable stuck after one file | Handled by `game-brief` Step 4 (nudge once, then finish contracts in-chat) |
 | Fleet / producer idle after MCP approve | Resend the prompt with `--enter` |
 | Producer says no `MILESTONES.md` / `slices/` | Step 4 gate was skipped — re-run `game-brief` (nudge Fable for H/I/J) before handing off |
+| Step 1c shows a provider `unavailable` (cursor: `status` says "Logged in" but `models` needs a login) | Keep it out of every combo, tell the director the fix (`cursor-agent login`, `codex login`, …). The old defaults `orchestrator` / `scanner` / `analyst` = cursor auto will fail at launch then — a combo must replace them |
 | Fleet locked `claude opus` although user asked cursor workers | `AGENT_NOTES.md` `fleet.writer_agent` was not written in Step 3, or the prompt override line contradicts it. Fix the yaml, tell the orchestrator to re-read AGENT_NOTES.md before Step 0.2 (only possible before any Task started) |
 | `merge-rip-pack.mjs` dies "no images/ … under" | Wrong folder — point `--rip` at the `output/` dir, not the workdir or `ripped/` |
 | `merge-rip-pack.mjs` `format: "unknown"` | Not a `unity-apk-rip` manifest; merge still happened. Note it; Fable reads folders directly (no catalogs) |
