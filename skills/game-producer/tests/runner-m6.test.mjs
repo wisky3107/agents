@@ -73,7 +73,7 @@ test('answer lib: which choices take a note, numbers with an inline note, the me
   assert.match(parseReply(GATE, 'approve').error, /number/);
   assert.match(menu(LANE), /^q2 · lane_blocked · S01\nfleet HANDOFF blocked: which material\?\n\n {2}1\) send this answer to the lane {2}\(needs a note\)\n {2}2\) answered in the lane, continue\n/);
   // the footer's example is a placeholder, not a note someone could copy as an instruction (S10 q21)
-  assert.match(menu(LANE), /A note may follow the number \("2 <note>"\); it is sent word for word\.$/);
+  assert.match(menu(LANE), /A note may follow the number \("2 <note>"\); it is passed on word for word\.$/);
   assert.equal(answerProblem(GATE, 'approve', ''), null);
   assert.match(answerProblem({ ...GATE, options: ['answer with --text', 'stop'] }, 'answer with --text', ' '), /needs the decision/);
   assert.match(answerProblem({ ...GATE, answer: { choice: 'approve' } }, 'revise'), /already answered \(approve\)/);
@@ -163,7 +163,7 @@ test('dialog: choice + note go through the same answer path; Later and a cancell
   assert.deepEqual(choose.args.slice(2), ['approve', 'revise', 'stop']);
   assert.equal(choose.args[0], `producer-runner · ${path.basename(p.root)}`);
   assert.match(choose.args[1], new RegExp(`^${path.basename(p.root)} · S01 x \\(planned\\)\nrelease: 0/1 merged\n\nq1 · fleet_gate · S01\nfleet gate g1: Approve PLAN\\?`));
-  assert.match(note.args[1], /optional/);
+  assert.match(note.args[1], /^Note for "approve" \(optional, sent with the decision word for word; leave empty for none\):$/);
   // Later
   osa(f, { choice: '<<later>>' });
   dialog(p.root, f, 'q2', { PRODUCER_RUNNER_OSASCRIPT: bin });
@@ -183,7 +183,7 @@ test('dialog: the whole question, then why the judge left it to the director; on
   const tail = 'Should this manifest path be added to S01, or should the worker restore it and keep only the listed .mtl/scene paths?';
   const text = `fleet gate g1: S01 scope field needing director decision: ${'the slice paths authorize one file but not the manifest. '.repeat(20)}${tail}`;
   const why = 'judge deferred: no contract sentence says whether to widen the path list, so this is a scope call for the director.';
-  const p = withQuestions([{ ...GATE, text, judge: { at: '2026-10-04T14:28:30Z', defer: why } }, { ...LANE, text: 'y'.repeat(3500) }]);
+  const p = withQuestions([{ ...GATE, text, judge: { at: '2026-10-04T14:28:30Z', defer: why } }, { ...LANE, text: 'y'.repeat(2500), judge: { at: '2026-10-04T14:28:30Z', defer: why } }]);
   const f = fakes();
   const bin = osa(f, { choice: '<<later>>' });
   dialog(p.root, f, 'q1', { PRODUCER_RUNNER_OSASCRIPT: bin });
@@ -192,8 +192,8 @@ test('dialog: the whole question, then why the judge left it to the director; on
   assert.ok(shown.endsWith(why));
   dialog(p.root, f, 'q2', { PRODUCER_RUNNER_OSASCRIPT: bin });
   const cut = osaRuns(f)[1].args[1];
-  assert.ok(cut.endsWith(`${'y'.repeat(3000)}… (the rest: \`producer-runner.mjs answer\` or the runner terminal)`));
-  assert.ok(!cut.includes('y'.repeat(3001)));
+  assert.ok(cut.endsWith(`${'y'.repeat(1800)}… (the whole question: the runner terminal)\n\n${why}`));
+  assert.ok(!cut.includes('y'.repeat(1801)));
 });
 
 test('dialog: stop-after is not a halt (the runner keeps waiting); stop closes it without an answer', () => {
@@ -661,7 +661,7 @@ test('fleet gate: the question carries the whole gate, every line, and the whole
   const ask1 = 'S01 scope field needing director decision: the slice paths authorize assets/arts/x/models/brick.mtl, but do not list assets/arts/x/manifest.json. The art-manifest worker changed that manifest to add the Source=generate brick_material row.';
   const ask2 = 'Should this manifest path be added to S01, or should the worker restore it and keep only the listed .mtl/scene paths?';
   const other = `Second gate: ${'a long second question that goes on. '.repeat(12)}end of g2`;
-  const g1 = { id: 'g1', status: 'pending', question: `${ask1}\n\n${ask2}`, options: '["add manifest path","restore and continue"]' };
+  const g1 = { id: 'g1', status: 'pending', question: `${ask1}\n\n  - the manifest row: brick_material\r\n${ask2}`, options: '["add manifest path","restore and continue"]' };
   const g2 = { id: 'g2', status: 'pending', question: other, options: '["x"]' };
   f.queue([
     { name: 'run', runs: [{ id: 'run_1', coordinator_handle: 'term_1' }], write: { [H]: { role: 'coordinator', status: 'working' } } },
@@ -669,7 +669,7 @@ test('fleet gate: the question carries the whole gate, every line, and the whole
   ]);
   runner(p.root, f, 'start', '--once');
   assert.ok(ask1.length > 200 && other.length > 300);
-  assert.equal(question(p.root, 'q1').text, `fleet gate g1 (also pending: g2): ${ask1} / ${ask2} | g2: ${other}`);
+  assert.equal(question(p.root, 'q1').text, `fleet gate g1 (also pending: g2): ${ask1} / - the manifest row: brick_material / ${ask2} | g2: ${other}`);
 });
 
 test('fleet gates: every pending gate in one question; the relay names the others; another gate is asked only after a settle', () => {
