@@ -541,6 +541,9 @@ test('manual_required: defer — APPROVED with only manual checks left merges, l
   assert.deepEqual(manualItems(s09), ['fps on device', 'notch on hardware', 'fade']);
   // without a current top-level list, history is all there is: still walked, nothing lost
   assert.deepEqual(manualItems({ round1: { manual_required: ['only in round 1'] } }), ['only in round 1']);
+  // review round 13: a word-like key is not history; a current list in HANDOFF makes runtime history stale
+  assert.deepEqual(manualItems({ manual_required: ['a'], roundtrip_latency: { checks: [{ id: 'rt', result: 'manual_required' }] } }), ['a', 'rt']);
+  assert.deepEqual(manualItems({ round1: { manual_required: ['old'] } }, { manual_required: ['h1'] }), ['h1']);
 });
 
 test('fleet: the newest review file is the verdict; defer never covers a review that is not APPROVED; the commit line names the runner', () => {

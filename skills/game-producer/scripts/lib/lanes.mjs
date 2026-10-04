@@ -331,7 +331,7 @@ function manualField(x) {
  * "manual_required" marker (`status: manual_required`, `{id: fps, result: manual_required}`) shows only
  * when no field lists anything (pilot: `status` stood next to the real items as a line of its own).
  */
-const MANUAL_HISTORY = /^(?:round|attempt|previous|prior|history)/i; // a reviewer's copies of earlier rounds
+const MANUAL_HISTORY = /^(?:rounds?|attempts?|previous|prior|history)(?:[_\W\d]|$)/i; // a reviewer's copies of earlier rounds (round1, round2_attempt1)
 
 export function manualItems(...sources) {
   const items = [];
@@ -363,10 +363,9 @@ export function manualItems(...sources) {
       } else walk(v, here);
     }
   };
-  for (const src of sources) {
-    current = Boolean(src && typeof src === 'object' && !Array.isArray(src) && manualField(src.manual_required).length);
-    walk(src, '');
-  }
+  // one current list in any source (runtime-state or HANDOFF) makes every source's history stale
+  current = sources.some((src) => src && typeof src === 'object' && !Array.isArray(src) && manualField(src.manual_required).length > 0);
+  for (const src of sources) walk(src, '');
   return [...new Set(items.length ? items : marks)];
 }
 
