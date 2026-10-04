@@ -535,6 +535,12 @@ test('manual_required: defer — APPROVED with only manual checks left merges, l
   // a named document's own status is not a check (review round 10)
   assert.deepEqual(manualItems({ id: 'S03', status: 'manual_required', manual_required: ['iOS unlock'] }), ['iOS unlock']);
   assert.deepEqual(manualItems({ title: 'Runtime state', status: 'manual_required' }), ['status: manual_required (no details)']);
+  // a reviewer's runtime-state keeps earlier rounds: the current top-level list is the answer (pilot S09)
+  const s09 = { round: 3, manual_required: ['fps on device', 'notch on hardware'], round1: { manual_required: ['A-09-04 outline-only volume (blocked by F1)'] },
+    round2_attempt1: { manual_required: ['rerun the whole review'], checks: [{ id: 'old', result: 'manual_required' }] }, checks: [{ id: 'fade', result: 'manual_required' }] };
+  assert.deepEqual(manualItems(s09), ['fps on device', 'notch on hardware', 'fade']);
+  // without a current top-level list, history is all there is: still walked, nothing lost
+  assert.deepEqual(manualItems({ round1: { manual_required: ['only in round 1'] } }), ['only in round 1']);
 });
 
 test('fleet: the newest review file is the verdict; defer never covers a review that is not APPROVED; the commit line names the runner', () => {

@@ -331,10 +331,16 @@ function manualField(x) {
  * "manual_required" marker (`status: manual_required`, `{id: fps, result: manual_required}`) shows only
  * when no field lists anything (pilot: `status` stood next to the real items as a line of its own).
  */
+const MANUAL_HISTORY = /^(?:round|attempt|previous|prior|history)/i; // a reviewer's copies of earlier rounds
+
 export function manualItems(...sources) {
   const items = [];
   const marks = [];
   const isMark = (v) => typeof v === 'string' && v.trim().toLowerCase() === 'manual_required';
+  // a source whose own top-level manual_required lists checks is speaking for the current round: its
+  // nested manual_required fields and its round/attempt history are earlier rounds' copies, not walked
+  // (S09: round1 + round2_attempt1 + current made 18 lines for 6 checks, one of them long resolved)
+  let current = false;
   const walk = (x, at) => {
     if (Array.isArray(x)) {
       // a bare marker in a list (`checks: ['pass', 'manual_required']`) is a mark too, never lost
@@ -343,6 +349,8 @@ export function manualItems(...sources) {
     if (!x || typeof x !== 'object') return;
     for (const [k, v] of Object.entries(x)) {
       const here = at ? `${at}.${k}` : k;
+      if (current && at && k.toLowerCase() === 'manual_required') continue;
+      if (current && MANUAL_HISTORY.test(k)) continue;
       if (k.toLowerCase() === 'manual_required') {
         const listed = manualField(v);
         if (listed.length) items.push(...listed);
@@ -355,7 +363,10 @@ export function manualItems(...sources) {
       } else walk(v, here);
     }
   };
-  for (const src of sources) walk(src, '');
+  for (const src of sources) {
+    current = Boolean(src && typeof src === 'object' && !Array.isArray(src) && manualField(src.manual_required).length);
+    walk(src, '');
+  }
   return [...new Set(items.length ? items : marks)];
 }
 
