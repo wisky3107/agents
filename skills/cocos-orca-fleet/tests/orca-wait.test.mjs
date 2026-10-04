@@ -111,6 +111,15 @@ test('lane: a HANDOFF written between calls and a pending gate return at once', 
   const b = run(bin, ['lane', '--run', 'run_1', '--handoff', handoff, '--state', state, '--max-ms', '5000']).out;
   assert.equal(b.event, 'gate');
   assert.deepEqual(b.pending_gates.map((g) => g.id), ['g2']);
+  // the whole question reaches the producer, every line — not the first line cut at 200 (S10 q21, 2026-10-04)
+  const ask = `Scope field: ${'the slice paths authorize one file but not the manifest. '.repeat(5)}\n\nShould the manifest path be added, or restored?`;
+  fs.writeFileSync(path.join(bin, 'gates.json'), JSON.stringify({ ok: true, result: { gates: [{ id: 'g3', status: 'pending', question: ask, options: '["add","restore"]' }] } }));
+  const c = run(bin, ['lane', '--run', 'run_1', '--handoff', handoff, '--state', state, '--max-ms', '5000']).out;
+  assert.equal(c.pending_gates[0].question, ask.replace('\n\n', ' / '));
+  // past 4000 characters it is cut and marked
+  fs.writeFileSync(path.join(bin, 'gates.json'), JSON.stringify({ ok: true, result: { gates: [{ id: 'g4', status: 'pending', question: 'y'.repeat(4500) }] } }));
+  const d = run(bin, ['lane', '--run', 'run_1', '--handoff', handoff, '--state', state, '--max-ms', '5000']).out;
+  assert.equal(d.pending_gates[0].question, `${'y'.repeat(4000)}…`);
   fs.rmSync(bin, { recursive: true });
 });
 
