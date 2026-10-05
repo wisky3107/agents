@@ -118,14 +118,19 @@ Do:
    antigravity → THIS session's own image tools. If that tool returns HTTP 429 or a quota
      error, make the same files with codex-image-gen (as below) and add
      `backend: codex-image (antigravity 429)` to concept-check.md. If codex-image is down too
-     (`node ~/.agents/skills/codex-image-gen/scripts/codex-image.mjs check` exits 2), do not
-     wait: send the coordinator one `ask` with both lanes' state and the Antigravity reset time
-     from `node ~/.agents/tools/agy-account/agy-account.mjs status`, then stop this round.
+     (`node ~/.agents/skills/codex-image-gen/scripts/codex-image.mjs check` exits 2), send the coordinator one `ask` with both lanes' state, the earliest
+     `until` from `node ~/.agents/tools/agy-account/agy-account.mjs status` and whether any
+     account is still unexhausted, then wait for the reply (no polling of either lane). Reply
+     `wait until <ts>` → run the round again after it; `exception: <lane> for <STEM>` → use that
+     lane for this stem only, plain light background, no alpha, the front attached as the
+     reference for the other views, and note the exception in concept-check.md.
    codex-image → ~/.agents/skills/codex-image-gen/SKILL.md, one jobs file: concept-front.png
      as a generation; concept-threequarter.png and concept-back.png as edits with
      "ref": "<abs path of concept-front.png>" (only the VIEW line changes). Plain light-grey
-     background, no alpha. --overwrite when regenerating a round.
-   Do NOT call orca-gpt-image-gen / ChatGPT for these concepts.
+     background, no alpha. --overwrite when regenerating a round. If `check` exits 2 here, the
+     same single `ask` as above.
+   Do NOT call orca-gpt-image-gen / ChatGPT for these concepts unless the coordinator's reply
+   grants a written exception for this stem.
 2. Read every PNG. Write evidence/art/<STEM>/concept-check.md (never a shared file):
      ## <STEM> — concept round <n>
      files: ...
