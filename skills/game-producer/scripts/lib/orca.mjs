@@ -190,9 +190,13 @@ export function readScreen(handle) {
   return lines ? { lines, source: t.source || null } : null;
 }
 
-/** Raw input without Enter (a key sequence, or text typed into a TUI panel). Throws when Orca refuses it. */
+/**
+ * Raw input without Enter (a key sequence, or text typed into a TUI panel). Throws when Orca refuses it.
+ * A value that starts with `-` could be read as a flag by the CLI: it goes with one leading space (a TUI
+ * input ignores it), never as `--text=` (unverified on this CLI).
+ */
 export function sendKeys(handle, text) {
-  const r = orca(['terminal', 'send', '--terminal', handle, '--text', text]);
+  const r = orca(['terminal', 'send', '--terminal', handle, '--text', String(text).startsWith('-') ? ` ${text}` : text]);
   if (r.status !== 0 || r.parsed?.ok === false) {
     const e = r.parsed?.error;
     throw new Error(`terminal keys to ${handle} failed: ${e ? [e.code, e.message].filter(Boolean).join(': ') : (r.stderr || r.stdout).trim().slice(-200)}`);

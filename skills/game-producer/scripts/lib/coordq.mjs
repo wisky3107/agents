@@ -31,7 +31,9 @@ const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07/g;
 const clean = (l) => String(l).replace(ANSI, '').replace(/[\x00-\x1f\x7f]/g, '').replace(/\s+$/, '');
 const oneLine = (t) => String(t || '').replace(/\s+/g, ' ').trim();
 const OPTION = /^\s*([›❯>])?\s*(\d{1,2})[.)]\s+(\S.*)$/;
-const FOOTER = /^\s*enter submit\b/i;
+// the footer row only: a transcript line that mentions "enter submit" is not one
+const FOOTER = /^\s*enter submit\b.*\bctrl\+\]\s*skip\b/i;
+const INPUT_ROW = /^\s*[›❯>](?:\s.*)?$/; // the bare input row of an "Other" that is already selected
 const POSITION = /^\s*(?:question\s+)?(\d+)\s*(?:of|\/)\s*(\d+)\s*$/i;
 const ANCHOR = /queued follow-up|shift\+←|^\s*[─━═╭╰│┌└┐┘-]{3,}\s*$/i;
 export const isOther = (label) => /^other\b/i.test(label);
@@ -103,15 +105,31 @@ function parseOpen(lines, f) {
   if (!rows.length || expect !== 1) return { ok: false, error: 'the numbered options do not start at 1' };
   const labels = rows.map((o) => o.label);
   if (new Set(labels).size !== labels.length) return { ok: false, error: 'two options have the same label' };
+  // a bare `›` row (or one with typed text) after the last numbered option is the input row of an "Other"
+  // that is already selected (2026-10-05 capture): a synthetic last option, marked, in input mode
+  let inputRow = -1;
+  for (let k = rows[rows.length - 1].row + 1; k < f; k++) {
+    if (INPUT_ROW.test(lines[k]) && !OPTION.test(lines[k])) {
+      inputRow = k;
+      break;
+    }
+  }
   const options = rows.map((o, i) => {
-    const end = i + 1 < rows.length ? rows[i + 1].row : f;
+    const end = i + 1 < rows.length ? rows[i + 1].row : inputRow >= 0 ? inputRow : f;
     const desc = oneLine(lines.slice(o.row + 1, end).join(' '));
     return { label: o.label, ...(desc ? { desc } : {}) };
   });
   const question = questionAbove(lines, rows[0].row);
   if (!question) return { ok: false, error: 'no question text above the options' };
   const marks = rows.map((o, i) => (o.marker ? i : -1)).filter((i) => i >= 0);
-  return { ok: true, kind: 'choice', question, options, marked: marks.length === 1 ? marks[0] : null, ...position(lines, rows[0].row, f) };
+  let marked = marks.length === 1 ? marks[0] : null;
+  let otherInput = false;
+  if (inputRow >= 0 && !marks.length && !options.some((o) => isOther(o.label))) {
+    options.push({ label: 'Other' });
+    marked = options.length - 1;
+    otherInput = true;
+  }
+  return { ok: true, kind: 'choice', question, options, marked, otherInput, ...position(lines, rows[0].row, f) };
 }
 
 /**
@@ -155,11 +173,12 @@ function pressMain(handle) {
  * `keepOpen` (a panel left open would swallow the runner's next plain message). A closed marker with
  * `quietCount` questions is one the director already dealt with: it is not opened again (shift+← / shift+→
  * on every wait would pull a director who is answering in that terminal out of the panel).
- * → { state: 'none' } | { state: 'quiet' } | { state: 'panel', panel, fp, count } | { state: 'raw', fp, tail, why, count }
+ * → { state: 'unknown' } (the screen could not be read: no state may change on it) | { state: 'none' } (read,
+ *   no panel) | { state: 'quiet' } | { state: 'panel', panel, fp, count } | { state: 'raw', fp, tail, why, count }
  */
 export function readPanel(handle, { keepOpen = false, quietCount = null } = {}) {
   let scr = io.readScreen(handle);
-  if (!scr) return { state: 'none' };
+  if (!scr) return { state: 'unknown' };
   let p = parseScreen(scr.lines);
   if (p.state === 'none') return { state: 'none' };
   const first = p;
@@ -174,7 +193,11 @@ export function readPanel(handle, { keepOpen = false, quietCount = null } = {}) 
     opened = true;
     keyPause();
     scr = io.readScreen(handle);
-    p = scr ? parseScreen(scr.lines) : { state: 'none' };
+    if (!scr) {
+      pressMain(handle); // the panel may be open and unreadable: back to the main prompt
+      return { state: 'unknown' };
+    }
+    p = parseScreen(scr.lines);
     if (p.state !== 'open') return raw(first.lines, first.row, 'the panel did not open after shift+←', first.count);
   }
   const count = first.state === 'closed' ? first.count : null;
@@ -202,11 +225,12 @@ export function describe(r) {
 }
 
 /**
- * One look for the runner. → { gone: true } (no panel on the screen) | { quiet: true } (the one the director
- * already dealt with) | { detail, options, ref, obs, count } (a question for the director)
+ * One look for the runner. → { unknown: true } (the screen could not be read) | { gone: true } (read: no panel)
+ * | { quiet: true } (the one the director already dealt with) | { detail, options, ref, obs, count } (a question)
  */
 export function find(handle, quietCount = null) {
   const r = readPanel(handle, { quietCount });
+  if (r.state === 'unknown') return { unknown: true };
   if (r.state === 'none') return { gone: true };
   return r.state === 'quiet' ? { quiet: true } : describe(r);
 }
@@ -232,11 +256,12 @@ function moveTo(handle, panel, to, fp, say) {
   return sent;
 }
 
-/** Is the question `fp` still the one on screen? true | false | null (no panel, or unreadable) */
+/** Is the question `fp` still the one on screen? true | false (moved on or gone) | null (cannot tell: unreadable) */
 function stillOpen(handle, fp) {
   const scr = io.readScreen(handle);
-  const p = scr ? parseScreen(scr.lines) : null;
-  return p?.state === 'open' && p.ok ? `p:${fingerprint(p.question)}` === fp : p?.state === 'open' ? null : false;
+  if (!scr) return null;
+  const p = parseScreen(scr.lines);
+  return p.state === 'open' && p.ok ? `p:${fingerprint(p.question)}` === fp : p.state === 'open' ? null : false;
 }
 
 /** After an answer: a panel left open goes back to the main prompt, so the runner's next message reaches the composer. */
@@ -257,6 +282,7 @@ export function answerOption(handle, ref, label, say) {
       say('no question panel on the screen any more: nothing sent');
       return;
     }
+    if (r.state === 'unknown') throw new Error("the coordinator's screen could not be read; nothing sent — answer it in the coordinator terminal");
     if (r.state !== 'panel') throw new Error(`the panel cannot be read now (${r.why}); nothing sent — answer it in the coordinator terminal`);
     if (r.fp !== ref) throw new Error(`the coordinator now shows a different question ("${r.panel.question.slice(0, 80)}"); nothing sent`);
     if (r.panel.kind !== 'choice') throw new Error('the panel is a free-text question now; nothing sent');
@@ -287,6 +313,10 @@ export function answerText(handle, ref, text, say) {
       say('no question panel on the screen any more: the answer goes as a plain message only');
       return { followUp: true, left: false };
     }
+    if (r.state === 'unknown') {
+      say("the coordinator's screen could not be read: nothing typed, the answer goes as a plain message only");
+      return { followUp: true, left: true };
+    }
     if (r.state !== 'panel' || !ref?.startsWith('p:')) {
       say(`the panel was not read as a question the director saw (${r.state === 'panel' ? 'asked unreadable' : r.why}): main prompt, the answer goes as a plain message only`);
       return { followUp: true, left: true };
@@ -298,22 +328,29 @@ export function answerText(handle, ref, text, say) {
       io.sendKeys(handle, KEYS.enter);
       keyPause();
       say(`typed the answer (${text.length} characters) + Enter into the free-text panel`);
+      // moved on, or this call fails: a text that may have been taken is never typed a second time
+      if (stillOpen(handle, r.fp) !== false) throw new Error('the panel still shows the question after the answer and Enter (or the screen cannot be read); nothing typed again — check the coordinator terminal');
+      say('the panel moved on');
       return { followUp: false, left: false };
     }
     const other = r.panel.options.findIndex((o) => isOther(o.label));
     if (other < 0) throw new Error('this panel has no "Other" option: pick one of its options, or answer it in the coordinator terminal; nothing sent');
-    const sent = moveTo(handle, r.panel, other, r.fp, say);
-    io.sendKeys(handle, KEYS.enter);
-    keyPause();
+    // "Other" already selected (its input row is showing): no key to choose it, the text goes straight in
+    const sent = r.panel.otherInput ? [] : moveTo(handle, r.panel, other, r.fp, say);
+    if (!r.panel.otherInput) {
+      io.sendKeys(handle, KEYS.enter);
+      keyPause();
+    }
     // the typed text only goes where the question is still on screen (an input for "Other"); a panel that
-    // moved on would put it in the main prompt, where the plain message below already is
-    if (stillOpen(handle, r.fp) !== false) {
+    // moved on, or a screen that cannot be read, would put it in the main prompt, where the plain message
+    // below already is
+    if (r.panel.otherInput || stillOpen(handle, r.fp) === true) {
       io.sendKeys(handle, text);
       keyPause();
       io.sendKeys(handle, KEYS.enter);
       keyPause();
-      say(`sent ${[...sent, 'Enter'].join(', ')} for "${r.panel.options[other].label}", typed the answer + Enter`);
-    } else say(`sent ${[...sent, 'Enter'].join(', ')} for "${r.panel.options[other].label}"; the panel moved on, no typing`);
+      say(`${r.panel.otherInput ? 'the "Other" input was already showing' : `sent ${[...sent, 'Enter'].join(', ')} for "${r.panel.options[other].label}"`}, typed the answer + Enter`);
+    } else say(`sent ${[...sent, 'Enter'].join(', ')} for "${r.panel.options[other].label}"; the panel moved on (or could not be read), no typing`);
     return { followUp: true, left: false };
   } finally {
     restore(handle);

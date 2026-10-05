@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { parseScreen, fingerprint, ANSWER_TEXT, ANSWER_DONE } from '../scripts/lib/coordq.mjs';
 import { waitsOnDirector } from '../scripts/lib/lanes.mjs';
 import { menu, textNeed, answerProblem } from '../scripts/lib/answer.mjs';
-import { project, fakes, env, runner, evRel, ev } from './harness.mjs';
+import { project, fakes, env, runner, evRel, ev, sliceState } from './harness.mjs';
 
 // Two gaps from the 2026-10-04/05 fleet slices (codex coordinator): a question asked through codex's own
 // panel (the runner never saw it, the lane waited an hour) and "pending a director decision" written into
@@ -47,7 +47,7 @@ const screens = (frames, at = 'closed') => ({ term_1: { at, frames } });
 const fleet = () => project({ slices: { S01: { needs: false, size: 'L' } } });
 const working = (detail = 'implementing') => ({ [H]: { role: 'coordinator', status: 'working', detail } });
 const start = (map, detail) => ({ name: 'run created', runs: [{ id: 'run_1', coordinator_handle: 'term_1' }], write: working(detail), ...(map ? { screens: map } : {}) });
-const tick = (n, detail = `tick ${n}`) => ({ name: `tick ${n}`, write: working(detail) });
+const tick = (n, detail = `tick ${n}`, extra = {}) => ({ name: `tick ${n}`, write: working(detail), ...extra });
 const run = (root, f, ...args) => runner(root, f, ...args, { env: { PRODUCER_RUNNER_KEY_MS: '0' } });
 const runnerFile = (root) => JSON.parse(fs.readFileSync(path.join(root, '.cursor', 'producer-runner.json'), 'utf8'));
 const log = (root) => fs.readFileSync(ev(root, 'S01', 'producer-log.md'), 'utf8');
@@ -185,7 +185,7 @@ test('"answer with --text" on a choice panel: Other + Enter, the text typed + En
   run(q.root, g, 'start', '--once');
   assert.deepEqual(typed(g), [OPEN, MAIN, OPEN, DOWN, DOWN, ENTER]);
   assert.deepEqual(g.sends(), [{ to: 'term_1', text: `${FOLLOW}split brick 3` }]);
-  assert.match(log(q.root), /the panel moved on, no typing/);
+  assert.match(log(q.root), /the panel moved on \(or could not be read\), no typing/);
 
   // a choice panel without "Other": nothing is pressed, the director is told
   const r = fleet();
@@ -258,6 +258,8 @@ test('a screen read that is only the stream, or fails, asks nothing', () => {
   const out = run(p.root, f, 'start', '--once').out;
   assert.equal(out.some((o) => o.blocked || o.waiting), false);
   assert.deepEqual(typed(f), []); // the accumulated stream still shows closed panels: never keys into it
+  // said once, not on every wait: the feature is not silently off
+  assert.equal(log(p.root).match(/could not read the coordinator's screen \(term_1\)/g).length, 1);
 });
 
 test('"answered in the coordinator terminal, continue": nothing is typed, and the same panel is not asked again', () => {
@@ -321,7 +323,7 @@ test('director_pending: a HANDOFF detail waiting on the director with no gate, t
   assert.equal(runnerFile(p.root).questions.length, 1);
   assert.deepEqual(f.sends().map((s) => s.to), ['term_1']);
   assert.match(f.sends()[0].text, /^Director's answer to your question: pixel for the 30 FAIL rows — continue the slice; update HANDOFF\.json when your status changes\.$/);
-  assert.deepEqual(f.reads().length > 0, true); // the screen is read on every wait; nothing was on it
+  assert.ok(f.reads().length >= f.waits().length); // the screen is read after every wait; nothing was on it
   assert.deepEqual(f.keys(), []);
 });
 
@@ -374,6 +376,11 @@ test('waitsOnDirector: waiting phrases match; decisions made, negations and othe
     'director decision is pending',
     'blocked on a director approval',
     'no gate opened pending a director decision', // the negation is not right before it
+    'Holiday reserve decision pending director.', // a real pending decision (2026-10-05 review)
+    'Holiday reserve decision pending the director.',
+    'Reserve swap pending the director.', // no decision noun
+    'Awaiting your decision on A-10-02.',
+    'waiting for your ruling',
   ]) assert.ok(waitsOnDirector(yes), yes);
   for (const no of [
     'Director resolved gate g1: keep the literal rule',
@@ -388,6 +395,10 @@ test('waitsOnDirector: waiting phrases match; decisions made, negations and othe
     "the director hasn't decided yet, but the integrator doesn't need it", // not a phrase of waiting
     'directory listing needs a decision',
     'Gate g2 pending (director gate), implementing meanwhile',
+    'Awaiting director-approved reserve list', // "director-approved" is a thing, not the director
+    'Reviewer awaiting director-side evidence.',
+    'Worker is pending director-signed manifest paths',
+    'Waiting for your next message from the reviewer',
     '',
     undefined,
   ]) assert.equal(waitsOnDirector(no), null, String(no));
@@ -439,4 +450,383 @@ test('answer UX: the menu, the dialog and the CLI show both kinds with the whole
   assert.equal(dialog('q2').status, 0);
   assert.ok(fs.readFileSync(path.join(f.dir, 'osa.log'), 'utf8').includes(PENDING.slice(0, 60)));
   assert.deepEqual([runnerFile(p.root).questions[1].answer.choice, runnerFile(p.root).questions[1].answer.text], ['send this answer to the lane', 'pixel for all of them']);
+});
+
+// ---------------------------------------------------------------------------------------------------
+// Review of 1364345: real codex screens (captured 2026-10-05, lego-stack S11) and the cases they showed.
+
+const L = (t) => t.split('\n');
+const REAL = {
+  // (A) closed
+  A: L(`• Waiting for background terminal (1h 29m 47s • esc to interrupt) · 1 background terminal running · /ps to view · /stop to close
+  └ node ~/.agents/skills/cocos-orca-fleet/scripts/orca-wait.mjs coord
+• Queued follow-up inputs
+  ? 1 question
+    shift+← to answer
+› Ask Codex to do anything
+  gpt-6-luna-high high · ~/Works/games/CocosCreator/cc-lego-stack · Run S11 Orca slice
+  ? for shortcuts`),
+  // (B) choice, wrapped question
+  B: L(`• Queued follow-up inputs
+  A-10-14: At least 6 separable neighboring bricks are required, but V1 L1 has 5 merged bricks and merge rules are out of scope. Keep the literal rule and report the known failure at review, or approve interpreting it as all 5
+  layer-0 bricks separable?
+  › 1. Keep literal rule; report at review
+    2. Approve all 5 layer-0 bricks
+    3. Other
+  enter submit   ctrl+] skip   shift+→ main prompt`),
+  // (C) free text
+  C: L(`• Queued follow-up inputs
+  A-10-02 needs a director reading: the fixed 120 ms quadOut glide moves 0.58× a tray block’s height on its first V3 L1 frame. Choose A: animate scale during the glide; B: measure the 0.35× step against the block at its model scale
+  at the gap pose (recommended, <=0.26× across viewports); C: delay glide 80 ms (about 200 ms total); or D: lengthen the glide to about 220 ms.
+  Type your answer
+  enter submit   ctrl+] skip   shift+→ main prompt`),
+  // (D) first of two
+  D: L(`• Queued follow-up inputs
+  1 of 2
+  S11 reserve design gap: the slice names Teacher and Mail Carrier but gives no briefs or V-12 palettes. Which design and downstream update handling should the reserve-swap worker use?
+  › 1. Approve the worker proposal: Teacher uses glasses/cardigan/books with G W N S; Mail Carrier uses peaked cap/satchel/letter with B D N S. Update only L100/L102 test names and strings. (Recommended)
+    2. Approve reserve designs, but leave test names and strings for integration
+    3. Give exact designs and update handling in a reply
+    4. Other
+  enter submit   ctrl+] skip   shift+→ main prompt   shift+← next question`),
+  // (E) the second question, after the first was submitted
+  E: L(`  ↳ > S11 reserve design gap: the slice names Teacher and Mail Carrier but gives no briefs or V-12 palettes. Which design and downstream update handling should the reserve-swap worker use?
+    Approve the worker proposal: Teacher uses glasses/cardigan/books with G W N S; Mail Carrier uses peaked cap/satchel/letter with B D N S. Update only L100/L102 test names and strings. (Recommended)
+• Queued follow-up inputs
+  The food reserve list names Ice Lolly and Watermelon Slice but gives no prompts, model records, or authorized shared-file paths. For L054’s palette FAIL, should the worker leave the concept FAIL and list the swap as pending, or
+  may it propose and add reserve details in models/prompts/strings?
+  › 1. Leave L054 as honest FAIL and record the reserve swap as pending (Recommended)
+    2. Authorize a narrowly scoped Ice Lolly swap and add required model/prompt/string fields
+    3. Give exact replacement details and paths
+    4. Other
+  enter submit   ctrl+] skip   shift+→ main prompt`),
+  // (F) "Other" already selected, its input row showing (typed text is not rendered)
+  F: L(`  Should the chapter keep these FAIL rows for review, or should two failures use reserves with you supplying the target IDs and any missing reserve details?
+    1. Keep all Holidays FAIL rows for director review (Recommended)
+    2. Use two reserves; I will specify target IDs/details
+    3. Provide exact reserve mappings and designs now
+›
+  enter submit   ctrl+] skip   shift+→ main prompt`),
+  // (G) an answer echoed after submit: no panel
+  G: L(`• Messages to be submitted after next tool call (press esc to interrupt and send immediately)
+  ↳ > Your gate reply ended with “2 only the test file.” Which test file did you mean, if that is a separate scope instruction? I’ve resolved the gate as “add manifest path” and will continue the slic
+    No separate test-file instruction
+› Ask Codex to do anything`),
+};
+const UP = '\x1b[A';
+const countOf = (n) => REAL.A.map((l) => l.replace('? 1 question', `? ${n} question${n > 1 ? 's' : ''}`));
+// the same screen with the `›` marker on numbered row n
+const moveMark = (sample, n) => sample.map((l) => l.replace(/^(\s*)(?:›\s+)?(\d+)\.\s/, (m, ws, num) => `  ${Number(num) === n ? '›' : ' '} ${num}. `));
+// frames for a choice panel of `sample` with `rows` numbered rows: closed → (shift+←) → row 1 …; Enter → `after`
+function realChoice(sample, rows, { closedLines = REAL.A, after = 'gone', enter = {} } = {}) {
+  const f = { closed: { lines: closedLines, keys: { [OPEN]: 'm1' } }, gone: { lines: REAL.G } };
+  for (let n = 1; n <= rows; n++) f[`m${n}`] = { lines: moveMark(sample, n), keys: { [DOWN]: `m${Math.min(n + 1, rows)}`, [UP]: `m${Math.max(n - 1, 1)}`, [ENTER]: enter[n] || after, [MAIN]: 'closed' } };
+  return f;
+}
+
+test('real codex screens: A closed, B / D / E choice (wrapped, "1 of 2"), C free text, F "Other" selected, G no panel', () => {
+  const closedA = parseScreen(REAL.A);
+  assert.deepEqual([closedA.state, closedA.count], ['closed', 1]);
+  assert.equal(parseScreen(countOf(2)).count, 2);
+
+  const b = parseScreen(REAL.B);
+  assert.deepEqual([b.state, b.ok, b.kind, b.marked, b.options.map((o) => o.label)], ['open', true, 'choice', 0, ['Keep literal rule; report at review', 'Approve all 5 layer-0 bricks', 'Other']]);
+  assert.equal(b.question, 'A-10-14: At least 6 separable neighboring bricks are required, but V1 L1 has 5 merged bricks and merge rules are out of scope. Keep the literal rule and report the known failure at review, or approve interpreting it as all 5 layer-0 bricks separable?');
+  assert.equal(b.otherInput, false);
+
+  const c = parseScreen(REAL.C);
+  assert.deepEqual([c.ok, c.kind, c.options], [true, 'free', []]);
+  assert.match(c.question, /^A-10-02 needs a director reading: .* tray block’s height .* scale at the gap pose \(recommended, <=0\.26× across viewports\); C: delay glide 80 ms .* about 220 ms\.$/);
+
+  const d = parseScreen(REAL.D);
+  assert.deepEqual([d.ok, d.kind, d.index, d.total, d.marked, d.options.length], [true, 'choice', 1, 2, 0, 4]);
+  assert.match(d.question, /^S11 reserve design gap: .* reserve-swap worker use\?$/);
+  assert.match(d.options[0].label, /^Approve the worker proposal: Teacher uses glasses\/cardigan\/books .* \(Recommended\)$/);
+  assert.equal(d.options[3].label, 'Other');
+
+  // E: the echo of the first answer above is not part of the second question
+  const e = parseScreen(REAL.E);
+  assert.deepEqual([e.ok, e.marked, e.options.length], [true, 0, 4]);
+  assert.equal(e.question, 'The food reserve list names Ice Lolly and Watermelon Slice but gives no prompts, model records, or authorized shared-file paths. For L054’s palette FAIL, should the worker leave the concept FAIL and list the swap as pending, or may it propose and add reserve details in models/prompts/strings?');
+
+  // F: the bare `›` row after the numbered options is the input of an "Other" that is already selected
+  const f = parseScreen(REAL.F);
+  assert.deepEqual([f.ok, f.kind, f.marked, f.otherInput, f.options.map((o) => o.label)],
+    [true, 'choice', 3, true, ['Keep all Holidays FAIL rows for director review (Recommended)', 'Use two reserves; I will specify target IDs/details', 'Provide exact reserve mappings and designs now', 'Other']]);
+  assert.equal(f.options[2].desc, undefined); // the input row is not the description of option 3
+  // …with typed text after the marker too
+  assert.deepEqual([parseScreen(REAL.F.map((l) => (l === '›' ? '› my words' : l))).otherInput, parseScreen(REAL.F.map((l) => (l === '›' ? '› my words' : l))).marked], [true, 3]);
+
+  assert.equal(parseScreen(REAL.G).state, 'none');
+  // the footer is the footer row only: a line that mentions it is not a panel
+  assert.equal(parseScreen(['  enter submit is how you send it', '› ']).state, 'none');
+  assert.equal(parseScreen(['  press enter submit then ctrl+] skip when sure of it', '› ']).state, 'none');
+});
+
+test('real screens end to end: A + B wrapped question → option 2 by one down and Enter; the question text is the whole wrapped one', () => {
+  const p = fleet();
+  const f = fakes();
+  f.queue([start(screens(realChoice(REAL.B, 3)))]);
+  // the very first screen is A (the closed marker), then B once opened
+  f.screens({ term_1: { at: 'closed', frames: realChoice(REAL.B, 3) } });
+  const a = run(p.root, f, 'start', '--once').out.at(-1);
+  assert.deepEqual([a.kind, a.options], ['coordinator_question', ['Keep literal rule; report at review', 'Approve all 5 layer-0 bricks', ...FIXED]]);
+  assert.match(runnerFile(p.root).questions[0].text, /Keep the literal rule and report the known failure at review, or approve interpreting it as all 5 layer-0 bricks separable\?$/);
+  run(p.root, f, 'answer', '--id', 'q1', '--choice', 'Approve all 5 layer-0 bricks');
+  run(p.root, f, 'start', '--once');
+  assert.deepEqual(typed(f), [OPEN, MAIN, OPEN, DOWN, ENTER]);
+  assert.match(log(p.root), /coordinator panel q1: the panel moved on/);
+});
+
+test('real screens end to end: D "1 of 2" answered with its long first option, then E is asked as the second question', () => {
+  const p = fleet();
+  const f = fakes();
+  const frames = {
+    closed: { lines: countOf(2), keys: { [OPEN]: 'd1' } },
+    d1: { lines: moveMark(REAL.D, 1), keys: { [DOWN]: 'd2', [ENTER]: 'e1', [MAIN]: 'closed' } },
+    d2: { lines: moveMark(REAL.D, 2), keys: { [ENTER]: 'e1', [MAIN]: 'closed' } },
+    e1: { lines: moveMark(REAL.E, 1), keys: { [MAIN]: 'closedE', [DOWN]: 'e1' } },
+    closedE: { lines: countOf(1), keys: { [OPEN]: 'e1' } },
+  };
+  f.queue([start(screens(frames))]);
+  const a = run(p.root, f, 'start', '--once').out.at(-1);
+  const first = parseScreen(REAL.D).options[0].label;
+  assert.deepEqual(a.options, [first, parseScreen(REAL.D).options[1].label, parseScreen(REAL.D).options[2].label, ...FIXED]);
+  assert.match(runnerFile(p.root).questions[0].text, /\(not an Orca gate, question 1 of 2\): S11 reserve design gap/);
+  run(p.root, f, 'answer', '--id', 'q1', '--choice', first);
+  f.queue([tick(2)]);
+  const b = run(p.root, f, 'start', '--once').out.at(-1);
+  assert.deepEqual([b.waiting, b.kind], ['q2', 'coordinator_question']);
+  assert.match(runnerFile(p.root).questions[1].text, /: The food reserve list names Ice Lolly and Watermelon Slice but .* in models\/prompts\/strings\?$/);
+  assert.deepEqual(typed(f), [OPEN, MAIN, OPEN, ENTER, MAIN, OPEN, MAIN]);
+});
+
+test('real screen F ("Other" selected): the text goes straight in with Enter (no key to select Other), then as a plain message; a numbered option moves up or refuses', () => {
+  const text = 'use two reserves: Holiday rows 1 and 3';
+  const numbered = (n) => moveMark([REAL.F[0], REAL.F[1], REAL.F[2], REAL.F[3], '    4. Other', REAL.F[5]], n);
+  const mk = (upWorks) => ({
+    closed: { lines: REAL.A, keys: { [OPEN]: 'f' } },
+    f: { lines: REAL.F, keys: { '*': 'f', [ENTER]: 'gone', [MAIN]: 'closed', ...(upWorks ? { [UP]: 'u3' } : {}) } },
+    u3: { lines: numbered(3), keys: { [UP]: 'u2', [ENTER]: 'gone', [MAIN]: 'closed' } },
+    u2: { lines: numbered(2), keys: { [UP]: 'u1', [ENTER]: 'gone', [MAIN]: 'closed' } },
+    u1: { lines: numbered(1), keys: { [UP]: 'u1', [ENTER]: 'gone', [MAIN]: 'closed' } },
+    gone: { lines: REAL.G },
+  });
+  const p = fleet();
+  const f = fakes();
+  f.queue([start(screens(mk(true)))]);
+  const a = run(p.root, f, 'start', '--once').out.at(-1);
+  assert.deepEqual(a.options, ['Keep all Holidays FAIL rows for director review (Recommended)', 'Use two reserves; I will specify target IDs/details', 'Provide exact reserve mappings and designs now', ...FIXED]);
+  run(p.root, f, 'answer', '--id', 'q1', '--choice', ANSWER_TEXT, '--text', text);
+  run(p.root, f, 'start', '--once');
+  assert.deepEqual(typed(f), [OPEN, MAIN, OPEN, text, ENTER]);
+  assert.deepEqual(f.sends(), [{ to: 'term_1', text: `${FOLLOW}${text}` }]);
+  assert.match(log(p.root), /the "Other" input was already showing, typed the answer \+ Enter/);
+
+  // a numbered option from there: three ups, the marker verified on it, then Enter
+  const q = fleet();
+  const g = fakes();
+  g.queue([start(screens(mk(true)))]);
+  run(q.root, g, 'start', '--once');
+  run(q.root, g, 'answer', '--id', 'q1', '--choice', 'Keep all Holidays FAIL rows for director review (Recommended)');
+  run(q.root, g, 'start', '--once');
+  assert.deepEqual(typed(g), [OPEN, MAIN, OPEN, UP, UP, UP, ENTER]);
+  assert.deepEqual(g.sends(), []);
+
+  // the screen does not move the marker up: refused before Enter, the panel put back to the main prompt
+  const r = fleet();
+  const h = fakes();
+  h.queue([start(screens(mk(false)))]);
+  run(r.root, h, 'start', '--once');
+  run(r.root, h, 'answer', '--id', 'q1', '--choice', 'Keep all Holidays FAIL rows for director review (Recommended)');
+  const out = run(r.root, h, 'start', '--once').out;
+  assert.deepEqual(typed(h), [OPEN, MAIN, OPEN, UP, UP, UP, MAIN]);
+  assert.match(out.find((o) => o.blocked).detail, /the marker is not on "Keep all Holidays FAIL rows for director review \(Recommended\)" after up, up, up; nothing was submitted/);
+});
+
+test('never submit when unsure: Enter that leaves the panel up is an error; a free-text submit that did not take is not typed again; an unreadable screen after Enter on "Other" gets no text', () => {
+  // an option: Enter leaves the same panel on screen → error (the keys sent are in it), panel back to the main prompt
+  const p = fleet();
+  const f = fakes();
+  f.queue([start(screens(realChoice(REAL.B, 3, { enter: { 1: 'm1', 2: 'm2', 3: 'm3' } })))]);
+  run(p.root, f, 'start', '--once');
+  run(p.root, f, 'answer', '--id', 'q1', '--choice', 'Approve all 5 layer-0 bricks');
+  const out = run(p.root, f, 'start', '--once').out;
+  assert.match(out.find((o) => o.blocked).detail, /the panel still shows the question after Enter \(sent down, Enter\); check the coordinator terminal/);
+  assert.deepEqual(typed(f), [OPEN, MAIN, OPEN, DOWN, ENTER, MAIN]);
+
+  // free text (real C): Enter keeps the panel → an error, and the text was typed exactly once
+  const q = fleet();
+  const g = fakes();
+  const stuck = { closed: { lines: REAL.A, keys: { [OPEN]: 'c' } }, c: { lines: REAL.C, keys: { '*': 'c', [ENTER]: 'c', [MAIN]: 'closed' } } };
+  g.queue([start(screens(stuck))]);
+  run(q.root, g, 'start', '--once');
+  run(q.root, g, 'answer', '--id', 'q1', '--choice', ANSWER_TEXT, '--text', 'A, but scale the step to 0.26x');
+  const out2 = run(q.root, g, 'start', '--once').out;
+  assert.match(out2.find((o) => o.blocked).detail, /the panel still shows the question after the answer and Enter .* nothing typed again/);
+  assert.deepEqual(typed(g), [OPEN, MAIN, OPEN, 'A, but scale the step to 0.26x', ENTER, MAIN]);
+  assert.deepEqual(g.sends(), []);
+  // (and with the screen unreadable after Enter the same: it cannot be confirmed)
+  const r = fleet();
+  const h = fakes();
+  h.queue([start(screens({ closed: { lines: REAL.A, keys: { [OPEN]: 'c' } }, c: { lines: REAL.C, keys: { '*': 'c', [ENTER]: 'blind', [MAIN]: 'closed' } }, blind: { source: 'screen-unavailable', lines: [] } }))]);
+  run(r.root, h, 'start', '--once');
+  run(r.root, h, 'answer', '--id', 'q1', '--choice', ANSWER_TEXT, '--text', 'C');
+  assert.match(run(r.root, h, 'start', '--once').out.find((o) => o.blocked).detail, /cannot be read\); nothing typed again/);
+
+  // "Other" chosen, then the screen cannot be read: no text typed into whatever has the keys; the plain message still goes
+  const s = fleet();
+  const k = fakes();
+  const blind = realChoice(REAL.B, 3, { enter: { 3: 'blind' } });
+  blind.blind = { source: 'screen-unavailable', lines: [] };
+  k.queue([start(screens(blind))]);
+  run(s.root, k, 'start', '--once');
+  run(s.root, k, 'answer', '--id', 'q1', '--choice', ANSWER_TEXT, '--text', 'my own words');
+  run(s.root, k, 'start', '--once');
+  assert.deepEqual(typed(k), [OPEN, MAIN, OPEN, DOWN, DOWN, ENTER]);
+  assert.deepEqual(k.sends(), [{ to: 'term_1', text: `${FOLLOW}my own words` }]);
+});
+
+test('input hygiene: control bytes never become keys, a text starting with "-" is not a flag, a refused key is logged', () => {
+  const p = fleet();
+  const f = fakes();
+  const Q = 'Which backend should the 30 FAIL rows use?';
+  const frames = { closed: { lines: closed(), keys: { [OPEN]: 'f0' } }, f0: { lines: free(Q), keys: { '*': 'f1', [MAIN]: 'closed' } }, f1: { lines: free(Q), keys: { [ENTER]: 'gone', [MAIN]: 'closed' } }, gone: { lines: GONE } };
+  f.queue([start(screens(frames))]);
+  run(p.root, f, 'start', '--once');
+  run(p.root, f, 'answer', '--id', 'q1', '--choice', ANSWER_TEXT, '--text', '-x a\x1b[B b\x07\ttab');
+  run(p.root, f, 'start', '--once');
+  const t = typed(f)[3];
+  assert.equal(t, ' -x a[B b tab'); // no ESC / BEL, one line, and a leading space so the CLI cannot read a flag
+  assert.ok(!/[\x00-\x08\x0b-\x1f\x7f]/.test(t));
+  assert.equal(typed(f)[4], ENTER);
+
+  // a key the terminal refuses: the error says so and the log keeps it
+  const q = fleet();
+  const g = fakes();
+  g.queue([start(screens(choiceFrames(Q1, LABELS)))]);
+  run(q.root, g, 'start', '--once');
+  fs.writeFileSync(path.join(g.dir, 'keys-fail'), '1');
+  run(q.root, g, 'answer', '--id', 'q1', '--choice', LABELS[1]);
+  const out = run(q.root, g, 'start', '--once').out;
+  assert.match(out.find((o) => o.blocked).detail, /keys refused/);
+  assert.match(log(q.root), /coordinator panel q1: failed: .*keys refused/);
+});
+
+test('an acked panel: gone clears the ack (the same question later is asked again); 5 waits do not open and close the panel 5 times; an unreadable read changes nothing; held at most 12 waits', () => {
+  const p = fleet();
+  const f = fakes();
+  f.queue([start(screens(choiceFrames(Q1, LABELS)))]);
+  run(p.root, f, 'start', '--once');
+  run(p.root, f, 'answer', '--id', 'q1', '--choice', ANSWER_DONE);
+  const acked = () => (sliceState(p.root, 'S01').acked || []).filter((x) => x.startsWith('cq:'));
+
+  // 1. a transient unreadable read is not "gone": the acks and the quiet marker stay, and it is said once
+  const blind = { term_1: { at: 'u', frames: { u: { source: 'screen-unavailable', lines: [] } } } };
+  f.queue([tick(2, 't2', { screens: blind }), tick(3, 't3', { screens: blind }), tick(4, 't4', { screens: screens(choiceFrames(Q1, LABELS)) })]);
+  assert.equal(run(p.root, f, 'start', '--once').out.some((o) => o.blocked || o.waiting), false);
+  assert.deepEqual([acked().length, sliceState(p.root, 'S01').cq_quiet], [1, 1]);
+  assert.equal(log(p.root).match(/could not read the coordinator's screen/g).length, 1);
+  assert.deepEqual(typed(f), [OPEN, MAIN]); // only the first look opened it: the marker stayed quiet
+
+  // 2. the count changed (a second question queued behind it): one look, then quiet again for 5 waits
+  const two = screens(choiceFrames(Q1, LABELS, { n: 2 }));
+  f.queue([tick(5, 't5', { screens: two }), tick(6), tick(7), tick(8), tick(9)]);
+  fs.rmSync(path.join(p.root, '.cursor', 'producer.control'), { force: true });
+  assert.equal(run(p.root, f, 'start', '--once').out.some((o) => o.blocked || o.waiting), false);
+  assert.deepEqual(typed(f), [OPEN, MAIN, OPEN, MAIN]);
+  assert.equal(sliceState(p.root, 'S01').cq_quiet, 2);
+
+  // 3. held 12 waits at most: then it is asked about again (the director may not have answered it after all)
+  fs.writeFileSync(ev(p.root, 'S01', 'producer-state.json'), JSON.stringify({ ...sliceState(p.root, 'S01'), cq_held: 11 }));
+  f.queue([tick(10), tick(11), tick(12)]);
+  fs.rmSync(path.join(p.root, '.cursor', 'producer.control'), { force: true });
+  const out = run(p.root, f, 'start', '--once').out;
+  assert.deepEqual([out.at(-1).waiting, out.at(-1).kind], ['q2', 'coordinator_question']);
+  assert.match(log(p.root), /still on screen after 12 waits: asking about it again/);
+});
+
+test('an acked panel that has gone: the same question shown again afterwards is asked again', () => {
+  const p = fleet();
+  const f = fakes();
+  f.queue([start(screens(choiceFrames(Q1, LABELS)))]);
+  run(p.root, f, 'start', '--once');
+  run(p.root, f, 'answer', '--id', 'q1', '--choice', ANSWER_DONE);
+  f.queue([
+    tick(2, 't2', { screens: { term_1: { at: 'g', frames: { g: { lines: GONE } } } } }), // answered in the terminal
+    tick(3, 't3', { screens: screens(choiceFrames(Q1, LABELS)) }), // the same text again
+  ]);
+  const b = run(p.root, f, 'start', '--once').out.at(-1);
+  assert.deepEqual([b.waiting, b.kind], ['q2', 'coordinator_question']);
+  assert.equal(runnerFile(p.root).questions[1].text, runnerFile(p.root).questions[0].text);
+  assert.deepEqual((sliceState(p.root, 'S01').acked || []).filter((x) => x.startsWith('cq:')), []);
+});
+
+test('the panel is checked in the committing phase too', () => {
+  const p = fleet();
+  const f = fakes();
+  const evidence = { [evRel('S01', 'review.md')]: 'F1\n\nAPPROVED\n', [evRel('S01', 'runtime-state.json')]: { status: 'verified' }, [evRel('S01', 'final-report.md')]: 'x', [evRel('S01', 'stats.json')]: {} };
+  f.queue([
+    start(null),
+    { name: 'offer', write: { [H]: { role: 'coordinator', status: 'offer_commit' }, ...evidence } },
+    // HANDOFF written again (still offer_commit) so orca-wait returns at once, with the panel on screen
+    { name: 'asks while committing', screens: screens(realChoice(REAL.B, 3)), write: { [H]: { role: 'coordinator', status: 'offer_commit', detail: 'asked' } } },
+  ]);
+  const a = run(p.root, f, 'start', '--once').out.at(-1);
+  assert.deepEqual([a.waiting, a.kind], ['q1', 'coordinator_question']);
+  assert.equal(sliceState(p.root, 'S01').phase, 'committing');
+  assert.equal(f.sends().length, 1); // the commit request went out first
+  assert.match(f.sends()[0].text, /^approved — commit \(producer: Step 2d passed\)$/);
+  assert.deepEqual(typed(f), [OPEN, MAIN]);
+});
+
+test('a panel is raised before lane_blocked and unknown_status, which follow once it is answered', () => {
+  for (const [state, kind] of [[{ status: 'blocked', detail: 'which material?' }, 'lane_blocked'], [{ status: 'pondering', detail: 'x' }, 'unknown_status']]) {
+    const p = fleet();
+    const f = fakes();
+    f.queue([{ ...start(screens(choiceFrames(Q1, LABELS))), write: { [H]: { role: 'coordinator', ...state } } }]);
+    const a = run(p.root, f, 'start', '--once').out.at(-1);
+    assert.deepEqual([a.waiting, a.kind], ['q1', 'coordinator_question']);
+    run(p.root, f, 'answer', '--id', 'q1', '--choice', ANSWER_DONE);
+    f.queue([{ name: 'again', result: 'idle' }]);
+    const b = run(p.root, f, 'start', '--once').out.at(-1); // the panel is still on screen, held for the director — and the lane's own question comes
+    assert.deepEqual([b.waiting, b.kind], ['q2', kind]);
+  }
+});
+
+test('director_pending: a detail about a gate already decided is not a new wait; a new one after the relay is', () => {
+  const gate = { id: 'g1', status: 'pending', question: 'Approve PLAN?', options: '["approve","revise"]' };
+  const asked = (out) => out.some((o) => o.blocked || o.waiting);
+  // (a) the detail names the relayed gate, the lane rewrites HANDOFF after the relay with the same words
+  const D = 'Gate g1 opened: slice pending a director decision on PLAN.';
+  const p = fleet();
+  const f = fakes();
+  f.queue([start(null, D), { name: 'gate opened', gates: [gate], write: working(D) }]);
+  assert.equal(run(p.root, f, 'start', '--once').out.at(-1).kind, 'fleet_gate');
+  run(p.root, f, 'answer', '--id', 'q1', '--choice', 'approve');
+  f.set('gates.json', []);
+  f.queue([tick(3, D), tick(4, D), tick(5, D), tick(6, D)]);
+  fs.rmSync(path.join(p.root, '.cursor', 'producer.control'), { force: true });
+  assert.equal(asked(run(p.root, f, 'start', '--once').out), false);
+
+  // (b) no gate id in it, but HANDOFF was written before the relay and not since
+  const D2 = 'Slice pending a director decision on PLAN.';
+  const q = fleet();
+  const g = fakes();
+  g.queue([start(null, D2), { name: 'gate opened', gates: [gate] }]);
+  assert.equal(run(q.root, g, 'start', '--once').out.at(-1).kind, 'fleet_gate');
+  assert.equal(sliceState(q.root, 'S01').dp_fp, null); // a gate event resets the count (seen once before it)
+  assert.equal(sliceState(q.root, 'S01').dp_seen, 0);
+  run(q.root, g, 'answer', '--id', 'q1', '--choice', 'approve');
+  g.set('gates.json', []);
+  g.queue([{ name: 'w1' }, { name: 'w2' }, { name: 'w3' }, { name: 'w4' }]);
+  fs.rmSync(path.join(q.root, '.cursor', 'producer.control'), { force: true });
+  assert.equal(asked(run(q.root, g, 'start', '--once').out), false);
+
+  // (c) the lane rewrites HANDOFF after the relay with a new wait that names no relayed gate: asked on the second look
+  const D3 = 'Voxel fallback is pending a director decision on the backend.';
+  g.queue([tick(7, D3), tick(8, D3)]);
+  fs.rmSync(path.join(q.root, '.cursor', 'producer.control'), { force: true });
+  const out = run(q.root, g, 'start', '--once').out;
+  assert.deepEqual([out.at(-1).waiting, out.at(-1).kind], ['q2', 'director_pending']);
 });

@@ -132,6 +132,8 @@ if (cmd === 'terminal send') {
   // --enter = a message to the agent (sends.log); without it, raw keys or text typed into a TUI panel (keys.log).
   // keystream.log keeps both in order. A raw send moves the terminal's screen frame (screens.json).
   const entry = { to: arg('--terminal'), text: arg('--text') };
+  // keys-fail: raw keys / typed text are refused (a message with --enter still goes)
+  if (!a.includes('--enter') && fs.existsSync(path.join(D, 'keys-fail'))) out({ ok: false, error: { code: 'input_refused', message: 'keys refused' } }, 1);
   log(a.includes('--enter') ? 'sends.log' : 'keys.log', entry);
   log('keystream.log', { ...entry, enter: a.includes('--enter') });
   const screens = read('screens.json', {}), sc = screens[entry.to];
@@ -146,7 +148,8 @@ if (cmd === 'terminal send') {
 if (cmd === 'terminal read') {
   const sc = read('screens.json', {})[arg('--terminal')];
   log('reads.log', { on: arg('--terminal'), frame: sc ? sc.at : null });
-  out({ ok: true, result: { terminal: { handle: arg('--terminal'), source: (sc && sc.source) || 'screen', tail: sc ? sc.frames[sc.at].lines : [] } } });
+  // a frame may carry its own source ('screen-unavailable': only the accumulated stream could be read)
+  out({ ok: true, result: { terminal: { handle: arg('--terminal'), source: (sc && (sc.frames[sc.at].source || sc.source)) || 'screen', tail: sc ? sc.frames[sc.at].lines : [] } } });
 }
 if (cmd === 'terminal close') { log('closes.log', { handle: arg('--terminal') }); out({ ok: true }); }
 if (cmd === 'terminal list') out({ ok: true, result: { terminals: [] } });
