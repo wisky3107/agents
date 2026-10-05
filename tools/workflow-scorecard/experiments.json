@@ -1,6 +1,3 @@
 [
-  {"project": "cc-lego-stack", "dim": "writer", "switched_at": "2026-10-03T12:18:00Z",
-   "from": "claude --model sonnet --effort high", "to": "claude --model opus --effort high",
-   "set_by": "cc-lego-stack e49982c",
-   "note": "S3 writer experiment: S02-S08 ran sonnet (1/6 runner slices passed review without a fix); slices finished after the switch run opus. Directional until each arm has >=5 slices."}
+  {"project": "cc-lego-stack", "dim": "writer", "switched_at": "2026-10-03T12:18:00Z", "from": "claude --model sonnet --effort high", "to": "claude --model opus --effort high", "set_by": "cc-lego-stack e49982c", "note": "S3 writer experiment: S02-S08 ran sonnet (1/6 runner slices passed review without a fix); slices finished after the switch run opus. Directional until each arm has >=5 slices.", "ended_at": "2026-10-05T14:38:00Z", "ended_by": "cc-lego-stack 0e9b972", "ended_note": "quay về sonnet sau opus n=3: 0/3 không cần fix, token ~2x"}
 ]

@@ -54,7 +54,9 @@ A slice's label comes from its own record first: stats.json `agents`, then the p
 `spawned <role> term_… (<spec>, …)` lines in producer-log.md. A slice with neither takes the lock
 that held when it finished: `experiments.json` records each switch (`project`, `dim`,
 `switched_at`, `from`, `to`), so changing AGENT_NOTES never relabels older slices. Add an entry
-whenever a lock changes for an experiment.
+whenever a lock changes for an experiment. When the lock goes back, set `ended_at` (UTC) and
+`ended_note` on that entry instead of adding a reverse switch: slices finished after `ended_at`
+leave the experiment, and the table shows "dừng sớm" if an arm is still under 5.
 
 ## Resolutions
 

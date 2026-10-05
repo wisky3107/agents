@@ -359,6 +359,10 @@ class S2S3(unittest.TestCase):
             reg = sc.registered_experiments(con, sw)
             self.assertEqual([(e['arm'], e['side'], e['slices']) for e in reg],
                              [('claude sonnet', 'trước', 'S08'), ('claude opus', 'sau', 'S09')])
+            sw[0].update(ended_at='2026-10-04T09:00:00Z', ended_note='n=1')
+            reg = sc.registered_experiments(con, sw)
+            self.assertEqual([(e['arm'], e['n'], e['ready']) for e in reg],
+                             [('claude sonnet', 1, 'dừng sớm (n=1)'), ('claude opus', 0, 'dừng sớm (n=1)')])
 
     def test_outputs(self):
         with tempfile.TemporaryDirectory() as d:

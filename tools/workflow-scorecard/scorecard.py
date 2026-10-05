@@ -1482,7 +1482,8 @@ def experiments(con, projects: list[str], switches: list[dict] | None = None) ->
 
 def registered_experiments(con, switches: list[dict] | None = None) -> list[dict]:
     """Each experiments.json switch, compared inside its own project: slices labelled `from`
-    against slices labelled `to`."""
+    against slices labelled `to`. A switch with `ended_at` (the lock went back) stops there:
+    slices that finish later belong to neither arm."""
     q = lambda sql, *a: con.execute(sql, a).fetchall()  # noqa: E731
     switches = read_json(EXPERIMENTS, []) if switches is None else switches
     role = {'writer': 'implement', 'reviewer': 'review', 'art_backend': 'art'}
@@ -1495,6 +1496,8 @@ def registered_experiments(con, switches: list[dict] | None = None) -> list[dict
                 FROM slices s LEFT JOIN slice_agents a ON a.project=s.project AND a.slice=s.slice AND a.role=?
                 LEFT JOIN runner_slices r ON r.project=s.project AND r.slice=s.slice
                 WHERE s.project=? AND (s.fix_rounds IS NOT NULL OR s.review_rounds > 0)''', role.get(dim, dim), p):
+            if sw.get('ended_at') and done and parse_ts(done) >= parse_ts(sw['ended_at']):
+                continue
             if own:
                 arm = short_agent(own)
             elif done:  # no label of its own: the lock that held when it finished
@@ -1519,7 +1522,9 @@ def registered_experiments(con, switches: list[dict] | None = None) -> list[dict
                         'fix_median': statistics.median(fixes) if fixes else None,
                         'e2e_median': statistics.median(e2es) if e2es else None,
                         'owners': ', '.join(f'{k} {v}' for k, v in owners.most_common()),
-                        'ready': 'có' if all(len(v) >= 5 for v in arms.values()) else 'chưa (cần ≥5 slice mỗi nhánh)'})
+                        'ready': 'có' if all(len(v) >= 5 for v in arms.values()) else
+                                 f"dừng sớm ({sw.get('ended_note', sw['ended_at'])})" if sw.get('ended_at') else
+                                 'chưa (cần ≥5 slice mỗi nhánh)'})
     return out
 
 # --------------------------------------------------------------------------- S2: weekly + dashboard
