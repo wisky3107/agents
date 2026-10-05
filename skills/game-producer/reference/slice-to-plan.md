@@ -19,6 +19,7 @@ writer_agent: <spec>
 reviewer_agent: <spec>
 art_backend: <backend>
 mesh_backend: <backend>
+mesh_agent: <spec>                        # art-mesh / art-anim worker; default claude --model opus
 studio_available: <bool | n/a>
 lite: <true|false>                        # true when the slice has no assets (skip scan/art)
 forbidden_changes: [<dirty snapshot verbatim>, <SCOPE.md exclusions>]

@@ -195,7 +195,9 @@ Settles every agent the run will launch: brief author, orchestrator / implemente
    - `brief` (brief_author=`fable` only; game-brief default = `claude --model claude-fable-5-1`)
    - `orchestrator` (producer / fleet coordinator; the implementer when mode=`single`)
    - mode `producer` / `fleet`: `scanner`, `planner`, `writer`, `reviewer`, `art_backend`,
-     `mesh_backend` (3D only); mode `producer` also `judge` (`release.judge_agent`)
+     `mesh_backend` and `mesh_agent` (3D only; `mesh_agent` default `claude --model opus`, the
+     agent that writes Blender generators and judges mesh sheets); mode `producer` also `judge`
+     (`release.judge_agent`)
 5. Hard rules for every combo:
    - Only providers whose status is `ready` / `degraded` / `unverified`; never `unavailable`.
      A `degraded` provider gets light roles only, and the combo says why.
@@ -337,8 +339,8 @@ JSON result, edit **only** these parts:
   `creator_version` / `engine_version` / `cli_version` (cc4), `bootstrapped_at`.
   For 3.8 Funplay: `project_name` from `/health.projectName`, not the slug you typed;
   `funplay_port` from the pin. For cc4: `engine: cocos-cli`, `mcp_port` / `preview_port` from the pin.
-- yaml `fleet:` → the Step 0b combo: `orchestrator_agent` and every `*_agent` / `art_backend` /
-  `mesh_backend` it set, as launch specs (`agent-cmd` / `agent-session` print the canonical
+- yaml `fleet:` → the Step 0b combo: `orchestrator_agent` and every `*_agent` (`mesh_agent`
+  included) / `art_backend` / `mesh_backend` it set, as launch specs (`agent-cmd` / `agent-session` print the canonical
   form as `agentSpec`). Roles the combo did not set keep the skeleton defaults.
 - yaml `release:` → `goal` and `deploy` from intake item 3c (`end_to_end` / `preview` unless
   the user said otherwise); `judge_agent` from the Step 0b combo when it set one. Leave `auto_commit` / `auto_merge` at skeleton defaults unless the

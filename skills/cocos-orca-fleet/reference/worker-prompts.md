@@ -68,7 +68,7 @@ game files, no Editor, no lock, no Funplay, no `orca orchestration` sub-dispatch
 
 Director's request (verbatim): <REQUEST>
 Locks already decided by the coordinator — copy them into the PLAN, never change them:
-art_backend=<ART_BACKEND> mesh_backend=<MESH_BACKEND> studio_available=<BOOL> char_anim_home=<PATH|n/a>
+art_backend=<ART_BACKEND> mesh_backend=<MESH_BACKEND> mesh_agent=<MESH_AGENT> studio_available=<BOOL> char_anim_home=<PATH|n/a>
 planner_agent=<SPEC> writer_agent=<SPEC> reviewer_agent=<SPEC>
 Dirty-worktree snapshot (goes into forbidden_changes verbatim): <DIRTY_FILES>
 

@@ -71,7 +71,7 @@ Do:
      --out <EVIDENCE_ROOT>/art/<ID>/review/<ID>-front.glb --face=-Y
    "$BLENDER" --background --python <CAG>/render_model_iso.py -- \
      --input <EVIDENCE_ROOT>/art/<ID>/review/<ID>-front.glb \
-     --out <EVIDENCE_ROOT>/art/<ID>/model[/round-<n>] --concepts <ART_PATHS>/concepts/<ID>
+     --out <EVIDENCE_ROOT>/art/<ID>/model[/round-<n>] --forward +Z --concepts <ART_PATHS>/concepts/<ID>
 5. Open contact-sheet.png and compare-sheet.png, then write model-check.md:
      ## <ID>.glb — round <n>
      source: gen3d-report.json (high <n> tris → game <n>, coverage <c>, ~<n> credits)

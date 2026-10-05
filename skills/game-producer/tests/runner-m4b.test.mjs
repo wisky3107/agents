@@ -182,7 +182,7 @@ test('fleet lane: gate relayed as text (never resolved by the runner), takeover 
   assert.deepEqual(sp.map((s) => [s.role, s.agent]), [['coordinator', 'claude --model sonnet']]);
   assert.match(sp[0].prompt, /running slice S01/);
   assert.match(sp[0].prompt, /LITE: true/); // no assets and lite_when_no_assets on
-  assert.match(sp[0].prompt, /writer=claude --model sonnet --effort high reviewer=claude --model opus scanner=claude --model sonnet art=antigravity mesh=auto budget=advisory lite=true cursor=on/);
+  assert.match(sp[0].prompt, /writer=claude --model sonnet --effort high reviewer=claude --model opus scanner=claude --model sonnet art=antigravity mesh=auto mesh_agent=claude --model opus budget=advisory lite=true cursor=on/);
   assert.equal(sliceState(p.root, 'S01').run, 'run_1');
   // the branch main was on at selection is where the slice merges back (M4c)
   assert.equal(sliceState(p.root, 'S01').base_branch, spawnSync('git', ['-C', p.root, 'symbolic-ref', '--short', 'HEAD'], { encoding: 'utf8' }).stdout.trim());
@@ -451,7 +451,14 @@ test('locks: policy agents vs yaml, budget mode, lite flag, cursor state, cc4, s
     fs.mkdirSync(path.join(pj.root, '.cursor'), { recursive: true });
     fs.writeFileSync(path.join(pj.root, '.cursor', 'producer-runner.json'), JSON.stringify({ questions: [], cursor_substitute: 'claude --model sonnet --effort high' }));
     assert.deepEqual(cursorUndecided(pj, 'fleet'), []);
-    assert.equal(fleetLocks(pj, 'advisory', true), 'writer=claude --model sonnet --effort high reviewer=claude --model sonnet --effort high scanner=claude --model sonnet --effort high art=antigravity mesh=auto budget=advisory lite=true cursor=off (Cursor roles above already moved by the director)');
+    assert.equal(fleetLocks(pj, 'advisory', true), 'writer=claude --model sonnet --effort high reviewer=claude --model sonnet --effort high scanner=claude --model sonnet --effort high art=antigravity mesh=auto mesh_agent=claude --model opus budget=advisory lite=true cursor=off (Cursor roles above already moved by the director)');
+    // mesh_agent: Cursor off moves it to Opus with no question (a mesh worker needs no image tools)
+    const { meshAgent } = await import('../scripts/lib/lanes.mjs');
+    const withMesh = (spec) => { const p = cur(POLICY); p.fleet.mesh_agent = spec; return p; };
+    assert.equal(meshAgent(withMesh('cursor --model auto')), 'claude --model opus');
+    assert.equal(meshAgent(withMesh('codex')), 'codex');
+    assert.equal(meshAgent(withMesh('art_backend')), 'art_backend');
+    assert.deepEqual(cursorUndecided(withMesh('cursor --model auto'), 'fleet'), []); // never a cursor_off question
     const nc = cursorFleet(cur(`${POLICY} no_cursor=true`));
     assert.deepEqual(cursorUndecided(nc, 'fleet'), []); // the policy decided
     assert.match(fleetLocks(nc, 'advisory', true), /reviewer=claude --model sonnet --effort high .* cursor=off \(Cursor roles/);

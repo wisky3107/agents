@@ -279,7 +279,7 @@ already wrote `bootstrap:` — do not touch it):
   Keep original absolute Unity paths in that block (`unity_project` = `.../ripped/UnityProject/ExportedProject`,
   `primary_content` = `.../ripped/PrimaryContent`, never bare `ripped/`); do not copy the large `ripped/` tree.
 - yaml `fleet:` → the Step 1c lock (combo or pre-noted): `orchestrator_agent`, every `*_agent`,
-  `art_backend`, `mesh_backend` it set, as launch specs (`claude --model opus`,
+  `art_backend`, `mesh_backend`, `mesh_agent` it set, as launch specs (`claude --model opus`,
   `cursor --model gpt-5 --effort high`); roles it did not set keep the skeleton defaults. Its
   Step 6 passes `orchestrator_agent` to `agent-session --agent`.
 - yaml `release:` → `goal` + `deploy` from intake item 4b; `judge_agent` from the Step 1c combo when it set one. Leave `auto_commit` / `auto_merge`

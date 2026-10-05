@@ -113,8 +113,9 @@ to Source=generate. Review checks behavior parity scenarios as well as EXPECT vi
   wiring, and asset import belong to the **integrator** Task.
 - **`.meta` is generated, never authored.** Art produces raw files only; the integrator imports
   them (`refresh_assets`) and verifies every pair.
-- **Generated 3D pipeline is fan-out, concept always Antigravity, route per generated mesh.** Coordinator creates
-  parallel `art-concept-<stem>` (always `agy`) and `art-mesh-<stem>` Tasks with disjoint path
+- **Generated 3D pipeline is fan-out, concept per concept route, route per generated mesh.** Coordinator creates
+  parallel `art-concept-<stem>` (concept route: `agy`, or `codex` with `codex-image-gen` when
+  `art_backend` is gpt-image-gen / codex-image) and `art-mesh-<stem>` Tasks with disjoint path
   allowlists. Mesh work starts only after that stem's `CONCEPT: PASS`; the mesh worker follows
   `cocos-asset-gen` routing (simple → Blender script, complex → 3D Gen Studio, studio down →
   Blender). Verify reads both the 4 iso contact sheet **and** the concept|model compare sheet.
@@ -164,8 +165,11 @@ one line together with the worker locks.
 | `gpt-image-gen` | `--agent codex` | **C**; hero rows via `orca-gpt-image-gen`, the rest via `codex-image-gen` |
 | `codex-image` | `--agent codex` | **C**; every image row via `codex-image-gen` |
 
-`mesh_backend` does not change the agent — the `art-mesh-<stem>` worker (locked `art_backend`)
-runs whichever route the contract selects. When `mesh_backend` resolves to `3dgenstudio` or
+`mesh_backend` does not change the agent. The `art-mesh-<stem>` and `art-anim-<stem>` workers
+launch on the locked **`mesh_agent`** (default `claude --model opus`; the value `art_backend`
+means the agent `art_backend` launches) and run whichever route the contract selects. Concepts
+and 2D stay on `art_backend`. `mesh_agent` on Cursor with Cursor off → `claude --model opus`
+(no ask). When `mesh_backend` resolves to `3dgenstudio` or
 `auto` **and** the PLAN has complex Source=generate meshes, the coordinator runs
 `python3 .cursor/skills/cocos-asset-gen/scripts/gen3d_studio.py --check` once at Step 0.2 and
 records the result in the PLAN (`studio_available: true|false`) so mesh workers do not each
@@ -201,7 +205,7 @@ integrate ← all art-mesh + all art-anim + art-2d + implement
 |---|---|---|---|
 | `art-manifest` | `cursor --model auto` (Cursor off → `claude --model sonnet --effort high`) | `art_paths/manifest.json` skeleton only (rows carry `complexity`, `tri_budget`) | concepts, meshes, evidence art |
 | `art-concept-<stem>` | concept route: `agy --dangerously-skip-permissions`, or `codex` when `art_backend` is gpt-image-gen / codex-image | `art_paths/concepts/<stem>/**` + `evidence/art/<stem>/concept-check.md` | other stems' concepts, any `.glb`, `manifest.json` |
-| `art-mesh-<stem>` | locked `art_backend` (default antigravity) | `art_paths/gen_<stem>_*.py`, `art_paths/gen3d/<stem>/**`, `art_paths/<stem>.glb` (or PLAN name), `evidence/art/<stem>/**`, its `model-check.md`; may patch **only** its manifest row (`complexity`/`concepts`/`verify`) | other stems' files, Creator, `.meta` |
+| `art-mesh-<stem>` | locked `mesh_agent` (default `claude --model opus`) | `art_paths/gen_<stem>_*.py`, `art_paths/gen3d/<stem>/**`, `art_paths/<stem>.glb` (or PLAN name), `evidence/art/<stem>/**`, its `model-check.md`; may patch **only** its manifest row (`complexity`/`concepts`/`verify`) | other stems' files, Creator, `.meta` |
 | `art-anim-<stem>` | locked `art_backend` (needs local Blender + write access to `char_anim_home`) | `<char_anim_home>` files of id `<slug>-<stem>`, `art_paths/<stem>.fbx` (row `file`), `art_paths/<fbf_dir>/**`, `evidence/art/<stem>/anim/**`, `anim-check.md`; may patch **only** its row's `anim_verify` | other characters' pipeline files, pipeline code, Creator, `.meta` |
 | `art-2d` | locked `art_backend` | 2D files under `art_paths` that are not concepts/meshes; `evidence/art/2d/gen_2d.py`; `evidence/art/2d/2d-check.md` (every backend but cursor) | 3D |
 
@@ -260,7 +264,7 @@ authoring)` in the lock line — the point of the field is to keep planning off 
 
 Synonyms at first resolve only: `cursor agent`, `cursor-agent`, `agent` → `cursor --model auto`;
 `agy` → `antigravity`; a bare `claude` → `claude --model opus`. Announce the locks in one line
-(`Workers: scanner=<spec> · planner=<spec|skipped:<reason>> · writer=<spec> · reviewer=<spec> · art=<backend>`)
+(`Workers: scanner=<spec> · planner=<spec|skipped:<reason>> · writer=<spec> · reviewer=<spec> · art=<backend> · mesh_agent=<spec>`)
 and proceed — no choice gate when a value resolves. The reviewer terminal is always fresh even
 when `reviewer_agent` equals `writer_agent`. If the resolved CLI is not on PATH
 (`which cursor-agent|claude|codex|agy`), one `ask` for a substitute from the accepted set, then
@@ -300,7 +304,7 @@ account out (`!`) — then the choice is wait for the reset it prints, or the Ta
 | scan | discover | per locked `scanner_agent` (default `cursor --model auto`; Cursor off: Locks) | `evidence/discovery.md`, `evidence/baseline/` | writes outside evidence dir |
 | art-manifest | writer (assets) | `cursor --model auto`; `claude --model sonnet --effort high` when Cursor is off | `art_paths/manifest.json` skeleton | concepts, meshes |
 | art-concept-<stem> | writer (assets) | concept route (cocos-asset-gen): antigravity, or codex-image when `art_backend` is gpt-image-gen / codex-image | `concepts/<stem>/**`, concept-check block | meshes, other stems |
-| art-mesh-<stem> | writer (assets) | locked `art_backend` (default antigravity); route per `mesh_backend` (Blender script ∣ 3D Gen Studio ∣ fallback Blender) | generator or `gen3d/<stem>/**` + `.glb` for stem, iso/compare evidence, model-check block | other stems, Creator |
+| art-mesh-<stem> | writer (assets) | locked `mesh_agent` (default `claude --model opus`); route per `mesh_backend` (Blender script ∣ 3D Gen Studio ∣ fallback Blender) | generator or `gen3d/<stem>/**` + `.glb` for stem, iso/compare evidence, model-check block | other stems, Creator |
 | art-anim-<stem> | writer (assets) | locked `art_backend`; char-anim-pipeline (`char-anim` skill) | rigged FBX / FBF atlas for stem, anim evidence, anim-check block | other stems, pipeline code, Creator |
 | art-2d | writer (assets) | locked `art_backend` | 2D textures/sprites under `art_paths` per row `method`, gen_2d.py, 2d-check block (every backend but cursor) | 3D concepts/meshes |
 | implement | writer | per locked `writer_agent` (default `claude --model opus --effort high`) | `code_paths` TS | Funplay, lock, scene files, `art_paths` |
@@ -314,7 +318,8 @@ Fleet Progress:
 - [ ] 0.1 First reply line: `Task size: L — <reason> → fleet`
 - [ ] 0.2 Extract ONLY the leading yaml fence of AGENT_NOTES.md (python/sed — do not load
           Notes sections). Lock art_backend (antigravity | cursor | gpt-image-gen | codex-image),
-          mesh_backend (auto | blender | 3dgenstudio), scanner_agent, planner_agent,
+          mesh_backend (auto | blender | 3dgenstudio), mesh_agent (default claude --model opus),
+          scanner_agent, planner_agent,
           writer_agent, reviewer_agent once (prompt > AGENT_NOTES.md > default); Cursor state from
           the producer's `cursor=on|off`, else — when any role, art-manifest included, is on
           Cursor — `agent-ready.mjs --agent cursor` (Locks: off → art-manifest on claude sonnet,
@@ -360,7 +365,7 @@ Fleet Progress:
              and wait for the director. `revise` → the director's notes become the spec of a
              new `plan` Task on the same handle (max 2 rounds), then a new gate. Only an
              approved PLAN unblocks 0.6.
-          In every branch the PLAN must carry: art_backend, mesh_backend, studio_available,
+          In every branch the PLAN must carry: art_backend, mesh_backend, mesh_agent, studio_available,
           scanner_agent, planner_agent (or `given`/`slice`), writer_agent, reviewer_agent; allowed_paths split
           into code_paths / art_paths; allowed_scene_objects; acceptance_criteria as
           observations — including feel/VFX observations (e.g. "merge pops with particles +
@@ -445,8 +450,8 @@ the director or reviewer evidence, and its limitations apply ("not recorded" mea
 | art-manifest | scan | recipe **A** (Cursor) / **B** (Cursor off: claude sonnet) | `manifest.json` skeleton with every mesh/2D row (2D rows carry `method`); `status` to concept + mesh + implement handles |
 | art-import-<stem> (Source=import) | art-manifest | recipe A/B per writer_agent | copied/converted files, route=import check with source/hash + VERDICT PASS; anim-check when applicable |
 | art-concept-<stem> | art-manifest | recipe **C** per the concept route — antigravity or codex (no AGENTS.md boot) | concept PNGs on disk; `CONCEPT: PASS` in `concept-check.md`; `status` to matching mesh handle |
-| art-mesh-<stem> | art-concept-<stem> | recipe A (cursor) / **C** (antigravity · gpt-image-gen / codex-image on codex) | `.glb` + generator; `contact-sheet` + `compare-sheet` + `VERDICT: PASS`; own manifest row `verify` set |
-| art-anim-<stem> | art-mesh-<stem> (animated rows) | recipe A (cursor) / **C** (antigravity · gpt-image-gen / codex-image on codex) | FBX / FBF shipped to `art_paths`; pipeline `qa.json` pass; `ANIM: PASS` in `anim-check.md`; own row `anim_verify` set |
+| art-mesh-<stem> | art-concept-<stem> | `mesh_agent`: recipe A (cursor) / **C** (claude · codex · antigravity) | `.glb` + generator; `contact-sheet` + `compare-sheet` + `VERDICT: PASS`; own manifest row `verify` set |
+| art-anim-<stem> | art-mesh-<stem> (animated rows) | `mesh_agent`: recipe A (cursor) / **C** (claude · codex · antigravity) | FBX / FBF shipped to `art_paths`; pipeline `qa.json` pass; `ANIM: PASS` in `anim-check.md`; own row `anim_verify` set |
 | art-2d | art-manifest | recipe A (cursor) / **C** (antigravity · gpt-image-gen / codex-image on codex) | manifest 2D rows only; no 3D; each file made per its row `method`; non-cursor: `ART2D: PASS` in `evidence/art/2d/2d-check.md` + 2D rows' `verify` (with `tool`) set |
 | implement | scan, art-manifest | recipe A/B per `writer_agent` | tsc clean; `integration-notes.md`; output-contract YAML |
 | integrate | implement, all art-import-*, all art-mesh-*, all art-anim-*, art-2d | reuse implement terminal | lock cycle; `.meta` pairs; preflight / editor-log / diff-stat; preview-startup.json with verified URL or exact blocker |
@@ -472,7 +477,7 @@ Pick the recipe by **role**, then by launch spec:
 |---|---|
 | `art-manifest` on Cursor, Cursor `scan` / `writer` / `reviewer` / `planner` | **A** |
 | `scan`, `plan`, `implement`, `review` on non-Cursor (`claude` / `codex` / `antigravity`), and `art-manifest` on the Cursor fallback | **B** (conditional boot) |
-| every art gen role (`art-concept-*`, `art-mesh-*`, `art-anim-*`, `art-2d`, legacy `art`) on non-Cursor | **C** (no AGENTS.md boot) |
+| every art gen role (`art-concept-*`, `art-mesh-*`, `art-anim-*`, `art-2d`, legacy `art`) on non-Cursor (`art-mesh-*` / `art-anim-*` on `mesh_agent`, Claude included) | **C** (no AGENTS.md boot) |
 | art gen on `cursor` | **A** |
 
 The AGENTS.md startup prompt is for scan/code/plan/review sessions only. Art workers follow
@@ -510,14 +515,14 @@ Claude Teams must retain the Orca `claude-teams` wrapper. Inspect `agent-cmd`'s 
 with `--path <checkout>`: scan/code/plan/review agents without native rules loading need the
 legacy startup turn from worker-prompts.md before task attachment. Art always skips it.
 
-**C — non-Cursor art gen (antigravity / codex for gpt-image-gen and codex-image) — no AGENTS.md boot.**
+**C — non-Cursor art gen (antigravity / codex for gpt-image-gen and codex-image; `mesh_agent` for art-mesh / art-anim) — no AGENTS.md boot.**
 Same terminal create as B, but after the first `tui-idle` attach the Task immediately. Do not
 send the boot prompt; do not wait for `AGENTS.md loaded — …`. The art spec from
 `cocos-asset-gen/reference/worker-prompts-art.md` is the first real turn.
 
 ```bash
 H=$(orca terminal create --worktree id:<wt> --title "<art-role>" \
-  --command "<agent-cmd --agent <locked art spec> --role worker --slice <Sxx> → .command>" --json \
+  --command "<agent-cmd --agent <locked art spec or mesh_agent> --role worker --slice <Sxx> → .command>" --json \
   | jq -r '.result.handle // .result.terminal.handle')
 orca terminal wait --terminal "$H" --for tui-idle --timeout-ms 90000 --json
 # NO boot prompt here

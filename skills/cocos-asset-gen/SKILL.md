@@ -25,16 +25,29 @@ first turn (see `cocos-orca-fleet` Worker start recipes).
 
 | Key (`fleet:` yaml) | Default | Values | Meaning |
 |---|---|---|---|
-| `art_backend` | `antigravity` | `antigravity` · `cursor` · `gpt-image-gen` · `codex-image` | who authors 2D files and Blender mesh generators |
+| `art_backend` | `antigravity` | `antigravity` · `cursor` · `gpt-image-gen` · `codex-image` | who makes concepts and 2D files |
 | `mesh_backend` | `auto` | `auto` · `blender` · `3dgenstudio` | how `.glb` meshes are produced (see routing) |
+| `mesh_agent` | `claude --model opus` | a fleet launch spec (`claude --model <m> [--effort <e>]` · `codex` · `cursor --model <m>` · `antigravity`) · `art_backend` | who runs `art-mesh-<stem>` and `art-anim-<stem>`: writes the Blender generator, runs the studio route, judges the sheets |
 
 Synonyms at first resolve only: `agy` → `antigravity`; `gpt image` / `chatgpt image` /
 `orca-gpt-image-gen` → `gpt-image-gen`; `codex image` / `omniroute image` / `codex-image-gen` →
-`codex-image`; `3dgs` / `gen studio` / `tripo` → `3dgenstudio`; `script` / `bpy` → `blender`.
-Announce `Art: backend=<v> · mesh=<v>` once; never re-ask or switch mid-task. `gpt-image-gen`
+`codex-image`; `3dgs` / `gen studio` / `tripo` → `3dgenstudio`; `script` / `bpy` → `blender`;
+`mesh_agent` `opus` / bare `claude` → `claude --model opus`, `agy` → `antigravity`, and
+`art_backend` → the agent that `art_backend` launches (the pre-2026-10 behaviour).
+Announce `Art: backend=<v> · mesh=<v> · mesh_agent=<spec>` once; never re-ask or switch mid-task. `gpt-image-gen`
 without the `orca-gpt-image-gen` skill installed, or `codex-image` when
 `node ~/.agents/skills/codex-image-gen/scripts/codex-image.mjs check` exits 2 → one `ask` to
-pick another backend.
+pick another backend. `mesh_agent` on Cursor with Cursor off → `claude --model opus`, said in
+the announce line (unlike `art_backend`, a mesh worker needs no image tools, so claude is a
+full substitute).
+
+**Why `mesh_agent` defaults to Opus.** Two blind A/B rounds on 8 meshes (2026-10-05,
+`~/Works/games/pilots/opus-bpy-2026-10-05` and `…-r2-2026-10-05`, `results/results.md`): four
+simple cc-bus-fever-party meshes and four coloured hard-surface ones (fire truck, double-decker,
+kiosk, boom barrier), same spec for both arms. The director picked the Opus generator 7 times,
+tied once and never picked Antigravity; Opus meshes were shippable 7/8 against 6/8. Opus took
+~8 min a mesh against ~14 for Antigravity (Gemini 3.8 Flash), ~100–140k tokens, with generators
+half as long and 1–5 nodes per mesh instead of up to 45.
 
 **OpenAI image lanes.** `gpt-image-gen` splits by row with the `codex-image-gen` "Pick the
 backend" rule: rows with `"tier": "hero"` go through `orca-gpt-image-gen` (ChatGPT,
@@ -109,9 +122,18 @@ Ties → `simple` (cheaper, deterministic, no credits). The chosen route and the
 
 ### Route A — Blender generator (simple, or fallback)
 
-Unchanged from the classic fleet flow: `art_paths/gen_<stem>_*.py` reproducible generator that
-cites the concept paths, exports `art_paths/<stem>.glb` at manifest dims/pivot/forward, then
-verify (below). Blender missing → one `ask`.
+The `mesh_agent` worker writes `art_paths/gen_<stem>_*.py`: a reproducible generator that
+cites the concept paths, builds from a factory-empty scene, and exports `art_paths/<stem>.glb`
+at manifest dims/pivot/forward, then verify (below). Blender missing → one `ask`.
+
+Generator habits that held up in the pilot:
+- Few nodes: one body mesh plus a separate node only where the manifest asks for one (a decal
+  plate, a part the code moves). Windows, lamps and grilles are cut into the body shell, not
+  closed boxes with hidden backs. Fewer nodes mean fewer draw calls.
+- Bevel with per-edge bevel weights. A bevel with `clamp_overlap` shrinks to the shortest edge.
+- A closed part's signed volume must be positive. Have the generator check it and fail loudly.
+- Spend the triangle budget where the game camera sees it, and print tris per part while
+  tuning.
 
 ### Route B — 3D Gen Studio (complex)
 
@@ -162,11 +184,17 @@ BLENDER="${BLENDER_BIN:-$(command -v blender || echo /Applications/Blender.app/C
   --input <art_paths>/<MODEL_FILE> \
   --out .cursor/evidence/tasks/<T>/art/<stem>[/round-<n>] \
   --expect-dims "<x,y,z from manifest>" \
+  --forward <manifest forward, e.g. -Z> \
   --concepts <art_paths>/concepts/<stem>
 ```
 
 Writes `iso-{ne,nw,sw,se}.png`, `contact-sheet.png`, `match-*.png`, `compare-sheet.png`
-(concept | model rows), `stats.json`. The worker **Reads** contact-sheet, compare-sheet,
+(concept | model rows), `stats.json`. `expect_dims` is glTF order (x width, y height, z depth),
+which the script reads by default; `--forward` places the front / three-quarter / back cameras
+on the side the model faces. Workbench shows vertex colours only when every mesh has them;
+`render_notes` in stats.json says when to re-render with `--engine eevee` to judge colour. The
+normals flag counts closed parts that are inside out (negative volume) and edges between faces
+of opposite winding; a ring, a concave shape or an inner wall no longer trips it. The worker **Reads** contact-sheet, compare-sheet,
 stats.json and the concept PNGs, then writes `evidence/art/<stem>/model-check.md`:
 
 ```

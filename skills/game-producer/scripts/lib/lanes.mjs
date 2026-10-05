@@ -211,6 +211,17 @@ export const fleetIsLite = (project, id) => liteWhenNoAssets(project) && !hasAss
 export const cursorArtBlocked = (project, id) =>
   project.fleet.art_backend === 'cursor' && !fleetIsLite(project, id) && cursorState(project).state === 'off';
 
+/**
+ * Who runs art-mesh / art-anim. Default Opus (2026-10-05 blind pilots, 8 meshes: 7 wins, 1 tie, 0 losses).
+ * Unlike art_backend it has a claude substitute, so Cursor off moves it to Opus without a question.
+ */
+export const MESH_AGENT_DEFAULT = 'claude --model opus';
+export function meshAgent(project) {
+  const spec = project.fleet.mesh_agent || MESH_AGENT_DEFAULT;
+  if (spec === 'art_backend') return spec;
+  return family(spec) === 'cursor' && cursorState(project).state === 'off' ? MESH_AGENT_DEFAULT : spec;
+}
+
 /** The fleet's locks line, `cursor=on|off` last so the coordinator need not probe again. */
 export function fleetLocks(project, budget, lite) {
   const f = project.fleet;
@@ -218,7 +229,7 @@ export function fleetLocks(project, budget, lite) {
   const pick = (spec) => agentFor(project, spec) || spec;
   const swapped = [f.writer_agent, f.reviewer_agent, f.scanner_agent || f.orchestrator_agent].some((x) => pick(x) !== x);
   return `writer=${pick(f.writer_agent)} reviewer=${pick(f.reviewer_agent)} scanner=${pick(f.scanner_agent || f.orchestrator_agent)} ` +
-    `art=${f.art_backend || 'antigravity'} mesh=${f.mesh_backend || 'auto'} budget=${budget} lite=${lite} cursor=${cursor.state}` +
+    `art=${f.art_backend || 'antigravity'} mesh=${f.mesh_backend || 'auto'} mesh_agent=${meshAgent(project)} budget=${budget} lite=${lite} cursor=${cursor.state}` +
     (swapped ? ' (Cursor roles above already moved by the director)' : '');
 }
 

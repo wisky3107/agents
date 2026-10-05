@@ -46,7 +46,8 @@ Do:
 1. Write manifest.json listing every planned asset row from PLAN (meshes + 2D). Mesh rows include
    source=import/generate from ASSET_MANIFEST. Imported rows preserve source format, existing
    rig/clip inventory and exact source_path; the generated FBX defaults below do not rewrite them.
-   file, format, expect_dims [x,y,z] in Blender/export order, pivot, forward, intended_node,
+   file, format, expect_dims [x,y,z] in glTF order (x width, y height/up, z depth), pivot,
+   forward (glTF axis the front faces, default -Z), intended_node,
    notes, tri_budget, "complexity": "simple" | "complex" (cocos-asset-gen SKILL.md routing table;
    ties → simple), "concepts": [], "verify": null. Do not invent assets beyond change_budget.
    A character that must move (PLAN lists clips / sprite animation for it) is an **animated** row:
@@ -151,10 +152,11 @@ On PASS, send status to the art-mesh handle; art-anim waits on the mesh.
 
 ---
 
-## art-mesh-<stem> (per locked art_backend; mesh_backend decides the route)
+## art-mesh-<stem> (locked mesh_agent; mesh_backend decides the route)
 
-Launch: `cursor` art_backend → recipe **A**; `antigravity` / `gpt-image-gen` / `codex-image` (codex)
-→ recipe **C** (no AGENTS.md boot — art spec is the first turn).
+Launch on the locked `mesh_agent` (default `claude --model opus`; `art_backend` means the agent
+`art_backend` launches): `cursor` → recipe **A**; `claude` / `codex` / `antigravity` → recipe
+**C** (no AGENTS.md boot — art spec is the first turn).
 
 ```text
 ROLE: writer (assets) — one mesh. Depends on art-concept-<STEM> CONCEPT: PASS.
@@ -190,8 +192,9 @@ Do:
      "$BLENDER" --background --python .cursor/skills/cocos-asset-gen/scripts/render_model_iso.py -- \
        --input <ART_PATHS>/<MODEL_FILE> \
        --out <EVIDENCE_ROOT>/art/<STEM>[/round-<n>] \
-       --expect-dims "<x,y,z>" \
+       --expect-dims "<x,y,z from the row, glTF order>" --forward <row forward> \
        --concepts <ART_PATHS>/concepts/<STEM>
+     (add --engine eevee when stats.json render_notes asks for it, or to judge vertex colours)
 5. Read contact-sheet.png, compare-sheet.png, stats.json, the concept PNGs (and gen3d-report.json
    on route 3B). Write evidence/art/<STEM>/model-check.md (per-stem file):
      ## <MODEL_FILE> — round <n>
@@ -222,10 +225,10 @@ Route is always 3dgenstudio (a Blender primitive figure cannot be rigged). Studi
 no Blender fallback. Use --target-tris 30000 --lod-ratios 0.5 --collision none.
 Do NOT cp the glb to <MODEL_FILE>: the static mesh stays in gen3d/<STEM>/, and art-anim ships
 the rigged file.
-Studio glbs face +X; render_model_iso's front camera expects -Y. Render a turned copy:
+Studio glbs face +X. Render a turned copy that faces Blender -Y (glTF +Z):
   <CHAR_ANIM_HOME>/anim normalize <ART_PATHS>/gen3d/<STEM>/<STEM>.glb \
     --out <EVIDENCE_ROOT>/art/<STEM>/review/<STEM>-front.glb --face=-Y
-and pass that copy as --input (omit --expect-dims; normalize scales to 1.7 m).
+and pass that copy as --input with --forward +Z (omit --expect-dims; normalize scales to 1.7 m).
 model-check.md adds: rig readiness: PASS|FAIL — one humanoid, arms clear of the torso, two
 separate legs down to the feet, hands present, no fused props.
 PASS → send status "mesh ready" to the art-anim handle, with body <ART_PATHS>/gen3d/<STEM>/<STEM>.glb.
@@ -233,9 +236,10 @@ PASS → send status "mesh ready" to the art-anim handle, with body <ART_PATHS>/
 
 ---
 
-## art-anim-<stem> (locked art_backend; char-anim-pipeline)
+## art-anim-<stem> (locked mesh_agent; char-anim-pipeline)
 
-Launch: like art-mesh (`cursor` → recipe **A**; antigravity / codex → recipe **C**). The worker
+Launch: like art-mesh, on the locked `mesh_agent` (`cursor` → recipe **A**; claude / codex /
+antigravity → recipe **C**). The worker
 needs local Blender, and write access to `<CHAR_ANIM_HOME>` (PLAN `char_anim_home`, default
 `/Users/wikz/Works/agent/char-anim-pipeline`), which lives outside the worktree.
 
@@ -400,7 +404,7 @@ Done: worker_done --files-modified.
 Concept findings → new art-concept-<stem> (concept route) must re-PASS concept-check before remesh.
 Mesh / compare-sheet findings → art-mesh-<stem>: Blender route re-exports; 3dgenstudio route
 reruns gen3d_studio.py --source-glb <stem>_high.glb (finishing) or regenerates once when the
-silhouette is the finding; both re-run render_model_iso.py with --concepts into round-<n+1>.
+silhouette is the finding; both re-run render_model_iso.py with --forward and --concepts into round-<n+1>.
 Closed only by new CONCEPT: PASS (when needed) + VERDICT: PASS with both sheets on disk.
 Animation findings (pose, timing, events, clipping) → art-anim-<stem>: edit the clip in
 jobs/<ANIM_ID>-core.json, then `anim run --clips <clip>`, re-ship, and write a new anim-check round.

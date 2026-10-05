@@ -2,7 +2,7 @@
 
 Replace `<PROJECT>`, `<Sxx>`, `<SLICE_FILE>`, `<ENGINE_LINE>`, `<DIRECTOR_DECISIONS>`, `<LITE>`
 (`true` when the slice's `assets` block is empty and `fleet_lite_when_no_assets` is on), `<BUDGET_MODE>`
-(`advisory` or `gate:<pct>`), `<FLEET_LOCKS>` (one line: `writer=<spec> reviewer=<spec> scanner=<spec> art=<backend> mesh=<backend> budget=<BUDGET_MODE> lite=<bool> cursor=<on|off>`;
+(`advisory` or `gate:<pct>`), `<FLEET_LOCKS>` (one line: `writer=<spec> reviewer=<spec> scanner=<spec> art=<backend> mesh=<backend> mesh_agent=<spec> budget=<BUDGET_MODE> lite=<bool> cursor=<on|off>`;
 `cursor` is the runner's one `agent-ready.mjs --agent cursor` probe, or `off` under policy `no_cursor`;
 when the runner moved Cursor specs to the director's substitute the line ends with
 ` (Cursor roles above already moved by the director)`),

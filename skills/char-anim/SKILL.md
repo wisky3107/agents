@@ -88,16 +88,16 @@ python3 $CAG/gen3d_studio.py --image <art>/concepts/<id>/concept-front.png --ste
   `seam_limited` false. If the finishing pass needs fixing, rerun with
   `--source-glb <art>/gen3d/<id>/<id>_high.glb` (costs no credits, at most twice). Generate
   again only when the silhouette itself is wrong. In that case fix the concept first.
-- Review render: studio glbs face +X, but `render_model_iso.py` expects -Y. Turn a copy first:
+- Review render: studio glbs face +X. Turn a copy to face Blender -Y (glTF +Z) first:
   ```bash
   $CHAR_ANIM_HOME/anim normalize <art>/gen3d/<id>/<id>.glb --out evidence/art/<id>/review/<id>-front.glb \
     --face=-Y --height <height_m>
   "$BLENDER" -b --python $CAG/render_model_iso.py -- --input evidence/art/<id>/review/<id>-front.glb \
-    --out evidence/art/<id>/model[/round-<n>] --concepts <art>/concepts/<id>
+    --out evidence/art/<id>/model[/round-<n>] --forward +Z --concepts <art>/concepts/<id>
   ```
-  `render_model_iso` often warns "N faces point inward → flipped normals" on studio meshes with
-  thin limbs. Trust the renders over that line: flipped normals show as dark or see-through
-  patches in the sheets.
+  The normals flag only counts closed parts that are inside out, so studio meshes with thin
+  limbs no longer trip it falsely. Still trust the renders: flipped normals show as dark or
+  see-through patches in the sheets.
 - Open `compare-sheet.png` and `contact-sheet.png`. Write `evidence/art/<id>/model-check.md`
   covering concept match (front / three-quarter / back rows), arms clear of the torso, the legs
   as two separate columns down to the feet, hands present, no fused props, and the tri budget.
