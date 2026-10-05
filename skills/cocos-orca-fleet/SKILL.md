@@ -119,7 +119,7 @@ to Source=generate. Review checks behavior parity scenarios as well as EXPECT vi
   allowlists. Mesh work starts only after that stem's `CONCEPT: PASS`; the mesh worker follows
   `cocos-asset-gen` routing (simple → Blender script, complex → 3D Gen Studio, studio down →
   Blender). Verify reads both the 4 iso contact sheet **and** the concept|model compare sheet.
-  Integrator needs `CONCEPT: PASS` + `VERDICT: PASS` per mesh. An **animated** character
+  Integrator needs `CONCEPT: PASS` + `VERDICT: PASS` + a `look-check.md` (advisory) per mesh. An **animated** character
   (manifest `animated`) adds `art-anim-<stem>` after its mesh (A-pose concept, rig + clips via
   `char-anim`), and the integrator also needs `ANIM: PASS`.
 - **Integrator prepares preview before review.** For 3.8, verify the pinned Funplay
@@ -173,7 +173,13 @@ and 2D stay on `art_backend`. `mesh_agent` on Cursor with Cursor off → `claude
 `auto` **and** the PLAN has complex Source=generate meshes, the coordinator runs
 `python3 .cursor/skills/cocos-asset-gen/scripts/gen3d_studio.py --check` once at Step 0.2 and
 records the result in the PLAN (`studio_available: true|false`) so mesh workers do not each
-discover the outage; `false` under `auto` → say `mesh=auto (studio down → blender)`.
+discover the outage. App not running → open it yourself (`open -a "3D Gen Studio"`, wait for
+`/api/health`) and probe again before asking anyone. Still `false` with complex Source=generate
+meshes → one `ask` for all of them before any mesh Task, quoting the probe's reason (no key,
+Tripo balance below one generation, studio unreachable): "<reason>: fix it and I re-probe, or
+accept a Blender block-out for <stems>?". Record the answer as `fallback_ok: true|false` in the
+PLAN (a re-probe that succeeds sets `studio_available: true`). Never buy credits. Blender is a full substitute for hard-surface
+meshes but gives organic ones a block-out, so this is never silent.
 When the PLAN has **animated** characters requiring new rig/clip generation, Step 0.2 also checks `test -x <char_anim_home>/anim`
 and Blender. `char_anim_home` resolves as prompt > `AGENT_NOTES.md` `fleet.char_anim_home` >
 `/Users/wikz/Works/agent/char-anim-pipeline`. Record `char_anim_home` in the PLAN. Generated animated rows always need
@@ -221,7 +227,10 @@ integrate ← all art-mesh + all art-anim + art-2d + implement
 - Start every `art-concept-*` together as soon as `art-manifest` is done (and in parallel with
   `implement` + `art-2d`).
 - Start `art-mesh-<stem>` only when that stem's concept worker reports `worker_done` with
-  `CONCEPT: PASS` (peer `status` to the mesh handle is enough; coordinator also gates).
+  `CONCEPT: PASS` (peer `status` to the mesh handle is enough; coordinator also gates). A
+  `proportions: WARN` in concept-check.md is the coordinator's call before that start: keep the
+  manifest size, or patch the row's `expect_dims` to the measured `height_for_concept`, and
+  say which in the mesh spec.
 - Disjoint allowlists are mandatory so parallel writers never collide. Shared `manifest.json`:
   `art-manifest` writes the skeleton; each mesh worker updates **only its own asset row** with a
   read-modify-write; concept workers do not edit the manifest.
@@ -233,8 +242,9 @@ integrate ← all art-mesh + all art-anim + art-2d + implement
 
 **Gates the fleet enforces downstream:** a generated mesh imports only with
 `evidence/art/<stem>/concept-check.md` → `CONCEPT: PASS`, `evidence/art/<stem>/model-check.md`
-→ `VERDICT: PASS` (with `route:` line), and both `contact-sheet.png` + `compare-sheet.png` on
-disk; an imported mesh instead requires route=import, source/hash, conversion and
+→ `VERDICT: PASS` (with `route:` line), `evidence/art/<stem>/look-check.md` (independent look
+check; a LOOK FAIL is advisory, so the integrator imports and the reviewer weighs the open items
+listed in model-check.md), and both `contact-sheet.png` + `compare-sheet.png` on disk; an imported mesh instead requires route=import, source/hash, conversion and
 source-comparison evidence with `VERDICT: PASS`; it has no concept gate. Reviewer opens the
 comparison evidence and may overturn. For animated rows the integrator
 also needs `evidence/art/<stem>/anim-check.md` → `ANIM: PASS` and the row's `anim_verify`, and imports the FBX
@@ -366,6 +376,7 @@ Fleet Progress:
              new `plan` Task on the same handle (max 2 rounds), then a new gate. Only an
              approved PLAN unblocks 0.6.
           In every branch the PLAN must carry: art_backend, mesh_backend, mesh_agent, studio_available,
+          fallback_ok (when studio_available is false),
           scanner_agent, planner_agent (or `given`/`slice`), writer_agent, reviewer_agent; allowed_paths split
           into code_paths / art_paths; allowed_scene_objects; acceptance_criteria as
           observations — including feel/VFX observations (e.g. "merge pops with particles +

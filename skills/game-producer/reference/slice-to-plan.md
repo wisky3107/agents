@@ -21,6 +21,7 @@ art_backend: <backend>
 mesh_backend: <backend>
 mesh_agent: <spec>                        # art-mesh / art-anim worker; default claude --model opus
 studio_available: <bool | n/a>
+fallback_ok: <bool | n/a>                 # studio down: director accepted a Blender block-out for complex meshes
 lite: <true|false>                        # true when the slice has no assets (skip scan/art)
 forbidden_changes: [<dirty snapshot verbatim>, <SCOPE.md exclusions>]
 budget_mode: <advisory|gate>              # SCOPE.md budget_mode; missing → advisory

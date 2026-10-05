@@ -46,7 +46,18 @@ TRIPO_API_ID = "tripo_meshgeneration"
 
 def _request(url: str, data: bytes | None = None, headers: dict | None = None, method: str | None = None, timeout: int = 120):
     req = urllib.request.Request(url, data=data, headers=headers or {}, method=method or ("POST" if data else "GET"))
-    return urllib.request.urlopen(req, timeout=timeout)
+    try:
+        return urllib.request.urlopen(req, timeout=timeout)
+    except urllib.error.HTTPError as exc:
+        # The studio answers {"error": "..."}: keep the reason (e.g. Tripo "not enough credit"),
+        # not just "HTTP Error 500".
+        body = exc.read().decode(errors="replace")
+        try:
+            parsed = json.loads(body)
+            reason = parsed.get("error") or parsed.get("message") or body
+        except (json.JSONDecodeError, AttributeError):
+            reason = body
+        raise RuntimeError(f"HTTP {exc.code} from {url}: {str(reason)[:300]}") from exc
 
 
 def get_json(url: str, timeout: int = 20):
@@ -285,6 +296,31 @@ class Studio:
             return res.read()
 
 
+TRIPO_BALANCE_URL = "https://api.tripo3d.ai/v2/openapi/user/balance"
+
+
+def tripo_balance(key: str) -> int | None:
+    """Credits left on the Tripo account behind the studio's key; None when Tripo can't be asked."""
+    try:
+        res = get_json_auth(TRIPO_BALANCE_URL, key)
+        return int(res["data"]["balance"])
+    except Exception:  # noqa: BLE001 — an unknown balance must not block a run that may still work
+        return None
+
+
+def get_json_auth(url: str, key: str, timeout: int = 15):
+    with _request(url, headers={"Authorization": f"Bearer {key}"}, timeout=timeout) as res:
+        return json.loads(res.read().decode())
+
+
+def credits_needed(args) -> int:
+    """Tripo cost of one generation with these options (walkthrough §3)."""
+    credits = 30 if not args.tripo_no_texture else 20
+    credits += 10 if args.tripo_texture_quality == "detailed" else 0
+    credits += 10 if args.tripo_smart_low_poly else 0
+    return credits
+
+
 def discover(log=print) -> tuple[Studio | None, list[str]]:
     reasons = []
     for url in candidate_urls():
@@ -457,9 +493,17 @@ def main(argv=None) -> int:
     has_key = bool(studio.tripo_key)
     log(f"  tripo key: {'configured' if has_key else 'MISSING'} · mesh-tools {studio.meshtools}: {'up' if meshtools_up else 'down'}")
 
+    balance = tripo_balance(studio.tripo_key) if has_key else None
+    need = credits_needed(args)
+    if has_key:
+        log(f"  tripo credits: {'unknown (balance check failed)' if balance is None else balance} · one generation needs {need}")
+    short = balance is not None and balance < need
+
     if args.check:
-        ok = has_key
-        log("[gen3d] " + ("USABLE" if ok else "UNAVAILABLE (no Tripo API key in Settings → Tripo AI)"))
+        ok = has_key and not short
+        reason = ("no Tripo API key in Settings → Tripo AI" if not has_key else
+                  f"Tripo balance {balance} credits < {need} needed; top up at tripo3d.ai or use --source-glb")
+        log("[gen3d] " + ("USABLE" if ok else f"UNAVAILABLE ({reason})"))
         if not meshtools_up:
             log("  note: mesh-tools down → bake/collision would be skipped; start it from Settings → Mesh Tools")
         return EXIT_OK if ok else EXIT_UNAVAILABLE
@@ -470,13 +514,17 @@ def main(argv=None) -> int:
     if (args.image or args.prompt) and not has_key:
         log("[gen3d] UNAVAILABLE: Tripo API key not configured")
         return EXIT_UNAVAILABLE
+    if (args.image or args.prompt) and short:
+        log(f"[gen3d] UNAVAILABLE: Tripo balance {balance} credits < {need} needed")
+        return EXIT_UNAVAILABLE
 
     out_dir = (args.out_dir or pathlib.Path.cwd()).resolve()
     evidence_dir = (args.evidence_dir or out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     evidence_dir.mkdir(parents=True, exist_ok=True)
     stem = args.stem
-    report: dict = {"route": "3dgenstudio", "stem": stem, "studio": studio.base, "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    report: dict = {"route": "3dgenstudio", "stem": stem, "studio": studio.base, "tripo_balance_before": balance,
+                    "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
                     "steps": {}, "warnings": []}
 
     try:
@@ -495,9 +543,7 @@ def main(argv=None) -> int:
             log("[gen3d] generating with Tripo…")
             high, gen_info = generate_tripo(studio, project_id, stem, prompt=args.prompt, image_asset=image_asset,
                                             opts=tripo_opts, poll_s=args.poll_seconds, timeout_s=args.timeout_seconds, log=log)
-            credits = 30 if not args.tripo_no_texture else 20
-            credits += 10 if args.tripo_texture_quality == "detailed" else 0
-            credits += 10 if args.tripo_smart_low_poly else 0
+            credits = credits_needed(args)
             report["steps"]["generate"] = {**gen_info, "options": tripo_opts, "credits_estimate": credits,
                                            "input": "image" if image_asset else "prompt"}
         high_stats = glb_stats(high)

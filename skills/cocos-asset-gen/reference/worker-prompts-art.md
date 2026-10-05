@@ -130,11 +130,16 @@ Do:
      style: PASS|FAIL — vs GAME_BRIEF / PLAN
      anatomy: PASS|FAIL — ...
      cross-angle consistency: PASS|FAIL — front/3/4/back are the same design
-     CONCEPT: PASS | CONCEPT: FAIL — <reason>
+     proportions: PASS|WARN — `python3 ~/.agents/skills/cocos-asset-gen/scripts/concept_ratio.py
+       --image <ART_PATHS>/concepts/<STEM>/concept-front.png --expect-dims "<row expect_dims>"
+       --forward <row forward>` → concept W:H vs manifest W:H (WARN = exit 1; quote height_for_concept)
+     signature features: <the 3-6 parts that make this design recognisable — the look check uses them>
+     CONCEPT: PASS | CONCEPT: FAIL — <reason>   (a proportions WARN alone does not fail the concept)
 3. CONCEPT FAIL → regenerate (max 2 rounds). No PASS → worker_done --outcome failed; do not
    signal the mesh worker to start.
 4. On PASS: `orca orchestration send --type status --to <MESH_HANDLE> --subject "concept ready"
-   --body "<concepts dir>"` then worker_done listing the PNGs.
+   --body "<concepts dir>"` then worker_done listing the PNGs. A proportions WARN goes in the
+   worker_done summary too: the coordinator settles expect_dims before the mesh starts.
 
 Never: write .glb / generators; edit other stems; edit manifest.json; open Creator.
 ```
@@ -173,8 +178,9 @@ Do:
      3dgenstudio  → probe `python3 .cursor/skills/cocos-asset-gen/scripts/gen3d_studio.py --check`;
                     exit 0 → 3B; exit 2 → ask once ("studio down: wait or Blender?") unless the
                     PLAN says fallback_ok → 3A
-     auto         → complexity simple → 3A; complex → probe; exit 0 → 3B; exit 2 → 3A and note
-                    "fallback: studio unavailable" in model-check.md
+     auto         → complexity simple → 3A; complex → probe; exit 0 → 3B; exit 2 → 3A only
+                    when the PLAN says fallback_ok: true (note "fallback: studio unavailable" in
+                    model-check.md); otherwise ask once ("studio down: open it, or Blender block-out?")
 3A. BLENDER: write <ART_PATHS>/gen_<STEM>_*.py citing the concept paths as source of truth;
     export <ART_PATHS>/<MODEL_FILE> at manifest dims / pivot / forward; respect tri_budget.
 3B. 3D GEN STUDIO:
@@ -206,13 +212,24 @@ Do:
      concept match: PASS|FAIL — cite front / threequarter / back rows of compare-sheet
      pivot/axis: PASS|FAIL
      VERDICT: PASS | VERDICT: FAIL — <reason>
-6. FAIL → fix (3A: generator; 3B: finishing rerun or, if the silhouette itself is wrong, one
+6. Your VERDICT: PASS → independent look check on the same round:
+     python3 ~/.agents/skills/cocos-asset-gen/scripts/look_check.py --stem <STEM> \
+       --concepts <ART_PATHS>/concepts/<STEM> --render <EVIDENCE_ROOT>/art/<STEM>/round-<n> \
+       --out <EVIDENCE_ROOT>/art/<STEM>/look-check.md --dims "<x,y,z>" --tri-budget <tri_budget> \
+       --features "<signature features line of concept-check.md>" --round <n>
+   LOOK: FAIL with rounds left → treat its items as this round's findings (VERDICT: FAIL — look).
+   LOOK: FAIL on the last round → keep your verdict, add to model-check.md
+   `look: FAIL (advisory) — <item>: <why it ships anyway>` per item; the reviewer decides.
+   Exit 2 (judge unavailable) → note `look: not run — <reason>`.
+7. FAIL → fix (3A: generator; 3B: finishing rerun or, if the silhouette itself is wrong, one
    regeneration with a better prompt/concept), re-render into round-<n+1> (max 3). PASS → patch
    only this manifest row:
      "complexity": "<value>", "concepts": [...],
      "verify": {"status":"PASS","route":"<route>","evidence":"<contact-sheet>",
-                "compare":"<compare-sheet>","concept":"<concept-front>","round":n}
-7. worker_done --files-modified (list the .glb, LODs, collision, maps, and evidence files).
+                "compare":"<compare-sheet>","concept":"<concept-front>","round":n,
+                "look":"PASS|FAIL (advisory)|not run"}
+8. worker_done --files-modified (list the .glb, LODs, collision, maps, and evidence files,
+   look-check.md included).
 
 Never: touch other stems; create .meta; open Creator; skip --concepts; PASS without opening
 compare-sheet.png; ship the Tripo high-poly as the asset; pick 3dgenstudio for a simple prop.

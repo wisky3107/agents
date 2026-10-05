@@ -85,6 +85,15 @@ Concept pack: `concept-front.png`, `concept-threequarter.png`, `concept-back.png
 `CONCEPT: PASS|FAIL` (max 2 rounds). No PASS → no mesh. The concept-front is also the
 image-to-3D input for the studio route.
 
+The concept check also measures proportions, because neither the worker nor a reviewer judges
+them reliably by eye:
+`python3 <scripts>/concept_ratio.py --image <concepts>/<stem>/concept-front.png --expect-dims "<x,y,z>" --forward <f>`.
+It compares the subject's width:height with the manifest row's. Exit 1 → `proportions: WARN`
+with the measured ratio and `height_for_concept`. The coordinator then picks the manifest size
+or the concept's ratio before the mesh starts, so the mesh worker never has to choose. On the
+2026-10-05 pilots it flagged env_lot (thick tray vs a 0.1 m slab, unshippable in both arms),
+bus_small and double_decker, and confirmed the pig at 0.5 × 0.5.
+
 **Concept route** (who makes the pack):
 - `art_backend` `antigravity` or `cursor` → an Antigravity worker with its own image tools.
   When that image tool returns HTTP 429 or a quota error, the same worker makes the pack with
@@ -104,8 +113,16 @@ mesh_backend = auto (default):
     complexity == simple    → Blender route
     complexity == complex   → probe gen3d_studio.py --check
                                 exit 0 → 3D Gen Studio route
-                                exit 2 → Blender route (record "fallback: studio unavailable")
+                                exit 2 → PLAN fallback_ok: true → Blender route (record
+                                         "fallback: studio unavailable"); otherwise one ask
 ```
+
+**Studio down for a complex mesh is a director decision.** Blender is a full substitute for
+hard-surface shapes. For organic ones it gives a block-out: the 2026-10-05 pig came out with
+slab ears and a boxy body. So the coordinator probes once at Step 0.2 and, when the studio is down
+and the PLAN has complex Source=generate meshes, asks once for all of them: "open 3D Gen Studio
+and re-probe, or accept a Blender block-out for <stems>". The answer goes into the PLAN as
+`fallback_ok: true|false`, and mesh workers read it instead of asking again.
 
 `complexity` is set per manifest row by `art-manifest` (`"complexity": "simple" | "complex"`).
 Missing → the mesh worker classifies from the concept + row `notes` and writes the value back
@@ -139,8 +156,12 @@ Generator habits that held up in the pilot:
 
 Precondition (the `--check` probe does all of it): 3D Gen Studio desktop app running (backend
 `http://127.0.0.1:3001`, port auto-discovered from its `runtime.json`), **Tripo AI API key**
-set in Settings → Tripo AI, Mesh Tools python service up (`:8200`; without it bake/collision
-are skipped and reported). ComfyUI is **not** required for this route.
+set in Settings → Tripo AI, enough **Tripo credits** for one generation (the probe reads the
+account balance; short → exit 2, which goes to the `fallback_ok` question like a closed studio),
+Mesh Tools python service up (`:8200`; without it bake/collision are skipped and reported).
+ComfyUI is **not** required for this route. The coordinator may open the app itself
+(`open -a "3D Gen Studio"`, then wait for `/api/health`) before probing; it never buys credits.
+Studio errors carry the server's reason (e.g. "not enough credit"), not a bare HTTP 500.
 
 ```bash
 GEN3D=.cursor/skills/cocos-asset-gen/scripts/gen3d_studio.py
@@ -210,8 +231,24 @@ VERDICT: PASS | VERDICT: FAIL — <reason>
 ```
 
 Topology CLEAN that fails a compare-sheet row is still FAIL. Max 3 mesh rounds after a PASSed
-concept, then `ask` with the sheets. PASS → patch only this manifest row:
-`"verify": {"status":"PASS","route":"<route>","evidence":"<contact-sheet>","compare":"<compare-sheet>","concept":"<concept-front>","round":n}`.
+concept, then `ask` with the sheets.
+
+**Look check (independent, advisory).** After the worker's own `VERDICT: PASS`, a fresh session
+that did not build the mesh reviews the same sheets:
+`python3 <scripts>/look_check.py --stem <stem> --concepts <concepts dir> --render <round dir> --out evidence/art/<stem>/look-check.md --dims "<x,y,z>" --tri-budget <n> --features "<signature features from concept-check>" --round <n>`
+(`claude -p --model sonnet`, Read only; exit 0 PASS, 1 FAIL, 2 judge unavailable). A LOOK FAIL
+with rounds left counts as a failed round: fix its items. After the last round the worker keeps
+its own verdict, but copies the open LOOK items into model-check.md, each with a one-line reason
+it ships anyway, and the reviewer decides. It is advisory, not a gate, because it is stricter
+than the director. Calibrated 2026-10-05 on 8 director-labelled meshes, it agreed on 5: it caught
+2 of the 3 unshippable meshes and failed 3 of the 5 shippable ones. An Opus judge was stricter
+still. Its value is the defect list, such as floating fragments, notches and mis-seated parts,
+that a self-graded worker skips.
+
+PASS → patch only this manifest row:
+`"verify": {"status":"PASS","route":"<route>","evidence":"<contact-sheet>","compare":"<compare-sheet>","concept":"<concept-front>","round":n,"look":"PASS|FAIL (advisory)|not run"}`.
+`look` repeats the last look check so the integrator and reviewer see a disputed mesh in the
+manifest without opening look-check.md.
 
 ### Game-ready budgets (what the studio route enforces, what the Blender route must respect)
 
@@ -276,8 +313,9 @@ row** (`complexity` if missing, `concepts`, `verify`).
 
 - Sending a 500k-tri Tripo output into `art_paths/<stem>.glb` without the finishing pass.
 - Choosing `3dgenstudio` for a crate "because it looks nicer" — simple → Blender, always.
-- Silently switching to Blender after a studio failure with exit `3` (a real error) — exit `2`
-  is the only automatic fallback; `3` needs the report read and, if unclear, an `ask`.
+- Silently switching to Blender after a studio failure. Exit `2` falls back only with PLAN
+  `fallback_ok: true`; exit `3` is a real error that needs the report read and, if unclear, an `ask`.
+- Shipping a `VERDICT: PASS` over a LOOK FAIL without listing the open items in model-check.md.
 - Regenerating with Tripo to fix a finishing problem (costs credits) instead of
   `--source-glb <stem>_high.glb`.
 - Giving 3D concepts to ChatGPT / `orca-gpt-image-gen`; concepts follow the concept route.
@@ -296,6 +334,10 @@ row** (`complexity` if missing, `concepts`, `verify`).
   calibrated on.
 - [scripts/gen3d_studio.py](scripts/gen3d_studio.py) — execute; `--check` / `--image` /
   `--prompt` / `--source-glb`; exit 0/2/3.
+- [scripts/concept_ratio.py](scripts/concept_ratio.py) — execute; concept width:height vs
+  manifest `expect_dims` (exit 0 agree, 1 WARN, 2 error).
+- [scripts/look_check.py](scripts/look_check.py) — execute; independent advisory look check
+  through `claude -p` (exit 0 PASS, 1 FAIL, 2 judge unavailable).
+- `../cocos-orca-fleet/SKILL.md` — Task topology, DAG, and locks that call into this skill.
 - [scripts/render_model_iso.py](scripts/render_model_iso.py) — execute under headless Blender;
   iso views, concept-angle match, compare-sheet, `stats.json`.
-- `../cocos-orca-fleet/SKILL.md` — Task topology, DAG, and locks that call into this skill.
