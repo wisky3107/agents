@@ -1179,8 +1179,12 @@ export function applyAnswer(ctx, q) {
       // another full patience window, then asked again (a bare ack waited in silence)
       ack();
       return st.writeSliceState(root, id, { gate_waits: 0, gate_unresolved_waits: (s.gate_unresolved_waits || 0) + 1 });
-    case 'unknown_status:treat as working, keep waiting':
     case 'coordinator_screen:checked the coordinator terminal, continue':
+      // the director looked at the terminal: the panel last seen no longer holds the lane on a blind
+      // screen (review round 4, V1: otherwise nudges and stall checks stay off for good)
+      ack();
+      return st.writeSliceState(root, id, { cq_panel_seen: false });
+    case 'unknown_status:treat as working, keep waiting':
     case 'lane_blocked:answered in the lane, continue':
     case 'director_pending:answered in the lane, continue':
     case 'coordinator_missing:taken over, continue':

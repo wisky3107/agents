@@ -971,6 +971,14 @@ test('U1: the screen goes unreadable with a panel last seen: the lane is only wa
   assert.equal(sliceState(p.root, 'S01').nudged_stall, undefined);
   assert.equal(out.find((o) => o.blocked).blocked, 'coordinator_screen'); // the third unreadable wait asks the director once
   assert.deepEqual(typed(f), [OPEN, MAIN]);
+  // the director checked the terminal: the hold ends, and a still-blind idle lane is nudged again
+  const cs = runnerFile(p.root).questions.find((x) => x.kind === 'coordinator_screen');
+  run(p.root, f, 'answer', '--id', cs.id, '--choice', 'checked the coordinator terminal, continue');
+  f.queue([{ name: 'idle 3', result: 'idle', screens: BLIND }, { name: 'idle 4', result: 'idle' }]);
+  fs.rmSync(path.join(p.root, '.cursor', 'producer.control'), { force: true });
+  run(p.root, f, 'start', '--once'); // the runner applies the answer, then waits on the still-blind lane
+  assert.equal(sliceState(p.root, 'S01').cq_panel_seen, false);
+  assert.match(f.sends().at(-1)?.text || '', /^resume the cocos-orca-fleet Coordinator loop/);
 
   // no panel last seen (a read that showed none): an unreadable screen changes nothing, the idle lane is nudged
   const q = fleet();
