@@ -35,11 +35,13 @@ import struct
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 
 EXIT_OK, EXIT_USAGE, EXIT_UNAVAILABLE, EXIT_FAILED = 0, 1, 2, 3
 TRIPO_API_ID = "tripo_meshgeneration"
+LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 
 
 # ----------------------------------------------------------------------------- HTTP helpers
@@ -273,7 +275,13 @@ class Studio:
         self.base = base
         self.settings = settings
         mesh = settings.get("apis", {}).get("meshtools", {})
-        self.meshtools = f"{mesh.get('url', 'http://127.0.0.1')}:{mesh.get('port', '8200')}"
+        mesh_url = mesh.get("url", "http://127.0.0.1")
+        # Settings store mesh-tools as seen from the studio's own machine; a remote studio
+        # (GENSTUDIO_URL on another host) means its loopback is that host, not ours.
+        studio_host = urllib.parse.urlsplit(base).hostname
+        if studio_host not in LOOPBACK and urllib.parse.urlsplit(mesh_url).hostname in LOOPBACK:
+            mesh_url = f"http://{studio_host}"
+        self.meshtools = f"{mesh_url}:{mesh.get('port', '8200')}"
 
     @property
     def tripo_key(self) -> str:
@@ -560,6 +568,12 @@ def main(argv=None) -> int:
         log(f"[gen3d] simplifying high → LOD0 (ratio {base_ratio:.4f})…")
         lod0 = simplify_and_lods(studio, high, [base_ratio], args.simplify_error, not args.no_seam_breaking, log)[0]
         report["steps"]["simplify"] = {k: lod0[k] for k in ("ratio", "achieved_ratio", "seam_limited", "triangles", "vertices")}
+        if lod0["triangles"] > args.target_tris * 1.02:
+            # floored (or overshot) first pass: a second pass from LOD0 reaches the budget
+            second = args.target_tris / lod0["triangles"]
+            log(f"[gen3d] LOD0 {lod0['triangles']} > {args.target_tris}; second pass (ratio {second:.3f})…")
+            lod0 = simplify_and_lods(studio, lod0["buffer"], [second], args.simplify_error, not args.no_seam_breaking, log)[0]
+            report["steps"]["simplify"]["second_pass"] = {k: lod0[k] for k in ("ratio", "achieved_ratio", "seam_limited", "triangles", "vertices")}
 
         # 3. LOD chain from LOD0 (fractions of the game mesh, all >= 1% so no floor issue)
         lod_fracs = [min(1.0, max(0.01, float(x))) for x in args.lod_ratios.split(",") if x.strip()]
