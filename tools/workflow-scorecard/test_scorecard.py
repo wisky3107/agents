@@ -445,5 +445,20 @@ class StaticAndAlerts(unittest.TestCase):
             self.assertIn(' x\n', open(os.path.join(d, 'scorecard-alerts.log')).read())
 
 
+class ActiveProjects(unittest.TestCase):
+    def test_recent_slices_only(self):
+        with tempfile.TemporaryDirectory() as root:
+            now = 1_800_000_000.0
+            for name, age_days in (('cc-new', 2), ('cc-old', 45), ('cc4-x', 10), ('other', 1)):
+                d = os.path.join(root, name, '.cursor', 'evidence', 'tasks', 'T-S01', 'evidence')
+                os.makedirs(d)
+                f = os.path.join(d, 'review.md')
+                open(f, 'w').close()
+                for x in (f, d, os.path.dirname(d)):
+                    os.utime(x, (now - age_days * 86400, now - age_days * 86400))
+            os.makedirs(os.path.join(root, 'cc-bootstrapped', '.cursor'))  # no slice yet
+            self.assertEqual(sc.active_projects(root, 30, now), ['cc-new', 'cc4-x'])
+
+
 if __name__ == '__main__':
     unittest.main()

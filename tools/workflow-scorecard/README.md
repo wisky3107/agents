@@ -21,8 +21,12 @@ rewritten by `daily`:
 - `~/.agents/logs/weekly/scorecard-<YYYY>-W<ww>.md`: KPI flags (ĐỎ / VÀNG / XANH / chưa đủ dữ liệu),
   slices finished in the last 7 days, top recurring `fix_target`, configuration arms. Rewritten
   daily, so the file for a week keeps that week's last state.
-- `~/.agents/logs/scorecard-dashboard.html`: the same as a local page (light and dark). Default projects: `DEFAULT_PROJECTS` in
-`scorecard.py` (pilots cc-block-out and cc-lego-stack, plus cc-meowdoku and cc-monopoly-go).
+- `~/.agents/logs/scorecard-dashboard.html`: the same as a local page (light and dark);
+  `scorecard-artifact.html` is the same page without the html/head/body wrapper, for a claude.ai artifact.
+
+Projects: every `cc-*` / `cc4-*` checkout under ~/Works/games/CocosCreator with a slice task dir
+(`.cursor/evidence/tasks/T-S*`) changed in the last `ACTIVE_DAYS` (30) days. A new project joins
+with its first slice, an idle one drops out; nothing to register. `--project` picks one by hand.
 
 ## Sources
 

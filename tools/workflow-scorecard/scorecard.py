@@ -53,7 +53,7 @@ TOKEN_REPORT_CANDIDATES = [
 ORCA = os.environ.get('ORCA_CLI_COMMAND', 'orca')
 
 # Pilot projects first; the rest are baseline only.
-DEFAULT_PROJECTS = ['cc-block-out', 'cc-lego-stack', 'cc-meowdoku', 'cc-monopoly-go']
+ACTIVE_DAYS = 30  # a project is tracked while one of its slices changed in this many days
 
 # Combinable histograms (seconds) so percentiles survive daily aggregation.
 BUCKETS = [0.25, 0.5, 1, 2, 4, 8, 15, 30, 60, 120, 300, 600, float('inf')]
@@ -197,8 +197,29 @@ def hist_pct(h: list[int], q: float) -> float | None:
 # --------------------------------------------------------------------------- project mapping
 
 
+def active_projects(root: str = GAMES_ROOT, days: int = ACTIVE_DAYS, now: float | None = None) -> list[str]:
+    """Projects the per-slice KPIs cover: every cc-* / cc4-* checkout with a slice task dir
+    (.cursor/evidence/tasks/T-S*) that changed in the last `days` days — a new project joins with
+    its first slice, an idle one drops out. Newest mtime of the task dir and the files two levels in."""
+    cutoff = (now if now is not None else datetime.now().timestamp()) - days * 86400
+    out = []
+    for name in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+        if not name.startswith(('cc-', 'cc4-')):
+            continue
+        newest = 0.0
+        for d in glob.glob(os.path.join(root, name, '.cursor', 'evidence', 'tasks', 'T-S*')):
+            for f in [d, *glob.glob(os.path.join(d, '*')), *glob.glob(os.path.join(d, '*', '*'))]:
+                try:
+                    newest = max(newest, os.path.getmtime(f))
+                except OSError:
+                    pass
+        if newest >= cutoff:
+            out.append(name)
+    return out
+
+
 def known_projects() -> list[str]:
-    names = set(DEFAULT_PROJECTS)
+    names = set()
     if os.path.isdir(GAMES_ROOT):
         names.update(n for n in os.listdir(GAMES_ROOT) if n.startswith(('cc-', 'cc4-')))
     return sorted(names, key=len, reverse=True)
@@ -1849,7 +1870,7 @@ def main(argv=None) -> int:
     d.add_argument('--no-tokens', action='store_true')
     a = ap.parse_args(argv)
     con = connect(a.db)
-    projects = getattr(a, 'project', None) or DEFAULT_PROJECTS
+    projects = getattr(a, 'project', None) or active_projects()
 
     def step(name, fn):
         try:
