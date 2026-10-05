@@ -374,7 +374,11 @@ class S2S3(unittest.TestCase):
             self.assertEqual((gw['status'], gw['scope']), ('critical', 'provider agy'))
             fp = [f for f in flags if f['kpi'] == 'agent.first_pass'][0]
             self.assertEqual(fp['status'], 'na')  # one slice < min n 5
-            weekly, dash = sc.write_outputs(con, ['cc-a'], d)
+            weekly, dash, art = sc.write_outputs(con, ['cc-a'], d)
+            frag = open(art).read()
+            self.assertTrue(frag.startswith('<title>Workflow scorecard</title><style>'))
+            self.assertNotIn('<body', frag)
+            self.assertNotIn('<!doctype', frag)
             self.assertIn('gateway.error_rate', open(weekly).read())
             html_text = open(dash).read()
             self.assertIn('<title>Workflow scorecard</title>', html_text)

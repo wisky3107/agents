@@ -1716,7 +1716,9 @@ def html_table(head: list[str], rows: list[list], num: set[int] = frozenset()) -
     return f'<div class="wrap"><table><thead><tr>{th}</tr></thead><tbody>{body}</tbody></table></div>'
 
 
-def dashboard_html(con, projects: list[str], flags: list[dict], exps: list[dict]) -> str:
+def dashboard_html(con, projects: list[str], flags: list[dict], exps: list[dict], fragment: bool = False) -> str:
+    """The local dashboard page; fragment=True drops the doctype/html/head/body wrapper for the
+    claude.ai artifact copy (logs/scorecard-artifact.html), which the publisher wraps itself."""
     q = lambda sql, *a: con.execute(sql, a).fetchall()  # noqa: E731
     ph = ','.join('?' * len(projects))
     count = collections.Counter(f['status'] for f in flags)
@@ -1726,9 +1728,10 @@ def dashboard_html(con, projects: list[str], flags: list[dict], exps: list[dict]
         f'<div class="tile"><div class="k">{esc(f["category"])} · {esc(f["kpi"])} · {esc(f["scope"])}</div>'
         f'<div class="v">{esc(f["text"])}</div>{badge(f["status"])}<div class="s">{esc(f["action"])}</div></div>' for f in hot)
     parts = [
-        '<!doctype html><html lang="vi"><head><meta charset="utf-8">',
-        '<meta name="viewport" content="width=device-width, initial-scale=1">',
-        f'<title>Workflow scorecard</title><style>{DASHBOARD_CSS}</style></head><body><main>',
+        *([f'<title>Workflow scorecard</title><style>{DASHBOARD_CSS}</style><main lang="vi">'] if fragment else [
+            '<!doctype html><html lang="vi"><head><meta charset="utf-8">',
+            '<meta name="viewport" content="width=device-width, initial-scale=1">',
+            f'<title>Workflow scorecard</title><style>{DASHBOARD_CSS}</style></head><body><main>']),
         '<h1>Workflow scorecard</h1>',
         f'<p class="sub">Cập nhật {esc(now_iso())} · dự án: {esc(", ".join(projects))} · số nhỏ là tín hiệu định hướng</p>',
         '<div class="totals">' + ''.join(f'{badge(s)} <span class="muted">{count[s]}</span>' for s in ('critical', 'warning', 'fixed', 'good', 'na')) + '</div>',
@@ -1768,7 +1771,7 @@ def dashboard_html(con, projects: list[str], flags: list[dict], exps: list[dict]
         html_table(['project', 'slice', 'fix rounds', 'nguồn', 'verdict cuối', 'e2e phút', 'nguồn e2e'],
                    q(f'''SELECT project, slice, fix_rounds, fix_rounds_source, final_verdict, e2e_min, e2e_source FROM slices
                          WHERE project IN ({ph}) ORDER BY project, slice''', *projects), {2, 5}),
-        '</main></body></html>',
+        '</main>' if fragment else '</main></body></html>',
     ]
     return '\n'.join(parts)
 
@@ -1779,11 +1782,14 @@ def write_outputs(con, projects: list[str], logs_dir: str = os.path.dirname(LATE
     os.makedirs(weekly_dir, exist_ok=True)
     weekly = os.path.join(weekly_dir, f'scorecard-{datetime.now().strftime("%G-W%V")}.md')  # rewritten daily; last day wins
     dash = os.path.join(logs_dir, 'scorecard-dashboard.html')
+    art = os.path.join(logs_dir, 'scorecard-artifact.html')  # the copy published to claude.ai on request
     with open(weekly, 'w') as fh:
         fh.write(scorecard_md(con, projects, flags, exps))
     with open(dash, 'w') as fh:
         fh.write(dashboard_html(con, projects, flags, exps))
-    return [weekly, dash]
+    with open(art, 'w') as fh:
+        fh.write(dashboard_html(con, projects, flags, exps, fragment=True))
+    return [weekly, dash, art]
 
 def new_reds(con, flags: list[dict], day: str) -> list[dict] | None:
     """Record today's KPI statuses and return the ones that turned red since the last earlier day
