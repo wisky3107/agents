@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseQuotaEvents, parseInvalidEvents, logFacts, relaunchCommand, nextAccount } from '../rotate.mjs';
+import { parseQuotaEvents, parseInvalidEvents, logFacts, relaunchCommand, signedOut } from '../rotate.mjs';
+import { rankAccounts } from '../slot.mjs';
 
 // Shape copied from a real agy log (cli-20261005_021641.log), trace ids trimmed.
 const QUOTA_429 = `I1005 02:23:33.091751   14297 http_helpers.go:315] URL: https://daily-cloudcode-pa.googleapis.com/v1internal:generateContent Trace: 0x8a
@@ -91,7 +92,23 @@ test('"Account ineligible" (age / location) is an invalid event too', () => {
   assert.deepEqual(parseInvalidEvents(text, { year: 2026 }), [{ at: new Date(2026, 9, 5, 13, 6, 13).toISOString() }]);
 });
 
-test('nextAccount skips disabled, token-less and still-exhausted accounts, in priority order', () => {
+test('a relaunch without a conversation starts fresh; bin picks the agy to run', () => {
+  assert.equal(relaunchCommand('/Users/w/.local/bin/agy --dangerously-skip-permissions', null, null, '/Users/w/.agents/tools/agy-account/bin/agy'),
+    '/Users/w/.agents/tools/agy-account/bin/agy --dangerously-skip-permissions');
+});
+
+test('signedOut: a young log stuck on "not logged into Antigravity", not one that signed in or is too new/old', () => {
+  const file = '/x/cli-20261005_122556.log';
+  const start = new Date(2026, 9, 5, 12, 25, 56).getTime();
+  const out = 'E1005 12:25:56.873763      75 errorreport.go:224] error getting token source: You are not logged into Antigravity.';
+  const ok = `${out}\nI1005 12:25:57.440022     151 server_oauth.go:203] OAuth: authenticated successfully as hanptn@gmail.com`;
+  assert.equal(signedOut(file, start + 60_000, out), true);
+  assert.equal(signedOut(file, start + 60_000, ok), false);
+  assert.equal(signedOut(file, start + 10_000, out), false); // still starting
+  assert.equal(signedOut(file, start + 3600_000, out), false); // an old session is not a fresh terminal
+});
+
+test('rankAccounts skips disabled, token-less, blocked and still-exhausted accounts, then prefers clean, unloaded, priority', () => {
   const now = Date.parse('2026-10-05T05:00:00Z');
   const accounts = [
     { email: 'p1@x', active: true, refreshToken: 'r' },
@@ -103,13 +120,15 @@ test('nextAccount skips disabled, token-less and still-exhausted accounts, in pr
   const state = { exhausted: {
     'p1@x': { 'gemini-3.1-flash-image': '2026-10-05T06:00:00Z' },
     'p4@x': { 'gemini-3.1-flash-image': '2026-10-05T04:00:00Z', 'gemini-3.8-flash': '2026-10-05T09:00:00Z' },
-  } };
-  assert.equal(nextAccount(accounts, state, 'gemini-3.1-flash-image', now).email, 'p4@x'); // p4's image reset passed
-  assert.equal(nextAccount(accounts, state, 'gemini-3.8-flash', now).email, 'p1@x');
-  state.exhausted['p4@x']['gemini-3.1-flash-image'] = '2026-10-05T07:00:00Z';
-  state.exhausted['p5@x'] = { 'gemini-3.1-flash-image': '2026-10-05T07:00:00Z' };
-  assert.equal(nextAccount(accounts, state, 'gemini-3.1-flash-image', now), null);
+  }, invalid: {} };
+  const emails = (opts) => rankAccounts(accounts, state, { now, ...opts }).map((a) => a.email);
+  // p4's image reset passed but it is still out for gemini-3.8-flash, so clean p5 goes first.
+  assert.deepEqual(emails({ model: 'gemini-3.1-flash-image' }), ['p5@x', 'p4@x']);
+  assert.deepEqual(emails({ model: 'gemini-3.8-flash' }), ['p5@x', 'p1@x']);
+  // Any model: clean first; among clean ones the account fewer live slots hold.
+  assert.deepEqual(emails({}), ['p5@x', 'p1@x', 'p4@x']);
+  state.exhausted = {};
+  assert.deepEqual(emails({ slots: [{ live: true, email: 'p1@x' }, { live: false, email: 'p4@x' }] }), ['p4@x', 'p5@x', 'p1@x']);
   state.invalid = { 'p1@x': '2026-10-06T00:00:00Z' };
-  assert.equal(nextAccount(accounts, state, 'gemini-3.8-flash', now).email, 'p5@x'); // p1 needs verification, p4 out for this model
-  assert.equal(nextAccount(accounts, { invalid: state.invalid }, '*', now).email, 'p4@x');
+  assert.deepEqual(emails({}), ['p4@x', 'p5@x']);
 });

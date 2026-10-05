@@ -4,7 +4,8 @@
  * agy keeps one token per macOS user: Keychain item service "gemini" / account "antigravity"
  * (value "go-keyring-base64:" + base64 JSON) plus the fallback file
  * ~/.gemini/antigravity-cli/antigravity-oauth-token. A running agy reads it once at start and
- * refreshes in memory, so a switch only reaches sessions started after it.
+ * refreshes in memory, so a switch only reaches sessions started after it. slot.mjs gives one
+ * agy its own token instead (a HOME without the login Keychain makes agy use the file).
  *
  * OmniRoute signs agy accounts in with the same Google OAuth client
  * (src/lib/oauth/constants/oauth.ts AGY_CONFIG), so its refresh token works in agy as-is; agy
@@ -150,13 +151,12 @@ export function pickAccount(accounts, who) {
   return hits[0];
 }
 
-/** Put an OmniRoute account into agy's slot. Returns the backup slot, or null when nothing was there. */
-export function switchTo(target, accounts) {
+/** agy's stored-token object for an OmniRoute account. */
+export function tokenFor(target) {
   if (!target.refreshToken) throw new AccountError(`${target.email} has no refresh token in OmniRoute; reconnect it there`);
-  const slot = backupCurrent(accounts);
   // A near-expiry access token is dropped so agy refreshes before its first call.
   const fresh = target.accessToken && target.expiry && Date.parse(target.expiry) > Date.now() + 120_000;
-  writeAgy(encodeValue({
+  return {
     token: {
       access_token: fresh ? target.accessToken : '',
       token_type: 'Bearer',
@@ -165,7 +165,14 @@ export function switchTo(target, accounts) {
     },
     auth_method: 'consumer',
     id_token: '',
-  }));
+  };
+}
+
+/** Put an OmniRoute account into agy's slot. Returns the backup slot, or null when nothing was there. */
+export function switchTo(target, accounts) {
+  const tok = tokenFor(target);
+  const slot = backupCurrent(accounts);
+  writeAgy(encodeValue(tok));
   return slot;
 }
 

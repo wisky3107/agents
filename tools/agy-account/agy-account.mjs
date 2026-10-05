@@ -12,9 +12,14 @@
  *   node agy-account.mjs check [--dry-run]    # one rotation pass (rotate.mjs)
  *   node agy-account.mjs watch [--interval 15]
  *   node agy-account.mjs install-launchd | uninstall-launchd   # run `watch` as a login agent
+ *   node agy-account.mjs slots                # per-terminal slots: account, live pid
+ *   node agy-account.mjs prepare              # (bin/agy) ready this terminal's slot, print its HOME
+ *   node agy-account.mjs install-wrapper      # ~/.agents/bin/agy -> bin/agy, first on PATH
  *
- * accounts.mjs has the token format; rotate.mjs the rotation rules. Before every write the
- * current agy token is saved to Keychain "gemini" / "antigravity@<email>".
+ * accounts.mjs has the token format; rotate.mjs the rotation rules; slot.mjs the per-terminal
+ * slots that bin/agy runs agy in. `use` / `restore` change agy's shared Keychain slot, which only
+ * agy started without bin/agy reads; before every write the current token is saved to Keychain
+ * "gemini" / "antigravity@<email>".
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -24,8 +29,11 @@ import {
   ACCOUNT, SERVICE, AccountError, omniAccounts, currentEmail, pickAccount, switchTo, restoreSlot, keychainSlots,
 } from './accounts.mjs';
 import { check, watch, loadState, probeAll, EVENTS_FILE } from './rotate.mjs';
+import { prepare, listSlots, slotEmail, WRAPPER } from './slot.mjs';
 
 const LABEL = 'com.agents.agy-rotate';
+const BIN_DIR = path.join(os.homedir(), '.agents', 'bin');
+const PATH_LINE = 'export PATH="$HOME/.agents/bin:$PATH"  # agy per-terminal account slots (tools/agy-account)';
 const PLIST = path.join(os.homedir(), 'Library', 'LaunchAgents', `${LABEL}.plist`);
 
 function agyRunning() {
@@ -106,9 +114,32 @@ async function main() {
     const live = Object.entries(exhausted).flatMap(([e, m]) => Object.entries(m).map(([model, t]) => `  ${e} ${model} until ${t}`));
     console.log(`exhausted:${live.length ? `\n${live.join('\n')}` : ' none'}`);
     console.log(`agy processes: ${procs.length ? '' : 'none'}`);
-    for (const p of procs) console.log(`  pid ${p.pid} ${p.handle || '(no Orca terminal)'} ${p.cwd || ''}`);
+    const accounts = procs.length ? omniAccounts() : [];
+    for (const p of procs) {
+      const who = p.slotHome ? `slot ${slotEmail(p.slotHome, accounts) || '?'}` : `shared ${currentEmail(accounts) || '?'}`;
+      console.log(`  pid ${p.pid} ${p.handle || '(no Orca terminal)'} ${who} ${p.cwd || ''}`);
+    }
     if (cmd === 'check') for (const a of actions) console.log(JSON.stringify(a));
     else if (actions.length) console.log(`would do:\n${actions.map((a) => `  ${JSON.stringify(a)}`).join('\n')}`);
+  } else if (cmd === 'prepare') {
+    process.stdout.write(`${await prepare()}\n`);
+  } else if (cmd === 'slots') {
+    const slots = listSlots().sort((a, b) => String(b.at).localeCompare(String(a.at)));
+    if (!slots.length) console.log('no slots yet');
+    for (const s of slots) console.log(`${s.live ? 'live' : '    '} ${s.email || '(no account)'} ${s.key} ${s.at || ''}${s.pid ? ` pid ${s.pid}` : ''}`);
+  } else if (cmd === 'install-wrapper') {
+    fs.mkdirSync(BIN_DIR, { recursive: true });
+    const link = path.join(BIN_DIR, 'agy');
+    fs.rmSync(link, { force: true });
+    fs.symlinkSync(WRAPPER, link);
+    for (const rc of ['.zprofile', '.zshrc']) {
+      const file = path.join(os.homedir(), rc);
+      const text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+      if (text.includes('.agents/bin')) continue;
+      fs.appendFileSync(file, `${text.endsWith('\n') || !text ? '' : '\n'}${PATH_LINE}\n`);
+      console.log(`added ~/.agents/bin to PATH in ~/${rc}`);
+    }
+    console.log(`${link} -> ${WRAPPER}; new terminals run agy in per-terminal slots (agy-rotate relaunches use it already)`);
   } else if (cmd === 'watch') {
     await watch({ intervalMs: Math.max(5, Number(opt('--interval') || 15)) * 1000 });
   } else if (cmd === 'install-launchd') {
@@ -122,7 +153,7 @@ async function main() {
     fs.rmSync(PLIST, { force: true });
     console.log(`removed ${LABEL}`);
   } else {
-    throw new AccountError(`unknown command "${cmd}" (list | current | use | restore | status | check | watch | install-launchd | uninstall-launchd)`);
+    throw new AccountError(`unknown command "${cmd}" (list | current | use | restore | status | check | watch | slots | prepare | install-wrapper | install-launchd | uninstall-launchd)`);
   }
 }
 

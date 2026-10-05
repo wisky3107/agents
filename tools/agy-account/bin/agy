@@ -1,0 +1,23 @@
+#!/bin/bash
+# agy on its own Antigravity account per Orca terminal (tools/agy-account/slot.mjs): pick a usable
+# account, then run the real agy with HOME=<slot mirror>. AGY_NO_SLOT=1 runs the real agy as is.
+self=$(realpath "${BASH_SOURCE[0]}")
+real=${AGY_REAL:-}
+if [[ -z $real ]]; then
+  IFS=: read -ra dirs <<<"$PATH"
+  for d in "${dirs[@]}"; do
+    [[ -x $d/agy && $(realpath "$d/agy") != "$self" ]] && { real=$d/agy; break; }
+  done
+fi
+[[ -z $real && -x /Users/$USER/.local/bin/agy ]] && real=/Users/$USER/.local/bin/agy
+[[ -z $real ]] && { echo "agy-slot: the real agy is not on PATH (set AGY_REAL)" >&2; exit 127; }
+
+case $1 in update|install|help|changelog|-h|--help) exec "$real" "$@" ;; esac
+[[ -n $AGY_NO_SLOT ]] && exec "$real" "$@"
+
+if home=$(node --no-warnings "$(dirname "$self")/../agy-account.mjs" prepare) && [[ -d $home ]]; then
+  export HOME=$home AGY_SLOT_HOME=$home
+else
+  echo "agy-slot: could not prepare a slot; agy uses the shared account" >&2
+fi
+exec "$real" "$@"

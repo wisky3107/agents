@@ -2,3 +2,6 @@
 skills.zip
 __pycache__/
 /logs/
+/run/
+# install-wrapper: machine-local symlink to tools/agy-account/bin/agy
+/bin/

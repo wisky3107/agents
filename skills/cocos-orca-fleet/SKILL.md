@@ -281,6 +281,15 @@ Step 0.2: `node ~/.agents/skills/cocos-orca-fleet/scripts/agent-ready.mjs --agen
 If Cursor stops working mid-fleet (a worker at the login screen, an agent_readiness timeout), the
 same rule applies to that Task. A Cursor login is never a reason for a fleet `infra_blocked`.
 
+**Antigravity runs one account per terminal** (`agy` on PATH is `~/.agents/tools/agy-account/bin/agy`:
+each Orca terminal gets its own slot with a probed, non-exhausted OmniRoute account; launchd
+`com.agents.agy-rotate` moves a worker that hits 429, a blocked account or a stuck sign-in to the
+next account and relaunches it). An agy worker at "You are currently not signed in", a different
+Google profile, or an agent_readiness timeout is not a gate yet: exit that terminal, then retry the
+Task **once** in a fresh terminal (the new slot picks a usable account). Ask the director only when
+that retry fails too, or when `node ~/.agents/tools/agy-account/agy-account.mjs list` shows every
+account out (`!`) — then the choice is wait for the reset it prints, or the Task's fallback.
+
 ## Role map
 
 | Fleet role | AGENTS.md hat | Agent | Owns | Never |
