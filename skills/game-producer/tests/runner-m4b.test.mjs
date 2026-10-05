@@ -498,3 +498,31 @@ test('locks: policy agents vs yaml, budget mode, lite flag, cursor state, cc4, s
   // a lane naming its step (pilot 1: "implementing") is working: the runner only waits on it
   assert.deepEqual(['implementing', 'In_Progress', 'reviewing', 'shipped'].map(normalizeStatus), ['working', 'working', 'working', null]);
 });
+
+test('single lane: check-slice FAIL at ready_for_review goes back to the writer (not a fix round); fixed → reviewer', () => {
+  // an old spec the slice turned red: its Run: header runs a script that passes only once tests/fixed.flag exists
+  const p = project({
+    slices: { S01: { needs: false } },
+    files: {
+      'tests/old.spec.ts': '/**\n * Run:\n *   node tests/run-old.js\n */\n',
+      'tests/run-old.js': "const fs = require('fs'); if (!fs.existsSync('tests/fixed.flag')) { console.log('FAIL placement'); process.exit(1); }\n",
+    },
+  });
+  const f = fakes();
+  f.queue([
+    { name: 'writer ready, spec red', write: { ...W('ready_for_review'), ...preview(7461) } },
+    { name: 'writer fixed', write: { 'tests/fixed.flag': 'x', ...W('ready_for_review', { detail: 'static fixed' }) } },
+    { name: 'review approved', write: R('approved', 'APPROVED') },
+    commitStep('S01'),
+  ]);
+  const out = runner(p.root, f, 'start', '--once').out;
+  assert.deepEqual(out.find((o) => o.merged), { merged: 'S01', commit: lastCommit(f) });
+  const sends = f.sends();
+  assert.match(sends[0].text, /^Static check FAIL before review \(specs\), see .*static-check\.txt\. .*This is not a review round\.$/);
+  assert.equal(f.spawns().length, 2); // writer, then one reviewer only after the fix
+  assert.match(fs.readFileSync(ev(p.root, 'S01', 'evidence/static-check.txt'), 'utf8'), /PASS specs: 1\/1 specs [^\n]*\n[\s\S]*RESULT PASS/);
+  assert.match(log(p.root), /static check FAIL \(specs\)[\s\S]*static check PASS/);
+  const s = sliceState(p.root, 'S01');
+  assert.equal(s.fix_rounds || 0, 0);
+  assert.equal(s.static_bounces, 1);
+});

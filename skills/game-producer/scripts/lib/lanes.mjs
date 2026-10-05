@@ -45,6 +45,8 @@ const GATE_SETTLE = 3; // idle pauses after a relay before another pending gate 
 const MISSING_RECHECKS = 5; // "terminal missing" from orca-wait while `terminal show` finds it: ask after this many
 const BAD_JSON_PATIENCE = 3; // a HANDOFF caught mid-write parses on the next look
 const VERDICT_PATIENCE = 2; // looks after a HANDOFF verdict before its review file disagreeing is a question
+const MAX_STATIC_BOUNCES = 2; // check-slice FAILs sent back to the writer per review round before the reviewer gets it anyway
+const CHECK_SLICE = fileURLToPath(new URL('../../../cocos-orca-fleet/scripts/check-slice.mjs', import.meta.url));
 export const FALLBACK_REVIEWER = 'cursor --model auto';
 export const STALL_NUDGE =
   'resume the cocos-orca-fleet Coordinator loop: `check --ack` the Delivery you last handled (bare `check` if none), ' +
@@ -647,8 +649,37 @@ function fixRound(ctx, s) {
   const reviewMd = path.join(evidenceDir(ctx.project.root, ctx.id), 'review.md');
   sendOnce(ctx, `fix:${rounds + 1}`, s.writer,
     `Fix round ${rounds + 1}: apply exactly the rows of the \`## fix_routing\` table in ${reviewMd} (no other changes), re-verify, update the evidence, then set HANDOFF.json ready_for_review. Never restore, revert or stash AGENT_NOTES.md or the runner's files (.cursor/producer*, producer-state.json, producer-log.md), even when cleaning up: they are the producer's.`,
-    { phase: 'writer', fix_rounds: rounds + 1, reviewer: null, nudged_writer: false });
+    { phase: 'writer', fix_rounds: rounds + 1, reviewer: null, nudged_writer: false, static_bounces: 0 });
   st.log(ctx.project.root, ctx.id, `fix round ${rounds + 1}`);
+}
+
+/**
+ * check-slice before every review round: tsc, the ES5 web build, every spec (old ones too), slice
+ * scope, NaN-safe smoke checks — the finding classes that recurred across cc-lego-stack S01–S11
+ * (scorecard 2026-10-05). A FAIL goes back to the writer, not counted as a fix round, at most
+ * MAX_STATIC_BOUNCES times; then the reviewer gets the slice with the FAIL in static-check.txt.
+ * true = on to review; false = the writer has it (this HANDOFF write waits for the next one).
+ */
+function staticGate(ctx, s, h) {
+  const { project, id } = ctx;
+  const root = project.root;
+  if (!fs.existsSync(CHECK_SLICE)) return true;
+  const slice = promptValues(project, id).SLICE_FILE;
+  const out = path.join(evidenceDir(root, id), 'static-check.txt');
+  const r = spawnSync(process.execPath, [CHECK_SLICE, '--root', root, '--slice', slice, '--out', out], { encoding: 'utf8', timeout: 600000, cwd: root });
+  const result = ((r.stdout || '').match(/^RESULT (\w+)(.*)$/m) || [])[1] || 'ERROR';
+  const which = ((r.stdout || '').match(/^RESULT \w+ \((.*)\)$/m) || [])[1] || '';
+  const bounces = s.static_bounces || 0;
+  st.log(root, id, `static check ${result}${which ? ` (${which})` : ''}${result === 'ERROR' ? `: ${(r.stderr || r.error?.message || '').trim().slice(0, 200)}` : ''}`);
+  if (result !== 'FAIL' || bounces >= MAX_STATIC_BOUNCES) {
+    st.writeSliceState(root, id, { static_result: result });
+    return true;
+  }
+  const cmd = `node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice ${slice} --out ${path.relative(root, out)}`;
+  sendOnce(ctx, `static:${s.fix_rounds || 0}:${bounces + 1}`, s.writer,
+    `Static check FAIL before review (${which}), see ${out}. Fix every FAIL line; for each WARN scope line either move the change or declare it in integration-notes.md. Rerun \`${cmd}\` until RESULT is not FAIL, then set HANDOFF.json ready_for_review again. This is not a review round.`,
+    { static_bounces: bounces + 1, static_fail_mtime: h.mtime, static_result: result, nudged_writer: false });
+  return false;
 }
 
 function singleStep(ctx, s, phase) {
@@ -692,7 +723,9 @@ function singleStep(ctx, s, phase) {
     if (h.fresh && !h.ok) return badHandoff(root, id, s, handoff);
     parsedAgain(root, id, s, h);
     const obs = (code) => `${code}@${h.mtime || 0}`;
-    if (h.status === 'ready_for_review') {
+    // the HANDOFF write a static FAIL went back on is not a new ready_for_review
+    if (h.status === 'ready_for_review' && h.mtime !== s.static_fail_mtime) {
+      if (!staticGate(ctx, s, h)) return PAUSE;
       setPhase(root, id, 'spawn-reviewer', { reviewer: null, bad_handoff: 0 });
       return null;
     }
@@ -708,7 +741,9 @@ function singleStep(ctx, s, phase) {
     }
     if (h.status === 'blocked') return ask(s, 'lane_blocked', `writer HANDOFF blocked: ${h.detail || 'no detail'}`, LANE_BLOCKED_OPTIONS, { obs: obs('lane_blocked') });
     if (w.event === 'idle' && w.idle_streak === 2 && !s.nudged_writer) {
-      const text = s.fix_rounds && h.status === 'changes_requested'
+      const text = h.status === 'ready_for_review'
+        ? `Static check still FAILs (${path.join(evidence, 'static-check.txt')}): fix the FAIL lines, rerun check-slice, then write HANDOFF.json ready_for_review again.`
+        : s.fix_rounds && h.status === 'changes_requested'
         ? `Fix round ${s.fix_rounds} is still open: apply the \`## fix_routing\` rows in ${path.join(evidence, 'review.md')}, re-verify, then set HANDOFF.json ready_for_review.`
         : `Status check: HANDOFF.json is not ready_for_review yet. Finish the missing evidence files in ${evidence} (${SINGLE_EVIDENCE.join(', ')}), then set HANDOFF ready_for_review.`;
       sendOnce(ctx, `nudge:${s.writer}:${s.fix_rounds || 0}`, s.writer, text, { nudged_writer: true });

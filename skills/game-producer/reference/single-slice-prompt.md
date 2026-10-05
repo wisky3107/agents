@@ -57,13 +57,18 @@ Build:
 1. Code in paths.code; @property refs for scene wiring; tsc clean; no console.log.
 2. For EVERY acceptance row that state can answer, add scripts/smoke/checks/<Sxx>-<nn>-<id>.check.js
    (≤30 lines; format: .cursor/skills/smoke-test/SKILL.md §Check files; copy a template from
-   .cursor/skills/smoke-test/templates/). Feel rows stay manual.
+   .cursor/skills/smoke-test/templates/). Feel rows stay manual. Write every fail guard so a
+   NaN/undefined value fails: `if (!(x <= limit)) fail(...)` or Number.isFinite in the same condition.
 3. Integrator hat: probe.mjs --only funplay (parity true), editor lock, scene wiring through
    scene-tool / Funplay per .cursor/skills/cocos-editor/SKILL.md, refresh + reopen, no MissingScript.
 4. Preview: reuse the healthy URL or run_project_preview({mode:"browser"}) once; verify title;
    write <EVIDENCE_DIR>/preview-startup.json (projectPath, previewUrl, status, checkedAt).
 5. Verify: node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT> must be green;
    play the feel rows once; batch state reads into one eval. Screenshots: ONE preview.png total.
+   Then `node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice <SLICE_FILE> --out <EVIDENCE_DIR>/static-check.txt` must
+   not end RESULT FAIL: it runs tsc, the ES5 web build, EVERY spec in tests/ (old ones too), slice
+   scope and the smoke-guard lint. Declare each WARN scope line in integration-notes.md. The
+   producer reruns it before the reviewer and sends a FAIL back to you.
 6. Budget: stage, `bash .cursor/skills/setup-pre-commit/check-change-budget.sh --report`, unstage;
    paste the line into <EVIDENCE_DIR>/integration-notes.md. Budget mode <BUDGET_MODE>:
    advisory → over budget, add
@@ -114,7 +119,9 @@ to check, then gather current evidence. A memory item or the writer's claim is n
    `budget_bump: <from>→<to>` line above the verdict. Budget mode <BUDGET_MODE>: advisory → the
    overrun is never a finding; flag extra code only for paths outside the slice, `scope.out` work,
    dead/duplicated code or architecture breaks. gate:<pct> → overrun > pct is a finding (owner
-   code). tsc/lint output read, not assumed.
+   code). tsc/lint output read, not assumed. Read <EVIDENCE_DIR>/static-check.txt (the producer's
+   check-slice run; rerun it if missing or older than the last code change): each FAIL line is a
+   finding (owner code), and so is each WARN scope line integration-notes.md does not declare.
 4. Screenshots: one final preview.png plus at most one per blocker/major finding.
 Write <EVIDENCE_DIR>/review.md (findings F1…, owner code|scene, `## fix_routing` table when
 CHANGES_REQUESTED) ending with exactly APPROVED or CHANGES_REQUESTED, runtime-state.json

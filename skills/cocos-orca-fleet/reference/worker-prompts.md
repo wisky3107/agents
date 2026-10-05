@@ -206,8 +206,11 @@ Do:
    `scripts/smoke/checks/<Sxx>-<nn>-<id>.check.js` (≤30 lines, format in
    .cursor/skills/smoke-test/SKILL.md §Check files; copy from its templates/). Feel rows (tween,
    particle, shake) stay manual. The reviewer runs these first; a missing check for a
-   state-answerable row is a finding against you.
-6. `tsc` clean; no console.log left behind. Budget: run
+   state-answerable row is a finding against you. Write every fail guard so a NaN/undefined
+   value fails: `if (!(x <= limit)) fail(...)` or Number.isFinite in the same condition.
+6. `tsc` clean; no console.log left behind. Before worker_done, `node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice <PLAN's plan_source slice file> --out evidence/static-check.txt`
+   must not end RESULT FAIL (tsc, the ES5 web build, EVERY spec in tests/, scope, smoke-guard
+   lint); declare each WARN scope line in integration-notes.md. Budget: run
    `bash .cursor/skills/setup-pre-commit/check-change-budget.sh --report` (stage, report, unstage)
    and paste the line into integration-notes.md — that number is the only one anyone quotes.
    Over budget → add `budget_bump: <from>→<to>` + one-line reason. PLAN `budget_mode: advisory`
@@ -350,7 +353,10 @@ Static (commit-guard gates 1–4, read-only):
   owner asset); an `image-gen` row whose `verify.tool` is a script (gen_2d.py, Pillow, SVG) is a
   blocker (owner asset); a sprite with matte/halo, a seam on a tileable, or off-style art in preview is a
   finding (owner asset).
-- STATIC: tsc + lint clean (read the tool output, do not assume).
+- STATIC: tsc + lint clean (read the tool output, do not assume). Run check-slice yourself
+  (`node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice <plan_source> --out evidence/static-check.txt`):
+  each FAIL line is a finding (owner code), and so is each WARN scope line integration-notes.md
+  does not declare.
 
 Runtime:
 1. Read evidence/preview-startup.json and validate the handed-off URL/title/readiness for this
