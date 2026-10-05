@@ -427,6 +427,8 @@ test('waitsOnDirector: waiting phrases match; decisions made, negations and othe
     'S12 is pending director gate; implementing the rest meanwhile', // a gate exists
     'Merge pending director review is not required', // negated after the phrase
     'Reserve swap pending director approval is no longer needed',
+    'S12 is pending director gate_6c4eda5aca3c; implementing the rest', // a gate id too
+    'Merge pending director gate-g1 (opened above)',
     '',
     undefined,
   ]) assert.equal(waitsOnDirector(no), null, String(no));
@@ -710,8 +712,16 @@ test('never submit when unsure: Enter that leaves the panel up is an error; a fr
   k.queue([start(screens(blind))]);
   run(s.root, k, 'start', '--once');
   run(s.root, k, 'answer', '--id', 'q1', '--choice', ANSWER_TEXT, '--text', 'my own words');
-  run(s.root, k, 'start', '--once');
+  const held = run(s.root, k, 'start', '--once').out;
   assert.deepEqual(typed(k), [OPEN, MAIN, OPEN, DOWN, DOWN, ENTER]);
+  // the screen cannot be read and a panel was the last thing seen (the "Other" input may be open): the plain
+  // message is not sent into it; the director gets the usual send_failed question
+  assert.deepEqual(k.sends(), []);
+  assert.equal(held.find((o) => o.blocked).blocked, 'send_failed');
+  // once the screen can be read again, "retry the send" delivers it
+  k.screens({ term_1: { at: 'g', frames: { g: { lines: GONE } } } });
+  run(s.root, k, 'answer', '--id', 'q2', '--choice', 'retry the send');
+  run(s.root, k, 'start', '--once');
   assert.deepEqual(k.sends(), [{ to: 'term_1', text: `${FOLLOW}my own words` }]);
 });
 
@@ -936,4 +946,92 @@ test('R4: a coordinator panel held for the director does not mask a blocked comm
   assert.deepEqual([b.waiting, b.kind], ['q2', 'lane_blocked']);
   assert.match(runnerFile(p.root).questions[1].text, /commit blocked: commit-guard refused: dirty tree/);
   assert.deepEqual(typed(f), [OPEN, MAIN]); // the held panel was not opened again
+});
+
+// ---------------------------------------------------------------------------------------------------
+// Review round 3 of c36a5d0: an unreadable screen after a panel was seen.
+
+const BLIND = { term_1: { at: 'u', frames: { u: { source: 'screen-unavailable', lines: [] } } } };
+const GATE1 = { id: 'g1', status: 'pending', question: 'Approve PLAN?', options: '["approve","revise"]' };
+
+test('U1: the screen goes unreadable with a panel last seen: the lane is only waited on (no stall nudge); with no panel last seen it is nudged as before', () => {
+  const p = fleet();
+  const f = fakes();
+  f.queue([start(screens(choiceFrames(Q1, LABELS)))]);
+  run(p.root, f, 'start', '--once');
+  run(p.root, f, 'answer', '--id', 'q1', '--choice', ANSWER_DONE); // the director has the panel in the terminal
+  f.queue([tick(2)]);
+  run(p.root, f, 'start', '--once');
+  assert.equal(sliceState(p.root, 'S01').cq_panel_seen, true);
+  // the screen cannot be read and the coordinator is idle: this is the stall nudge, which would be typed into the panel
+  f.queue([{ name: 'idle 1', result: 'idle', screens: BLIND }, { name: 'idle 2', result: 'idle' }]);
+  fs.rmSync(path.join(p.root, '.cursor', 'producer.control'), { force: true });
+  const out = run(p.root, f, 'start', '--once').out;
+  assert.deepEqual(f.sends(), []);
+  assert.equal(sliceState(p.root, 'S01').nudged_stall, undefined);
+  assert.equal(out.find((o) => o.blocked).blocked, 'coordinator_screen'); // the third unreadable wait asks the director once
+  assert.deepEqual(typed(f), [OPEN, MAIN]);
+
+  // no panel last seen (a read that showed none): an unreadable screen changes nothing, the idle lane is nudged
+  const q = fleet();
+  const g = fakes();
+  g.queue([start({ term_1: { at: 'g', frames: { g: { lines: GONE } } } }), { name: 'idle', result: 'idle', screens: BLIND }]);
+  run(q.root, g, 'start', '--once');
+  assert.equal(Boolean(sliceState(q.root, 'S01').cq_panel_seen), false);
+  assert.match(g.sends()[0].text, /^resume the cocos-orca-fleet Coordinator loop/);
+});
+
+test('U1: a gate decision is not sent while the screen is unreadable and a panel was last seen; "retry the send" delivers it once it can be read', () => {
+  const p = fleet();
+  const f = fakes();
+  f.queue([start(screens(choiceFrames(Q1, LABELS)))]);
+  run(p.root, f, 'start', '--once');
+  run(p.root, f, 'answer', '--id', 'q1', '--choice', ANSWER_DONE);
+  f.queue([{ name: 'gate opened', gates: [GATE1], screens: BLIND }]);
+  assert.equal(run(p.root, f, 'start', '--once').out.at(-1).kind, 'fleet_gate');
+  run(p.root, f, 'answer', '--id', 'q2', '--choice', 'approve');
+  const out = run(p.root, f, 'start', '--once').out;
+  assert.equal(out.find((o) => o.blocked).blocked, 'send_failed');
+  assert.deepEqual(f.sends(), []); // nothing typed into a panel that may be open
+  assert.match(runnerFile(p.root).questions[2].text, /cannot be read and a question panel was the last thing seen there/);
+
+  f.screens({ term_1: { at: 'g', frames: { g: { lines: GONE } } } });
+  run(p.root, f, 'answer', '--id', 'q3', '--choice', 'retry the send');
+  run(p.root, f, 'start', '--once');
+  assert.deepEqual(f.sends(), [{ to: 'term_1', text: 'Director decision for gate g1: approve. Resolve your gate with it and continue.' }]);
+  assert.equal(sliceState(p.root, 'S01').cq_panel_seen, false);
+});
+
+test('U1: after a confirmed keys answer (no panel left), an unreadable screen lets messages through; cq_last is cleared', () => {
+  const p = fleet();
+  const f = fakes();
+  f.queue([start(screens(realChoice(REAL.B, 3)))]);
+  run(p.root, f, 'start', '--once');
+  assert.deepEqual(sliceState(p.root, 'S01').cq_last, { fp: `p:${fingerprint(parseScreen(REAL.B).question)}`, count: 1 });
+  run(p.root, f, 'answer', '--id', 'q1', '--choice', 'Approve all 5 layer-0 bricks');
+  f.queue([{ name: 'gate opened', gates: [GATE1], screens: BLIND }]); // the screen goes unreadable after the answer
+  assert.equal(run(p.root, f, 'start', '--once').out.at(-1).kind, 'fleet_gate');
+  const s = sliceState(p.root, 'S01');
+  assert.deepEqual([s.cq_panel_seen, s.cq_last], [false, null]);
+  run(p.root, f, 'answer', '--id', 'q2', '--choice', 'approve');
+  const out = run(p.root, f, 'start', '--once').out;
+  assert.equal(out.some((o) => o.blocked === 'send_failed'), false);
+  assert.deepEqual(f.sends(), [{ to: 'term_1', text: 'Director decision for gate g1: approve. Resolve your gate with it and continue.' }]);
+  assert.deepEqual(typed(f), [OPEN, MAIN, OPEN, DOWN, ENTER]); // no key into the unreadable screen
+
+  // the next of several questions is a panel still pending: the flag stays set (and cq_last is the old one, cleared)
+  const q = fleet();
+  const g = fakes();
+  const frames = {
+    closed: { lines: countOf(2), keys: { [OPEN]: 'd1' } },
+    d1: { lines: moveMark(REAL.D, 1), keys: { [ENTER]: 'e1', [MAIN]: 'closed' } },
+    e1: { lines: moveMark(REAL.E, 1), keys: { [MAIN]: 'closedE' } },
+    closedE: { lines: countOf(1), keys: { [OPEN]: 'e1' } },
+  };
+  g.queue([start(screens(frames))]);
+  run(q.root, g, 'start', '--once');
+  run(q.root, g, 'answer', '--id', 'q1', '--choice', parseScreen(REAL.D).options[0].label);
+  g.queue([{ name: 'blind', screens: BLIND, write: working('x') }]);
+  run(q.root, g, 'start', '--once');
+  assert.equal(sliceState(q.root, 'S01').cq_panel_seen, true);
 });

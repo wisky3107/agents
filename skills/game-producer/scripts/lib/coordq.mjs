@@ -264,23 +264,31 @@ function stillOpen(handle, fp) {
   return p.state === 'open' && p.ok ? `p:${fingerprint(p.question)}` === fp : p.state === 'open' ? null : false;
 }
 
-/** After an answer: a panel left open goes back to the main prompt, so the runner's next message reaches the composer. */
+/**
+ * After an answer: a panel left open goes back to the main prompt, so the runner's next message reaches the
+ * composer. → what the screen shows now: 'panel' (a question is still pending: the next of several, or the same),
+ * 'none' (a read that shows no panel) or 'unknown' (it could not be read).
+ */
 function restore(handle) {
   try {
     const scr = io.readScreen(handle);
-    if (scr && parseScreen(scr.lines).state === 'open') pressMain(handle);
+    if (!scr) return 'unknown';
+    const state = parseScreen(scr.lines).state;
+    if (state === 'open') pressMain(handle);
+    return state === 'none' ? 'none' : 'panel';
   } catch {
-    /* best effort */
+    return 'unknown'; // best effort
   }
 }
 
-/** The director picked one of the panel's options. Throws when it cannot be pressed safely. */
+/** The director picked one of the panel's options. Throws when it cannot be pressed safely. → { after } (see restore) */
 export function answerOption(handle, ref, label, say) {
   const r = readPanel(handle, { keepOpen: true });
+  const result = { after: 'unknown' }; // what the screen shows once the answer is done (set in finally)
   try {
     if (r.state === 'none') {
       say('no question panel on the screen any more: nothing sent');
-      return;
+      return result;
     }
     if (r.state === 'unknown') throw new Error("the coordinator's screen could not be read; nothing sent — answer it in the coordinator terminal");
     if (r.state !== 'panel') throw new Error(`the panel cannot be read now (${r.why}); nothing sent — answer it in the coordinator terminal`);
@@ -295,8 +303,9 @@ export function answerOption(handle, ref, label, say) {
     const after = stillOpen(handle, r.fp);
     if (after === true) throw new Error(`the panel still shows the question after Enter (sent ${[...sent, 'Enter'].join(', ')}); check the coordinator terminal`);
     say(after === null ? 'the panel after Enter could not be read: check the coordinator terminal' : 'the panel moved on');
+    return result;
   } finally {
-    restore(handle);
+    result.after = restore(handle);
   }
 }
 
@@ -304,22 +313,24 @@ export function answerOption(handle, ref, label, say) {
  * The director's own words. A free-text panel: typed + Enter. A choice panel: "Other" picked + Enter,
  * the text typed + Enter while the panel is still on that question, and the caller also sends the text
  * as a plain message (typing into "Other" did not render). A panel that is gone or cannot be read: only
- * the plain message. → { followUp: boolean, left: boolean } (left: an unreadable panel is still on the screen)
+ * the plain message. → { followUp, left, after } (left: an unreadable panel is still on the screen; after: what
+ * the screen shows once the answer is done, see restore)
  */
 export function answerText(handle, ref, text, say) {
   const r = readPanel(handle, { keepOpen: true });
+  const result = { followUp: false, left: false, after: 'unknown' };
   try {
     if (r.state === 'none') {
       say('no question panel on the screen any more: the answer goes as a plain message only');
-      return { followUp: true, left: false };
+      return Object.assign(result, { followUp: true });
     }
     if (r.state === 'unknown') {
       say("the coordinator's screen could not be read: nothing typed, the answer goes as a plain message only");
-      return { followUp: true, left: true };
+      return Object.assign(result, { followUp: true, left: true });
     }
     if (r.state !== 'panel' || !ref?.startsWith('p:')) {
       say(`the panel was not read as a question the director saw (${r.state === 'panel' ? 'asked unreadable' : r.why}): main prompt, the answer goes as a plain message only`);
-      return { followUp: true, left: true };
+      return Object.assign(result, { followUp: true, left: true });
     }
     if (r.fp !== ref) throw new Error(`the coordinator now shows a different question ("${r.panel.question.slice(0, 80)}"); nothing sent`);
     if (r.panel.kind === 'free') {
@@ -331,7 +342,7 @@ export function answerText(handle, ref, text, say) {
       // moved on, or this call fails: a text that may have been taken is never typed a second time
       if (stillOpen(handle, r.fp) !== false) throw new Error('the panel still shows the question after the answer and Enter (or the screen cannot be read); nothing typed again — check the coordinator terminal');
       say('the panel moved on');
-      return { followUp: false, left: false };
+      return result;
     }
     const other = r.panel.options.findIndex((o) => isOther(o.label));
     if (other < 0) throw new Error('this panel has no "Other" option: pick one of its options, or answer it in the coordinator terminal; nothing sent');
@@ -351,9 +362,9 @@ export function answerText(handle, ref, text, say) {
       keyPause();
       say(`${r.panel.otherInput ? 'the "Other" input was already showing' : `sent ${[...sent, 'Enter'].join(', ')} for "${r.panel.options[other].label}"`}, typed the answer + Enter`);
     } else say(`sent ${[...sent, 'Enter'].join(', ')} for "${r.panel.options[other].label}"; the panel moved on (or could not be read), no typing`);
-    return { followUp: true, left: false };
+    return Object.assign(result, { followUp: true });
   } finally {
-    restore(handle);
+    result.after = restore(handle);
   }
 }
 
@@ -361,16 +372,23 @@ export function answerText(handle, ref, text, say) {
  * Before the runner sends a plain message to the coordinator: an OPEN question panel would take that message
  * (and its Enter) as its answer. An open panel is sent back to the main prompt (shift+→) and the screen is read
  * again; a panel that is still open — or a screen that can no longer be read — throws, so nothing is sent.
- * → { closed: boolean } (closed: a panel was open and has been put away); a screen that cannot be read at
- * the start is no evidence of a panel, the message goes as before.
+ * A screen that cannot be read at the start: with `panelKnown` (a panel was the last thing seen there, so it may
+ * be open) it throws too; otherwise it is no evidence of a panel and the message goes as before.
+ * → { closed: boolean, panel: 'open' | 'closed' | 'none' | 'unknown' } (closed: a panel was open and has been
+ * put away; panel: what the first read showed)
  */
-export function mainPrompt(handle) {
+export function mainPrompt(handle, { panelKnown = false } = {}) {
   const scr = io.readScreen(handle);
-  if (!scr || parseScreen(scr.lines).state !== 'open') return { closed: false };
+  if (!scr) {
+    if (panelKnown) throw new Error(`the screen of ${handle} cannot be read and a question panel was the last thing seen there (it may be open); the message would be typed into it, nothing sent — look at the coordinator terminal, then retry`);
+    return { closed: false, panel: 'unknown' };
+  }
+  const state = parseScreen(scr.lines).state;
+  if (state !== 'open') return { closed: false, panel: state === 'none' ? 'none' : 'closed' };
   io.sendKeys(handle, KEYS.main);
   keyPause();
   const again = io.readScreen(handle);
   if (!again) throw new Error(`a question panel is open on ${handle} and could not be confirmed closed after shift+→; nothing sent`);
   if (parseScreen(again.lines).state === 'open') throw new Error(`a question panel is still open on ${handle} after shift+→; the message would be typed into it, nothing sent — answer or close the panel`);
-  return { closed: true };
+  return { closed: true, panel: 'open' };
 }

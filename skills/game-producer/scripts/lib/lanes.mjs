@@ -489,7 +489,12 @@ function deliver(ctx, key) {
     handle = resolveTo(ctx, entry.to);
     if (!handle) throw new Error('no terminal recorded');
     // an open codex question panel would take this message as its answer: back to the main prompt first (confirmed)
-    if (ctx.lane === 'fleet' && cq.mainPrompt(handle).closed) st.log(root, ctx.id, `closed an open question panel on ${handle} (shift+→) before sending ${key}`);
+    if (ctx.lane === 'fleet') {
+      const was = Boolean(st.readSliceState(root, ctx.id).cq_panel_seen);
+      const m = cq.mainPrompt(handle, { panelKnown: was });
+      if (m.closed) st.log(root, ctx.id, `closed an open question panel on ${handle} (shift+→) before sending ${key}`);
+      if (m.panel !== 'unknown' && was !== (m.panel !== 'none')) st.writeSliceState(root, ctx.id, { cq_panel_seen: m.panel !== 'none' });
+    }
     io.send(handle, entry.text);
   } catch (err) {
     setEntry(ctx, key, { ...entry, failed: String(err.message).slice(0, 200) });
@@ -1228,12 +1233,16 @@ function coordinatorAsks(ctx, s, handle) {
     const now = { at: was?.at || st.now(), n: (was?.n || 0) + 1 };
     st.writeSliceState(root, ctx.id, { cq_blind: now });
     if (now.n === 1) st.log(root, ctx.id, `could not read the coordinator's screen (${handle}): codex question panels are not checked until it can be`);
-    if (now.n < CQ_BLIND_WAITS) return null;
+    // a panel was the last thing seen there: it may be open, so the lane is only waited on (no nudge, no message)
+    const unseen = s.cq_panel_seen ? { hold: true } : null;
+    if (now.n < CQ_BLIND_WAITS) return unseen;
     const q = ask(s, 'coordinator_screen', `the coordinator's screen (${handle}) could not be read on ${now.n} waits in a row, so a codex question panel (request_user_input) may be waiting there and the runner would not see it; look at the coordinator terminal and answer anything it asks`,
       ['checked the coordinator terminal, continue', 'stop'], { obs: `cq_blind@${now.at}` });
-    return q === PAUSE ? null : q;
+    return q === PAUSE ? unseen : q;
   }
   if (s.cq_blind) st.writeSliceState(root, ctx.id, { cq_blind: null });
+  // the last successful read decides what an unreadable one may do: a panel there (open or closed) or none
+  if (Boolean(s.cq_panel_seen) === Boolean(found.gone)) st.writeSliceState(root, ctx.id, { cq_panel_seen: !found.gone });
   if (found.gone) {
     // the panel is gone: what was acked for it is over, so the same question shown again is asked again
     if (s.cq_quiet != null || s.cq_last || s.cq_held || (s.acked || []).some((x) => String(x).startsWith('cq:'))) {
@@ -1286,10 +1295,14 @@ function applyCoordinatorQuestion(ctx, q) {
   if (!handle) throw new Error('no coordinator terminal recorded');
   const say = (line) => st.log(root, ctx.id, `coordinator panel ${q.id}: ${line}`);
   try {
-    if (choice !== cq.ANSWER_TEXT) return cq.answerOption(handle, q.ref, choice, say);
+    // once keys went in, what was last asked is stale; what the screen shows now says whether a panel is still
+    // pending (the next of several) or not (then an unreadable screen may let messages through)
+    const answered = (r) => st.writeSliceState(root, ctx.id, { cq_last: null, ...(r.after === 'panel' ? { cq_panel_seen: true } : r.after === 'none' ? { cq_panel_seen: false } : {}) });
+    if (choice !== cq.ANSWER_TEXT) return answered(cq.answerOption(handle, q.ref, choice, say));
     const text = typedText(q.answer.text);
     if (!text) throw new Error('give the answer with --text');
     const r = cq.answerText(handle, q.ref, text, say);
+    answered(r); // before the follow-up goes out: deliver() reads it
     if (r.followUp) sendOnce(ctx, `answer:${q.id}`, COORDINATOR, `${cq.FOLLOW_UP}: ${text}`);
     if (r.left) stays();
   } catch (err) {
@@ -1301,7 +1314,7 @@ function applyCoordinatorQuestion(ctx, q) {
 // A HANDOFF detail that says the slice waits for the director while no gate is open (2026-10-05: "pending a
 // director decision" with status working stalled a slice). Decisions already made ("Director resolved gate…",
 // "per director") never match: only a state of waiting does, and a negation just before it cancels the match.
-const WHO = String.raw`(?:a\s+|the\s+|your\s+)?director(?:['’]s)?(?![\w-])(?!\s+gates?\b)`; // not "director-approved", "director-side", "director gate" (a gate exists)
+const WHO = String.raw`(?:a\s+|the\s+|your\s+)?director(?:['’]s)?(?![\w-])(?!\s+gates?(?![a-z]))`; // not "director-approved", "director-side", "director gate" / "director gate_6c…" (a gate exists)
 const DECISION = String.raw`(?:decision|ruling|approval|call|input|answer|sign-?off)`;
 const DIRECTOR_WAIT = new RegExp([
   String.raw`\bpending\s+(?:on\s+)?${WHO}`, // "pending the director", "pending director approval"
