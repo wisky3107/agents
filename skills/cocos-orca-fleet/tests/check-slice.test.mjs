@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { specCommands, slicePaths, outOfScope, nanUnsafe, es5Errors } from '../scripts/check-slice.mjs';
+import { specCommands, slicePaths, outOfScope, nanUnsafe, es5Errors, sliceFacts, evidenceRe, section } from '../scripts/check-slice.mjs';
 
 const SCRIPT = new URL('../scripts/check-slice.mjs', import.meta.url).pathname;
 
@@ -110,4 +110,47 @@ test('end to end: an old spec gone red fails, out-of-slice paths warn, NaN-unsaf
   assert.match(r.stdout, /FAIL smoke-lint[^\n]*\n  scripts\/smoke\/checks\/S12-01\.check\.js:1:/);
   assert.match(r.stdout, /RESULT FAIL \(specs, smoke-lint, scope\)/);
   assert.equal(fs.readFileSync(path.join(d, '.cursor/evidence/tasks/T-S12/evidence/static-check.txt'), 'utf8'), r.stdout);
+});
+
+test('sliceFacts / evidenceRe / section: ids, named evidence paths and their matchers', () => {
+  const src = `---\nid: S12\nacceptance:\n  - text: "A-12-01 / GP-3 the pack loads"\n    evidence: GIVEN\n  - text: "no id on this row"\n    evidence: ASSUMPTION\nplaytest:\n  - "capture docs/evidence/S12/V1-<id>.png and docs/evidence/S12/after/Vn-start|win.png, then docs/evidence/S12/perf.md."\n---\n`;
+  const f = sliceFacts(src);
+  assert.deepEqual([f.id, f.rows], ['S12', ['A-12-01', '#2']]);
+  assert.deepEqual(f.evidence, ['docs/evidence/S12/V1-<id>.png', 'docs/evidence/S12/after/Vn-start', 'docs/evidence/S12/perf.md']);
+  assert.ok(evidenceRe('docs/evidence/S12/V1-<id>.png').test('docs/evidence/S12/V1-L54.png'));
+  assert.ok(!evidenceRe('docs/evidence/S12/V1-<id>.png').test('docs/evidence/S12/V2-L54.png'));
+  assert.ok(evidenceRe('docs/evidence/S12/after/Vn-start').test('docs/evidence/S12/after/V3-start.png'));
+  assert.ok(evidenceRe('docs/evidence/S12/**').test('docs/evidence/S12/a/b.json'));
+  assert.equal(section('# N\n## Gaps\n- a\n## Next\nx', 'gaps'), '- a');
+  assert.equal(section('# N\n', 'gaps'), null);
+});
+
+test('evidence + notes: missing named evidence fails unless deferred; stale evidence warns; notes sections enforced', () => {
+  const { d, g } = repo();
+  fs.writeFileSync(path.join(d, 'slices/S12-x.md'), `---\nid: S12\npaths:\n  code: [src/a.js]\nacceptance:\n  - text: "A-12-01 loads"\n    evidence: GIVEN\n  - text: "A-12-02 saves"\n    evidence: GIVEN\nplaytest:\n  - "write docs/evidence/S12/perf.md and docs/evidence/S12/V1-<id>.png"\n---\n`);
+  g('add', '-A'); g('commit', '-qm', 'slice');
+  const notes = path.join(d, '.cursor/evidence/tasks/T-S12/evidence/integration-notes.md');
+  fs.mkdirSync(path.dirname(notes), { recursive: true });
+  fs.writeFileSync(notes, '# notes\n## acceptance map\n| row | check |\n|---|---|\n| A-12-01 | tests/ok.spec.ts |\n## gaps\n- L57 off-playfield at V2\n');
+  fs.mkdirSync(path.join(d, 'docs/evidence/S12'), { recursive: true });
+  fs.writeFileSync(path.join(d, 'docs/evidence/S12/perf.md'), 'perf');
+  const old = new Date(Date.now() - 60000);
+  fs.utimesSync(path.join(d, 'docs/evidence/S12/perf.md'), old, old);
+  fs.mkdirSync(path.join(d, 'src')); fs.writeFileSync(path.join(d, 'src/a.js'), '1');
+  fs.mkdirSync(path.join(d, 'scripts/smoke/checks'), { recursive: true });
+  fs.writeFileSync(path.join(d, 'scripts/smoke/checks/S12-01-load.check.js'), "if (!(n >= 1)) fail('x');\n");
+  let r = exec(d, '--slice', 'slices/S12-x.md', '--only', 'evidence,notes');
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /FAIL evidence: 1 named evidence path\(s\) missing[^\n]*\n  missing: docs\/evidence\/S12\/V1-<id>\.png\n  older than src\/a\.js/);
+  assert.match(r.stdout, /acceptance map: A-12-02 has no check named/);
+  assert.match(r.stdout, /gap without a disposition[^\n]*L57 off-playfield/);
+  assert.match(r.stdout, /no `## negative controls` section/);
+
+  fs.writeFileSync(notes, '# notes\n## acceptance map\n| A-12-01 | tests/ok.spec.ts |\n| A-12-02 | manual: phone |\n## gaps\n- L57 off-playfield at V2 → followup F-14\n## negative controls\n- S12-01-load: n = NaN → FAIL\n## evidence deferred\n- docs/evidence/S12/V1-<id>.png: phone capture, manual_required\n');
+  fs.writeFileSync(path.join(d, 'docs/evidence/S12/perf.md'), 'perf again');
+  r = exec(d, '--slice', 'slices/S12-x.md', '--only', 'evidence,notes');
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, /PASS evidence: 2 named path\(s\) present/);
+  assert.match(r.stdout, /PASS notes: 2 acceptance row\(s\) mapped, 1 negative control\(s\)/);
+  assert.match(exec(d, '--slice', 'slices/S12-x.md', '--skip', 'evidence,notes,specs').stdout, /^(?![\s\S]*evidence:)[\s\S]*RESULT/);
 });

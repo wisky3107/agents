@@ -67,15 +67,24 @@ Build:
    play the feel rows once; batch state reads into one eval. Screenshots: ONE preview.png total.
    Then `node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice <SLICE_FILE> --out <EVIDENCE_DIR>/static-check.txt` must
    not end RESULT FAIL: it runs tsc, the ES5 web build, EVERY spec in tests/ (old ones too), slice
-   scope and the smoke-guard lint. Declare each WARN scope line in integration-notes.md. The
-   producer reruns it before the reviewer and sends a FAIL back to you.
+   scope, the smoke-guard lint, the docs/evidence/ paths the slice names and the integration-notes
+   sections below. Declare each WARN scope line in integration-notes.md. The producer reruns it
+   before the reviewer and sends a FAIL back to you.
 6. Budget: stage, `bash .cursor/skills/setup-pre-commit/check-change-budget.sh --report`, unstage;
    paste the line into <EVIDENCE_DIR>/integration-notes.md. Budget mode <BUDGET_MODE>:
    advisory → over budget, add
    `budget_bump: <from>→<to>` + one-line reason and keep going; never trim code/tests/VFX/assets
    to fit. gate:<pct> → over by ≤ pct continue and say so; more → stop, HANDOFF blocked, report.
    tripo_credits over cap → stop and report in every mode.
-7. Evidence in <EVIDENCE_DIR>: integration-notes.md, preflight.json, preview-startup.json,
+7. integration-notes.md carries `## acceptance map` (one line per acceptance row, by its id: the check file, spec or
+   `manual: <reason>` that measures it), `## gaps` (every gap you know of, each with a disposition:
+   fixed / followup F-n added to FOLLOWUPS.md / director D-n; `none` when there are none — a gap
+   that breaks an acceptance row is never a followup: fix it, or HANDOFF blocked), and
+   `## negative controls` (each new or changed smoke check and spec: the broken state you ran it
+   against and the red line it printed — a check you never saw fail proves nothing).
+   A docs/evidence/ file the slice names that you cannot produce (phone, real device) goes under
+   `## evidence deferred` with the reason.
+8. Evidence in <EVIDENCE_DIR>: integration-notes.md, preflight.json, preview-startup.json,
    runtime-state.json (smoke JSON + eval reads; manual_required only with the real reason),
    preview.png, stats.json, final-report.md. If a concrete reusable technique emerged, add
    learning-candidates.json: [{id,kind:failure_fix|successful_pattern,topic,context:{engine,mode,platform},
@@ -122,6 +131,9 @@ to check, then gather current evidence. A memory item or the writer's claim is n
    code). tsc/lint output read, not assumed. Read <EVIDENCE_DIR>/static-check.txt (the producer's
    check-slice run; rerun it if missing or older than the last code change): each FAIL line is a
    finding (owner code), and so is each WARN scope line integration-notes.md does not declare.
+   Pick one `## negative controls` line and redo it: a check that stays green on the broken state
+   is a finding (owner code). A `## gaps` disposition that leaves an acceptance row broken is a
+   finding (owner code).
 4. Screenshots: one final preview.png plus at most one per blocker/major finding.
 Write <EVIDENCE_DIR>/review.md (findings F1…, owner code|scene, `## fix_routing` table when
 CHANGES_REQUESTED) ending with exactly APPROVED or CHANGES_REQUESTED, runtime-state.json

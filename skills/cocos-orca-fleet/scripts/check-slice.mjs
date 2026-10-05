@@ -6,7 +6,7 @@
  * recurred across slices and that a script can catch, so the reviewer stops spending rounds on them.
  *
  *   node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs [--slice slices/Sxx-*.md] [--base <ref>]
- *        [--out <file>] [--only tsc,es5,specs,scope,smoke-lint] [--all-checks]
+ *        [--out <file>] [--only <checks>] [--skip <checks>] [--notes <integration-notes.md>] [--all-checks]
  *
  *   tsc         project tsconfig, --noEmit. A writer's "tsc clean" is not evidence (S05 F1).
  *   es5         the same tsconfig with --target es5, TS2802 in assets/ only. The editor preview runs
@@ -22,6 +22,19 @@
  *               passes when x is NaN or undefined (S11 F-04, a vacuous probe). Write it as
  *               `if (!(x <= limit)) fail(...)`, test Number.isFinite in the same condition, or end the
  *               line with `// finite: <why x is always a number>`.
+ *   evidence    every docs/evidence/ path the slice names exists (`<x>` and `*` match anything, `Vn` a
+ *               viewport digit, a name without an extension a prefix), unless integration-notes.md
+ *               lists it under `## evidence deferred` with a reason: required evidence was missing
+ *               in S05, S07, S09, S10 and S11. WARN when an evidence file under docs/evidence/<Sxx>/
+ *               (before/ and baseline left out) is older than the newest changed code or data file:
+ *               S11 evidence described a pack the slice had since rebuilt (R2-01).
+ *   notes       integration-notes.md carries three sections (they come from the same review):
+ *               `## acceptance map` names the check, spec or manual reason for every acceptance row
+ *               (by its id such as A-11-03, else #n) — rows nobody measured shipped (S06 F2, S08 F2);
+ *               `## gaps` gives every known gap a disposition (fixed, followup F-n, director D-n /
+ *               gate, or `none`) — a gap the writer noted and shipped anyway (S08 F4);
+ *               `## negative controls` names every new or changed smoke check and spec with the
+ *               broken state it went red on — vacuous checks passed (S04 F3, S11 F-04).
  *
  * Prints one line per check and the detail under it, then `RESULT PASS|WARN|FAIL (...)`.
  * Exit 1 on any FAIL, else 0. SKIP (no tsconfig, no tests, no slice) is not a failure.
@@ -31,7 +44,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-const CHECKS = ['tsc', 'es5', 'specs', 'scope', 'smoke-lint'];
+const CHECKS = ['tsc', 'es5', 'specs', 'scope', 'smoke-lint', 'evidence', 'notes'];
 // always inside a slice: tests, evidence, producer state, docs
 const ALWAYS = ['tests/**', 'scripts/smoke/checks/**', '.cursor/evidence/**', '.cursor/producer*', 'docs/**', 'slices/**',
   '*.md', 'producer-state.json', 'producer-log.md'];
@@ -46,6 +59,8 @@ export function parseArgs(argv) {
     else if (a === '--out') o.out = argv[++i];
     else if (a === '--root') o.root = argv[++i];
     else if (a === '--only') o.only = argv[++i].split(',').map((s) => s.trim()).filter(Boolean);
+    else if (a === '--skip') { const skip = argv[++i].split(',').map((s) => s.trim()); o.only = o.only.filter((c) => !skip.includes(c)); }
+    else if (a === '--notes') o.notes = argv[++i];
     else if (a === '--all-checks') o.allChecks = true;
     else throw new Error(`unknown argument ${a}`);
   }
@@ -201,6 +216,104 @@ function changedFiles(root, base) {
   return [...set].sort();
 }
 
+/** Slice id (front matter `id:`), acceptance rows as ids (A-11-03 … else #n), docs/evidence/ paths named anywhere. */
+export function sliceFacts(src) {
+  const id = (src.match(/^id:\s*(\S+)/m) || [])[1] || null;
+  const acc = (src.match(/^acceptance:[^\n]*\n((?:[ \t]+[^\n]*\n|\s*\n)*)/m) || [])[1] || '';
+  const rows = [...acc.matchAll(/^\s+-\s+text:\s*(.*)$/gm)].map((m, i) => (m[1].match(/\b[A-Z]{1,3}-\d{1,3}-\d{1,3}\b/) || [`#${i + 1}`])[0]);
+  const evidence = [...new Set([...src.matchAll(/docs\/evidence\/[A-Za-z0-9_.\/*<>-]+/g)].map((m) => m[0].replace(/[.,;:]+$/, '')))];
+  return { id, rows, evidence };
+}
+
+/** A path the slice names → a matcher over project-relative files. */
+export function evidenceRe(p) {
+  const last = p.split('/').pop();
+  const prefix = p.endsWith('/') || p.endsWith('**') || (last && !last.includes('.') && !last.includes('*'));
+  const body = p.replace(/\/?\*\*$/, '/').replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/<[^>]*>/g, '\u0000').replace(/\bVn\b/g, 'V\\d')
+    .replace(/\*/g, '[^/]*').replace(/\u0000/g, '[^/]+');
+  return new RegExp(`^${body}${prefix ? '.*' : ''}$`);
+}
+
+/** The lines under a `## <title>` heading (any level), up to the next heading; null when there is no such heading. */
+export function section(md, title) {
+  const lines = md.split('\n');
+  const at = lines.findIndex((l) => new RegExp(`^#{1,6}\\s*${title}\\b`, 'i').test(l));
+  if (at < 0) return null;
+  const end = lines.findIndex((l, i) => i > at && /^#{1,6}\s/.test(l));
+  return lines.slice(at + 1, end < 0 ? undefined : end).join('\n');
+}
+
+function filesUnder(root, rel) {
+  const out = [];
+  const walk = (d) => {
+    if (!fs.existsSync(d)) return;
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p); else out.push(path.relative(root, p));
+    }
+  };
+  walk(path.join(root, rel));
+  return out;
+}
+
+const notesPath = (o, id) => o.notes || `.cursor/evidence/tasks/T-${id}/evidence/integration-notes.md`;
+const readSlice = (root, slice) => (slice && fs.existsSync(path.resolve(root, slice)) ? fs.readFileSync(path.resolve(root, slice), 'utf8') : null);
+const readText = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : null);
+
+function checkEvidence(root, o, changed) {
+  const src = readSlice(root, o.slice);
+  if (!src) return { status: 'SKIP', note: o.slice ? `${o.slice} not found` : 'no --slice' };
+  const { id, evidence } = sliceFacts(src);
+  if (!evidence.length) return { status: 'SKIP', note: 'the slice names no docs/evidence/ path' };
+  const have = filesUnder(root, 'docs/evidence');
+  const deferred = section(readText(path.resolve(root, notesPath(o, id))) || '', 'evidence deferred') || '';
+  const missing = evidence.filter((p) => !have.some((f) => evidenceRe(p).test(f)) && !deferred.includes(p) && !deferred.includes(p.split('/').pop()));
+  const lines = missing.map((p) => `missing: ${p}`);
+  // stale: claims under docs/evidence/<id>/ older than the newest changed code/data file
+  const code = changed.filter((f) => !/^(docs|tests|scripts\/smoke|\.cursor|slices)\//.test(f) && !f.endsWith('.md') && fs.existsSync(path.join(root, f)));
+  const newest = code.map((f) => [f, fs.statSync(path.join(root, f)).mtimeMs]).sort((a, b) => b[1] - a[1])[0];
+  let stale = [];
+  if (newest && id) {
+    stale = have.filter((f) => f.startsWith(`docs/evidence/${id}/`) && !/\/(before|baseline)\//.test(f) && /\.(md|json|txt)$/.test(f)
+      && fs.statSync(path.join(root, f)).mtimeMs < newest[1] - 1000);
+    if (stale.length) lines.push(`older than ${newest[0]} (${new Date(newest[1]).toISOString()}) — regenerate or say why it still holds:`, ...stale.slice(0, 20).map((f) => `  ${f}`));
+  }
+  if (missing.length) return { status: 'FAIL', note: `${missing.length} named evidence path(s) missing — produce them or list them under ## evidence deferred with a reason`, lines };
+  if (stale.length) return { status: 'WARN', note: `${stale.length} evidence file(s) older than the last code/data change`, lines };
+  return { status: 'PASS', note: `${evidence.length} named path(s) present` };
+}
+
+const DISPOSITION = /\b(fixed|none|followups?|F-\d+|director|D-?\d+|gate_\w+|deferred)\b/i;
+
+function checkNotes(root, o, changed) {
+  const src = readSlice(root, o.slice);
+  if (!src) return { status: 'SKIP', note: o.slice ? `${o.slice} not found` : 'no --slice' };
+  const { id, rows } = sliceFacts(src);
+  if (!rows.length) return { status: 'SKIP', note: 'the slice has no acceptance rows' };
+  const file = notesPath(o, id);
+  const md = readText(path.resolve(root, file));
+  if (md === null) return { status: 'FAIL', note: `${file} missing` };
+  const lines = [];
+  const map = section(md, 'acceptance map');
+  if (map === null) lines.push('no `## acceptance map` section (row → check / spec / manual reason)');
+  else for (const r of rows) if (!new RegExp(`(^|[^\\w-])${r.replace(/[#-]/g, '\\$&')}(?![\\w-])`).test(map)) lines.push(`acceptance map: ${r} has no check named`);
+  const gaps = section(md, '(?:known |open )?gaps');
+  if (gaps === null) lines.push('no `## gaps` section (write `none` when there are none)');
+  else {
+    const items = gaps.split('\n').filter((l) => /^\s*([-*]|\d+\.|\|)\s*\S/.test(l) && !/^\s*\|[\s:-]+\|/.test(l) && !/^\s*\|\s*gap\b/i.test(l));
+    if (!items.length && !/\bnone\b/i.test(gaps)) lines.push('`## gaps` is empty — write `none` when there are none');
+    for (const l of items) if (!DISPOSITION.test(l)) lines.push(`gap without a disposition (fixed / followup F-n / director D-n): ${l.trim().slice(0, 160)}`);
+  }
+  const checks = changed.filter((f) => (/^scripts\/smoke\/checks\/.+\.check\.js$/.test(f) || /^tests\/.+\.spec\.ts$/.test(f)) && fs.existsSync(path.join(root, f)));
+  if (checks.length) {
+    const neg = section(md, 'negative controls?');
+    if (neg === null) lines.push('no `## negative controls` section (each new/changed check: the broken state it went red on)');
+    else for (const f of checks) if (!neg.includes(path.basename(f).replace(/\.(check\.js|spec\.ts)$/, ''))) lines.push(`negative control missing: ${f}`);
+  }
+  return lines.length ? { status: 'FAIL', note: `${file}: ${lines.length} problem(s)`, lines }
+    : { status: 'PASS', note: `${rows.length} acceptance row(s) mapped${checks.length ? `, ${checks.length} negative control(s)` : ''}` };
+}
+
 function checkScope(root, slice, changed) {
   if (!slice) return { status: 'SKIP', note: 'no --slice' };
   const file = path.resolve(root, slice);
@@ -250,6 +363,8 @@ export function main(argv) {
     specs: () => checkSpecs(root),
     scope: () => checkScope(root, o.slice, changed),
     'smoke-lint': () => checkSmokeLint(root, changed, o.allChecks),
+    evidence: () => checkEvidence(root, o, changed),
+    notes: () => checkNotes(root, o, changed),
   };
   const out = [`check-slice ${path.basename(root)} slice=${o.slice || '-'} base=${base || '-'} at ${new Date().toISOString()}`];
   const worst = { FAIL: [], WARN: [] };

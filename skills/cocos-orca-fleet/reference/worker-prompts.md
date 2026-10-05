@@ -200,7 +200,12 @@ Do:
    its prefab step (printed `next:`) goes in integration-notes for the integrator.
 4. Write evidence/integration-notes.md: exact nodes/components/refs the integrator must create
    or wire, in `{Kind} - {label}` form with parent path, ensure_* semantics, and which manifest
-   asset goes where.
+   asset goes where. It also carries `## acceptance map` (one line per acceptance row, by its id: the check file, spec or
+   `manual: <reason>` that measures it), `## gaps` (every gap you know of, each with a disposition:
+   fixed / followup F-n added to FOLLOWUPS.md / director D-n; `none` when there are none — a gap
+   that breaks an acceptance row is never a followup: fix it, or HANDOFF blocked), and
+   `## negative controls` (each new or changed smoke check and spec: the broken state you ran it
+   against and the red line it printed — a check you never saw fail proves nothing).
 5. Smoke checks are part of the code, not the review: for EVERY acceptance row that state can
    answer (score, panel open, saved value, node count, no console error) add one
    `scripts/smoke/checks/<Sxx>-<nn>-<id>.check.js` (≤30 lines, format in
@@ -208,9 +213,10 @@ Do:
    particle, shake) stay manual. The reviewer runs these first; a missing check for a
    state-answerable row is a finding against you. Write every fail guard so a NaN/undefined
    value fails: `if (!(x <= limit)) fail(...)` or Number.isFinite in the same condition.
-6. `tsc` clean; no console.log left behind. Before worker_done, `node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice <PLAN's plan_source slice file> --out evidence/static-check.txt`
+6. `tsc` clean; no console.log left behind. Before worker_done, `node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice <PLAN's plan_source slice file> --skip evidence --out evidence/static-check.txt`
    must not end RESULT FAIL (tsc, the ES5 web build, EVERY spec in tests/, scope, smoke-guard
-   lint); declare each WARN scope line in integration-notes.md. Budget: run
+   lint, the integration-notes sections); declare each WARN scope line in integration-notes.md.
+   docs/evidence/ is the integrator's. Budget: run
    `bash .cursor/skills/setup-pre-commit/check-change-budget.sh --report` (stage, report, unstage)
    and paste the line into integration-notes.md — that number is the only one anyone quotes.
    Over budget → add `budget_bump: <from>→<to>` + one-line reason. PLAN `budget_mode: advisory`
@@ -286,6 +292,11 @@ Do:
    This is startup evidence, not an independent playtest. Failure → report to coordinator;
    do not ask the human directly or repeat an unchanged attempt.
 8. evidence/diff-stat.txt after the task, plus the `check-change-budget.sh --report` line.
+   Produce every docs/evidence/ path the slice names, then run check-slice in full
+   (`node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice <plan_source> --out evidence/static-check.txt`):
+   an `evidence` FAIL line is yours (produce it, or list it under `## evidence deferred` in
+   integration-notes.md with the reason); an `evidence` WARN means a file predates the last
+   code/data change — regenerate it. Other FAIL lines go to the coordinator as code findings.
 9. editor-lock.js release --owner integrator, including on startup failure.
 10. Screenshots: at most ONE editor screenshot (hierarchy/refs) and none of the preview — the
     reviewer takes preview shots. Evidence is JSON/text first; PNGs are for visual questions only.
@@ -355,8 +366,10 @@ Static (commit-guard gates 1–4, read-only):
   finding (owner asset).
 - STATIC: tsc + lint clean (read the tool output, do not assume). Run check-slice yourself
   (`node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice <plan_source> --out evidence/static-check.txt`):
-  each FAIL line is a finding (owner code), and so is each WARN scope line integration-notes.md
-  does not declare.
+  each FAIL line is a finding (owner code; `evidence` lines owner scene), and so is each WARN
+  scope line integration-notes.md does not declare. Redo one `## negative controls` line: a check
+  that stays green on the broken state is a finding (owner code). A `## gaps` disposition that
+  leaves an acceptance row broken is a finding (owner code).
 
 Runtime:
 1. Read evidence/preview-startup.json and validate the handed-off URL/title/readiness for this
