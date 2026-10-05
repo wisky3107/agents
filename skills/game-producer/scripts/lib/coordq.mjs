@@ -356,3 +356,21 @@ export function answerText(handle, ref, text, say) {
     restore(handle);
   }
 }
+
+/**
+ * Before the runner sends a plain message to the coordinator: an OPEN question panel would take that message
+ * (and its Enter) as its answer. An open panel is sent back to the main prompt (shift+→) and the screen is read
+ * again; a panel that is still open — or a screen that can no longer be read — throws, so nothing is sent.
+ * → { closed: boolean } (closed: a panel was open and has been put away); a screen that cannot be read at
+ * the start is no evidence of a panel, the message goes as before.
+ */
+export function mainPrompt(handle) {
+  const scr = io.readScreen(handle);
+  if (!scr || parseScreen(scr.lines).state !== 'open') return { closed: false };
+  io.sendKeys(handle, KEYS.main);
+  keyPause();
+  const again = io.readScreen(handle);
+  if (!again) throw new Error(`a question panel is open on ${handle} and could not be confirmed closed after shift+→; nothing sent`);
+  if (parseScreen(again.lines).state === 'open') throw new Error(`a question panel is still open on ${handle} after shift+→; the message would be typed into it, nothing sent — answer or close the panel`);
+  return { closed: true };
+}

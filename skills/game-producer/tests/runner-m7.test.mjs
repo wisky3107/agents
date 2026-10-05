@@ -251,15 +251,40 @@ test('an unreadable panel: the raw screen tail with only the text / continue / s
   assert.deepEqual(typed(g), [OPEN]);
 });
 
-test('a screen read that is only the stream, or fails, asks nothing', () => {
+test('a screen that cannot be read: never keys into it, said once in the log, and the director is asked after 3 waits in a row (once per outage)', () => {
   const p = fleet();
   const f = fakes();
-  f.queue([start({ term_1: { at: 'closed', source: 'screen-unavailable', frames: { closed: { lines: closed(), keys: { [OPEN]: 'closed' } } } } }), tick(2)]);
-  const out = run(p.root, f, 'start', '--once').out;
-  assert.equal(out.some((o) => o.blocked || o.waiting), false);
-  assert.deepEqual(typed(f), []); // the accumulated stream still shows closed panels: never keys into it
-  // said once, not on every wait: the feature is not silently off
-  assert.equal(log(p.root).match(/could not read the coordinator's screen \(term_1\)/g).length, 1);
+  const blind = { term_1: { at: 'u', source: 'screen-unavailable', frames: { u: { lines: closed(), keys: { [OPEN]: 'u' } } } } };
+  // two unreadable waits: nothing asked, nothing typed (the accumulated stream still shows closed panels)
+  f.queue([start(blind), tick(2)]);
+  const first = run(p.root, f, 'start', '--once').out;
+  const q1 = runnerFile(p.root).questions[0];
+  assert.deepEqual(typed(f), []);
+  // the empty queue ends the third wait: that is the 3rd unreadable look → one question
+  assert.deepEqual([first.find((o) => o.blocked).blocked, first.find((o) => o.blocked).options], ['coordinator_screen', ['checked the coordinator terminal, continue', 'stop']]);
+  assert.match(q1.text, /could not be read on 3 waits in a row, so a codex question panel \(request_user_input\) may be waiting there/);
+  assert.equal(log(p.root).match(/could not read the coordinator's screen \(term_1\)/g).length, 1); // said once, not on every wait
+
+  // answered: the same outage is not asked again, a new outage (after a good read) is
+  run(p.root, f, 'answer', '--id', 'q1', '--choice', 'checked the coordinator terminal, continue');
+  f.queue([tick(4), tick(5), tick(6), tick(7)]);
+  fs.rmSync(path.join(p.root, '.cursor', 'producer.control'), { force: true });
+  assert.equal(run(p.root, f, 'start', '--once').out.some((o) => o.waiting || (o.blocked && o.blocked !== 'fleet_stall')), false);
+  assert.equal(runnerFile(p.root).questions.filter((q) => q.kind === 'coordinator_screen').length, 1);
+  const readable = { term_1: { at: 'g', frames: { g: { lines: GONE } } } };
+  f.queue([tick(8, 't8', { screens: readable }), tick(9, 't9', { screens: blind }), tick(10), tick(11)]);
+  fs.rmSync(path.join(p.root, '.cursor', 'producer.control'), { force: true });
+  const again = run(p.root, f, 'start', '--once').out;
+  assert.equal(again.find((o) => o.waiting)?.kind, 'coordinator_screen');
+  assert.equal(runnerFile(p.root).questions.filter((q) => q.kind === 'coordinator_screen').length, 2);
+  assert.deepEqual(typed(f), []);
+  assert.equal(log(p.root).match(/could not read the coordinator's screen \(term_1\)/g).length, 2); // once per outage
+
+  // a single unreadable wait in between good ones asks nothing
+  const q = fleet();
+  const g = fakes();
+  g.queue([start({ term_1: { at: 'g', frames: { g: { lines: GONE } } } }), tick(2, 't2', { screens: blind }), tick(3, 't3', { screens: readable }), tick(4, 't4', { screens: blind }), tick(5, 't5', { screens: readable })]);
+  assert.equal(run(q.root, g, 'start', '--once').out.some((o) => o.waiting || (o.blocked && o.blocked !== 'fleet_stall')), false);
 });
 
 test('"answered in the coordinator terminal, continue": nothing is typed, and the same panel is not asked again', () => {
@@ -399,6 +424,9 @@ test('waitsOnDirector: waiting phrases match; decisions made, negations and othe
     'Reviewer awaiting director-side evidence.',
     'Worker is pending director-signed manifest paths',
     'Waiting for your next message from the reviewer',
+    'S12 is pending director gate; implementing the rest meanwhile', // a gate exists
+    'Merge pending director review is not required', // negated after the phrase
+    'Reserve swap pending director approval is no longer needed',
     '',
     undefined,
   ]) assert.equal(waitsOnDirector(no), null, String(no));
@@ -743,7 +771,7 @@ test('an acked panel: gone clears the ack (the same question later is asked agai
   fs.rmSync(path.join(p.root, '.cursor', 'producer.control'), { force: true });
   const out = run(p.root, f, 'start', '--once').out;
   assert.deepEqual([out.at(-1).waiting, out.at(-1).kind], ['q2', 'coordinator_question']);
-  assert.match(log(p.root), /still on screen after 12 waits: asking about it again/);
+  assert.match(log(p.root), /still on screen after 12 waits: asking about it on the next wait/);
 });
 
 test('an acked panel that has gone: the same question shown again afterwards is asked again', () => {
@@ -829,4 +857,83 @@ test('director_pending: a detail about a gate already decided is not a new wait;
   fs.rmSync(path.join(q.root, '.cursor', 'producer.control'), { force: true });
   const out = run(q.root, g, 'start', '--once').out;
   assert.deepEqual([out.at(-1).waiting, out.at(-1).kind], ['q2', 'director_pending']);
+});
+
+// ---------------------------------------------------------------------------------------------------
+// Review round 2 of 6e97e92.
+
+test('R1: the wait that releases a held panel only waits (no stall nudge into the panel); the next wait asks again', () => {
+  const p = fleet();
+  const f = fakes();
+  f.queue([start(screens(choiceFrames(Q1, LABELS)))]);
+  run(p.root, f, 'start', '--once');
+  run(p.root, f, 'answer', '--id', 'q1', '--choice', ANSWER_DONE);
+  f.queue([tick(2)]);
+  run(p.root, f, 'start', '--once'); // applies the answer: the panel is held
+  // held for 12 waits already: the next one releases it. An idle coordinator is what would be nudged.
+  fs.writeFileSync(ev(p.root, 'S01', 'producer-state.json'), JSON.stringify({ ...sliceState(p.root, 'S01'), cq_held: 12 }));
+  fs.rmSync(path.join(p.root, '.cursor', 'producer.control'), { force: true });
+  f.queue([{ name: 'idle', result: 'idle' }, { name: 'idle', result: 'idle' }, { name: 'idle', result: 'idle' }]);
+  const out = run(p.root, f, 'start', '--once').out;
+  assert.deepEqual([out.at(-1).waiting, out.at(-1).kind], ['q2', 'coordinator_question']);
+  assert.deepEqual(f.sends(), []); // no "resume the cocos-orca-fleet Coordinator loop" typed into the panel
+  assert.equal(sliceState(p.root, 'S01').nudged_stall, undefined);
+  assert.match(log(p.root), /still on screen after 12 waits: asking about it on the next wait/);
+});
+
+test('R1: an open panel is put back to the main prompt (shift+→, confirmed) before the runner sends a message; one that stays open blocks the send', () => {
+  const gate = { id: 'g1', status: 'pending', question: 'Approve PLAN?', options: '["approve","revise"]' };
+  const open = (stays) => ({ term_1: { at: 'open', frames: { open: { lines: moveMark(REAL.B, 1), keys: stays ? {} : { [MAIN]: 'closed' } }, closed: { lines: REAL.A, keys: {} } } } });
+  const p = fleet();
+  const f = fakes();
+  f.queue([start(null), { name: 'gate opened', gates: [gate] }]);
+  assert.equal(run(p.root, f, 'start', '--once').out.at(-1).kind, 'fleet_gate');
+  f.screens(open(false)); // a panel is open on the coordinator when the decision is relayed
+  run(p.root, f, 'answer', '--id', 'q1', '--choice', 'approve');
+  run(p.root, f, 'start', '--once');
+  // the panel was put away with a raw key first, then the message went with its Enter
+  assert.deepEqual(f.keystream().map((k) => [k.text === MAIN ? 'main' : k.text, k.enter]), [['main', false], ['Director decision for gate g1: approve. Resolve your gate with it and continue.', true]]);
+  assert.match(log(p.root), /closed an open question panel on term_1 \(shift\+→\) before sending gate:g1:q1/);
+  assert.equal(frame(f), 'closed');
+
+  // a panel that does not close: nothing is sent, the director is told the send failed
+  const q = fleet();
+  const g = fakes();
+  g.queue([start(null), { name: 'gate opened', gates: [gate] }]);
+  run(q.root, g, 'start', '--once');
+  g.screens(open(true));
+  run(q.root, g, 'answer', '--id', 'q1', '--choice', 'approve');
+  const out = run(q.root, g, 'start', '--once').out;
+  assert.deepEqual(g.sends(), []);
+  assert.deepEqual(g.keys().map((k) => k.text), [MAIN]);
+  assert.equal(out.find((o) => o.blocked).blocked, 'send_failed');
+  assert.match(runnerFile(q.root).questions[1].text, /a question panel is still open on term_1 after shift\+→; the message would be typed into it, nothing sent/);
+
+  // no panel (or an unreadable screen): the message goes as before, with no key
+  const r = fleet();
+  const h = fakes();
+  h.queue([start(null), { name: 'gate opened', gates: [gate] }]);
+  run(r.root, h, 'start', '--once');
+  run(r.root, h, 'answer', '--id', 'q1', '--choice', 'approve');
+  run(r.root, h, 'start', '--once');
+  assert.deepEqual([h.sends().length, h.keys()], [1, []]);
+});
+
+test('R4: a coordinator panel held for the director does not mask a blocked commit; the panel is raised first', () => {
+  const p = fleet();
+  const f = fakes();
+  const evidence = { [evRel('S01', 'review.md')]: 'F1\n\nAPPROVED\n', [evRel('S01', 'runtime-state.json')]: { status: 'verified' }, [evRel('S01', 'final-report.md')]: 'x', [evRel('S01', 'stats.json')]: {} };
+  f.queue([
+    start(null),
+    { name: 'offer', write: { [H]: { role: 'coordinator', status: 'offer_commit' }, ...evidence } },
+    { name: 'asks while committing', screens: screens(realChoice(REAL.B, 3)), write: { [H]: { role: 'coordinator', status: 'offer_commit', detail: 'asked' } } },
+  ]);
+  assert.equal(run(p.root, f, 'start', '--once').out.at(-1).kind, 'coordinator_question');
+  run(p.root, f, 'answer', '--id', 'q1', '--choice', ANSWER_DONE); // the director has the panel in the terminal
+  // the commit hook fails and the coordinator says so: asked at once, not after the hold runs out
+  f.queue([{ name: 'blocked', write: { [H]: { role: 'coordinator', status: 'blocked', detail: 'commit-guard refused: dirty tree' } } }]);
+  const b = run(p.root, f, 'start', '--once').out.at(-1);
+  assert.deepEqual([b.waiting, b.kind], ['q2', 'lane_blocked']);
+  assert.match(runnerFile(p.root).questions[1].text, /commit blocked: commit-guard refused: dirty tree/);
+  assert.deepEqual(typed(f), [OPEN, MAIN]); // the held panel was not opened again
 });
