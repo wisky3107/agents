@@ -21,7 +21,11 @@ do not open .cursor/skills/** unless a step names the file.
    example physics + physics-ammo).
 4. Preview: reuse the healthy browser preview or run run_project_preview({mode:"browser"}) once,
    then `node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <port of that preview>` must be
-   green. Do not replay feel rows; the slice review already did.
+   green. Do not replay feel rows; the slice review already did. A big suite takes minutes: run it
+   in the background or with a Bash timeout of 600000. When the project's run-smoke.mjs lists
+   `--viewport` in its usage, pass `--page <the preview tab> --viewport <the portrait V1 size from
+   EXPECT_GAMEPLAY_VISUAL.md>`: an editor preview tab is landscape and unfocused, which stalled
+   cc-lego-stack S11's verify on 2026-10-05.
 5. Write <EVIDENCE_DIR>/verify-main.json:
    {"status":"verified|manual_required|failed","checks":{"funplay":"…","missing_script":"…","include_modules":"…","smoke":"…"},"detail":"<one line>","updatedAt":"<ISO>"}
    manual_required only with the real reason (the preview cannot start, a device is needed). Then stop.
