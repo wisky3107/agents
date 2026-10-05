@@ -18,6 +18,7 @@ import { sliceFront, sliceSize, sliceWorktrees, budgetMode, liteWhenNoAssets, is
 import * as st from './state.mjs';
 import * as io from './orca.mjs';
 import { mergeStep, applyMergeAnswer, MERGE_KINDS } from './merge.mjs';
+import * as cq from './coordq.mjs';
 import { ready as agentReady, family } from '../../../cocos-orca-fleet/scripts/agent-ready.mjs';
 
 const REF = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'reference');
@@ -1021,6 +1022,10 @@ function fleetStep(ctx, s, phase) {
   if (phase === 'committing') {
     const c = readHandoff(handoff, s.commit_base);
     if (w.event === 'terminal-missing' && !(c.status === 'committed' && c.sha)) return missing();
+    if (!(c.status === 'committed' && c.sha)) {
+      const panel = coordinatorAsks(ctx, s, coordinator);
+      if (panel) return panel;
+    }
     return committing(ctx, s, w, c);
   }
 
@@ -1038,6 +1043,9 @@ function fleetStep(ctx, s, phase) {
     return null;
   }
   if (w.event === 'terminal-missing') return missing();
+  // the coordinator may sit on codex's own question panel (no gate shows it): any event, before the status rules
+  const panel = coordinatorAsks(ctx, s, coordinator);
+  if (panel) return panel; // a question, or one the director has in the terminal (only wait)
   if (h.fresh && !h.status) {
     const q = ask(s, 'unknown_status', `fleet HANDOFF status "${h.raw ?? '(none)'}" is not one the runner knows`, ['treat as working, keep waiting', 'treat as offer_commit', 'mark blocked', 'stop'], { obs: obs('unknown_status') });
     // answered "keep waiting": the stall rules below still apply to that coordinator (nudge, then ask)
@@ -1046,6 +1054,9 @@ function fleetStep(ctx, s, phase) {
   if (h.status === 'blocked' || h.status === 'infra_blocked') {
     return ask(s, 'lane_blocked', `fleet HANDOFF ${h.status}: ${h.detail || 'no detail'}`, LANE_BLOCKED_OPTIONS, { obs: obs('lane_blocked') });
   }
+  // a decision parked in HANDOFF.json's detail while no gate is open
+  const parked = directorPending(ctx, s, h, w);
+  if (parked) return parked;
   if (w.event === 'idle') {
     // idle with any other status: stalled (S08 lost ~3 h) → one nudge, then the human
     if (!s.nudged_stall) {
@@ -1144,6 +1155,7 @@ export function applyAnswer(ctx, q) {
     case 'send_failed:resume lane carries it':
       st.writeSliceState(root, id, { outbox: { ...s.outbox, [q.ref]: { ...s.outbox[q.ref], dropped: true } }, resume_note: s.outbox[q.ref].text });
       return resumeWriter(ctx, st.readSliceState(root, id), `unreachable (${s.outbox[q.ref].failed})`);
+    case 'director_pending:send this answer to the lane':
     case 'lane_blocked:send this answer to the lane': {
       if (!q.answer.text) throw new Error('give the answer with --text');
       ack();
@@ -1157,11 +1169,13 @@ export function applyAnswer(ctx, q) {
       return st.writeSliceState(root, id, { gate_waits: 0, gate_unresolved_waits: (s.gate_unresolved_waits || 0) + 1 });
     case 'unknown_status:treat as working, keep waiting':
     case 'lane_blocked:answered in the lane, continue':
+    case 'director_pending:answered in the lane, continue':
     case 'coordinator_missing:taken over, continue':
     case 'fleet_stall:nudged again, continue':
       return ack();
     default:
       if (MERGE_KINDS.has(q.kind)) return applyMergeAnswer(ctx, q);
+      if (q.kind === 'coordinator_question') return applyCoordinatorQuestion(ctx, q);
       if (q.kind === 'fleet_gate') {
         const decision = oneLine(choice === 'answer with --text' ? q.answer.text : `${choice}${note}`);
         if (!decision) throw new Error('this gate needs --text with the decision');
@@ -1176,4 +1190,104 @@ export function applyAnswer(ctx, q) {
       }
       throw new Error(`no action for ${q.kind}: ${choice}`);
   }
+}
+
+// ------------------------------------------------------------------ the coordinator's own questions (2026-10-04/05)
+
+/**
+ * The coordinator's screen after a lane wait: a question in codex's own panel (request_user_input) is one
+ * the runner never sees as a gate. → null (none) | PAUSE (one the director already took) | { ask }
+ * See lib/coordq.mjs for what is read and how the answer is typed.
+ */
+function coordinatorAsks(ctx, s, handle) {
+  const { root } = ctx.project;
+  let found;
+  try {
+    found = cq.find(handle, s.cq_quiet ?? null);
+  } catch (err) {
+    st.log(root, ctx.id, `coordinator screen check failed (${handle}): ${err.message}`);
+    return null;
+  }
+  if (found.gone) {
+    if (s.cq_quiet != null || s.cq_last) st.writeSliceState(root, ctx.id, { cq_quiet: null, cq_last: null });
+    return null;
+  }
+  if (found.quiet) return PAUSE; // the director has it in the terminal: only wait (no nudge, no stall question)
+  // what was asked last (its closed-marker count), so an answer given outside the panel can quiet it
+  if (s.cq_last?.fp !== found.ref || s.cq_last?.count !== found.count) st.writeSliceState(root, ctx.id, { cq_last: { fp: found.ref, count: found.count } });
+  return ask(s, 'coordinator_question', found.detail, found.options, { obs: found.obs, ref: found.ref });
+}
+
+/** The director typed or picked an answer to a coordinator_question: keys into the panel, or a plain follow-up. */
+function applyCoordinatorQuestion(ctx, q) {
+  const { root } = ctx.project;
+  const s = st.readSliceState(root, ctx.id);
+  const choice = q.answer.choice;
+  // a panel that stays on the screen (the director answers it in the terminal, or it could not be read) is not
+  // asked again: its question is acked, and its closed marker is not opened on every wait (`cq_quiet`). A panel
+  // the runner answered is gone, so the same question asked later is a new one.
+  const stays = () => st.writeSliceState(root, ctx.id, {
+    acked: [...new Set([...(st.readSliceState(root, ctx.id).acked || []), q.obs].filter(Boolean))],
+    ...(s.cq_last?.fp === q.ref && s.cq_last.count != null ? { cq_quiet: s.cq_last.count } : {}),
+  });
+  if (choice === cq.ANSWER_DONE) return stays(); // taken in the coordinator terminal: the lane is only waited on
+  const handle = resolveTo(ctx, COORDINATOR);
+  if (!handle) throw new Error('no coordinator terminal recorded');
+  const say = (line) => st.log(root, ctx.id, `coordinator panel ${q.id}: ${line}`);
+  if (choice !== cq.ANSWER_TEXT) {
+    return cq.answerOption(handle, q.ref, choice, say);
+  }
+  const text = oneLine(q.answer.text);
+  if (!text) throw new Error('give the answer with --text');
+  const r = cq.answerText(handle, q.ref, text, say);
+  if (r.followUp) sendOnce(ctx, `answer:${q.id}`, COORDINATOR, `${cq.FOLLOW_UP}: ${text}`);
+  if (r.left) stays();
+}
+
+// A HANDOFF detail that says the slice waits for the director while no gate is open (2026-10-05: "pending a
+// director decision" with status working stalled a slice). Decisions already made ("Director resolved gate…",
+// "per director") never match: only a state of waiting does, and a negation just before it cancels the match.
+const WHO = String.raw`(?:a\s+|the\s+|your\s+)?director(?:['’]s)?`;
+const DECISION = String.raw`(?:decision|ruling|approval|call|input|answer|sign-?off)`;
+const DIRECTOR_WAIT = new RegExp([
+  String.raw`\bpending\s+${WHO}\s+${DECISION}\b`,
+  String.raw`\b(?:awaiting|waiting\s+(?:for|on))\s+${WHO}\b`,
+  String.raw`\bdirector(?:['’]s)?\s+(?:must|needs?\s+to|has\s+to|to)\s+(?:decide|rule|approve|choose|pick|confirm|answer)\b`,
+  String.raw`\b(?:needs?|requires?|blocked\s+(?:on|by|pending))\s+${WHO}\s+${DECISION}\b`,
+  String.raw`\bdirector(?:['’]s)?\s+${DECISION}\s+(?:is\s+)?(?:needed|required|pending)\b`,
+].join('|'), 'gi');
+const NEGATED = /\b(?:no|not|none|nothing|without|never|neither|nor|was|were|previously|formerly|had\s+been)\s+(?:\w+\s+)?$|n['’]t\s+(?:\w+\s+)?$/i; // at most one word between: \"no gate opened pending…\" still waits
+const DIRECTOR_PENDING_SEEN = 2; // consecutive waits with the same detail before it is a question
+
+/** The words of `detail` that say it waits for the director, or null. */
+export function waitsOnDirector(detail) {
+  const text = String(detail || '').replace(/\s+/g, ' ');
+  for (const m of text.matchAll(DIRECTOR_WAIT)) {
+    if (!NEGATED.test(text.slice(Math.max(0, m.index - 30), m.index))) return m[0];
+  }
+  return null;
+}
+
+const detailFp = (t) => cq.fingerprint(t);
+
+/**
+ * Fleet HANDOFF still working, its detail waiting on the director, no gate open, the same detail on two
+ * waits in a row (the coordinator gets one wait to open its gate) → a question that goes to the coordinator
+ * like a lane_blocked answer. → null | { ask }
+ */
+function directorPending(ctx, s, h, w) {
+  const { root } = ctx.project;
+  // any status the lane is still working in: committed / offer_commit / blocked have their own rules above
+  const hit = h.status && !['committed', 'offer_commit', 'blocked', 'infra_blocked'].includes(h.status) && !w.pending_gates?.length && waitsOnDirector(h.detail);
+  if (!hit) {
+    if (s.dp_fp) st.writeSliceState(root, ctx.id, { dp_fp: null, dp_seen: 0 });
+    return null;
+  }
+  const fp = detailFp(h.detail);
+  const seen = s.dp_fp === fp ? (s.dp_seen || 0) + 1 : 1;
+  if (seen !== s.dp_seen || fp !== s.dp_fp) st.writeSliceState(root, ctx.id, { dp_fp: fp, dp_seen: seen });
+  if (seen < DIRECTOR_PENDING_SEEN) return null;
+  const q = ask(s, 'director_pending', `fleet HANDOFF ${h.raw} says it waits for the director, but no gate is open: ${oneLine(h.detail)}`,
+    ['send this answer to the lane', 'answered in the lane, continue', 'stop'], { obs: `director_pending@${fp}` });
+  return q === PAUSE ? null : q; // already taken: the normal stall rules go on
 }
