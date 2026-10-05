@@ -132,6 +132,11 @@ CREATE TABLE IF NOT EXISTS infra (
   funplay_reachable INTEGER, funplay_parity INTEGER, preview_port INTEGER, orca INTEGER,
   PRIMARY KEY (project, at, checkout));
 CREATE TABLE IF NOT EXISTS runs_log (at TEXT, step TEXT, ok INTEGER, note TEXT);
+CREATE TABLE IF NOT EXISTS static_checks (
+  project TEXT, slice TEXT, seq INTEGER, at TEXT, source TEXT, result TEXT, failed TEXT, warned TEXT,
+  PRIMARY KEY (project, slice, seq));
+CREATE TABLE IF NOT EXISTS flag_history (
+  day TEXT, kpi TEXT, scope TEXT, status TEXT, text TEXT, PRIMARY KEY (day, kpi, scope));
 """
 
 
@@ -613,6 +618,33 @@ def runner_stops(log_text: str) -> list[dict]:
     return stops
 
 
+STATIC_LOG_RE = re.compile(r'^static check (PASS|WARN|FAIL|ERROR)(?: \(([^)]*)\))?')
+STATIC_LINE_RE = re.compile(r'^(PASS|WARN|FAIL|SKIP) ([\w-]+)')
+
+
+def runner_static(log_text: str) -> list[dict]:
+    """producer-log.md `static check FAIL (specs, smoke-lint)`: one row per check-slice run the
+    runner made before a review round (single lane). The parenthesis lists FAIL checks, then WARN."""
+    out = []
+    for line in log_text.splitlines():
+        m = LOG_RE.match(line.strip())
+        st = STATIC_LOG_RE.match(m.group(2)) if m else None
+        if st:
+            out.append({'at': m.group(1), 'result': st.group(1), 'names': [x.strip() for x in (st.group(2) or '').split(',') if x.strip()]})
+    return out
+
+
+def static_file(text: str) -> dict | None:
+    """evidence/static-check.txt: the last check-slice run of a slice (any lane), per-check status."""
+    m = re.search(r'^check-slice \S+ .* at (\S+)$', text, re.M)
+    res = re.search(r'^RESULT (\w+)', text, re.M)
+    if not (m and res):
+        return None
+    checks = [STATIC_LINE_RE.match(l).groups() for l in text.splitlines() if STATIC_LINE_RE.match(l)]
+    return {'at': m.group(1), 'result': res.group(1), 'failed': [n for st, n in checks if st == 'FAIL'],
+            'warned': [n for st, n in checks if st == 'WARN']}
+
+
 def read_json(path: str, default=None):
     try:
         with open(path) as fh:
@@ -723,7 +755,7 @@ def collect_project(con, project: str, root: str | None = None) -> str:
         return f'{project}: missing'
     ev_dir = os.path.join(root, '.cursor', 'evidence')
     for table in ('slices', 'events', 'learnings', 'gates', 'project_facts', 'runner_slices', 'runner_stops',
-                  'slice_agents', 'ship', 'infra'):
+                  'slice_agents', 'ship', 'infra', 'static_checks'):
         con.execute(f'DELETE FROM {table} WHERE project=?', (project,))
 
     lessons = read_jsonl(os.path.join(ev_dir, 'lessons.jsonl'))
@@ -760,6 +792,25 @@ def collect_project(con, project: str, root: str | None = None) -> str:
 
     for s in sorted(slices, key=lambda x: (int(re.sub(r'\D', '', x) or 0), x)):
         verdicts, owners, infra, stats = [], collections.Counter(), 0, {}
+        # check-slice: the runner's runs before each review round (log), else the slice's last run (file)
+        runs = []
+        for d in by_slice_dirs.get(s, []):
+            log = os.path.join(d, 'producer-log.md')
+            if os.path.exists(log):
+                with open(log, encoding='utf-8', errors='replace') as fh:
+                    runs += [{'at': r['at'], 'source': 'runner', 'result': r['result'], 'failed': r['names'] if r['result'] == 'FAIL' else [],
+                              'warned': r['names'] if r['result'] == 'WARN' else []} for r in runner_static(fh.read())]
+        if not runs:
+            for d in by_slice_dirs.get(s, []):
+                f = os.path.join(d, 'evidence', 'static-check.txt')
+                if os.path.exists(f):
+                    with open(f, encoding='utf-8', errors='replace') as fh:
+                        sf = static_file(fh.read())
+                    if sf:
+                        runs.append({**sf, 'source': 'file'})
+        for i, r in enumerate(sorted(runs, key=lambda r: r['at']), 1):
+            con.execute('INSERT OR REPLACE INTO static_checks VALUES (?,?,?,?,?,?,?,?)', (
+                project, s, i, r['at'], r['source'], r['result'], ','.join(r['failed']), ','.join(r['warned'])))
         for d in by_slice_dirs.get(s, []):
             evd = os.path.join(d, 'evidence')
             names = [os.path.basename(f) for f in glob.glob(os.path.join(evd, 'review*.md'))
@@ -1023,6 +1074,8 @@ def report(con, projects: list[str]) -> str:
 
     # 3 agents
     md.append('## 3. Agent theo vai trò\n')
+    md.append('check-slice (gate trước review; runner = các lần runner chạy trước mỗi vòng review, file = lần chạy cuối):\n')
+    md.append(table(STATIC_HEAD, static_rows(con, projects)))
     rows = []
     for p in projects:
         # review.md is often rewritten each round, so fix_rounds (when known) decides first pass.
@@ -1221,6 +1274,7 @@ THRESHOLDS = {
     'gateway.dead_connections': (1, None, 'high', 1),  # yellow-only: an account to re-login or remove
     'agent.first_pass': (0.50, 0.30, 'low', 5),
     'agent.infra_blocked': (1, 3, 'high', 1),
+    'agent.static_first_fail': (0.30, 0.50, 'high', 3),
     'engine.funplay_reach': (0.95, 0.80, 'low', 5),
     'engine.incidents_per_slice': (0.20, 0.50, 'high', 5),
     'brief.budget_ratio': (1.5, 2.0, 'high', 3),
@@ -1238,6 +1292,7 @@ ACTIONS = {
     'gateway.dead_connections': 'đăng nhập lại hoặc gỡ tài khoản đó trong OmniRoute',
     'agent.first_pass': 'xem fix_routing owner; cân nhắc đổi writer/reviewer (§4.3, S3)',
     'agent.infra_blocked': 'reviewer không tới được preview: đổi reviewer hoặc sửa preflight',
+    'agent.static_first_fail': 'writer giao slice khi check-slice còn FAIL: xem loại FAIL lặp lại, sửa prompt writer hoặc nguồn lỗi',
     'engine.funplay_reach': 'sửa setup hook / pin port',
     'engine.incidents_per_slice': 'retro các sự cố engine; sửa template/skill liên quan',
     'brief.budget_ratio': 'sửa cách calibrate change_budget trong slice-schema.md',
@@ -1322,6 +1377,13 @@ def evaluate(con, projects: list[str]) -> list[dict]:
         if sl:
             first = sum(1 for fr, fv in sl if (fr == 0 if fr is not None else fv == 'APPROVED'))
             add('agent.first_pass', p, first / len(sl), len(sl), pct(first, len(sl)))
+        sc = q('''SELECT slice, result, failed FROM static_checks c WHERE project=? AND seq =
+                  (SELECT MIN(seq) FROM static_checks d WHERE d.project=c.project AND d.slice=c.slice)''', p)
+        if sc:
+            bad = [(sl, f) for sl, r, f in sc if r == 'FAIL']
+            kinds = collections.Counter(k for _, f in bad for k in f.split(',') if k)
+            add('agent.static_first_fail', p, len(bad) / len(sc), len(sc),
+                f'{len(bad)}/{len(sc)} slice FAIL ở lần chạy đầu' + (' (' + ', '.join(f'{k} {n}' for k, n in kinds.most_common()) + ')' if kinds else ''))
         ib = q('SELECT COALESCE(SUM(infra_blocked_reviews), 0) FROM slices WHERE project=?', p)[0][0]
         ib += q("SELECT COUNT(*) FROM events WHERE project=? AND event='infra_blocked' AND system LIKE 'agent%'", p)[0][0]
         nsl = q('SELECT COUNT(*) FROM slices WHERE project=?', p)[0][0]
@@ -1530,6 +1592,24 @@ def registered_experiments(con, switches: list[dict] | None = None) -> list[dict
 # --------------------------------------------------------------------------- S2: weekly + dashboard
 
 
+STATIC_HEAD = ['project', 'slice', 'lần chạy', 'lần đầu', 'lần cuối', 'bị trả lại', 'check FAIL', 'check WARN']
+
+
+def static_rows(con, projects: list[str]) -> list[list]:
+    """check-slice per slice: runs, first and last result, bounces (FAIL runs before the last), the
+    checks that failed or warned in any run."""
+    ph = ','.join('?' * len(projects))
+    rows = []
+    by = collections.defaultdict(list)
+    for p, sl, r, f, w in con.execute(f'''SELECT project, slice, result, failed, warned FROM static_checks
+                                          WHERE project IN ({ph}) ORDER BY project, slice, seq''', projects):
+        by[(p, sl)].append((r, f, w))
+    for (p, sl), runs in by.items():
+        kinds = lambda i: ', '.join(sorted({k for r in runs for k in r[i].split(',') if k}))  # noqa: E731
+        rows.append([p, sl, len(runs), runs[0][0], runs[-1][0], sum(1 for r in runs[:-1] if r[0] == 'FAIL'), kinds(1), kinds(2)])
+    return rows
+
+
 def scorecard_md(con, projects: list[str], flags: list[dict], exps: list[dict]) -> str:
     md = [f'# Scorecard tuần {datetime.now().strftime("%G-W%V")}\n',
           f'Tạo lúc {now_iso()}. Ngưỡng: `THRESHOLDS` trong scorecard.py (plan §4). '
@@ -1557,6 +1637,8 @@ def scorecard_md(con, projects: list[str], flags: list[dict], exps: list[dict]) 
                       projects).fetchall()
     md.append('## Top 3 fix_target lặp lại\n')
     md.append(table(['project', 'fix_target', 'số slice'], rec))
+    md.append('## check-slice (gate trước review)\n')
+    md.append(table(STATIC_HEAD, static_rows(con, projects)))
     reg = registered_experiments(con)
     if reg:
         md.append('## Thí nghiệm đã đăng ký (experiments.json, so trong cùng project)\n')
@@ -1661,6 +1743,8 @@ def dashboard_html(con, projects: list[str], flags: list[dict], exps: list[dict]
                                 (SELECT COUNT(*) FROM runner_stops s WHERE s.project=r.project AND s.slice=r.slice),
                                 (SELECT ROUND(SUM(wait_min)) FROM runner_stops s WHERE s.project=r.project AND s.slice=r.slice)
                          FROM runner_slices r WHERE r.project IN ({ph}) ORDER BY 1, 2''', *projects), {3, 4, 5}),
+        '<h2>check-slice: gate trước review</h2><p class="sub">Mỗi slice: số lần chạy, kết quả lần đầu và lần cuối, số lần trả về writer.</p>',
+        html_table(STATIC_HEAD, static_rows(con, projects), {2, 5}),
         '<h2>Runner dừng theo lý do</h2>',
         html_table(['loại', 'lý do', 'lần', 'phút chờ'],
                    q(f'''SELECT category, reason, COUNT(*), ROUND(SUM(wait_min)) FROM runner_stops WHERE project IN ({ph})
@@ -1700,6 +1784,42 @@ def write_outputs(con, projects: list[str], logs_dir: str = os.path.dirname(LATE
     with open(dash, 'w') as fh:
         fh.write(dashboard_html(con, projects, flags, exps))
     return [weekly, dash]
+
+def new_reds(con, flags: list[dict], day: str) -> list[dict] | None:
+    """Record today's KPI statuses and return the ones that turned red since the last earlier day
+    (a KPI missing that day counts as new). None on the very first run: it only seeds the history,
+    so the existing reds do not all fire at once. A rerun the same day never repeats an alert."""
+    prev_day = con.execute('SELECT MAX(day) FROM flag_history WHERE day < ?', (day,)).fetchone()[0]
+    prev = {(k, sc): st for k, sc, st in con.execute('SELECT kpi, scope, status FROM flag_history WHERE day=?', (prev_day,))}
+    today = {(k, sc): st for k, sc, st in con.execute('SELECT kpi, scope, status FROM flag_history WHERE day=?', (day,))}
+    con.execute('DELETE FROM flag_history WHERE day=?', (day,))
+    for f in flags:
+        con.execute('INSERT OR REPLACE INTO flag_history VALUES (?,?,?,?,?)', (day, f['kpi'], f['scope'], f['status'], f['text']))
+    con.commit()
+    if prev_day is None and not today:
+        return None
+    return [f for f in flags if f['status'] == 'critical'
+            and prev.get((f['kpi'], f['scope'])) != 'critical' and today.get((f['kpi'], f['scope'])) != 'critical']
+
+
+def alert_text(reds: list[dict]) -> str:
+    """One line under 200 characters: what turned red, where, and the value."""
+    parts = [f"{f['kpi']} {f['scope']} ({f['text']})" for f in reds]
+    text = f"{len(reds)} ĐỎ mới: " + '; '.join(parts)
+    return text if len(text) <= 190 else text[:187] + '…'
+
+
+def notify(text: str, logs_dir: str = os.path.dirname(LATEST_REPORT)) -> bool:
+    """A macOS notification (osascript), plus a line in logs/scorecard-alerts.log. SCORECARD_NOTIFY=0 turns
+    the notification off; the log line is always written."""
+    with open(os.path.join(logs_dir, 'scorecard-alerts.log'), 'a') as fh:
+        fh.write(f'{now_iso()} {text}\n')
+    if os.environ.get('SCORECARD_NOTIFY', '1') == '0':
+        return False
+    quoted = '"' + text.replace('\\', '\\\\').replace('"', '\\"') + '"'  # AppleScript string: no \u escapes
+    script = f'display notification {quoted} with title "Workflow scorecard" subtitle "xem logs/scorecard-dashboard.html"'
+    r = subprocess.run(['osascript', '-e', script], capture_output=True, text=True, timeout=20)
+    return r.returncode == 0
 
 # --------------------------------------------------------------------------- CLI
 
@@ -1748,6 +1868,16 @@ def main(argv=None) -> int:
     if a.cmd == 'scorecard' or a.cmd == 'daily':
         for f in write_outputs(con, projects):
             print(f'scorecard: {f}', file=sys.stderr)
+    if a.cmd == 'daily':
+        def alert():
+            reds = new_reds(con, evaluate(con, projects), datetime.now().strftime('%Y-%m-%d'))
+            if reds is None:
+                return 'seeded flag history (first run: no alert)'
+            if not reds:
+                return 'no new red'
+            text = alert_text(reds)
+            return f'{"notified" if notify(text) else "logged"}: {text}'
+        step('alert', alert)
     if a.cmd in ('report', 'daily'):
         text = report(con, projects)
         out = getattr(a, 'out', None) or (LATEST_REPORT if a.cmd == 'daily' else None)

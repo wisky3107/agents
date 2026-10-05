@@ -382,5 +382,64 @@ class S2S3(unittest.TestCase):
             self.assertIn('✖ ĐỎ', html_text)
 
 
+class StaticAndAlerts(unittest.TestCase):
+    def test_runner_static_and_file(self):
+        log = ('2026-10-06T01:00:00Z runner: static check FAIL (specs, notes, scope)\n'
+               '2026-10-06T01:20:00Z runner: static check WARN (scope)\n'
+               '2026-10-06T01:21:00Z runner: phase spawn-reviewer\n')
+        self.assertEqual(sc.runner_static(log), [
+            {'at': '2026-10-06T01:00:00Z', 'result': 'FAIL', 'names': ['specs', 'notes', 'scope']},
+            {'at': '2026-10-06T01:20:00Z', 'result': 'WARN', 'names': ['scope']}])
+        f = ('check-slice cc-x slice=slices/S12-x.md base=main at 2026-10-06T02:00:00.000Z\n'
+             'PASS tsc (1.0 s)\nFAIL es5: 1 iteration(s) (1.0 s)\n  assets/a.ts(1,1): error TS2802\n'
+             'WARN scope: 1 path(s) (0.0 s)\n  tools/x.mjs\nSKIP specs: none (0.0 s)\nRESULT FAIL (es5, scope)\n')
+        self.assertEqual(sc.static_file(f), {'at': '2026-10-06T02:00:00.000Z', 'result': 'FAIL', 'failed': ['es5'], 'warned': ['scope']})
+        self.assertIsNone(sc.static_file('no header'))
+
+    def test_collect_kpi_rows(self):
+        with tempfile.TemporaryDirectory() as root:
+            ev = os.path.join(root, '.cursor', 'evidence', 'tasks')
+            # S12: runner log (single lane), bounced once; S13: fleet, file only, PASS
+            os.makedirs(os.path.join(ev, 'T-S12', 'evidence'))
+            with open(os.path.join(ev, 'T-S12', 'producer-log.md'), 'w') as fh:
+                fh.write('2026-10-06T01:00:00Z runner: static check FAIL (notes)\n2026-10-06T01:30:00Z runner: static check PASS\n')
+            os.makedirs(os.path.join(ev, 'T-S13', 'evidence'))
+            with open(os.path.join(ev, 'T-S13', 'evidence', 'static-check.txt'), 'w') as fh:
+                fh.write('check-slice cc-x slice=s base=main at 2026-10-06T03:00:00Z\nPASS tsc (1 s)\nRESULT PASS\n')
+            subprocess.run(['git', '-C', root, 'init', '-q'], check=True)
+            con = sc.connect(os.path.join(root, 'sc.sqlite'))
+            sc.collect_project(con, 'cc-x', root)
+            self.assertEqual(sc.static_rows(con, ['cc-x']), [
+                ['cc-x', 'S12', 2, 'FAIL', 'PASS', 1, 'notes', ''], ['cc-x', 'S13', 1, 'PASS', 'PASS', 0, '', '']])
+            con.execute("INSERT OR REPLACE INTO static_checks VALUES ('cc-x','S14',1,'2026-10-07T00:00:00Z','file','FAIL','notes','')")
+            k = [f for f in sc.evaluate(con, ['cc-x']) if f['kpi'] == 'agent.static_first_fail'][0]
+            self.assertEqual((k['status'], k['n']), ('critical', 3))  # 2/3 FAIL at the first run
+            self.assertEqual(k['text'], '2/3 slice FAIL ở lần chạy đầu (notes 2)')
+            self.assertIn('check-slice', sc.scorecard_md(con, ['cc-x'], [k], []))
+
+    def test_new_reds(self):
+        with tempfile.TemporaryDirectory() as d:
+            con = sc.connect(os.path.join(d, 'sc.sqlite'))
+            f = lambda kpi, st: {'kpi': kpi, 'scope': 'cc-x', 'status': st, 'text': 't'}  # noqa: E731
+            self.assertIsNone(sc.new_reds(con, [f('a', 'critical')], '2026-10-05'))  # first run seeds only
+            self.assertEqual(sc.new_reds(con, [f('a', 'critical'), f('b', 'warning')], '2026-10-06'), [])
+            got = sc.new_reds(con, [f('a', 'critical'), f('b', 'critical'), f('c', 'critical')], '2026-10-07')
+            self.assertEqual([x['kpi'] for x in got], ['b', 'c'])  # b turned red, c is new; a stayed red
+            self.assertEqual(sc.new_reds(con, [f('a', 'critical'), f('b', 'critical'), f('c', 'critical')], '2026-10-07'), [])  # rerun: no repeat
+
+    def test_alert_text_and_notify_off(self):
+        reds = [{'kpi': f'agent.k{i}', 'scope': 'cc-lego-stack', 'text': '2/3 slice FAIL ở lần chạy đầu'} for i in range(5)]
+        t = sc.alert_text(reds)
+        self.assertTrue(t.startswith('5 ĐỎ mới: agent.k0 cc-lego-stack'))
+        self.assertLessEqual(len(t), 190)
+        with tempfile.TemporaryDirectory() as d:
+            os.environ['SCORECARD_NOTIFY'] = '0'
+            try:
+                self.assertFalse(sc.notify('x', d))
+            finally:
+                del os.environ['SCORECARD_NOTIFY']
+            self.assertIn(' x\n', open(os.path.join(d, 'scorecard-alerts.log')).read())
+
+
 if __name__ == '__main__':
     unittest.main()

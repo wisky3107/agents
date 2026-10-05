@@ -58,6 +58,22 @@ whenever a lock changes for an experiment. When the lock goes back, set `ended_a
 `ended_note` on that entry instead of adding a reverse switch: slices finished after `ended_at`
 leave the experiment, and the table shows "dừng sớm" if an arm is still under 5.
 
+## Alerts
+
+`daily` records every KPI status in `flag_history` (one row per day, KPI and scope). A KPI that
+is red today and was not red on the last earlier day (or did not exist) is an alert: one macOS
+notification (`osascript`, line ≤190 characters) and a line in `logs/scorecard-alerts.log`.
+The first run only seeds the history; a rerun the same day never repeats an alert.
+`SCORECARD_NOTIFY=0` keeps the log line and skips the notification.
+
+## check-slice
+
+`static_checks` holds each check-slice run of a slice: the runner's `static check …` lines in
+producer-log.md (single lane, one per review round), else the slice's last
+`evidence/static-check.txt` (fleet). KPI `agent.static_first_fail` = share of slices whose first
+run FAILed (the writer handed off with a known failure); the weekly file, report §3 and the
+dashboard list runs, first/last result, bounces and the checks that failed or warned.
+
 ## Resolutions
 
 `resolutions.json` records fixes: a runner stop reason, a project's `fix_target`, or budget bumps
