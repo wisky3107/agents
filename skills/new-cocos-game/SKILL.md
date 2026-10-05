@@ -402,9 +402,10 @@ register; say so in the final report with the command above so the operator can 
 command appends the project with memory mode `off` and refuses a duplicate id or an overlapping
 path; that refusal is not a bootstrap failure. Leave out any fact you do not know (engine, mode,
 target) rather than guessing. Report the printed `{"registered":…}` line (or the refusal) in the
-final message. Turning memory on is a separate, deliberate operator edit of
-`~/.orca-memory/config/projects.json`; never do it here. `orca-memory doctor` lists active
-checkouts that were never registered.
+final message. Turning memory on is a separate, deliberate operator step
+(`orca-memory mode --project <id> shadow --note "why"`); never do it here, and never on the
+user's behalf without an explicit request. `orca-memory doctor` lists active checkouts that were
+never registered.
 
 ---
 
