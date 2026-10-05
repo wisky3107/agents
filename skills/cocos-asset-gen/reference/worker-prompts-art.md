@@ -121,9 +121,10 @@ Do:
      (`node ~/.agents/skills/codex-image-gen/scripts/codex-image.mjs check` exits 2), send the coordinator one `ask` with both lanes' state, the earliest
      `until` from `node ~/.agents/tools/agy-account/agy-account.mjs status` and whether any
      account is still unexhausted, then wait for the reply (no polling of either lane). Reply
-     `wait until <ts>` → run the round again after it; `exception: <lane> for <STEM>` → use that
-     lane for this stem only, plain light background, no alpha, the front attached as the
-     reference for the other views, and note the exception in concept-check.md.
+     `wait until <ts>` → run the round again after it; `exception: orca-gpt-image-gen for <STEM>` →
+     that lane for this stem only: classify the request as `non-game image` (no alpha contract;
+     plain light background), make each view from the same prompt with only the VIEW line
+     changed, judge cross-view consistency in concept-check.md, and note the exception there.
    codex-image → ~/.agents/skills/codex-image-gen/SKILL.md, one jobs file: concept-front.png
      as a generation; concept-threequarter.png and concept-back.png as edits with
      "ref": "<abs path of concept-front.png>" (only the VIEW line changes). Plain light-grey

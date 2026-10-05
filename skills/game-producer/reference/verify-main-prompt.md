@@ -25,7 +25,7 @@ do not open .cursor/skills/** unless a step names the file.
    with a Bash timeout of 600000 (or in the background) and stdout to a file, e.g.
    `> <EVIDENCE_DIR>/verify-smoke.json`, then read that file. When
    `grep -q -- '--viewport' .cursor/skills/smoke-test/scripts/run-smoke.mjs` succeeds, also pass
-   `--page <browserPageId from orca tab current --json> --viewport <the portrait V1 size in
+   `--page <browserPageId from orca tab current --json, after checking its URL is the preview port> --viewport <the portrait V1 size in
    EXPECT_GAMEPLAY_VISUAL.md, else the design resolution>`: an editor preview tab is landscape and
    unfocused, which stalled cc-lego-stack S11's verify on 2026-10-05.
 5. Write <EVIDENCE_DIR>/verify-main.json:
