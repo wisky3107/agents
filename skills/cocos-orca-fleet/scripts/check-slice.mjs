@@ -8,13 +8,17 @@
  *   node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs [--slice slices/Sxx-*.md] [--base <ref>]
  *        [--out <file>] [--only <checks>] [--skip <checks>] [--notes <integration-notes.md>] [--all-checks]
  *
- *   tsc         project tsconfig, --noEmit. A writer's "tsc clean" is not evidence (S05 F1).
- *   es5         the same tsconfig with --target es5, TS2802 in assets/ only. The editor preview runs
+ *   tsc         project tsconfig, --noEmit. A writer's "tsc clean" is not evidence (S05 F1). FAIL only
+ *               for errors in files the slice changed; errors elsewhere in the project are WARN
+ *               (pre-existing), and extensions/, temp/ and engine declarations are ignored.
+ *   es5         the same tsconfig with --target es5, TS2802 in assets/ only, same split. The editor preview runs
  *               ES2015+, the web-mobile build is ES5 loose: `[...map.values()]` became
  *               `[].concat(iterator)` and broke every level change (S08, caught in S09).
  *   specs       every tests/**\/*.spec.ts runs through the commands of its own `Run:` header, old
  *               specs included: a data change turned the S01 spec red and nobody reran it (S08 F3).
- *               A spec without a `Run:` header fails.
+ *               The header is the leading comment: `Run:` (or `Run from …:`) then the commands, on
+ *               that line or indented under it. A new or changed spec without one fails; an older
+ *               one is listed as not run (WARN).
  *   scope       changed paths (base...HEAD, working tree, untracked) outside the slice `paths.code` /
  *               `paths.art` and the usual test/evidence/doc places. WARN: the reviewer rules on each
  *               line, and the writer declares it in integration-notes.md.
@@ -92,39 +96,68 @@ function runTsc(root, extra) {
   return { status: r.status, errors, raw: `${r.stdout}${r.stderr}`.trim() };
 }
 
-function checkTsc(root) {
+// not the slice's code: editor extensions (shader-graph, textmeshpro ship their own type errors),
+// generated dirs, and engine declarations outside the project
+const NOT_PROJECT = /^(\.\.\/|\/|extensions\/|temp\/|library\/|build\/|node_modules\/|local\/|profiles\/)/;
+
+/** tsc error lines → in a file this slice changed (own: FAIL), elsewhere in the project (old: WARN), not project code (ignored). */
+export function classifyErrors(errors, changed) {
+  const ch = new Set(changed);
+  const out = { own: [], old: [], ignored: 0 };
+  for (const l of errors) {
+    const m = l.trim().match(/^(.+?)\(\d+,\d+\)/);
+    if (!m) out.own.push(l); // a config error names no file: never pre-existing noise
+    else if (NOT_PROJECT.test(m[1])) out.ignored++;
+    else (ch.has(m[1]) ? out.own : out.old).push(l);
+  }
+  return out;
+}
+
+function tscResult(r, changed, what, fix) {
+  if (r.status === 0) return { status: 'PASS' };
+  if (!r.errors.length) return { status: 'FAIL', note: 'tsc failed without error lines', lines: [r.raw.slice(0, 2000)] };
+  const c = classifyErrors(r.errors, changed);
+  const ignored = c.ignored ? `; ${c.ignored} outside project code ignored` : '';
+  if (c.own.length) return { status: 'FAIL', note: `${c.own.length} ${what} in files this slice changed${fix}${ignored}`, lines: [...c.own.slice(0, 40), ...(c.old.length ? [`(${c.old.length} more in unchanged files)`] : [])] };
+  if (c.old.length) return { status: 'WARN', note: `${c.old.length} pre-existing ${what} in files this slice did not change — not this slice's, file a followup${ignored}`, lines: c.old.slice(0, 20) };
+  return { status: 'PASS', note: ignored.slice(2) };
+}
+
+function checkTsc(root, changed) {
   const p = tsconfigProblem(root);
   if (p) return { status: 'SKIP', note: p };
-  const r = runTsc(root, []);
-  if (r.status === 0) return { status: 'PASS' };
-  return { status: 'FAIL', note: `${r.errors.length} error(s)`, lines: (r.errors.length ? r.errors : [r.raw]).slice(0, 40) };
+  return tscResult(runTsc(root, []), changed, 'error(s)', '');
 }
 
 export const es5Errors = (lines) => lines.filter((l) => /error TS2802/.test(l) && /^assets\//.test(l.trim()));
 
-function checkEs5(root) {
+function checkEs5(root, changed) {
   const p = tsconfigProblem(root);
   if (p) return { status: 'SKIP', note: p };
-  const bad = es5Errors(runTsc(root, ['--target', 'es5']).errors);
-  if (!bad.length) return { status: 'PASS' };
-  return { status: 'FAIL', note: `${bad.length} iteration(s) the ES5 web build breaks (use Array.from / forEach)`, lines: bad.slice(0, 40) };
+  const r = runTsc(root, ['--target', 'es5']);
+  const bad = es5Errors(r.errors);
+  return tscResult({ status: bad.length ? 1 : 0, errors: bad, raw: '' }, changed, 'iteration(s) the ES5 web build breaks', ' (use Array.from / forEach)');
 }
 
 /** The commands of a spec's `Run:` header: one per comment line that starts with tsc / node / npx / python3. */
 export function specCommands(src) {
-  const head = (src.match(/\/\*\*?([\s\S]*?)\*\//) || [])[1] || '';
-  const at = head.search(/\bRun:/);
+  // the leading /** … */ block, else the leading // lines; indentation after the comment marker kept
+  const block = src.match(/^\s*\/\*\*?([\s\S]*?)\*\//);
+  const lines = block
+    ? block[1].split('\n').map((l) => l.replace(/^\s*\*?/, ''))
+    : ((src.match(/^(?:[ \t]*\/\/[^\n]*\n)+/) || [''])[0]).split('\n').map((l) => l.replace(/^\s*\/\//, ''));
+  const at = lines.findIndex((l) => /\bRun\b[^:\n]*:/.test(l));
   if (at < 0) return [];
-  const lines = head.slice(at + 4).split('\n').map((l) => l.replace(/^\s*\*\s?/, '').trim());
+  const clean = (c) => c.replace(/\s+\([^)]*\)\s*$/, '').replace(/\s\[[^\]]*\]/g, '').trim();
   const cmds = [];
-  for (const l of lines) {
-    if (!/^(tsc|node|npx|python3?)\s/.test(l)) {
-      if (cmds.length) break;
-      continue;
-    }
-    cmds.push(l.replace(/\s+\(.*\)\s*$/, '').replace(/\s\[[^\]]*\]/g, '').trim());
+  const rest = lines[at].replace(/^.*?\bRun\b[^:\n]*:/, '').trim();
+  if (rest) cmds.push(clean(rest));
+  // then the indented lines under it, up to the first blank or unindented one
+  for (const l of lines.slice(at + 1)) {
+    if (/^\s{2,}\S/.test(l) && !/^\s*\(/.test(l)) cmds.push(clean(l));
+    else if (cmds.length) break;
   }
-  return cmds;
+  return cmds.filter(Boolean);
 }
 
 function listSpecs(root) {
@@ -139,16 +172,21 @@ function listSpecs(root) {
   return out.sort();
 }
 
-function checkSpecs(root) {
+function checkSpecs(root, changed) {
   const specs = listSpecs(root);
   if (!specs.length) return { status: 'SKIP', note: 'no tests/**/*.spec.ts' };
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'check-slice-'));
   const lines = [];
+  const unrun = [];
   let failed = 0;
   for (const spec of specs) {
     const rel = path.relative(root, spec);
     const cmds = specCommands(fs.readFileSync(spec, 'utf8'));
-    if (!cmds.length) { failed++; lines.push(`${rel}: no \`Run:\` header with tsc/node commands`); continue; }
+    if (!cmds.length) {
+      // a spec this slice wrote must say how it runs; an older one is reported, not blocked on
+      if (changed.includes(rel)) { failed++; lines.push(`${rel}: no \`Run:\` header with its commands`); } else unrun.push(rel);
+      continue;
+    }
     // each spec's /tmp/<dir> output goes to a fresh dir, so a stale build from another checkout never runs
     const script = cmds.map((c) => c.replace(/\/tmp\/([\w.-]+)/g, `${tmp}/$1`)).join(' && ');
     const t0 = Date.now();
@@ -160,8 +198,11 @@ function checkSpecs(root) {
     lines.push(`${rel}: exit ${r.status ?? (r.signal || 'timeout')} after ${secs} s — ${script}`, ...tail.map((l) => `    ${l.trim().slice(0, 240)}`));
   }
   fs.rmSync(tmp, { recursive: true, force: true });
-  return failed ? { status: 'FAIL', note: `${failed}/${specs.length} spec(s) failed`, lines }
-    : { status: 'PASS', note: `${specs.length}/${specs.length} specs` };
+  const notRun = unrun.length ? [`not run — no \`Run:\` header (older specs; add one when you touch them):`, ...unrun.map((f) => `  ${f}`)] : [];
+  const ran = specs.length - unrun.length;
+  if (failed) return { status: 'FAIL', note: `${failed}/${ran} spec(s) failed`, lines: [...lines, ...notRun] };
+  if (unrun.length) return { status: 'WARN', note: `${ran}/${ran} specs pass, ${unrun.length} not run`, lines: notRun };
+  return { status: 'PASS', note: `${ran}/${ran} specs` };
 }
 
 /** `paths.code` and `paths.art` of a slice file (inline `[a, b]` or block `- a  # comment`). */
@@ -358,9 +399,9 @@ export function main(argv) {
   const base = o.base || defaultBase(root);
   const changed = changedFiles(root, base);
   const run = {
-    tsc: () => checkTsc(root),
-    es5: () => checkEs5(root),
-    specs: () => checkSpecs(root),
+    tsc: () => checkTsc(root, changed),
+    es5: () => checkEs5(root, changed),
+    specs: () => checkSpecs(root, changed),
     scope: () => checkScope(root, o.slice, changed),
     'smoke-lint': () => checkSmokeLint(root, changed, o.allChecks),
     evidence: () => checkEvidence(root, o, changed),

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { specCommands, slicePaths, outOfScope, nanUnsafe, es5Errors, sliceFacts, evidenceRe, section } from '../scripts/check-slice.mjs';
+import { specCommands, slicePaths, outOfScope, nanUnsafe, es5Errors, sliceFacts, evidenceRe, section, classifyErrors } from '../scripts/check-slice.mjs';
 
 const SCRIPT = new URL('../scripts/check-slice.mjs', import.meta.url).pathname;
 
@@ -153,4 +153,42 @@ test('evidence + notes: missing named evidence fails unless deferred; stale evid
   assert.match(r.stdout, /PASS evidence: 2 named path\(s\) present/);
   assert.match(r.stdout, /PASS notes: 2 acceptance row\(s\) mapped, 1 negative control\(s\)/);
   assert.match(exec(d, '--slice', 'slices/S12-x.md', '--skip', 'evidence,notes,specs').stdout, /^(?![\s\S]*evidence:)[\s\S]*RESULT/);
+});
+
+test('specCommands: // headers with "Run from …:" and indented shell lines (cc-block-out form)', () => {
+  const src = `// S01 scenario tests.
+//
+// Run from the project root (no node_modules needed; temp/ is git-ignored):
+//   printf '%s' '{"compilerOptions":{"types":["./declarations/cc"]}}' > temp/tsconfig.s01.json
+//   rm -rf temp/s01-tests && tsc -p temp/tsconfig.s01.json && node --test temp/s01-tests/tests/S01.spec.js
+// Game modules are loaded with require() after 'cc' is swapped for a shim.
+
+declare const require: any;`;
+  assert.deepEqual(specCommands(src), [
+    `printf '%s' '{"compilerOptions":{"types":["./declarations/cc"]}}' > temp/tsconfig.s01.json`,
+    'rm -rf temp/s01-tests && tsc -p temp/tsconfig.s01.json && node --test temp/s01-tests/tests/S01.spec.js',
+  ]);
+  assert.deepEqual(specCommands('/**\n * Run: node .cursor/run-unit.js   (compiles with the global tsc)\n */'), ['node .cursor/run-unit.js']);
+});
+
+test('classifyErrors: changed file → own, other project file → old, extensions / engine d.ts / temp → ignored', () => {
+  const c = classifyErrors([
+    'assets/scripts/A.ts(1,2): error TS2322: x',
+    'assets/scripts/B.ts(3,4): error TS2322: y',
+    'extensions/shader-graph/x.ts(72,46): error TS2345: z',
+    '../../../../Applications/Cocos/Creator/3.8.8/cc.d.ts(6020,9): error TS1165: w',
+    'temp/review/x.ts(1,1): error TS1: v',
+    'error TS5023: Unknown compiler option',
+  ], ['assets/scripts/A.ts']);
+  assert.deepEqual([c.own.length, c.old.length, c.ignored], [2, 1, 3]);
+  assert.match(c.own[1], /TS5023/);
+});
+
+test('end to end: an older spec with no Run: header is WARN, not a block', () => {
+  const { d, g } = repo();
+  fs.writeFileSync(path.join(d, 'tests/legacy.spec.ts'), '// legacy, run by hand\nexport {};\n');
+  g('add', '-A'); g('commit', '-qm', 'legacy');
+  const r = exec(d, '--only', 'specs');
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, /WARN specs: 1\/1 specs pass, 1 not run[^\n]*\n  not run[^\n]*\n    tests\/legacy\.spec\.ts\n/);
 });
