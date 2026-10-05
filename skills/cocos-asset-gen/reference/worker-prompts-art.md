@@ -117,7 +117,10 @@ Do:
    image-to-3D input when the mesh routes to 3D Gen Studio.
    antigravity → THIS session's own image tools. If that tool returns HTTP 429 or a quota
      error, make the same files with codex-image-gen (as below) and add
-     `backend: codex-image (antigravity 429)` to concept-check.md.
+     `backend: codex-image (antigravity 429)` to concept-check.md. If codex-image is down too
+     (`node ~/.agents/skills/codex-image-gen/scripts/codex-image.mjs check` exits 2), do not
+     wait: send the coordinator one `ask` with both lanes' state and the Antigravity reset time
+     from `node ~/.agents/tools/agy-account/agy-account.mjs status`, then stop this round.
    codex-image → ~/.agents/skills/codex-image-gen/SKILL.md, one jobs file: concept-front.png
      as a generation; concept-threequarter.png and concept-back.png as edits with
      "ref": "<abs path of concept-front.png>" (only the VIEW line changes). Plain light-grey

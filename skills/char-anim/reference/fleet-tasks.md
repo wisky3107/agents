@@ -37,7 +37,9 @@ Do:
 2. Generate concept-front.png first, then concept-threequarter.png and concept-back.png with the
    front as the reference. Only the VIEW line changes between them.
    antigravity → this session's image tools; at HTTP 429 / quota switch to codex-image and add
-     `backend: codex-image (antigravity 429)` to concept-check.md.
+     `backend: codex-image (antigravity 429)` to concept-check.md. If codex-image is down too
+     (`codex-image.mjs check` exits 2), send the coordinator one `ask` with both lanes' state and
+     the Antigravity reset time (`agy-account.mjs status`) instead of waiting.
    codex-image → ~/.agents/skills/codex-image-gen/SKILL.md: one jobs file, the front as a
      generation, the other two as edits with "ref": "<abs path of concept-front.png>".
    Do NOT call orca-gpt-image-gen / ChatGPT, and never make a multi-view sheet.
