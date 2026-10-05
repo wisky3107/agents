@@ -477,15 +477,28 @@ def fix_owners(text: str) -> collections.Counter:
     if not rows:
         return collections.Counter()
     head = [c.lower() for c in rows[0]]
-    col = head.index('owner') if 'owner' in head else 1
+    col = head.index('owner') if 'owner' in head else None
     out = collections.Counter()
     for r in rows[1:]:
-        if re.fullmatch(r'[\s:|-]*', '|'.join(r)) or len(r) <= col or not re.match(r'F[\w.,\s-]*$', r[0]):
+        if re.fullmatch(r'[\s:|-]*', '|'.join(r)) or not re.match(r'(F|R\d+-)[\w.,\s-]*$', r[0]):
             continue
-        owner = re.match(r'[a-z][\w-]*', r[col].lower())
-        if owner:
-            out[owner.group(0)] += 1
+        if col is not None:
+            owner = re.match(r'[a-z][\w-]*', r[col].lower()) if len(r) > col else None
+            if owner:
+                out[owner.group(0)] += 1
+        else:
+            # no owner column (only paths): the paths say whose work it is
+            out[owner_from_paths(' '.join(r[1:]))] += 1
     return out
+
+
+def owner_from_paths(text: str) -> str:
+    t = text.lower()
+    for owner, rx in (('scene', r'\.scene|\.prefab'), ('code', r'\.(ts|mjs|js)\b|assets/scripts'),
+                      ('art', r'concept|pixel/|voxel/|\.(png|webp|glb|svg)\b|/art'), ('docs', r'docs/|\.md\b')):
+        if re.search(rx, t):
+            return f'{owner} (theo path)'
+    return 'khác (theo path)'
 
 
 GATE_RE = re.compile(r'\b(ART2D|CONCEPT|VERDICT|ANIM)\b\W{0,6}:?\W{0,6}\b(PASS|FAIL)\b')
@@ -545,6 +558,7 @@ STOP_CATEGORY = {
     'lane_blocked': 'lane', 'commit_stalled': 'lane', 'gate_unresolved': 'lane',
     'unknown_status': 'runner', 'coordinator_missing': 'runner', 'bad_handoff': 'runner', 'orca_error': 'runner',
     'policy_conflict': 'config', 'agent_conflict': 'config', 'cursor_off': 'config',
+    'verify_manual': 'review',  # main verified, but a check needs a human: an automation gap
 }
 # A director stop is a real decision: its wait is the director's time, not a defect. Every other
 # stop is one the workflow could have avoided.

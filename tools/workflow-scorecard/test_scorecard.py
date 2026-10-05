@@ -30,6 +30,10 @@ class Parsers(unittest.TestCase):
         self.assertEqual(dict(sc.fix_owners(text)), {'code': 1, 'scene': 1})
         sev = '## fix_routing\n\n| ids | severity | owner | scope |\n|---|---|---|---|\n| F1 | major | code | a |\n| F2 | minor | scene (→ director) | b |\n'
         self.assertEqual(dict(sc.fix_owners(sev)), {'code': 1, 'scene': 1})
+        paths = ('## fix_routing\n\n| Finding | Exact paths (in scope) | Acceptance |\n|---|---|---|\n'
+                 '| F-01 | `tools/levels/pipeline/concepts/L071/front.webp`, `pixel/L071.json` | x |\n'
+                 '| R2-02 | `assets/scripts/lego-stack/entities/Model.ts` | y |\n| F-02 | `.gitignore` | z |\n')
+        self.assertEqual(dict(sc.fix_owners(paths)), {'art (theo path)': 1, 'code (theo path)': 1, 'khác (theo path)': 1})
 
     def test_gates(self):
         text = 'ART2D: PASS\n**VERDICT**: **FAIL**\nCONCEPT: PASS — good\n'
