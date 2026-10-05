@@ -79,7 +79,7 @@ const QUESTION = {
   adopt: { options: ['no lane is running, start it', 'mark blocked', 'stop'], text: 'This slice is in progress but the runner did not start it; it will not spawn a second lane blind.' },
   blocked_resume: { options: ['start the slice fresh', 'mark blocked', 'stop'], text: 'The runner marked this slice blocked, but AGENT_NOTES says in_progress again.' },
   cursor_off: { options: [`use ${CURSOR_FALLBACK} for every Cursor role`, 'cursor logged in, retry', 'stop'], text: 'Cursor is not usable on this machine and this lane would start it.' },
-  cursor_art: { options: ['art_backend changed, retry', 'cursor logged in, retry', 'stop'], text: 'art_backend is cursor but Cursor cannot log in; an art backend has no claude substitute — set fleet.art_backend to antigravity or gpt-image-gen.' },
+  cursor_art: { options: ['art_backend changed, retry', 'cursor logged in, retry', 'stop'], text: 'art_backend is cursor but Cursor cannot log in; an art backend has no claude substitute — set fleet.art_backend to antigravity, gpt-image-gen or codex-image.' },
   runner_error: { options: ['fixed, retry', 'stop'], text: 'The runner hit an error.' },
   stuck: { options: ['fixed, retry', 'stop'], text: 'The runner cannot pick a slice.' },
 };

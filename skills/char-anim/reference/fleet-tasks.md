@@ -18,7 +18,7 @@ Launch rules follow the host fleet skill:
 
 | Task | Agent | Owns (disjoint) | Done when |
 |---|---|---|---|
-| `char-concept-<ID>` | antigravity (own image tools) | `<ART_PATHS>/concepts/<ID>/**`, `<EVIDENCE_ROOT>/art/<ID>/concept-check.md` | `CONCEPT: PASS`; `status` sent to the mesh handle |
+| `char-concept-<ID>` | antigravity (own image tools; codex-image-gen on 429), or codex with codex-image-gen when the concept route says codex-image | `<ART_PATHS>/concepts/<ID>/**`, `<EVIDENCE_ROOT>/art/<ID>/concept-check.md` | `CONCEPT: PASS`; `status` sent to the mesh handle |
 | `char-mesh-<ID>` | any agent with shell + Blender | `<ART_PATHS>/gen3d/<ID>/**`, `<EVIDENCE_ROOT>/art/<ID>/{gen3d-report.json,review/**,model/**,model-check.md}` | `VERDICT: PASS`; `status` sent to the anim handle |
 | `char-anim-<ID>` | any agent with shell + Blender on the machine that has `<CHAR_ANIM_HOME>` | `<CHAR_ANIM_HOME>/{characters,jobs,out,build/<ID>-*}/<ID>*`, `<ART_PATHS>/characters/<ID>/**`, `<EVIDENCE_ROOT>/art/<ID>/anim-check.md` | `ANIM: PASS`; deliverables copied |
 
@@ -27,7 +27,7 @@ Launch rules follow the host fleet skill:
 ## char-concept-<ID>
 
 ```text
-ROLE: writer (assets) — rig-ready concept for an animated character. Antigravity image tools only.
+ROLE: writer (assets) — rig-ready concept for an animated character. Concept route: <CONCEPT_ROUTE>.
 Owns ONLY: <ART_PATHS>/concepts/<ID>/** and <EVIDENCE_ROOT>/art/<ID>/concept-check.md.
 Brief: <NAME> — <design text from the user / GAME_BRIEF>.
 
@@ -36,6 +36,10 @@ Do:
    (A-pose, one figure per image, no props / cape / long skirt, plain background).
 2. Generate concept-front.png first, then concept-threequarter.png and concept-back.png with the
    front as the reference. Only the VIEW line changes between them.
+   antigravity → this session's image tools; at HTTP 429 / quota switch to codex-image and add
+     `backend: codex-image (antigravity 429)` to concept-check.md.
+   codex-image → ~/.agents/skills/codex-image-gen/SKILL.md: one jobs file, the front as a
+     generation, the other two as edits with "ref": "<abs path of concept-front.png>".
    Do NOT call orca-gpt-image-gen / ChatGPT, and never make a multi-view sheet.
 3. Open every PNG and write concept-check.md with the checklist in concept-prompt.md.
    Its last line is CONCEPT: PASS | CONCEPT: FAIL — <reason>.

@@ -1,11 +1,13 @@
 ---
 name: orca-gpt-image-gen
-description: Improve image briefs, use Orca's embedded browser to generate images in ChatGPT, and download completed assets to user-specified paths. When running inside a local project, create or reuse a matching ChatGPT Project, set shared art-style instructions, and support bounded parallel generation through multiple project chats. Use when the user asks to create or regenerate images through ChatGPT in the Orca browser, especially for a project image set or several images at once.
+description: Improve image briefs, use Orca's embedded browser to generate images in ChatGPT, and download completed assets to user-specified paths. When running inside a local project, create or reuse a matching ChatGPT Project, set shared art-style instructions, and support bounded parallel generation through multiple project chats. Use when the user asks to create or regenerate images through ChatGPT in the Orca browser, or a workflow routes hero / final art here (key art, splash, store images, backgrounds, character hero art — GPT Image 2.5). Batches, variants and reference edits go to codex-image-gen.
 ---
 
 # Orca GPT Image Gen
 
 Turn image requests into a consistent, reviewable generation run. The run has three invariants: a resolved output contract, a prompt improvement pass before submission, and a verified file on disk after download.
+
+This is the hero lane: ChatGPT runs GPT Image 2.5. Batches, variants, concept packs, and edits from a reference image (for example a side view made from a front) go through `codex-image-gen` instead; its "Pick the backend" table is the routing rule.
 
 Read `references/project-parallel.md` when a local project is detected or the user requests more than one image. It contains the project art-bible template, project UI fallback, worker-tab map, and concurrency recovery rules.
 

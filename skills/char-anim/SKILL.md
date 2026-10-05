@@ -39,7 +39,7 @@ Record these before any generation:
 | `clips` | `idle,run,jump,attack` | authored: `idle,walk,run,jump,attack` (list in `$CHAR_ANIM_HOME/pipeline/clip_templates.json`); anything else is a mocap clip (FBX/BVH file needed) |
 | `art` | the project's `art_paths`, else the folder the user names, else `./char-anim` | root for `concepts/<id>/` and `gen3d/<id>/`; the extra `<id>` level is intentional, so several characters can share one root |
 | `dest` | `<art>/characters/<id>/`, or the folder the user names | where deliverables are copied (matches fleet-tasks.md) |
-| `concept_backend` | `antigravity` | see step 1 |
+| `concept_backend` | `antigravity` | `antigravity` · `codex-image` · `gpt-image-gen`; see step 1 |
 | `height_m` | 1.7 | real height of the character in metres |
 | `pixel` | off | fbf only. Turn on **only** when the brief or prompt asks for pixel art / pixelate / 8-bit / 16-bit / retro sprite. Value = art px per metre: 48 by default, 32 for chunkier, 24 for 8-bit. Never switch it on because the game "looks retro" |
 
@@ -55,16 +55,21 @@ Style lives in the outfit and face, never in the pose.
    rules, the prompt template and the per-view lines. Generate three **separate** PNGs:
    `concept-front.png` (the image→3D input), `concept-threequarter.png` and `concept-back.png`.
    Put them in `<art>/concepts/<id>/`.
-2. Backend:
-   - `antigravity` is the default and is the only option inside `cocos-orca-fleet`, where
-     3D concepts are Antigravity-only. Antigravity uses its own image tools. A session without
-     image tools (for example Claude Code) spawns an Antigravity worker with orca: recipe C
-     from `cocos-orca-fleet/SKILL.md` inside a fleet, or the solo launch in
+2. Backend. Inside `cocos-orca-fleet`, the cocos-asset-gen concept route decides (antigravity,
+   or codex-image when `art_backend` is gpt-image-gen / codex-image). Every backend keeps the
+   concept on a plain light-grey or white background, never transparent, because Tripo reads
+   alpha edges badly.
+   - `antigravity` (default) uses its own image tools. A session without image tools (for
+     example Claude Code) spawns an Antigravity worker with orca: recipe C from
+     `cocos-orca-fleet/SKILL.md` inside a fleet, or the solo launch in
      [reference/fleet-tasks.md § Solo launch](reference/fleet-tasks.md#solo-launch-no-fleet) otherwise,
-     with the `char-concept-<id>` task spec.
+     with the `char-concept-<id>` task spec. When its image tool hits HTTP 429 or a quota
+     error, the worker switches to `codex-image`.
+   - `codex-image` runs `codex-image-gen` from any session with a shell, no worker needed. Use
+     one jobs file: `concept-front.png` as a generation, then the ¾ and back views as edits
+     with the front as `ref`, where only the VIEW line changes.
    - `gpt-image-gen` goes through `orca-gpt-image-gen`. Use it only when the user asks for it
-     outside a Cocos fleet. Keep the concept on a plain light-grey or white background, not
-     transparent: Tripo reads alpha edges badly.
+     outside a Cocos fleet.
 3. Open every PNG and write `evidence/art/<id>/concept-check.md` using the checklist in
    `reference/concept-prompt.md`. It ends with `CONCEPT: PASS` or `CONCEPT: FAIL — <reason>`.
    On FAIL, regenerate at most twice, then stop and report with the images.

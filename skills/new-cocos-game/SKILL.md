@@ -216,7 +216,10 @@ Settles every agent the run will launch: brief author, orchestrator / implemente
      that sandbox and game-producer says not to infer failure from provider identity. Evidence
      is mixed, so combos put claude / cursor there by default and say so when they pick codex.
    - `orchestrator` is mechanical: a cheap, reliable spec beats a strong one.
-   - `art_backend` cursor only when cursor is `ready`.
+   - `art_backend` cursor only when cursor is `ready`. `codex-image` (Codex via OmniRoute, fast
+     batches) only when `node ~/.agents/skills/codex-image-gen/scripts/codex-image.mjs check`
+     exits 0. `gpt-image-gen` sends hero rows to ChatGPT and the rest to Codex; when `check`
+     fails, a combo with it says every row will go to ChatGPT.
 6. Send one message, then **stop and wait** for the director:
 
    ```text

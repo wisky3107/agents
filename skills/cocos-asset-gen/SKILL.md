@@ -2,8 +2,8 @@
 name: cocos-asset-gen
 description: >-
   Art/asset generation contract for Cocos Creator projects: locks the 2D art backend
-  (antigravity | cursor | gpt-image-gen), runs the 3D pipeline (Antigravity concept pack →
-  mesh → iso/compare verify), and routes each mesh to a mesh backend — Blender python
+  (antigravity | cursor | gpt-image-gen | codex-image), runs the 3D pipeline (concept pack from
+  Antigravity or Codex image → mesh → iso/compare verify), and routes each mesh to a mesh backend — Blender python
   generator for simple hard-surface props, 3D Gen Studio (Tripo cloud + local mesh tools:
   simplify, LOD, pivot, bake, collision) for complex/organic models, with automatic fallback
   to Blender when the studio is unavailable. Use when a fleet or single agent must produce
@@ -25,14 +25,22 @@ first turn (see `cocos-orca-fleet` Worker start recipes).
 
 | Key (`fleet:` yaml) | Default | Values | Meaning |
 |---|---|---|---|
-| `art_backend` | `antigravity` | `antigravity` · `cursor` · `gpt-image-gen` | who authors 2D files and Blender mesh generators |
+| `art_backend` | `antigravity` | `antigravity` · `cursor` · `gpt-image-gen` · `codex-image` | who authors 2D files and Blender mesh generators |
 | `mesh_backend` | `auto` | `auto` · `blender` · `3dgenstudio` | how `.glb` meshes are produced (see routing) |
 
 Synonyms at first resolve only: `agy` → `antigravity`; `gpt image` / `chatgpt image` /
-`orca-gpt-image-gen` → `gpt-image-gen`; `3dgs` / `gen studio` / `tripo` → `3dgenstudio`;
-`script` / `bpy` → `blender`. Announce `Art: backend=<v> · mesh=<v>` once; never re-ask or
-switch mid-task. `gpt-image-gen` without the `orca-gpt-image-gen` skill installed → one `ask`
-to pick `antigravity` or `cursor`.
+`orca-gpt-image-gen` → `gpt-image-gen`; `codex image` / `omniroute image` / `codex-image-gen` →
+`codex-image`; `3dgs` / `gen studio` / `tripo` → `3dgenstudio`; `script` / `bpy` → `blender`.
+Announce `Art: backend=<v> · mesh=<v>` once; never re-ask or switch mid-task. `gpt-image-gen`
+without the `orca-gpt-image-gen` skill installed, or `codex-image` when
+`node ~/.agents/skills/codex-image-gen/scripts/codex-image.mjs check` exits 2 → one `ask` to
+pick another backend.
+
+**OpenAI image lanes.** `gpt-image-gen` splits by row with the `codex-image-gen` "Pick the
+backend" rule: rows with `"tier": "hero"` go through `orca-gpt-image-gen` (ChatGPT,
+GPT Image 2.5), and every other `image-gen` row goes through `codex-image-gen` as a batch. If the
+Codex lane is down (`check` exit 2), every row goes through `orca-gpt-image-gen`. `codex-image`
+sends every row, hero included, through `codex-image-gen`.
 
 ## Existing assets and port imports
 
@@ -49,7 +57,7 @@ Only missing/inadequate assets explicitly marked generate follow the pipeline be
 ## 3D generation pipeline (per stem, parallel across stems)
 
 ```
-art-manifest → art-concept-<stem> (ALWAYS antigravity) ──CONCEPT: PASS──▶ art-mesh-<stem>
+art-manifest → art-concept-<stem> (concept route) ──CONCEPT: PASS──▶ art-mesh-<stem>
                                                                             │ route (below)
                                                                             ▼
                                                     render_model_iso.py → model-check.md → VERDICT
@@ -60,9 +68,19 @@ chain: an A-pose rig-ready concept, this studio mesh route, then char-anim-pipel
 `~/.agents/skills/char-anim/SKILL.md`.
 
 Concept pack: `concept-front.png`, `concept-threequarter.png`, `concept-back.png`
-(`concept-turnaround.png` optional) authored **only** with Antigravity's own image tools, then
-`evidence/art/<stem>/concept-check.md` ending `CONCEPT: PASS|FAIL` (max 2 rounds). No PASS →
-no mesh. The concept-front is also the image-to-3D input for the studio route.
+(`concept-turnaround.png` optional), then `evidence/art/<stem>/concept-check.md` ending
+`CONCEPT: PASS|FAIL` (max 2 rounds). No PASS → no mesh. The concept-front is also the
+image-to-3D input for the studio route.
+
+**Concept route** (who makes the pack):
+- `art_backend` `antigravity` or `cursor` → an Antigravity worker with its own image tools.
+  When that image tool returns HTTP 429 or a quota error, the same worker makes the pack with
+  `codex-image-gen` and notes `backend: codex-image (antigravity 429)` in concept-check.md.
+- `art_backend` `gpt-image-gen` or `codex-image` → a codex worker running `codex-image-gen`.
+  The front is a generation; the ¾ and back views are edits that take `concept-front.png` as
+  the reference.
+- Never ChatGPT / `orca-gpt-image-gen`: each browser chat makes one image and cannot hold a
+  design across views.
 
 ### Mesh routing (`mesh_backend`)
 
@@ -182,8 +200,9 @@ from Tripo (≈250k verts / 500k tris) is a **source**, never an asset — alway
 ## 2D art (`art` / `art-2d` Tasks)
 
 Per locked `art_backend`: `antigravity` and `cursor` author raw files with the session's own
-tools; `gpt-image-gen` **must** put every `image-gen` row through `orca-gpt-image-gen`
-(+ `gpt-image-2-style-library` when present) — no freehand final pixels. Textures/sprites
+tools; `gpt-image-gen` and `codex-image` **must** put every `image-gen` row through their
+lanes (OpenAI image lanes above; `gpt-image-2-style-library` when present) — no freehand final
+pixels. Textures/sprites
 only; concepts and meshes are never produced here. Every file is reported against `max_assets`
 (an estimate in advisory mode — never drop a manifest row to fit).
 
@@ -192,13 +211,16 @@ row needs a different method, the worker sends an `ask`.
 
 | `method` | Use for | How |
 | --- | --- | --- |
-| `image-gen` | anything that depicts something: character/item sprites, icons with a picture, backgrounds, painted textures, illustrated VFX | the backend's image-generation tool (`gpt-image-gen` → `orca-gpt-image-gen`) |
+| `image-gen` | anything that depicts something: character/item sprites, icons with a picture, backgrounds, painted textures, illustrated VFX | the backend's image-generation tool (`gpt-image-gen` → hero rows `orca-gpt-image-gen`, the rest `codex-image-gen`; `codex-image` → `codex-image-gen`) |
 | `procedural` | flat geometric UI with no picture: pills, panels, cards, slots, plain buttons, 9-slice frames, rings, glows, soft shadows, gradients | a script (Pillow / SVG), saved as `evidence/art/2d/gen_2d.py` so it can be re-run |
 | `acquire` | fonts and other licensed files | download from the official source; record URL, commit/version, sha256 and licence |
 
 Tie → `image-gen` if the file shows an object, character or symbol; otherwise `procedural`.
+`art-manifest` marks hero `image-gen` rows `"tier": "hero"`: key art, splash / title, store
+art, logo, full-scene backgrounds and character hero art. A row without `tier` (older
+manifests) is routed by that same list.
 
-`antigravity` 2D has its own gate: the worker measures each file with `sips` (size, alpha),
+Every 2D backend but `cursor` has a gate: the worker measures each file with `sips` (size, alpha),
 Reads every PNG, and writes `evidence/art/2d/2d-check.md` (size / alpha / tiling / style /
 set consistency / readability / method) ending `ART2D: PASS|FAIL`, max 2 rounds regenerating
 only the failing files. PASS → each 2D row gets `verify`, including the `tool` that actually
@@ -230,7 +252,7 @@ row** (`complexity` if missing, `concepts`, `verify`).
   is the only automatic fallback; `3` needs the report read and, if unclear, an `ask`.
 - Regenerating with Tripo to fix a finishing problem (costs credits) instead of
   `--source-glb <stem>_high.glb`.
-- Giving 3D concepts to ChatGPT / `orca-gpt-image-gen`; concepts are Antigravity-only.
+- Giving 3D concepts to ChatGPT / `orca-gpt-image-gen`; concepts follow the concept route.
 - `VERDICT: PASS` without opening `compare-sheet.png`, or `concept match: PASS` from stats alone.
 - `ART2D: PASS` from file names or prompts alone, without `sips` numbers and a Read of each PNG.
 - Drawing an `image-gen` row with a Pillow/SVG/canvas script, or recording only

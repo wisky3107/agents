@@ -88,7 +88,7 @@ Ask only what's missing:
 Agent items 5–7 and the analyst in item 8 are never asked: a value the user named is
 **pre-noted** for Step 1c (no advice, used as is); everything else is settled by the Step 1c combo.
 
-5. **Art backend** — honor `antigravity` / `cursor` / `gpt-image-gen` if named
+5. **Art backend** — honor `antigravity` / `cursor` / `gpt-image-gen` / `codex-image` if named
 6. **Brief agent** — pass any explicit override to `game-brief`; otherwise the Step 1c combo
    (fallback: its saved-agent resolution and Fable 5.1 default)
 7. **Fleet workers** — never ask. Only when the user names an agent for the fleet's

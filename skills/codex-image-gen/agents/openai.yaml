@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex Image Gen"
+  short_description: "Batch image generation and reference edits via OmniRoute"
+  default_prompt: "Use $codex-image-gen to improve my image briefs, generate them in parallel through Codex via OmniRoute, edit side views from the front, and save every result to my target path."

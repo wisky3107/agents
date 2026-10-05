@@ -64,6 +64,8 @@ Do:
                   9-slice frames, rings, glows, shadows, gradients)
      acquire    = fonts / licensed files
    Tie → image-gen if it shows an object, character or symbol; otherwise procedural.
+   An image-gen row that is key art, splash / title, store art, logo, a full-scene background
+   or character hero art also gets "tier": "hero" (it routes to ChatGPT on gpt-image-gen).
 2. `orca orchestration send --type status` to every art-concept / art-mesh / art-anim / art-2d /
    implement handle with the manifest path.
 3. worker_done.
@@ -93,23 +95,32 @@ Read ASSET_MANIFEST and the slice's selected RIP_ASSET_MAP/Port evidence rows.
    rendering/playback; this task never creates .meta, opens Creator, or claims runtime PASS.
 ```
 
-## art-concept-<stem> (ALWAYS antigravity — recipe C, no AGENTS.md boot)
+## art-concept-<stem> (concept route — recipe C, no AGENTS.md boot)
 
 Launch with SKILL.md **recipe C**: `orca terminal create` → first `tui-idle` →
 `worker-start --terminal` with this spec as the first turn. Do **not** send the AGENTS.md
-startup prompt used by plan/implement/review (recipe B).
+startup prompt used by plan/implement/review (recipe B). Agent per the cocos-asset-gen concept
+route: `antigravity` when art_backend is antigravity / cursor, `codex` when it is
+gpt-image-gen / codex-image. Fill `<CONCEPT_ROUTE>` with `antigravity` or `codex-image`.
 
 ```text
-ROLE: writer (assets) — 3D concept pack. art_backend forced to antigravity for this Task.
+ROLE: writer (assets) — 3D concept pack. Concept route: <CONCEPT_ROUTE>.
 Owns ONLY: <ART_PATHS>/concepts/<STEM>/** and
 evidence/art/<STEM>/concept-check.md (create the stem evidence dir if needed).
 
 Do:
-1. With THIS Antigravity session's own image tools, generate real PNGs:
+1. Generate real PNGs:
      concept-front.png, concept-threequarter.png, concept-back.png
      (concept-turnaround.png optional). Same character / palette / outfit across all angles.
    concept-front.png must be a clean single subject on a plain background — it is also the
    image-to-3D input when the mesh routes to 3D Gen Studio.
+   antigravity → THIS session's own image tools. If that tool returns HTTP 429 or a quota
+     error, make the same files with codex-image-gen (as below) and add
+     `backend: codex-image (antigravity 429)` to concept-check.md.
+   codex-image → ~/.agents/skills/codex-image-gen/SKILL.md, one jobs file: concept-front.png
+     as a generation; concept-threequarter.png and concept-back.png as edits with
+     "ref": "<abs path of concept-front.png>" (only the VIEW line changes). Plain light-grey
+     background, no alpha. --overwrite when regenerating a round.
    Do NOT call orca-gpt-image-gen / ChatGPT for these concepts.
 2. Read every PNG. Write evidence/art/<STEM>/concept-check.md (never a shared file):
      ## <STEM> — concept round <n>
@@ -142,8 +153,8 @@ On PASS, send status to the art-mesh handle; art-anim waits on the mesh.
 
 ## art-mesh-<stem> (per locked art_backend; mesh_backend decides the route)
 
-Launch: `cursor` art_backend → recipe **A**; `antigravity` / `gpt-image-gen` (codex) → recipe **C**
-(no AGENTS.md boot — art spec is the first turn).
+Launch: `cursor` art_backend → recipe **A**; `antigravity` / `gpt-image-gen` / `codex-image` (codex)
+→ recipe **C** (no AGENTS.md boot — art spec is the first turn).
 
 ```text
 ROLE: writer (assets) — one mesh. Depends on art-concept-<STEM> CONCEPT: PASS.
@@ -279,8 +290,8 @@ pipeline code (pipeline bugs go in an escalation); ship with any clip QA fail.
 
 ## art / art-2d (locked art_backend — 2D only, parallel with concepts)
 
-Launch: `cursor` → recipe **A**; `antigravity` / `gpt-image-gen` (codex) → recipe **C** (no
-AGENTS.md boot).
+Launch: `cursor` → recipe **A**; `antigravity` / `gpt-image-gen` / `codex-image` (codex) → recipe
+**C** (no AGENTS.md boot).
 
 ```text
 ROLE: writer (assets) — 2D textures/sprites only.
@@ -298,7 +309,9 @@ Never: 3D concepts or meshes (those are art-concept / art-mesh Tasks).
 
 ```text
 Produce 2D files with this Antigravity session's own tools: image-gen rows with its
-image-generation tool, procedural rows with evidence/art/2d/gen_2d.py.
+image-generation tool, procedural rows with evidence/art/2d/gen_2d.py. Image tool at HTTP 429 /
+quota → the remaining image-gen rows go through codex-image-gen (see art-2d / codex-image);
+their `tool` says so.
 Also owns evidence/art/2d/2d-check.md and gen_2d.py (create the dir if needed).
 
 Check, before worker_done:
@@ -336,10 +349,27 @@ image-generation tool, procedural rows with evidence/art/2d/gen_2d.py.
 ### art-2d / gpt-image-gen
 
 ```text
-Produce every image-gen 2D row via the installed orca-gpt-image-gen skill (and
-gpt-image-2-style-library when present); procedural rows via evidence/art/2d/gen_2d.py.
-Destination = absolute paths under art_paths.
-Do not freehand image-gen rows. Verify each download exists before worker_done.
+Split the image-gen rows by "tier" (rows without it: the hero list in
+~/.agents/skills/codex-image-gen/SKILL.md "Pick the backend"):
+  hero rows → the installed orca-gpt-image-gen skill (ChatGPT, GPT Image 2.5)
+  every other row → codex-image-gen, one jobs file (see art-2d / codex-image)
+  codex-image.mjs check exits 2 → every row through orca-gpt-image-gen; note it in 2d-check.
+gpt-image-2-style-library when present; procedural rows via evidence/art/2d/gen_2d.py.
+Destination = absolute paths under art_paths. Do not freehand image-gen rows.
+Then run the Check steps of art-2d / antigravity (sips, Read, 2d-check.md → ART2D, verify).
+`tool` = "orca-gpt-image-gen (ChatGPT)" or "codex-image-gen (gpt-image-2-codex)".
+```
+
+### art-2d / codex-image
+
+```text
+Produce every image-gen 2D row with ~/.agents/skills/codex-image-gen/SKILL.md: one jobs file
+for the whole set (alpha true for sprites / icons / UI, refs for variants of one design),
+the project art bible as --prefix-file, --report evidence/art/2d/codex-report.json.
+Procedural rows via evidence/art/2d/gen_2d.py. Destination = absolute paths under art_paths.
+Codex ignores size: generate at the row's aspect, then scale to the row size with sips.
+Then run the Check steps of art-2d / antigravity (sips, Read, 2d-check.md → ART2D, verify).
+`tool` = "codex-image-gen (gpt-image-2-codex)".
 ```
 
 ---
@@ -348,13 +378,13 @@ Do not freehand image-gen rows. Verify each download exists before worker_done.
 
 ```text
 ROLE: writer (assets). art_backend=<ART_BACKEND>. Owns PLAN.art_paths only
-(+ evidence/art/2d/gen_2d.py, and 2d-check.md when art_backend=antigravity).
+(+ evidence/art/2d/gen_2d.py, and 2d-check.md unless art_backend=cursor).
 
 Do, in this order:
 1. Write <ART_PATHS>/manifest.json FIRST (2D rows carry "method" per the art-manifest block).
 2. status to implement handle.
-3. Produce every 2D file (backend-specific; antigravity also runs that block's 2d-check to
-   ART2D: PASS). Report the count vs max_assets; over it → note
+3. Produce every 2D file (backend-specific block above; every backend but cursor runs the
+   2d-check to ART2D: PASS). Report the count vs max_assets; over it → note
    `budget_bump` (advisory) — never skip a manifest row to fit.
 
 Never: .meta; Creator; .scene/.prefab; Funplay/refresh_assets; invent 3D here — if PLAN gains
@@ -367,7 +397,7 @@ Done: worker_done --files-modified.
 ## fix — art variant (3D)
 
 ```text
-Concept findings → new art-concept-<stem> (antigravity) must re-PASS concept-check before remesh.
+Concept findings → new art-concept-<stem> (concept route) must re-PASS concept-check before remesh.
 Mesh / compare-sheet findings → art-mesh-<stem>: Blender route re-exports; 3dgenstudio route
 reruns gen3d_studio.py --source-glb <stem>_high.glb (finishing) or regenerates once when the
 silhouette is the finding; both re-run render_model_iso.py with --concepts into round-<n+1>.
