@@ -595,6 +595,41 @@ test('fleet: the newest review file is the verdict; defer never covers a review 
   assert.deepEqual(sliceState(p.root, 'S01').manual_deferred, ['fps on the named device', 'GP-22 spot-check']);
 });
 
+test('fleet: a fix-round status never offers offer_commit; "check again" on the same files waits; back to the lane (S13 q48-q53)', () => {
+  const p = project({ slices: { S01: { needs: false, size: 'L' } } });
+  const f = fakes();
+  const fast = { env: { PRODUCER_RUNNER_IDLE_MS: '20' } };
+  f.queue([
+    { name: 'round 1', runs: [{ id: 'run_1', coordinator_handle: 'term_1' }], write: { [H]: { role: 'coordinator', status: 'working' }, [evRel('S01', 'review.md')]: 'F1\n\nCHANGES_REQUESTED\n' } },
+    { name: 'free-text fix status', write: { [H]: { role: 'coordinator', status: 'fix-r1 code done; recapture blocked on editor recompile' } } },
+  ]);
+  const a = runner(p.root, f, 'start', '--once', fast).out.at(-1);
+  assert.equal(a.kind, 'unknown_status');
+  assert.deepEqual(a.options, ['treat as working, keep waiting', 'mark blocked', 'stop']); // no offer_commit while the review says CHANGES_REQUESTED
+  // a slice that reached accept anyway (an older runner answered offer_commit): one question, not a loop
+  fs.writeFileSync(ev(p.root, 'S01', 'producer-state.json'), JSON.stringify({ ...sliceState(p.root, 'S01'), phase: 'accept' }));
+  runner(p.root, f, 'answer', '--id', 'q1', '--choice', 'treat as working, keep waiting');
+  clearControl(p.root);
+  const b = runner(p.root, f, 'start', '--once', fast).out.at(-1);
+  assert.equal(b.kind, 'approval_evidence');
+  assert.deepEqual(b.options, ['evidence fixed, check again', 'back to the lane (fix round still running)', 'mark blocked', 'stop']);
+  runner(p.root, f, 'answer', '--id', b.waiting, '--choice', 'evidence fixed, check again');
+  clearControl(p.root);
+  runner(p.root, f, 'start', '--once', { ...fast, timeout: 4000 }); // keeps waiting on the same files: stopped by the timeout
+  assert.equal(runnerFile(p.root).questions.filter((q) => q.kind === 'approval_evidence').length, 1, 'same files: no second approval question');
+  assert.equal(sliceState(p.root, 'S01').phase, 'accept');
+  // the director sends it back to the lane: the runner waits on the fleet again
+  fs.writeFileSync(ev(p.root, 'S01', 'evidence', 'review.md'), 'F1 still open\n\nCHANGES_REQUESTED\n'); // a touched file is a new observation
+  clearControl(p.root);
+  const c = runner(p.root, f, 'start', '--once', fast).out.at(-1);
+  assert.equal(c.kind, 'approval_evidence');
+  runner(p.root, f, 'answer', '--id', c.waiting, '--choice', 'back to the lane (fix round still running)');
+  clearControl(p.root);
+  runner(p.root, f, 'start', '--once', fast); // the runner applies the answer on its next pass
+  assert.match(log(p.root), /answer q\d+ \(approval_evidence\): back to the lane/);
+  assert.notEqual(sliceState(p.root, 'S01').phase, 'accept');
+});
+
 test('fleet: defer still asks about missing evidence first; review rounds order by number, not mtime', () => {
   const p = project({ notes: NOTES(POLICY, '{}', '  manual_required: defer\n'), slices: { S01: { needs: false, size: 'L' } } });
   const f = fakes();
@@ -663,6 +698,29 @@ test('fleet: a terminal-missing that the runner\'s own terminal show disproves i
   assert.match(log(p.root), /orca-wait reported term_1 missing but terminal show finds it \(1\/5\): waiting on/);
   assert.deepEqual([b.waiting, b.kind], ['q1', 'coordinator_missing']);
   assert.match(question(p.root, 'q1').text, /reported it missing 5 times in a row although terminal show still finds it/);
+});
+
+test('fleet: a stale terminal wait with a HANDOFF that does not move for 30 min asks fleet_stall (no idle event ever comes)', () => {
+  const p = project({ slices: { S01: { needs: false, size: 'L' } } });
+  const f = fakes();
+  f.queue([{ name: 'run', runs: [{ id: 'run_1', coordinator_handle: 'term_1' }], write: { [H]: { role: 'coordinator', status: 'working' } } }]);
+  runner(p.root, f, 'start', '--once');
+  clearControl(p.root);
+  const stub = path.join(f.dir, 'orca-wait-stale.mjs');
+  fs.writeFileSync(stub, "console.log(JSON.stringify({ event: 'timeout', handle: 'term_1', handle_changed: false, status: 'working', handoff_changed: false, idle_streak: 0, pending_gates: [], unread_to_run: 0, waited_ms: 1, stale_rechecks: 3 })); process.exit(0);\n");
+  const env = { env: { PRODUCER_RUNNER_ORCA_WAIT: stub, PRODUCER_RUNNER_IDLE_MS: '20' }, timeout: 4000 }; // under 30 min it keeps waiting: the timeout ends that pass
+  // the first stale timeout only starts the clock; then pretend 31 minutes passed with the same HANDOFF
+  const stateFile = path.join(p.root, '.cursor', 'evidence', 'tasks', 'T-S01', 'producer-state.json');
+  const until = (pred) => { for (let i = 0; i < 5 && !pred(); i++) { clearControl(p.root); runner(p.root, f, 'start', '--once', env); } };
+  until(() => Boolean(JSON.parse(fs.readFileSync(stateFile, 'utf8')).stale_since));
+  assert.match(log(p.root), /terminal wait is stale for term_1 but terminal show finds it \(3 rechecks\): waiting on/);
+  assert.equal(runnerFile(p.root).questions.length, 0);
+  const st = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  fs.writeFileSync(stateFile, JSON.stringify({ ...st, stale_since: Date.now() - 31 * 60 * 1000 }));
+  clearControl(p.root);
+  const b = runner(p.root, f, 'start', '--once', env).out.at(-1);
+  assert.deepEqual([b.waiting, b.kind], ['q1', 'fleet_stall']);
+  assert.match(question(p.root, 'q1').text, /stale and HANDOFF unchanged for 3[01] min/);
 });
 
 test('fleet gate: the question carries the whole gate, every line, and the whole of the others (S10 q21, 2026-10-04)', () => {

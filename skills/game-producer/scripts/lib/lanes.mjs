@@ -44,6 +44,7 @@ const gitOut = (root, args) => {
 const GATE_PATIENCE = 10; // idle pauses after relaying a gate decision before asking again
 const GATE_SETTLE = 3; // idle pauses after a relay before another pending gate becomes a question
 const MISSING_RECHECKS = 5; // "terminal missing" from orca-wait while `terminal show` finds it: ask after this many
+const STALE_STALL_MS = 30 * 60 * 1000; // stale `terminal wait` (orca-wait keeps waiting) and no HANDOFF change this long: ask
 const BAD_JSON_PATIENCE = 3; // a HANDOFF caught mid-write parses on the next look
 const VERDICT_PATIENCE = 2; // looks after a HANDOFF verdict before its review file disagreeing is a question
 const MAX_STATIC_BOUNCES = 2; // check-slice FAILs sent back to the writer per review round before the reviewer gets it anyway
@@ -892,7 +893,12 @@ function accept(ctx, s, dir, required, manualOptions) {
   // SKILL Step 2d: never commit or merge on manual_required or missing evidence
   if (p.code === 'manual_required') return ask(s, 'manual_required', `${p.detail} (${dir})`, manualOptions);
   if (p.code === 'verdict_override') return ask(s, 'verdict_override', `${p.detail} (${dir})`, ['treat as approved', 'evidence fixed, check again', 'mark blocked', 'stop']);
-  return ask(s, 'approval_evidence', `not APPROVED by Step 2d: ${p.detail} (${dir})`, ['evidence fixed, check again', 'mark blocked', 'stop']);
+  // pilot 6 (S13 q49-q52): "check again" on unchanged files re-asked every 4 s. The observation is the
+  // evidence files' mtimes: after "check again" the same files only wait; a fix round still running can
+  // send the slice back to its lane.
+  const evObs = `approval_evidence@${['review.md', 'runtime-state.json', 'HANDOFF.json'].map((f) => mtime(path.join(dir, f)) || 0).join(':')}`;
+  const back = ctx.lane === 'fleet' ? ['back to the lane (fix round still running)'] : [];
+  return ask(s, 'approval_evidence', `not APPROVED by Step 2d: ${p.detail} (${dir})`, ['evidence fixed, check again', ...back, 'mark blocked', 'stop'], { obs: evObs });
 }
 
 const laneHandoff = (ctx) => (ctx.lane === 'fleet' ? fleetHandoff(ctx.project.root, ctx.id).file : handoffMain(ctx.project.root, ctx.id));
@@ -1093,7 +1099,9 @@ function fleetStep(ctx, s, phase) {
   const panel = coordinatorAsks(ctx, s, coordinator);
   if (panel?.ask) return panel; // before the status rules: lane_blocked / unknown_status follow once it is answered
   if (h.fresh && !h.status) {
-    const q = ask(s, 'unknown_status', `fleet HANDOFF status "${h.raw ?? '(none)'}" is not one the runner knows`, ['treat as working, keep waiting', 'treat as offer_commit', 'mark blocked', 'stop'], { obs: obs('unknown_status') });
+    // offer_commit only when the newest review says APPROVED: S13 q48 took a fix-round status as an offer
+    const approved = reviewVerdict(ctx.project, id).verdict === 'APPROVED';
+    const q = ask(s, 'unknown_status', `fleet HANDOFF status "${h.raw ?? '(none)'}" is not one the runner knows`, ['treat as working, keep waiting', ...(approved ? ['treat as offer_commit'] : []), 'mark blocked', 'stop'], { obs: obs('unknown_status') });
     // answered "keep waiting": the stall rules below still apply to that coordinator (nudge, then ask)
     if (q !== PAUSE) return q;
   }
@@ -1115,6 +1123,20 @@ function fleetStep(ctx, s, phase) {
     return ask(s, 'fleet_stall', `fleet coordinator idle with status ${h.raw || 'none'} after one nudge (unread to Run: ${w.unread_to_run ?? '?'})`, ['nudged again, continue', 'mark blocked', 'stop'], { obs: obs(`fleet_stall:${coordinator}`) });
   }
   if (w.event === 'handoff' && s.nudged_stall) st.writeSliceState(root, id, { nudged_stall: false });
+  // orca-wait kept waiting on a stale handle that `terminal show` still finds (pilots 5, 6): no idle
+  // event ever comes, so the idle stall rule above cannot fire. Measure the HANDOFF instead.
+  if (w.stale_rechecks) {
+    const mt = h.mtime || 0;
+    if (!s.stale_since || s.stale_since_mtime !== mt) {
+      st.writeSliceState(root, id, { stale_since: Date.now(), stale_since_mtime: mt });
+      st.log(root, id, `terminal wait is stale for ${coordinator} but terminal show finds it (${w.stale_rechecks} rechecks): waiting on`);
+      return null;
+    }
+    const mins = Math.round((Date.now() - s.stale_since) / 60000);
+    if (Date.now() - s.stale_since >= STALE_STALL_MS) {
+      return ask(s, 'fleet_stall', `fleet coordinator ${coordinator}: \`terminal wait\` stale and HANDOFF unchanged for ${mins} min (status ${h.raw || 'none'}; terminal show still finds it)`, ['nudged again, continue', 'mark blocked', 'stop'], { obs: obs(`fleet_stall_stale:${coordinator}`) });
+    }
+  } else if (s.stale_since) st.writeSliceState(root, id, { stale_since: null, stale_since_mtime: null });
   return null;
 }
 
@@ -1170,6 +1192,11 @@ export function applyAnswer(ctx, q) {
       if (s.reviewer) io.closeTerminal(s.reviewer);
       return setPhase(root, id, 'spawn-reviewer', { reviewer: null });
     case 'approval_evidence:evidence fixed, check again':
+      ack(); // the same evidence files now only wait (see accept)
+      return setPhase(root, id, 'accept');
+    case 'approval_evidence:back to the lane (fix round still running)':
+      ack();
+      return setPhase(root, id, 'fleet');
     case 'manual_required:evidence fixed, check again':
     case 'verdict_override:evidence fixed, check again':
       return setPhase(root, id, 'accept');
