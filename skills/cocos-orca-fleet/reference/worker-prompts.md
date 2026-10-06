@@ -86,7 +86,10 @@ Do:
    - allowed_paths split into code_paths / art_paths, each path justified by a line in
      plan-notes.md (which system owns it, why it must change); nothing outside SCOPE.md.
    - allowed_scene_objects as concrete node paths / prefab names that exist or are to be
-     created (say which).
+     created (say which), laid out per .cursor/rules/35-scene-structure.mdc: fixed UI and
+     button/tab states are scene or prefab nodes, repeated items are prefabs under a container.
+     Visible hierarchy that code must build (`new Node()` + `addComponent`) goes under
+     `## code-built nodes` in plan-notes.md with owner and why no prefab serves.
    - Popups (overlay that opens and closes: result, pause, settings, shop, reward, toast):
      follow docs/flows/03-popup-system.md — prefab `assets/resources/prefab/ui/Popup<Name>.prefab`
      in allowed_scene_objects, script under modules/popup/**, key in constant/PopupDefine.ts.
@@ -206,6 +209,9 @@ Do:
    that breaks an acceptance row is never a followup: fix it, or HANDOFF blocked), and
    `## negative controls` (each new or changed smoke check and spec: the broken state you ran it
    against and the red line it printed — a check you never saw fail proves nothing).
+   Structure follows .cursor/rules/35-scene-structure.mdc (state children saved inactive and
+   wired to `@property` slots, prefab containers); code you wrote that builds visible nodes and
+   the PLAN does not list goes under `## code-built nodes` (what, owner, why no prefab).
 5. Smoke checks are part of the code, not the review: for EVERY acceptance row that state can
    answer (score, panel open, saved value, node count, no console error) add one
    `scripts/smoke/checks/<Sxx>-<nn>-<id>.check.js` (≤30 lines, format in
@@ -351,6 +357,12 @@ Static (commit-guard gates 1–4, read-only):
 - ARCHITECTURE: no upward deps, no cycles, events from the registry only. Popups only via
   `UIManager.showDialog/hideDialog(POPUP.X)` with key = prefab name = root node name =
   `@ccclass`; no popup node parented to the Canvas by hand, no second popup manager.
+  Scene structure (.cursor/rules/35-scene-structure.mdc): visible hierarchy built with
+  `new Node()` + `addComponent` that neither plan-notes.md nor integration-notes.md lists under
+  `## code-built nodes` is a finding (owner code; files of a kit the PLAN lists count as
+  declared); so is a state faked in code where the rule
+  wants pre-authored children. New UI nodes off `{Kind} - {label}` (`Label - ` for cc.Label),
+  or same-named siblings, are a minor finding (owner scene).
 - ASSETS: every asset has a .meta pair; no raw-edited .scene/.prefab/.meta. Every 3D model
   has `CONCEPT: PASS` + `VERDICT: PASS`; open compare-sheet.png (concept|model rows) and
   contact-sheet.png together — missing either sheet is a blocker (owner asset). Overturn when

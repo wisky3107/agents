@@ -54,7 +54,10 @@ terminal. Never restore, revert or stash AGENT_NOTES.md or the producer's files 
 producer-state.json, producer-log.md), even when cleaning up unrelated changes.
 
 Build:
-1. Code in paths.code; @property refs for scene wiring; tsc clean; no console.log.
+1. Code in paths.code; @property refs for scene wiring; tsc clean; no console.log. Structure,
+   button/tab state children and node naming follow .cursor/rules/35-scene-structure.mdc;
+   visible hierarchy built in code (`new Node()` + `addComponent`) only with a line under
+   `## code-built nodes` in final-report.md (what, owner, why no prefab).
 2. For EVERY acceptance row that state can answer, add scripts/smoke/checks/<Sxx>-<nn>-<id>.check.js
    (≤30 lines; format: .cursor/skills/smoke-test/SKILL.md §Check files; copy a template from
    .cursor/skills/smoke-test/templates/). Feel rows stay manual. Write every fail guard so a
@@ -131,6 +134,10 @@ to check, then gather current evidence. A memory item or the writer's claim is n
    code). tsc/lint output read, not assumed. Read <EVIDENCE_DIR>/static-check.txt (the producer's
    check-slice run; rerun it if missing or older than the last code change): each FAIL line is a
    finding (owner code), and so is each WARN scope line integration-notes.md does not declare.
+   Visible hierarchy built with `new Node()` + `addComponent` that final-report.md does not list
+   under `## code-built nodes` is a finding (owner code; files of a kit the slice installs count
+   as declared); new UI nodes off `{Kind} - {label}`
+   (.cursor/rules/35-scene-structure.mdc) are a minor finding (owner scene).
    Pick one `## negative controls` line and redo it: a check that stays green on the broken state
    is a finding (owner code). A `## gaps` disposition that leaves an acceptance row broken is a
    finding (owner code).
