@@ -13,6 +13,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { sliceFront, sliceSize, sliceWorktrees, budgetMode, liteWhenNoAssets, isCc4, ripStudy } from './project.mjs';
 import * as st from './state.mjs';
@@ -896,7 +897,12 @@ function accept(ctx, s, dir, required, manualOptions) {
   // pilot 6 (S13 q49-q52): "check again" on unchanged files re-asked every 4 s. The observation is the
   // evidence files' mtimes: after "check again" the same files only wait; a fix round still running can
   // send the slice back to its lane.
-  const evObs = `approval_evidence@${['review.md', 'runtime-state.json', 'HANDOFF.json'].map((f) => mtime(path.join(dir, f)) || 0).join(':')}`;
+  // the files that decide it: the verdict file and the last round (review-rN.md beats review.md), runtime-state,
+  // HANDOFF — plus the problem itself, so a different problem on the same files is a new question
+  const rf = st.reviewFiles(dir);
+  const files = [rf.verdict, rf.lastRound, path.join(dir, 'runtime-state.json'), path.join(dir, 'HANDOFF.json')].filter(Boolean);
+  const stamp = files.map((f) => `${path.basename(f)}=${mtime(f) || 0}`).join(':');
+  const evObs = `approval_evidence@${stamp}#${createHash('sha1').update(p.detail).digest('hex').slice(0, 8)}`;
   const back = ctx.lane === 'fleet' ? ['back to the lane (fix round still running)'] : [];
   return ask(s, 'approval_evidence', `not APPROVED by Step 2d: ${p.detail} (${dir})`, ['evidence fixed, check again', ...back, 'mark blocked', 'stop'], { obs: evObs });
 }
@@ -1196,7 +1202,8 @@ export function applyAnswer(ctx, q) {
       return setPhase(root, id, 'accept');
     case 'approval_evidence:back to the lane (fix round still running)':
       ack();
-      return setPhase(root, id, 'fleet');
+      // an earlier "treat as approved" must not let a later CHANGES_REQUESTED round pass accept
+      return setPhase(root, id, 'fleet', { verdict_accepted: false });
     case 'manual_required:evidence fixed, check again':
     case 'verdict_override:evidence fixed, check again':
       return setPhase(root, id, 'accept');

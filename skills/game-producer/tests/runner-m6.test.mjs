@@ -619,7 +619,8 @@ test('fleet: a fix-round status never offers offer_commit; "check again" on the 
   assert.equal(runnerFile(p.root).questions.filter((q) => q.kind === 'approval_evidence').length, 1, 'same files: no second approval question');
   assert.equal(sliceState(p.root, 'S01').phase, 'accept');
   // the director sends it back to the lane: the runner waits on the fleet again
-  fs.writeFileSync(ev(p.root, 'S01', 'evidence', 'review.md'), 'F1 still open\n\nCHANGES_REQUESTED\n'); // a touched file is a new observation
+  // a new review round lands in review-r2.md (review.md untouched): still not APPROVED, so it is asked again
+  fs.writeFileSync(ev(p.root, 'S01', 'evidence', 'review-r2.md'), 'F1 still open\n\nCHANGES_REQUESTED\n');
   clearControl(p.root);
   const c = runner(p.root, f, 'start', '--once', fast).out.at(-1);
   assert.equal(c.kind, 'approval_evidence');
@@ -628,6 +629,7 @@ test('fleet: a fix-round status never offers offer_commit; "check again" on the 
   runner(p.root, f, 'start', '--once', fast); // the runner applies the answer on its next pass
   assert.match(log(p.root), /answer q\d+ \(approval_evidence\): back to the lane/);
   assert.notEqual(sliceState(p.root, 'S01').phase, 'accept');
+  assert.equal(sliceState(p.root, 'S01').verdict_accepted, false);
 });
 
 test('fleet: defer still asks about missing evidence first; review rounds order by number, not mtime', () => {
