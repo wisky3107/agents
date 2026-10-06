@@ -353,3 +353,4 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - **Bài học cho người soạn slice:**
   - Mock phải lấy đúng bảng màu của skin thật (S09), không tự đặt màu. Cả F1 lẫn F3 ở S14 và F3 ở S13 đều là lệch màu giữa mock và skin.
   - Dặn reviewer trong prompt rằng dòng cuối chỉ được là từ verdict.
+- 15:5xZ: director cho phép thêm "bạn giúp mình deploy luôn, trước khi deploy hãy tạo git private push lên trước". Đã tạo repo private `wisky3107/cc-love-train` (remote `origin`) và push `main` (38434a6). Chỉ deploy preview, không prod, không tag. Push main sau mỗi lần merge và trước khi deploy. Các mục manual để ở trạng thái deferred, không waive.
