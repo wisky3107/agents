@@ -302,3 +302,17 @@ Slice do director yêu cầu để thử orca-memory (contract `08e8f8b`). Direc
   - token;
   - từng role có trích dẫn id memory nào hay ghi `memory used: none`;
   - các bài học trong pack có giúp tránh lỗi đã gặp không, ví dụ S14-03/04 có đo cỡ chữ thật lúc hiển thị ngay từ đầu không.
+
+### Pilot 8 — cc-love-train S01→S07 (dự án mới, cả release), nhận lúc 2026-10-06 15:48Z
+
+Ngày 2026-10-06 director nói "pilot dự án cc-love-train tự động làm hết". Đó là ủy quyền delegated: tôi trả lời mọi câu hỏi của runner, cho đến khi S07 merge, không push/deploy/tag. Mục đích: workflow chung, chạy trên một dự án mới tinh (source=media, contract do Fable viết, chưa commit trong main).
+- Lúc nhận việc, runner đã chạy S01:
+  - runner pid 14047, terminal `term_cc499227…`, khởi động lúc 14:27Z (đã có `dcf5dea`);
+  - coordinator `claude --model sonnet`, terminal `term_dff019ee…`, Run `run_df286e4f009f`;
+  - reviewer và judge đều là `claude --model opus`.
+- Policy line đã có `S01, S02, S04, S05, S06 GIVEN`, autopilot `retry_once`, `manual_required: defer`, `deploy=preview` (Step 3 phải chờ director ký các mục manual trước khi build/deploy).
+- Memory: `off`, nên không có pack.
+- Phát hiện trước khi tôi vào:
+  - **q1 fleet_gate (tsconfig strict)**: dòng acceptance "tsc strict clean" mâu thuẫn với SCOPE ("template common/* stays as shipped"). Có 161 lỗi strict nằm trong kit ui-popup và file template, đều ngoài slice. Judge defer đúng, director chọn A (`@ts-nocheck`). Lỗi nằm ở khâu viết contract: game-brief không chạy tsc strict trên baseline template và kit trước khi đưa dòng này vào.
+  - **q2 lane_blocked (infra)**: Creator của worktree chết khi coordinator đóng terminal integrator, vì terminal đó đã khởi động Creator. Bản recovery chạy Creator detached (ppid 1). HANDOFF đã ghi rõ "No human action needed", nhưng judge vẫn defer cho director. Tôi trả lời "answered in the lane, continue" lúc 15:48Z.
+  - **stop-after**: lệnh này không chặn được việc giao Step 3. `next.done` được kiểm tra trước `stop-after`, nên sau khi S07 merge, Step 3 vẫn được giao cho LLM producer.
