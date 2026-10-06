@@ -294,7 +294,7 @@ export function runner(root, fake, ...args) {
   const opts = args.length && typeof args[args.length - 1] === 'object' ? args.pop() : {};
   const r = spawnSync(process.execPath, [RUNNER, ...args, '--project', root], {
     encoding: 'utf8',
-    timeout: 90000,
+    timeout: opts.timeout || 90000, // a test that expects the runner to keep waiting passes a short one
     env: { ...env(root, fake), ...(opts.env || {}) },
     ...(opts.input !== undefined ? { input: opts.input } : {}),
   });

@@ -193,6 +193,8 @@ function lane(v) {
   let pendingGates = [];
   let unread = null;
   let errorText = null;
+  let staleRechecks = 0; // `terminal wait` said stale / not found but `terminal show` still found the terminal
+  let missingWhy = null;
   const before = readHandoff(v.handoff);
   // a HANDOFF written while the caller was busy elsewhere is news already: report it at once
   const baseMtime = prev.last_mtime !== undefined ? prev.last_mtime : before.mtime;
@@ -226,6 +228,22 @@ function lane(v) {
       // a stale or unknown handle is a gone terminal; anything else (runtime down, ECONNREFUSED) is not
       event = /stale|not[ _]found|unknown terminal|no such terminal/i.test(why) ? 'terminal-missing' : 'orca-error';
       if (event === 'orca-error') errorText = why.slice(0, 200);
+      if (event === 'terminal-missing') {
+        // pilots 5 and 6: `terminal wait` answered terminal_handle_stale for a live coordinator while
+        // `terminal show` found it. Ask show first; only a terminal show cannot find (or an orphan) is gone.
+        missingWhy = why.slice(0, 200);
+        const sh = orcaJson(['terminal', 'show', '--terminal', handle], Math.min(30000, Math.max(2000, deadline - Date.now())));
+        const t = sh.status === 0 ? sh.parsed?.result?.terminal : null;
+        // same liveness rule as the runner's terminalAlive(): an orphan or a disconnected pane is closed
+        if (t && t.orphaned !== true && t.connected !== false) {
+          staleRechecks += 1;
+          if (t.handle && t.handle !== handle) handle = t.handle; // Orca re-issued the handle
+          event = 'timeout';
+          const pause = Math.min(5000, Math.max(0, deadline - Date.now()));
+          if (pause) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, pause);
+          continue;
+        }
+      }
       break;
     }
   }
@@ -240,6 +258,8 @@ function lane(v) {
   const idleStreak = event === 'idle' ? (!handoffChanged && !handleChanged ? (prev.idle_streak || 0) + 1 : 1) : 0;
   const out = {
     event, handle, handle_changed: handleChanged, ...(errorText ? { error: errorText } : {}),
+    ...(event === 'terminal-missing' && missingWhy ? { error: missingWhy } : {}),
+    ...(staleRechecks ? { stale_rechecks: staleRechecks } : {}),
     status: after.status, detail: after.detail, sha: after.sha, handoff_changed: handoffChanged,
     idle_streak: idleStreak, pending_gates: pendingGates, unread_to_run: unread, waited_ms: Date.now() - started,
   };

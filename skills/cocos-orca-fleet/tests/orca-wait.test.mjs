@@ -20,6 +20,7 @@ case "$1 $2" in
   "orchestration gate-list") cat "${dir}/gates.json" ;;
   "orchestration inbox") cat "${dir}/inbox.json" ;;
   "terminal wait") cat "${dir}/wait.json" ;;
+  "terminal show") if [ -f "${dir}/show.json" ]; then cat "${dir}/show.json"; else echo '{"ok":false,"error":{"code":"terminal_not_found"}}'; exit 1; fi ;;
   *) echo '{"ok":false}'; exit 1 ;;
 esac
 `, { mode: 0o755 });
@@ -157,5 +158,29 @@ test('a failing orca is orca-error, a stale handle is terminal-missing; --max-ms
   assert.match(fs.readFileSync(path.join(bin, 'calls.log'), 'utf8'), /--timeout-ms 60000/); // chunk; the total is clamped to 570000
   fs.writeFileSync(path.join(bin, 'wait.json'), JSON.stringify({ ok: false, error: { code: 'terminal_handle_stale' } }));
   assert.equal(run(bin, ['lane', '--handle', 't1', '--handoff', path.join(bin, 'h.json'), '--state', path.join(bin, 's.json')]).out.event, 'terminal-missing');
+  fs.rmSync(bin, { recursive: true });
+});
+
+test('lane: a stale handle that `terminal show` still finds is not terminal-missing (pilots 5, 6); a re-issued handle is adopted', () => {
+  const bin = fakeOrca({ inbox: { ok: true, result: { messages: [] } } });
+  const script = path.join(bin, 'orca');
+  fs.writeFileSync(script, fs.readFileSync(script, 'utf8').replace(/("terminal wait"\) cat "[^"]+")/, '$1; exit 1'));
+  fs.writeFileSync(path.join(bin, 'wait.json'), JSON.stringify({ ok: false, error: { code: 'terminal_handle_stale' } }));
+  fs.writeFileSync(path.join(bin, 'show.json'), JSON.stringify({ ok: true, result: { terminal: { handle: 't2', orphaned: false } } }));
+  const args = ['lane', '--handle', 't1', '--handoff', path.join(bin, 'h.json'), '--state', path.join(bin, 's.json'), '--max-ms', '1500', '--chunk-ms', '200'];
+  const live = run(bin, args).out;
+  assert.equal(live.event, 'timeout');
+  assert.ok(live.stale_rechecks >= 1, JSON.stringify(live));
+  assert.equal(live.handle, 't2');
+  // an orphaned terminal, or one show cannot find, is still gone
+  fs.writeFileSync(path.join(bin, 'show.json'), JSON.stringify({ ok: true, result: { terminal: { handle: 't1', orphaned: true } } }));
+  const orphan = run(bin, args).out;
+  assert.equal(orphan.event, 'terminal-missing');
+  assert.match(orphan.error, /terminal_handle_stale/);
+  // a pane Orca keeps after the process exited: connected false, not orphaned → gone too
+  fs.writeFileSync(path.join(bin, 'show.json'), JSON.stringify({ ok: true, result: { terminal: { handle: 't1', orphaned: false, connected: false } } }));
+  assert.equal(run(bin, args).out.event, 'terminal-missing');
+  fs.rmSync(path.join(bin, 'show.json'));
+  assert.equal(run(bin, args).out.event, 'terminal-missing');
   fs.rmSync(bin, { recursive: true });
 });
