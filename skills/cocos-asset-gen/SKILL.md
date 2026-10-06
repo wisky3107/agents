@@ -98,11 +98,19 @@ bus_small and double_decker, and confirmed the pig at 0.5 × 0.5.
 - `art_backend` `antigravity` or `cursor` → an Antigravity worker with its own image tools.
   When that image tool returns HTTP 429 or a quota error, the same worker makes the pack with
   `codex-image-gen` and notes `backend: codex-image (antigravity 429)` in concept-check.md.
+  If the Codex lane is down too (`codex-image.mjs check` exits 2), the worker does not sit on a reset: it
+  sends the coordinator one `ask` naming both lanes' state, the earliest `until` from
+  `node ~/.agents/tools/agy-account/agy-account.mjs status` and whether any account is still
+  unexhausted, and waits. The coordinator opens one gate for the director and replies
+  `wait until <ts>` or `exception: orca-gpt-image-gen for <stem>` (a written exception for that stem). ChatGPT
+  stays off the concept route unless that gate grants it (cc-lego-stack S11 sat ~5 h on a silent
+  Antigravity wait, 2026-10-05).
 - `art_backend` `gpt-image-gen` or `codex-image` → a codex worker running `codex-image-gen`.
   The front is a generation; the ¾ and back views are edits that take `concept-front.png` as
-  the reference.
+  the reference. If `check` exits 2 mid-run, the worker sends the same single `ask` and waits
+  for the reply instead of polling.
 - Never ChatGPT / `orca-gpt-image-gen`: each browser chat makes one image and cannot hold a
-  design across views.
+  design across views. Only a director gate can grant a written exception for one slice.
 
 ### Mesh routing (`mesh_backend`)
 

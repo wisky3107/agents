@@ -37,10 +37,19 @@ Do:
 2. Generate concept-front.png first, then concept-threequarter.png and concept-back.png with the
    front as the reference. Only the VIEW line changes between them.
    antigravity → this session's image tools; at HTTP 429 / quota switch to codex-image and add
-     `backend: codex-image (antigravity 429)` to concept-check.md.
+     `backend: codex-image (antigravity 429)` to concept-check.md. If codex-image is down too
+     (`codex-image.mjs check` exits 2), send the coordinator one `ask` with both lanes' state, the earliest
+     `until` from `node ~/.agents/tools/agy-account/agy-account.mjs status` and whether any
+     account is still unexhausted, then wait for the reply (no polling of either lane). Reply
+     `wait until <ts>` → run the round again after it; `exception: orca-gpt-image-gen for <stem>` →
+     that lane for this stem only: classify the request as `non-game image` (no alpha contract;
+     plain light background), make each view from the same prompt with only the VIEW line
+     changed, judge cross-view consistency in concept-check.md, and note the exception there.
    codex-image → ~/.agents/skills/codex-image-gen/SKILL.md: one jobs file, the front as a
-     generation, the other two as edits with "ref": "<abs path of concept-front.png>".
-   Do NOT call orca-gpt-image-gen / ChatGPT, and never make a multi-view sheet.
+     generation, the other two as edits with "ref": "<abs path of concept-front.png>". If
+     `check` exits 2 here, the same single `ask` as above.
+   Do NOT call orca-gpt-image-gen / ChatGPT unless the coordinator's reply grants a written
+   exception for this stem, and never make a multi-view sheet.
 3. Open every PNG and write concept-check.md with the checklist in concept-prompt.md.
    Its last line is CONCEPT: PASS | CONCEPT: FAIL — <reason>.
 4. FAIL → regenerate, at most 2 rounds. Still no PASS → worker_done --outcome failed.

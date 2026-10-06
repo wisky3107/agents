@@ -15,7 +15,7 @@ Workflows point here for this routing rule:
 
 | Work | Backend |
 |---|---|
-| **hero**: key art, splash / title, store and marketing images, logo, full-scene backgrounds, character hero or portrait art, anything the director calls final, and any image that failed the Codex lane twice | `orca-gpt-image-gen` (ChatGPT, GPT Image 2.5) |
+| **hero**: key art, splash / title, store and marketing images, logo, full-scene backgrounds, character hero or portrait art, anything the director calls final, and any image that failed the Codex lane twice (not a concept pack, which asks instead) | `orca-gpt-image-gen` (ChatGPT, GPT Image 2.5) |
 | **batch**: everything else, including sprite / icon / prop / tile sets, variants and candidates, concept packs, and edits from a reference (side, back or ¾ view from a front, recolours, state variants) | `codex-image-gen` (this skill) |
 
 Why the split: the Codex backend pins its image tool to `gpt-image-2-codex` (GPT Image 2), and
@@ -81,7 +81,9 @@ What the tool does:
 - Exit codes: `0` every job ok · `1` some failed (the report says why) · `2` OmniRoute or its
   Codex image models are down.
 
-On exit `2`, switch the run to `orca-gpt-image-gen` and say so in the report.
+On exit `2`, switch the run to `orca-gpt-image-gen` and say so in the report — except a concept
+pack for cocos-asset-gen or char-anim: there exit `2` means the art worker's single `ask` (their
+"Concept route"), and concepts never move to ChatGPT without a director exception.
 
 Completion criterion: exit `0`, or every failed job is listed with its error.
 

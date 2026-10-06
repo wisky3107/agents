@@ -596,6 +596,9 @@ and wait again. Per Delivery:
    shared file, including the blocker key and request id/timestamp; relay an existing request
    through the producer once, not as a new question at every layer or review round. While the
    blocker is unchanged, continue independent tasks and report it once; no repeated reminders.
+   An art worker's "every image lane is out" `ask` (cocos-asset-gen Concept route) is a director
+   decision: `gate-create` with the lanes' state and reset time, then `reply` with
+   `wait until <ts>` or `exception: orca-gpt-image-gen for <stem>`.
 2. `worker_done` succeeded → decide the terminal's next owner **before** acking:
    implement → `worker-start --task <integrate> --terminal <handle> --worktree id:<wt>`;
    everything else → `worker-release --dispatch <id>` (recipe A) or `orca terminal close`
