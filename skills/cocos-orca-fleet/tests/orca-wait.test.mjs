@@ -177,6 +177,9 @@ test('lane: a stale handle that `terminal show` still finds is not terminal-miss
   const orphan = run(bin, args).out;
   assert.equal(orphan.event, 'terminal-missing');
   assert.match(orphan.error, /terminal_handle_stale/);
+  // a pane Orca keeps after the process exited: connected false, not orphaned → gone too
+  fs.writeFileSync(path.join(bin, 'show.json'), JSON.stringify({ ok: true, result: { terminal: { handle: 't1', orphaned: false, connected: false } } }));
+  assert.equal(run(bin, args).out.event, 'terminal-missing');
   fs.rmSync(path.join(bin, 'show.json'));
   assert.equal(run(bin, args).out.event, 'terminal-missing');
   fs.rmSync(bin, { recursive: true });

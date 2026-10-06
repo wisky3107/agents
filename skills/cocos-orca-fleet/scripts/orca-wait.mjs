@@ -232,9 +232,10 @@ function lane(v) {
         // pilots 5 and 6: `terminal wait` answered terminal_handle_stale for a live coordinator while
         // `terminal show` found it. Ask show first; only a terminal show cannot find (or an orphan) is gone.
         missingWhy = why.slice(0, 200);
-        const sh = orcaJson(['terminal', 'show', '--terminal', handle], 30000);
+        const sh = orcaJson(['terminal', 'show', '--terminal', handle], Math.min(30000, Math.max(2000, deadline - Date.now())));
         const t = sh.status === 0 ? sh.parsed?.result?.terminal : null;
-        if (t && !t.orphaned) {
+        // same liveness rule as the runner's terminalAlive(): an orphan or a disconnected pane is closed
+        if (t && t.orphaned !== true && t.connected !== false) {
           staleRechecks += 1;
           if (t.handle && t.handle !== handle) handle = t.handle; // Orca re-issued the handle
           event = 'timeout';

@@ -650,6 +650,21 @@ test('fleet: a stale `terminal wait` that terminal show disproves never reaches 
   assert.match(fs.readFileSync(path.join(f.dir, 'calls.log'), 'utf8'), /terminal show --terminal term_1/); // orca-wait asked show
 });
 
+test('fleet: a terminal-missing that the runner\'s own terminal show disproves is waited on (logged); five in a row → the human', () => {
+  // orca-wait now rechecks show itself; this keeps the runner's second line of defence covered with a stub
+  const p = project({ slices: { S01: { needs: false, size: 'L' } } });
+  const f = fakes();
+  f.queue([{ name: 'run', runs: [{ id: 'run_1', coordinator_handle: 'term_1' }], write: { [H]: { role: 'coordinator', status: 'working' } } }]);
+  runner(p.root, f, 'start', '--once');
+  clearControl(p.root);
+  const stub = path.join(f.dir, 'orca-wait-missing.mjs');
+  fs.writeFileSync(stub, "console.log(JSON.stringify({ event: 'terminal-missing', handle: 'term_1', handle_changed: false, status: 'working', handoff_changed: false, idle_streak: 0, pending_gates: [], unread_to_run: 0, waited_ms: 1 }));\n");
+  const b = runner(p.root, f, 'start', '--once', { env: { PRODUCER_RUNNER_ORCA_WAIT: stub } }).out.at(-1);
+  assert.match(log(p.root), /orca-wait reported term_1 missing but terminal show finds it \(1\/5\): waiting on/);
+  assert.deepEqual([b.waiting, b.kind], ['q1', 'coordinator_missing']);
+  assert.match(question(p.root, 'q1').text, /reported it missing 5 times in a row although terminal show still finds it/);
+});
+
 test('fleet gate: the question carries the whole gate, every line, and the whole of the others (S10 q21, 2026-10-04)', () => {
   const p = project({ slices: { S01: { needs: false, size: 'L' } } });
   const f = fakes();
