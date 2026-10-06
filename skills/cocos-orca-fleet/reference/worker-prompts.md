@@ -203,14 +203,15 @@ Do:
    its prefab step (printed `next:`) goes in integration-notes for the integrator.
 4. Write evidence/integration-notes.md: exact nodes/components/refs the integrator must create
    or wire, in `{Kind} - {label}` form with parent path, ensure_* semantics, and which manifest
-   asset goes where; structure per .cursor/rules/35-scene-structure.mdc (state children saved
-   inactive and wired to `@property` slots, prefab containers). Code you wrote that builds
-   visible nodes and the PLAN does not list → `## code-built nodes` (what, owner, why no prefab). It also carries `## acceptance map` (one line per acceptance row, by its id: the check file, spec or
+   asset goes where. It also carries `## acceptance map` (one line per acceptance row, by its id: the check file, spec or
    `manual: <reason>` that measures it), `## gaps` (every gap you know of, each with a disposition:
    fixed / followup F-n added to FOLLOWUPS.md / director D-n; `none` when there are none — a gap
    that breaks an acceptance row is never a followup: fix it, or HANDOFF blocked), and
    `## negative controls` (each new or changed smoke check and spec: the broken state you ran it
    against and the red line it printed — a check you never saw fail proves nothing).
+   Structure follows .cursor/rules/35-scene-structure.mdc (state children saved inactive and
+   wired to `@property` slots, prefab containers); code you wrote that builds visible nodes and
+   the PLAN does not list goes under `## code-built nodes` (what, owner, why no prefab).
 5. Smoke checks are part of the code, not the review: for EVERY acceptance row that state can
    answer (score, panel open, saved value, node count, no console error) add one
    `scripts/smoke/checks/<Sxx>-<nn>-<id>.check.js` (≤30 lines, format in
@@ -358,7 +359,8 @@ Static (commit-guard gates 1–4, read-only):
   `@ccclass`; no popup node parented to the Canvas by hand, no second popup manager.
   Scene structure (.cursor/rules/35-scene-structure.mdc): visible hierarchy built with
   `new Node()` + `addComponent` that neither plan-notes.md nor integration-notes.md lists under
-  `## code-built nodes` is a finding (owner code); so is a state faked in code where the rule
+  `## code-built nodes` is a finding (owner code; files of a kit the PLAN lists count as
+  declared); so is a state faked in code where the rule
   wants pre-authored children. New UI nodes off `{Kind} - {label}` (`Label - ` for cc.Label),
   or same-named siblings, are a minor finding (owner scene).
 - ASSETS: every asset has a .meta pair; no raw-edited .scene/.prefab/.meta. Every 3D model

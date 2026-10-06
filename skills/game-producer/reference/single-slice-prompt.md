@@ -135,7 +135,8 @@ to check, then gather current evidence. A memory item or the writer's claim is n
    check-slice run; rerun it if missing or older than the last code change): each FAIL line is a
    finding (owner code), and so is each WARN scope line integration-notes.md does not declare.
    Visible hierarchy built with `new Node()` + `addComponent` that final-report.md does not list
-   under `## code-built nodes` is a finding (owner code); new UI nodes off `{Kind} - {label}`
+   under `## code-built nodes` is a finding (owner code; files of a kit the slice installs count
+   as declared); new UI nodes off `{Kind} - {label}`
    (.cursor/rules/35-scene-structure.mdc) are a minor finding (owner scene).
    Pick one `## negative controls` line and redo it: a check that stays green on the broken state
    is a finding (owner code). A `## gaps` disposition that leaves an acceptance row broken is a
