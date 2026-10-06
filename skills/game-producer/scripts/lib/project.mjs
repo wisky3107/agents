@@ -165,14 +165,15 @@ function git(root, args) {
 
 /**
  * Slices git shows as merged on HEAD: conventional `feat(Sxx)` / `fix(Sxx)` scopes, or a merge of a
- * branch named `Sxx-…`. Free-text mentions ("docs: S15 build plan") never count.
+ * branch whose name carries `Sxx` as a dash/underscore token (`S08-…`, `owner/S10-…`, `owner/feature-S12-…`).
+ * Free-text mentions ("docs: S15 build plan") never count.
  */
 export function gitMergedSlices(root) {
   const out = new Set();
   for (const s of git(root, ['log', '--format=%s', 'HEAD']).split('\n')) {
     const scoped = s.match(/^(?:feat|fix)\((S\d{2}[a-z]?)\)/);
     if (scoped) out.add(scoped[1]);
-    const merge = s.match(/^Merge branch '([sS]\d{2}[a-zA-Z]?)[-_]/);
+    const merge = s.match(/^Merge branch '(?:[^'/\s]+\/)*(?:[a-z0-9]+[-_])*?(s\d{2}[a-z]?)[-_]/i);
     if (merge) out.add(normId(merge[1]));
   }
   return out;
@@ -183,7 +184,8 @@ export function sliceWorktrees(root) {
   const out = {};
   for (const line of git(root, ['worktree', 'list', '--porcelain']).split('\n')) {
     const m = line.match(/^worktree (.+)$/);
-    const id = m && path.basename(m[1]).match(/^(s\d{2}[a-z]?)[-_]/i);
+    // the slice id is a token anywhere in the folder name: S12-…, s11-…, feature-S12-… (orca names it)
+    const id = m && path.basename(m[1]).match(/(?:^|[-_])(s\d{2}[a-z]?)(?:[-_]|$)/i);
     if (id && path.resolve(m[1]) !== path.resolve(root)) out[normId(id[1])] = m[1];
   }
   return out;
