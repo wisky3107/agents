@@ -201,3 +201,32 @@ Cấu hình lúc khởi chạy:
 - judge claude sonnet, autopilot retry_once, manual_required defer.
 
 Policy line: `S12 GIVEN`. Kết quả (token-report `--since 2026-10-06T03:23Z`, số turn, vòng review, sự cố) sẽ ghi khi slice merge.
+
+### Pilot 5 — kết quả (S12 merge 2026-10-06 06:58Z)
+
+- **Merge:** `0db6294`, slice commit `f14f528`, bookkeeping `a7bc506`. Tổng thời gian 03:23Z → 06:58Z = 3 giờ 35 phút. Trong đó có 24 phút runner đứng vì lỗi (xem phần sự cố) và các lần chờ director.
+- **Review:** 1 vòng, APPROVED, 0 vòng fix, 4 finding (tất cả minor hoặc followup).
+- **Kiểm tra tay:** 3 việc hoãn theo `manual_required: defer`: feel trên máy thật, FPS và level start thời gian thực, z-order của FX trên result card.
+- **Bằng chứng runtime:** so ảnh 41/41, giải 103/103 level, perf nằm trong ngưỡng A-12-09, smoke V2 đạt 53/53. Smoke V1 đạt 52/53; check fail là `S03-04`, lỗi có từ trước, giống hệt ở baseline.
+
+| Role | S01 (baseline) | S08 (pilot 1) | S09 (pilot 4) | S12 (pilot 5) |
+|---|---|---|---|---|
+| fleet-orch | 1 session, 191 turns, 24.8M | 1 / 616 / 82.9M | 1 / 878 / 122.0M | 1 / 508 / 65.0M (trung bình 128k/turn; turn đầu 17.9k) |
+| fleet-worker | 15 / 1072 / 225.0M | 13 / 611 / 104.9M | 16 / 996 / 237.3M | 2 / 291 / 99.2M (writer+integrator 249 turns 93.5M, reviewer opus 42 turns 5.7M) + verifier 1 / 16 / 1.4M |
+| producer (LLM) | 145.9M | 0 | 0.1M (judge) | 0.07M (judge, 2 lần) |
+
+- **Mục tiêu −40% cho coordinator: vẫn chưa đạt so với S01**, vì S12 tốn hơn S01 162%. So với các pilot trước thì đã giảm: −22% so với S08, −47% so với S09.
+  - Context mỗi turn vẫn như cũ (khoảng 128k, trong khi S08 134k, S09 139k). Phần giảm đến từ **số turn**: 508 so với 878, vì chỉ 1 vòng review và 0 vòng fix. Planner, scan và art đều bị bỏ qua (`lite`).
+  - Kết luận của pilot 4 vẫn đúng: chi phí coordinator đi theo số turn. Theo heuristic, turn split là judgement 73%, chờ 17%, mechanical 8%, nên phần script thay được tối đa khoảng 27%.
+- **Câu hỏi runner (4):**
+  - q39 `coordinator_missing`: báo động sai. `orca-wait` báo coordinator mất 5 lần trong khi `terminal show` vẫn thấy nó. Director chọn "taken over, continue".
+  - q40 `fleet_gate`: khi reimport, Creator ép tên root của prefab theo tên file, nên luật tên node không qua được nếu file tên `SelectRow.prefab`. Judge không tự quyết. Director chọn đổi tên file prefab thành `Panel - Select Row.prefab` và các tên tương tự.
+  - q41 `fleet_gate` (commit-guard): smoke V1 52/53 vì `S03-04`. Judge không tự quyết. Session theo dõi kiểm tra baseline thấy fail giống hệt, rồi chọn "authorize commit with documented baseline failure", kèm một dòng FOLLOWUPS.
+  - q42 `verify_failed`: lỗi `S03-04` trên main sau khi merge. Director chọn "record merged anyway".
+- **Sự cố và bài học:**
+  - **Runner đứng 06:02 → 06:26Z:** orca đặt tên worktree `feature-S12-scene-structure`, trong khi `sliceWorktrees` chỉ nhận tên bắt đầu bằng `S12-`. Vì vậy runner không bao giờ đọc HANDOFF `offer_commit`. Đã sửa trên master `28668a9` (review APPROVED, kèm regex dò "Merge branch"), rồi khởi động lại runner ở terminal `term_7c143065…`.
+  - **Judge bị "quote không nguyên văn" chặn 2 lần (q40, q41):** câu nó trích từ A-12-09 có chỗ khác dấu câu so với slice. Nên nới việc so khớp câu trích, ví dụ bỏ qua dấu câu và khoảng trắng.
+  - **`S03-04` (EXPECT `"n/a-or-true"` so với `true`) gây ra 2 câu hỏi** (q41, q42). Cần sửa check này trước slice tiếp theo, nếu không câu hỏi sẽ lặp lại ở mọi lần chạy V1.
+  - **Ghi chú dựng UI theo cụm qua Funplay** (gửi lúc 03:5xZ) nằm trong hàng đợi của codex rồi được nạp đúng lúc. Coordinator chép nó vào `specs/integrate.md`, và integrator dựng scene theo cụm.
+  - **Hai giới hạn của Cocos mà rule 35 nên ghi lại:** mỗi script chỉ có một `@ccclass`, nên `UiRefs.ts` phải tách thành nhiều file; và tên root của prefab luôn bằng tên file, nên file prefab cũng phải đặt tên `{Kind} - {label}`.
+  - **Diff scene/prefab rất lớn:** 193 file, khoảng 175k dòng. Gần như toàn bộ là JSON serialized, budget không đếm phần này.
