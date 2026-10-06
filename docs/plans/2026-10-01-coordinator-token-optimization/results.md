@@ -286,3 +286,19 @@ Kết quả (token-report `--since 2026-10-06T08:52Z`) sẽ ghi khi slice merge.
     - Runner được khởi động lại bằng code mới (terminal `term_1adf32ae…`). Nó đi thẳng accept → commit → merge → verify, không hỏi thêm câu nào.
   - Bản sửa tìm worktree theo token `Sxx` (`28668a9`) chạy đúng: worktree tên `S13-chapter-home` được nhận ra, không bị kẹt như S12.
   - **Bài học:** hai gate về contract (q44 dùng schema 2 làm mẫu sai phiên bản, q46 chỗ bên trái nút sound không đủ 44 px) đáng ra phải được phát hiện lúc soạn slice. Người soạn slice nên kiểm hình học thật và các smoke check đang có, trước khi chốt một quyết định vị trí hay schema.
+
+### Pilot 7 — S14 settings-panel (L, fleet), từ 2026-10-06 12:54Z — thử nghiệm orca-memory assist
+
+Slice do director yêu cầu để thử orca-memory (contract `08e8f8b`). Director ủy quyền toàn bộ quyết định (S14-D1..D5), và yêu cầu chạy tới khi merge mà không dừng.
+- Trước khi chạy đã `orca-memory refresh`: kho có 294 record, thêm 9 bài học từ S12/S13.
+- Memory pack của planner: 6 mục, 1.976 token, nằm ở `T-S14/evidence/memory/plan/`, đường dẫn tuyệt đối. Mục đầu là `T-S13-rendered-label-floor-shrink`.
+- Đây là slice assist đầu tiên có pack thực sự được giao. Ở S12/S13 pack không tới được agent (đã sửa ở `dcf5dea`).
+- Cấu hình:
+  - runner pid 90518, terminal `term_115c6069…`;
+  - coordinator codex, terminal `term_64c44b31…`;
+  - runner đã có các bản sửa `28668a9` và `c0671e1`.
+- Policy line: `S14 GIVEN` (ủy quyền).
+- Khi merge sẽ ghi:
+  - token;
+  - từng role có trích dẫn id memory nào hay ghi `memory used: none`;
+  - các bài học trong pack có giúp tránh lỗi đã gặp không, ví dụ S14-03/04 có đo cỡ chữ thật lúc hiển thị ngay từ đầu không.
