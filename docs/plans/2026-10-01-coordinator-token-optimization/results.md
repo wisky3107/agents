@@ -183,3 +183,21 @@ Slice do director yêu cầu: làm lại UI theo phong cách cartoon và chỉ v
   - Coordinator chuyển review sang `cursor --model auto` dù Cursor đang tắt; luật fleet chỉ cho làm vậy khi `cursor=on`. Session theo dõi phải trả lời để kéo review về claude.
   - 18 việc được hoãn theo `manual_required: defer`, trong đó có trùng lặp và vài dòng **không phải kiểm thủ công** — "A-09-04 outline-only volume (blocked by F1)", "rerun the whole round-2 review…". Một acceptance row chưa kiểm được đã đi qua dưới dạng "manual". Đề xuất: defer chỉ nhận việc cần máy thật hoặc mắt người; dòng nhắc tới acceptance ID ở trạng thái "blocked" thì phải hỏi director.
   - Lỗi ES5 `Map` (crash ở mọi lần chuyển level trên bản web) có từ S08, tức đã có trong preview v1.0.0. S09 đã sửa.
+
+### Pilot 5 — S12 scene-structure (L, fleet), từ 2026-10-06 03:23Z
+
+Đây là slice director yêu cầu ngày 2026-10-06 (S12-D1). Mục tiêu: đưa toàn bộ UI đang dựng bằng code vào `game.scene` và prefab theo `.cursor/rules/35-scene-structure.mdc`, đặt tên `{Kind} - {label}`, và người chơi không thấy gì thay đổi. Hai quyết định đi kèm: D2 giữ ngưỡng so ảnh mặc định, D3 hiệu ứng dùng prefab + NodePool. Contract nằm ở `fb9d4fd`. Rule và scene-tool đã đồng bộ ở `4fdfac6`.
+
+Pilot này chạy lần đầu trên runner với các bản sửa của ngày 2026-10-06:
+- `coordq`: chuyển câu hỏi riêng của codex thành popup cho director.
+- `director_pending` và `coordinator_screen`.
+- art fallback (slice này không có art).
+- `run-smoke` mới: thăm dò lại Orca trước khi kết luận Orca chết, và giới hạn 3 lần chập chờn.
+
+Cấu hình lúc khởi chạy:
+- runner pid 50354, terminal `term_97ae84f4…`;
+- coordinator codex gpt-6-luna-high, terminal `term_0f32c7d6…`;
+- writer claude sonnet high, reviewer claude opus medium;
+- judge claude sonnet, autopilot retry_once, manual_required defer.
+
+Policy line: `S12 GIVEN`. Kết quả (token-report `--since 2026-10-06T03:23Z`, số turn, vòng review, sự cố) sẽ ghi khi slice merge.
