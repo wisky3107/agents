@@ -9,6 +9,7 @@ import * as st from './state.mjs';
 export function textNeed(q, choice) {
   if (choice === 'send this answer to the lane') return 'required';
   if (q?.kind === 'fleet_gate') return choice === 'answer with --text' ? 'required' : choice === 'stop' ? null : 'optional';
+  if (q?.kind === 'coordinator_question') return choice === 'answer with --text' ? 'required' : null; // typed into the coordinator's codex panel
   if (q?.kind === 'spawn_unconfirmed' && choice.startsWith('reattach')) return 'required';
   if (q?.kind === 'director_gate' && isGivenChoice(choice)) return 'optional'; // the note goes on the policy line
   return null;

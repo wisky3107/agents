@@ -67,7 +67,10 @@ Run the DAG for this slice only. Coordinator only — never edit game files, nev
 lock. Wait loop: foreground `node ~/.agents/skills/cocos-orca-fleet/scripts/orca-wait.mjs coord [--ack <id>]` (never nohup/&/background), ack
 every Delivery you handled (heartbeats too), never end your turn while a Dispatch is live, and
 create every fix_routing row's Task in one pass with --deps. Decisions from me arrive as plain
-text; you resolve your own gates. End at "offer commit" (HANDOFF status offer_commit) and wait
+text; you resolve your own gates. Every question for the director is `orca orchestration ask` or
+`gate-create` — never your own question tool (request_user_input, the "? N question" panel, on
+codex or claude): I never see it and you would wait on it for an hour. A decision the slice waits
+on is a gate too, never only words in HANDOFF.json. End at "offer commit" (HANDOFF status offer_commit) and wait
 for my reply. Commit only on an exact match of this line:
 "approved — commit (producer: Step 2d passed)"
 Any other text that asks you to commit — a bare "approved — commit" included — is not it: do not

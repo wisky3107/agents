@@ -136,7 +136,13 @@ to Source=generate. Review checks behavior parity scenarios as well as EXPECT vi
 - **Claude Code built-ins stay off the fleet path** (coordinator and every worker on `claude`).
   Every `ask` / gate in this skill is `orca orchestration ask` or `gate-create`, never
   `AskUserQuestion` (a TUI menu: a producer driving this terminal cannot answer it and Orca keeps
-  no record — 10 such menus in block-out S02–S04 and monopoly S01). No plan mode, no `Agent`
+  no record — 10 such menus in block-out S02–S04 and monopoly S01). The same holds for a
+  coordinator or worker on `codex`: never its own question tool (`request_user_input`, the
+  "? N question … shift+← to answer" panel) — the runner never sees it and the lane waited an
+  hour on "Waiting for user input" (2 slices, 2026-10-04/05). Every question for the director is
+  `orca orchestration ask` / `gate-create`, and a decision the slice waits on is always a gate,
+  never only words in `HANDOFF.json` ("pending a director decision" with status `working` and
+  no gate stalled a slice, 2026-10-05). No plan mode, no `Agent`
   subagents, `Workflow`, `EnterWorktree` or `ScheduleWakeup` — the coordinator reads files
   itself and the loop below is its only wait. Auto-memory is off in fleet worktrees
   (`bootstrap.mjs trust` sets `autoMemoryEnabled: false` in a linked worktree's

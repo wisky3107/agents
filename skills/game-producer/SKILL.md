@@ -66,6 +66,18 @@ node ~/.agents/skills/game-producer/scripts/producer-runner.mjs start --dry-run 
     CHANGES_REQUESTED), a second extra fix round. Only for a director who pre-approves every slice.
   Never stop, mark blocked or skip; anything else, or past its limit, waits for the director (or the
   judge).
+- **Coordinator questions the runner would miss (2026-10-04/05, codex coordinator):** after each fleet
+  wait the runner reads the coordinator's screen. A codex question panel ("? N question … shift+←
+  to answer") becomes `coordinator_question` (the whole text, the panel's options, `answer with
+  --text`, `answered in the coordinator terminal, continue`); the answer is typed into the panel
+  with keys (down to the option, Enter; "Other" + typed text + the text again as a plain message)
+  after re-reading it, and never guessed on a screen it cannot parse. A HANDOFF still `working`
+  whose detail says it waits for the director ("pending a director decision") with no gate, seen on
+  two waits in a row, becomes `director_pending` (answer goes to the coordinator like `lane_blocked`).
+  A coordinator screen that cannot be read on 3 waits in a row becomes `coordinator_screen` (once per
+  outage); before any message to a fleet coordinator the runner puts an open panel away (shift+→).
+  `coordinator_question`, `director_pending` and `coordinator_screen` have no judge or autopilot path: an
+  unattended run waits for a human on them. The fleet prompt tells coordinators to use gates instead.
 - **Single-lane commit (pilot 2):** the commit request says what to do — `/commit-guard` on the
   checkout, then HANDOFF `committed` + the full sha. A writer that commits and says nothing: the only
   new commit on main since the request — not a merge, naming the slice in its subject or a path it

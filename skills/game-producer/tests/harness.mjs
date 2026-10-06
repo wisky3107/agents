@@ -97,6 +97,7 @@ if (cmd === 'terminal wait') {
     fs.writeFileSync(f, typeof body === 'string' ? body : JSON.stringify(body));
   }
   if (step.gates) fs.writeFileSync(path.join(D, 'gates.json'), JSON.stringify(step.gates));
+  if (step.screens) fs.writeFileSync(path.join(D, 'screens.json'), JSON.stringify(step.screens));
   if (step.dead) fs.writeFileSync(path.join(D, 'dead.json'), JSON.stringify([...read('dead.json', []), ...step.dead]));
   if (step.commit) {
     // the lane commits on main for real (single lane), then reports the sha in its HANDOFF
@@ -127,7 +128,29 @@ if (cmd === 'terminal create') {
   log('creates.log', { worktree: arg('--worktree'), title: arg('--title'), command: arg('--command') });
   out({ ok: true, result: { handle: 'term_created' } });
 }
-if (cmd === 'terminal send') { log('sends.log', { to: arg('--terminal'), text: arg('--text') }); out({ ok: true }); }
+if (cmd === 'terminal send') {
+  // --enter = a message to the agent (sends.log); without it, raw keys or text typed into a TUI panel (keys.log).
+  // keystream.log keeps both in order. A raw send moves the terminal's screen frame (screens.json).
+  const entry = { to: arg('--terminal'), text: arg('--text') };
+  // keys-fail: raw keys / typed text are refused (a message with --enter still goes)
+  if (!a.includes('--enter') && fs.existsSync(path.join(D, 'keys-fail'))) out({ ok: false, error: { code: 'input_refused', message: 'keys refused' } }, 1);
+  log(a.includes('--enter') ? 'sends.log' : 'keys.log', entry);
+  log('keystream.log', { ...entry, enter: a.includes('--enter') });
+  const screens = read('screens.json', {}), sc = screens[entry.to];
+  if (sc && !a.includes('--enter')) {
+    const keys = sc.frames[sc.at].keys || {};
+    const next = entry.text in keys ? keys[entry.text] : keys['*'];
+    if (next) { sc.at = next; fs.writeFileSync(path.join(D, 'screens.json'), JSON.stringify(screens)); }
+  }
+  out({ ok: true });
+}
+// the rendered screen: screens.json = { handle: { at: frame, frames: { frame: { lines, keys: { sentText: nextFrame, '*': any } } } } }
+if (cmd === 'terminal read') {
+  const sc = read('screens.json', {})[arg('--terminal')];
+  log('reads.log', { on: arg('--terminal'), frame: sc ? sc.at : null });
+  // a frame may carry its own source ('screen-unavailable': only the accumulated stream could be read)
+  out({ ok: true, result: { terminal: { handle: arg('--terminal'), source: (sc && (sc.frames[sc.at].source || sc.source)) || 'screen', tail: sc ? sc.frames[sc.at].lines : [] } } });
+}
 if (cmd === 'terminal close') { log('closes.log', { handle: arg('--terminal') }); out({ ok: true }); }
 if (cmd === 'terminal list') out({ ok: true, result: { terminals: [] } });
 // a handle not in dead.json is shown (dead ones were answered stale above); orphaned.json: closed but still shown
@@ -216,6 +239,10 @@ export function fakes() {
     set: (name, value) => fs.writeFileSync(path.join(dir, name), JSON.stringify(value)),
     spawns: () => lines('spawns.log'),
     sends: () => lines('sends.log'),
+    keys: () => lines('keys.log'),
+    keystream: () => lines('keystream.log'),
+    reads: () => lines('reads.log'),
+    screens: (map) => fs.writeFileSync(path.join(dir, 'screens.json'), JSON.stringify(map)),
     closes: () => lines('closes.log').map((c) => c.handle),
     waits: () => lines('waits.log'),
     creates: () => lines('creates.log'),

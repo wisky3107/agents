@@ -30,6 +30,9 @@ const ALLOW = {
   unknown_status: (o) => ['treat as working, keep waiting', 'treat as ready_for_review', 'treat as changes_requested', 'treat as offer_commit'].includes(o),
   verdict_mismatch: (o) => ['treat as approved', 'treat as changes_requested'].includes(o),
 };
+// Not here on purpose: coordinator_question (a keystroke relay into the coordinator's codex panel, whose
+// options are screen text, not contract wording) and director_pending (the coordinator itself said the
+// decision is the director's). Both always wait for the director; autopilot does not answer them either.
 export const JUDGE_KINDS = new Set(Object.keys(ALLOW));
 const FROM_CONTRACTS = new Set(['fleet_gate', 'lane_blocked']); // these answers must quote a contract line
 const NEEDS_TEXT = new Set(['send this answer to the lane', 'answer with --text']);

@@ -175,3 +175,30 @@ export function memoryHarvest(wt, task, cwd) {
 export function memoryReview(task, acceptance, changed, out, cwd) {
   return memoryHook(['review', '--task', task, '--acceptance', acceptance, '--changed', changed.join(','), '--out', out], cwd, 120000);
 }
+
+/**
+ * The coordinator's rendered screen (`terminal read --screen`) → { lines, source } | null. Null when Orca
+ * does not answer or only has the accumulated stream (`source: stream | screen-unavailable`): a stream still
+ * holds a question panel long after it closed, so it is never read as the screen.
+ */
+export function readScreen(handle) {
+  const r = orca(['terminal', 'read', '--terminal', handle, '--screen']);
+  if (r.status !== 0 || r.parsed?.ok === false) return null;
+  const t = r.parsed?.result?.terminal || r.parsed?.result || {};
+  if (t.source === 'stream' || t.source === 'screen-unavailable') return null;
+  const lines = Array.isArray(t.tail) ? t.tail.map(String) : typeof t.tail === 'string' ? t.tail.split('\n') : null;
+  return lines ? { lines, source: t.source || null } : null;
+}
+
+/**
+ * Raw input without Enter (a key sequence, or text typed into a TUI panel). Throws when Orca refuses it.
+ * A value that starts with `-` could be read as a flag by the CLI: it goes with one leading space (a TUI
+ * input ignores it), never as `--text=` (unverified on this CLI).
+ */
+export function sendKeys(handle, text) {
+  const r = orca(['terminal', 'send', '--terminal', handle, '--text', String(text).startsWith('-') ? ` ${text}` : text]);
+  if (r.status !== 0 || r.parsed?.ok === false) {
+    const e = r.parsed?.error;
+    throw new Error(`terminal keys to ${handle} failed: ${e ? [e.code, e.message].filter(Boolean).join(': ') : (r.stderr || r.stdout).trim().slice(-200)}`);
+  }
+}
