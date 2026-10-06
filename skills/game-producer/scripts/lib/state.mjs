@@ -229,7 +229,7 @@ export function writeRunner(root, patch) {
 }
 
 /** One read-modify-write of the questions under the lock; fn(r) mutates r.questions and returns its result. */
-function editQuestions(root, fn) {
+export function editQuestions(root, fn) {
   excludeOnce(root);
   return withRunnerLock(root, () => {
     const r = readRunner(root);

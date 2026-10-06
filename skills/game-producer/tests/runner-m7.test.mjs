@@ -471,7 +471,7 @@ test('answer UX: the menu, the dialog and the CLI show both kinds with the whole
   assert.equal(dialog('q1').status, 0);
   const runs = fs.readFileSync(path.join(f.dir, 'osa.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
   assert.ok(runs[0].args[1].includes(long), 'the dialog shows the whole question');
-  assert.deepEqual(runs[0].args.slice(2), cq.options);
+  assert.deepEqual(runs[0].args.slice(4, -1), cq.options);
   assert.match(runs[1].args[1], /^Note for "answer with --text" \(required, sent with the decision word for word\):$/);
   const a = runnerFile(p.root).questions[0].answer;
   assert.deepEqual([a.choice, a.text, a.via], [ANSWER_TEXT, 'pixel for all of them', 'dialog']);
