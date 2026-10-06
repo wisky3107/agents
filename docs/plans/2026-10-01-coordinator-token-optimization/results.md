@@ -250,3 +250,39 @@ Policy line: `S13 GIVEN`.
 Sự cố ngay lúc khởi chạy (q43 `prompt_not_sent`): codex mở menu cập nhật 0.160.1 khi khởi động và nuốt mất prompt. Session theo dõi chọn "Skip until next version" rồi "close it and spawn again". Runner có thể nhận diện màn hình này để tự bấm Skip.
 
 Kết quả (token-report `--since 2026-10-06T08:52Z`) sẽ ghi khi slice merge.
+
+### Pilot 6 — kết quả (S13 merge 2026-10-06 11:52Z)
+
+- **Merge:**
+  - merge commit `5635472`, slice commit `41a4ddc`, bookkeeping `8b587c7`;
+  - verify trên main đạt.
+- **Thời gian:** 08:52Z → 11:52Z, tức 3 giờ. Trong đó runner dừng 46 phút: từ q53 (11:06Z) tới lúc director cho chạy lại (11:52Z). Review r2 đã APPROVED từ 11:45Z.
+- **Review:** 2 vòng (r1 CHANGES_REQUESTED với F1–F5, rồi r2 APPROVED), 1 vòng sửa.
+- **Kiểm tra tay:** 5 việc hoãn theo `manual_required: defer`. Đó là feel thời gian thực, 500 ms từ lúc mở game tới Home, 300 ms mở Home, cùng các việc trên máy thật.
+
+| Role | S01 (baseline) | S08 (pilot 1) | S09 (pilot 4) | S12 (pilot 5) | S13 (pilot 6) |
+|---|---|---|---|---|---|
+| fleet-orch | 1 session, 191 turns, 24.8M | 1 / 616 / 82.9M | 1 / 878 / 122.0M | 1 / 508 / 65.0M | 1 / 542 / 73.7M |
+| fleet-worker | 15 / 1072 / 225.0M | 13 / 611 / 104.9M | 16 / 996 / 237.3M | 2 / 291 / 99.2M | 5 / 450 / 113.8M (writer+integrator 214 turns 79.4M; review r1, fix, doc, review r2) + verifier 1 / 35 / 3.4M |
+| producer (LLM) | 145.9M | 0 | 0.1M (judge) | 0.07M (judge) | 0.1M (judge, 4 lần) |
+
+- **Mục tiêu −40% cho coordinator vẫn chưa đạt so với S01.** S13 tốn hơn S01 197%, nhưng thấp hơn S09 40% và thấp hơn S08 11%. So với S12 thì tăng 13%, vì có thêm 1 vòng review và 1 vòng sửa (542 so với 508 turns).
+  - Context mỗi turn vẫn quanh 136k. Kết luận của pilot 4 và 5 vẫn đúng: chi phí đi theo số turn.
+- **Câu hỏi runner:** 11 câu, so với 4 ở S12.
+  - q43 `prompt_not_sent`: menu cập nhật codex 0.160.1 nuốt mất prompt. Session theo dõi chọn "Skip until next version" rồi spawn lại.
+  - q44 `fleet_gate`: `S04-03` dùng schema 2 làm mẫu "sai phiên bản". Director chọn đổi mẫu sang schema 3.
+  - q45 `coordinator_missing`: báo động sai lần hai (lần đầu là S12 q39). Session theo dõi trả lời continue.
+  - q46 `fleet_gate`: chỗ bên trái nút sound không đủ 44 px. Director đổi D4 sang đặt bên phải, và chấp nhận skin S09 cùng tick "OK".
+  - q47 `fleet_gate`: director cho phép sửa thêm 4 file docs và FOLLOWUPS.
+  - q48 `unknown_status`: status dạng câu mô tả "fix-r1 …". Director chọn "treat as offer_commit", là một lựa chọn bẫy vì review vẫn CHANGES_REQUESTED.
+  - q49–q52 `approval_evidence`: "check again" kiểm lại ngay trên đúng các file cũ, nên runner hỏi lại khoảng mỗi 4 giây.
+  - q53: director chọn stop.
+- **Sự cố và bản sửa:**
+  - Vòng lặp q48–q53 và báo động sai q45 đều đã sửa trên `~/.agents` master `c0671e1` (4 vòng review, APPROVED):
+    - `orca-wait` kiểm lại bằng `terminal show` trước khi báo `terminal-missing`.
+    - `unknown_status` chỉ đưa ra lựa chọn offer_commit khi review đã APPROVED.
+    - `obs` của `approval_evidence` dựa trên file verdict thật và nội dung lỗi; thêm lựa chọn "back to the lane".
+    - Handle stale mà HANDOFF không đổi suốt 30 phút thì runner hỏi `fleet_stall`.
+    - Runner được khởi động lại bằng code mới (terminal `term_1adf32ae…`). Nó đi thẳng accept → commit → merge → verify, không hỏi thêm câu nào.
+  - Bản sửa tìm worktree theo token `Sxx` (`28668a9`) chạy đúng: worktree tên `S13-chapter-home` được nhận ra, không bị kẹt như S12.
+  - **Bài học:** hai gate về contract (q44 dùng schema 2 làm mẫu sai phiên bản, q46 chỗ bên trái nút sound không đủ 44 px) đáng ra phải được phát hiện lúc soạn slice. Người soạn slice nên kiểm hình học thật và các smoke check đang có, trước khi chốt một quyết định vị trí hay schema.
