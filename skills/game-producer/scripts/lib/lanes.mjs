@@ -386,6 +386,20 @@ export function manualItems(...sources) {
 }
 
 /**
+ * A fresh review round written as review.md, not an override of the last numbered round: its heading
+ * names a higher round than review-r<N>.md and it cites that file (it re-verified that round's
+ * findings). Every fleet fix round ends this way (pilot 8: S01 q3 round 4 over review-r3.md, S02 q6
+ * round 2 over review-r1.md).
+ */
+function laterRound(text, lastRound) {
+  const n = Number(path.basename(lastRound).match(/^review-r(\d+)\.md$/)?.[1]);
+  const head = text.replace(/^\uFEFF/, '').split('\n').find((l) => l.trim()) || '';
+  // the first "round N" is the review's own; later ones name earlier rounds ("round 4 (after fix round 2)")
+  const m = head.match(/^#+ .*?\bround (\d+)\b/i);
+  return Boolean(n && m && Number(m[1]) > n && text.includes(path.basename(lastRound)));
+}
+
+/**
  * Step 2d APPROVED: the newest review file ends APPROVED, runtime-state.json present without
  * manual_required, evidence files present. → [{ code, detail }] in asking order (empty = approved).
  */
@@ -405,7 +419,7 @@ function approvalProblems(dir, required, verdictAccepted = false, relayedGates =
     } catch {
       /* unreadable: no gate named */
     }
-    if (!relayedGates.some((g) => text.includes(g))) {
+    if (!relayedGates.some((g) => text.includes(g)) && !laterRound(text, lastRound)) {
       out.push({
         code: 'verdict_override',
         detail: `review.md ends APPROVED but the last review round (${path.basename(lastRound)}) ended CHANGES_REQUESTED and review.md names no gate decision the director sent (${relayedGates.join(', ') || 'none sent'})`,

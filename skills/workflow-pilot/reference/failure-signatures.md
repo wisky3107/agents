@@ -1,4 +1,4 @@
-# Failure signatures (seen in pilots 1–7)
+# Failure signatures (seen in pilots 1–8)
 
 Match a symptom here before treating it as new. "Fixed" names the commit that removed the
 cause. When a fixed signature returns, the fix regressed or did not load (a runner started
@@ -15,10 +15,13 @@ before the merge keeps old code).
 | The same smoke check fails in every slice | baseline smoke JSON shows it red before the slice | pre-existing check bug (S03-04 compared "n/a-or-true" with a boolean) | fix the check in its own small task before the next slice; until then authorize "commit with documented baseline failure" only after the baseline proves it |
 | `fleet_gate` about a schema sample or node-order list | grep the named check | the slice changed something a check hard-codes (S04-03 schema sample, S12-01 Root order) | pre-declare the edit in the slice (step 2 pre-check) |
 | `fleet_gate`: a decided position cannot meet 44 px | layout rects at compact | the decision was made without reading the geometry | amend the decision; pre-check geometry next time |
+| `verdict_override` after every fleet fix round: "review.md ends APPROVED but the last review round (review-rN.md) ended CHANGES_REQUESTED" | heading of review.md names round N+1 and cites review-rN.md | the fresh round is written to review.md while the old round is kept as review-rN.md; the runner took the highest -rN as the last round (pilot 8 S01 q3, S02 q6) | answer "treat as approved" after reading review.md; fixed ~/.agents fix/verdict-round (laterRound); restart the runner to load it |
 | `approval_evidence`: review.md ends "APPROVED (…prose…)" | `tail -1` of the newest review file | the reviewer put the manual_required note on the verdict line (pilot 7 q55) | ask the coordinator to move the note above and end with a bare `APPROVED`; answer "check again" after the file changed; candidate fix: reviewer prompt says the last line is the verdict word alone |
 | Judge "deferred: quote is not a sentence" | judge line in producer-log | judge quoted a row with different punctuation | answer by hand; candidate fix: punctuation-tolerant quote match |
 | A label passes the font check but looks small | `Label.actualFontSize` vs `fontSize` | `Overflow.SHRINK` renders below the nominal size | checks must assert rendered size (lesson T-S13-rendered-label-floor-shrink) |
 | Preview stuck at frame 0 after reload | fresh tab vs `location.reload` | Orca tab reload leaves the engine unbooted | open a fresh tab per run (lesson T-S13-fresh-tab-per-run…) |
 | `git merge` fails "beyond a symbolic link" / "stash failed" | checkout has tracked skill dirs replaced by symlinks | autostash cannot stash those paths | merge with merge-tree (fix-loop.md) |
+| `verify_failed`: "run-smoke finds 0 checks" after a merge | `ls scripts/smoke/checks` | the slice file named checks `sNN-*.js`; run-smoke loads only `*.check.js` (pilot 8 S01 q4) | rename to `.check.js` on main, fix the paths in later slices, answer "fixed by hand, verify again"; candidate fix: validate-contracts flags check paths without `.check.js` |
+| A new project's contracts are untracked on main after the first merge | `git status` on main lists GAME_BRIEF.md, slices/ … as `??` | lanes treat root contracts as forbidden changes and game-brief never committed them (pilot 8) | commit the contract set on main in its own commit; candidate fix: game-brief commits after the contracts gate |
 | Memory pack exists but no role used it | specs MEMORY path; stub in main after merge | relative path; rsync copied a "none" stub over the pack | fixed ~/.agents dcf5dea (absolute path, evidence/memory/plan excluded) |
 | A deploy dir gets `.env.local` | after `vercel link` | link pulls env into the cwd | link before copying the build in, or delete `.env.local` before `deploy`; check the URL returns 404 |
