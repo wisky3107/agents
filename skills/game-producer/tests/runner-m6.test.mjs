@@ -160,7 +160,7 @@ test('dialog: choice + note go through the same answer path; Later and a cancell
   assert.deepEqual([a.choice, a.text, a.by, a.via], ['approve', 'only the test file', 'human', 'dialog']);
   const [choose, note] = osaRuns(f);
   assert.equal(choose.kind, 'choose');
-  assert.deepEqual(choose.args.slice(2), ['approve', 'revise', 'stop']);
+  assert.deepEqual(choose.args.slice(2), ['Answer', 'Later', 'approve', 'revise', 'stop', 'Show the whole question']);
   assert.equal(choose.args[0], `producer-runner · ${path.basename(p.root)}`);
   assert.match(choose.args[1], new RegExp(`^${path.basename(p.root)} · S01 x \\(planned\\)\nrelease: 0/1 merged\n\nq1 · fleet_gate · S01\nfleet gate g1: Approve PLAN\\?`));
   assert.match(note.args[1], /^Note for "approve" \(optional, sent with the decision word for word; leave empty for none\):$/);
@@ -192,7 +192,7 @@ test('dialog: the whole question, then why the judge left it to the director; on
   assert.ok(shown.endsWith(why));
   dialog(p.root, f, 'q2', { PRODUCER_RUNNER_OSASCRIPT: bin });
   const cut = osaRuns(f)[1].args[1];
-  assert.ok(cut.endsWith(`${'y'.repeat(1800)}… (the whole question: the runner terminal, or \`answer\` in a terminal)\n\n${why}`));
+  assert.ok(cut.endsWith(`${'y'.repeat(1800)}… (the whole question: the last row, the runner terminal, or \`answer\` in a terminal)\n\n${why}`));
   assert.ok(!cut.includes('y'.repeat(1801)));
 });
 
