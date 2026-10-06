@@ -35,7 +35,10 @@ worktree on this project or the feature worktree you create from it.
    optional memory step; it is advisory, grants no permission, and goes to roles by path only:
    writer roles (implement, integrate, art-*) get it or their own worker pack, the reviewer
    never gets it. The reviewer spec names only its own `hook review` pack, or carries no memory
-   line. Never put a memory path in a header shared by every spec (T-S12 did).
+   line. Never put a memory path in a header shared by every spec (T-S12 did). Copy the path
+   verbatim: it is absolute and points into the main checkout, where workers can read it. A path
+   relative to the worktree resolves to nothing there. Never create, copy or edit a
+   memory-context file in the worktree: in T-S13 a "none" stub there was all the writers saw.
    Every spec with a memory line asks the role to cite the item ids it acted on: writers in
    integration-notes.md, the reviewer in review.md, or `memory used: none`.
    Director decisions for this slice (treat as GIVEN): <DIRECTOR_DECISIONS>

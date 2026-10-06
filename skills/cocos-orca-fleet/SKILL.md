@@ -444,8 +444,10 @@ Optional memory (run only if the launcher exists; use a pack only on `inject: tr
 from the worktree. Any status other than `inject: true`, or no launcher, means no memory line,
 and the specs go out exactly as before. The mode lives in the operator config only.
 - Planner pack: a `MEMORY: <path>` line in the prompt (branch B, from the producer) is the
-  planner pack. Otherwise run `hook plan --task <TASK_ID> --query-file <slice file or PLAN>
-  --out <evidence root>/memory/plan`.
+  planner pack. It is an absolute path into the main checkout: pass it on verbatim and never
+  create, copy or edit a memory-context file in the worktree (in T-S13 a "none" stub there was
+  all the writers saw). Without such a line, run `hook plan --task <TASK_ID> --query-file
+  <slice file or PLAN> --out <evidence root>/memory/plan`.
 - Writer roles (implement, integrate, art-*): `hook worker --task <TASK_ID> --role <role>
   --selection <planner-pack ids, comma-separated, in pack order> --out <evidence root>/memory/<role>`.
   When the PLAN selects no ids, a writer role may get the planner pack path instead.
@@ -454,8 +456,9 @@ and the specs go out exactly as before. The mode lives in the operator config on
   --out <evidence root>/memory/review`. The reviewer never gets the planner or writer pack.
 - Right before each `task-create`, run `hook check <evidence root>/memory/<role>/memory-context.json`.
   If it prints `stale`, drop the line for that role.
-- Only then add one spec line: `MEMORY: <evidence root>/memory/<role>/memory-context.md`. Name
-  the path; never paste pack text into the spec or the PLAN. The line goes in that role's spec
+- Only then add one spec line: `MEMORY: <absolute path of that role's memory-context.md>`.
+  Workers run in the worktree, so a relative path finds nothing. Name the path; never paste pack
+  text into the spec or the PLAN. The line goes in that role's spec
   only, never in a header shared by every spec: in T-S12 a shared header gave the reviewer the
   planner pack. A reviewer spec without its own review pack has no memory line.
 - With the memory line, ask the role to cite the item ids it acted on (writers in

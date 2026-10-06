@@ -214,6 +214,17 @@ test('a harvest that exits 0 but printed off is not recorded as archived (lego-s
   assert.match(fs.readFileSync(ev(root, 'S01', 'producer-log.md'), 'utf8'), /runner: memory harvest: off: .* is not registered/);
 });
 
+test('the evidence copy never overwrites the producer planner pack in main (lego-stack T-S13)', () => {
+  const { f, root, wt } = fleet();
+  write(root, evRel('S01', 'memory/plan/memory-context.md'), '# Memory context · planner\n[real pack]\n');
+  write(wt, evRel('S01', 'memory/plan/memory-context.md'), 'none');
+  write(wt, evRel('S01', 'memory/implement/memory-context.md'), '# worker pack\n');
+  f.queue([VERIFIED]);
+  assert.ok(runner(root, f, 'start', '--once').out.find((o) => o.merged));
+  assert.equal(fs.readFileSync(path.join(root, evRel('S01', 'memory/plan/memory-context.md')), 'utf8'), '# Memory context · planner\n[real pack]\n');
+  assert.equal(fs.readFileSync(path.join(root, evRel('S01', 'memory/implement/memory-context.md')), 'utf8'), '# worker pack\n', 'other worktree packs still come over');
+});
+
 test('harvestNote: reads the hook status line, not only the exit code', () => {
   assert.equal(harvestNote({ status: 1, memory: null }), 'failed: the worktree will be kept');
   assert.equal(harvestNote({ status: 0, memory: 'harvested' }), 'archived');

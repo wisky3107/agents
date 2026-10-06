@@ -22,13 +22,17 @@ const RUNNER_FILES = ['producer-state.json', 'producer-log.md', 'merge-journal.j
 const COMMIT_TIMEOUT_MS = Number(process.env.PRODUCER_RUNNER_COMMIT_TIMEOUT_MS) || 120000; // the bookkeeping commit's hooks
 const RUNNER_FILE_RE = /^(?:producer-state\.json|producer-log\.md|merge-journal\.json|wait-.*\.json|.*\.prev-.*\.json)$/;
 
-/** The slice's evidence, worktree → main (no PNGs, no runner files). → null | error text */
+// The producer writes the planner pack in main (Step 2c hook plan --out). A worktree copy is never
+// newer: in lego-stack T-S13 a 5-byte "none" stub there overwrote the real pack at merge.
+const PRODUCER_OWNED = ['/evidence/memory/plan/'];
+
+/** The slice's evidence, worktree → main (no PNGs, no runner files, no producer-owned pack). → null | error text */
 function copyEvidence(root, wt, id) {
   const from = path.join(wt, '.cursor', 'evidence', 'tasks', `T-${id}`) + '/';
   const to = path.join(root, '.cursor', 'evidence', 'tasks', `T-${id}`) + '/';
   if (!fs.existsSync(from)) return null;
   fs.mkdirSync(to, { recursive: true });
-  const r = spawnSync('rsync', ['-a', '--exclude', '*.png', ...RUNNER_FILES.flatMap((x) => ['--exclude', x]), from, to], { encoding: 'utf8' });
+  const r = spawnSync('rsync', ['-a', '--exclude', '*.png', ...[...RUNNER_FILES, ...PRODUCER_OWNED].flatMap((x) => ['--exclude', x]), from, to], { encoding: 'utf8' });
   return r.status === 0 ? null : (r.stderr || '').trim().slice(-200) || `rsync exit ${r.status}`;
 }
 
