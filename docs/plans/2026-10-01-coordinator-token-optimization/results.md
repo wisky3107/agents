@@ -316,3 +316,40 @@ Ngày 2026-10-06 director nói "pilot dự án cc-love-train tự động làm h
   - **q1 fleet_gate (tsconfig strict)**: dòng acceptance "tsc strict clean" mâu thuẫn với SCOPE ("template common/* stays as shipped"). Có 161 lỗi strict nằm trong kit ui-popup và file template, đều ngoài slice. Judge defer đúng, director chọn A (`@ts-nocheck`). Lỗi nằm ở khâu viết contract: game-brief không chạy tsc strict trên baseline template và kit trước khi đưa dòng này vào.
   - **q2 lane_blocked (infra)**: Creator của worktree chết khi coordinator đóng terminal integrator, vì terminal đó đã khởi động Creator. Bản recovery chạy Creator detached (ppid 1). HANDOFF đã ghi rõ "No human action needed", nhưng judge vẫn defer cho director. Tôi trả lời "answered in the lane, continue" lúc 15:48Z.
   - **stop-after**: lệnh này không chặn được việc giao Step 3. `next.done` được kiểm tra trước `stop-after`, nên sau khi S07 merge, Step 3 vẫn được giao cho LLM producer.
+
+### Pilot 7 — kết quả (S14 merge 2026-10-06 15:33Z)
+
+Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trước khi S14 merge.
+
+- **Merge:** `b50fcfe` (slice commit `21c3508`, bookkeeping `201e7e8`). Verify trên main đạt. Thời gian 12:54Z → 15:33Z, tức 2 giờ 39 phút. Runner không dừng lần nào.
+- **Review:** 3 vòng, 2 vòng sửa.
+  - r1: F1 bảng màu lệch so với mock.
+  - r2: F3 chữ navy lệch 36 đơn vị mỗi kênh.
+  - r3: APPROVED.
+  - Có 6 việc kiểm tay được hoãn: feel thời gian thực, 300 ms mở Settings, fps, độ trễ input, notch trên máy thật, reduced motion của hệ điều hành.
+
+| Role | S01 (baseline) | S08 | S09 | S12 | S13 | S14 (pilot 7) |
+|---|---|---|---|---|---|---|
+| fleet-orch | 1 session, 191 turns, 24.8M | 1 / 616 / 82.9M | 1 / 878 / 122.0M | 1 / 508 / 65.0M | 1 / 542 / 73.7M | 1 / 456 / 53.4M |
+| fleet-worker | 15 / 1072 / 225.0M | 13 / 611 / 104.9M | 16 / 996 / 237.3M | 2 / 291 / 99.2M | 5 / 450 / 113.8M | 6 / 392 / 98.5M (writer+integrator 221 turns 77.8M; review r1–r3 và các vòng sửa) + verifier 1 / 7 / 0.6M |
+| producer (LLM) | 145.9M | 0 | 0.1M | 0.07M | 0.1M | < 0.1M (judge 1 lần) |
+
+- **Coordinator:** vẫn cao hơn S01 115%, nên mục tiêu −40% so với S01 vẫn chưa đạt. Nhưng đây là slice rẻ nhất kể từ S08: thấp hơn S09 56%, thấp hơn S13 28%, thấp hơn S12 18%, dù có 3 vòng review.
+  - Số turn thấp nhất (456), context mỗi turn khoảng 117k. Nguyên nhân là runner không dừng lần nào và không có báo động sai.
+  - Kết luận cũ vẫn đúng: chi phí đi theo số turn.
+- **Câu hỏi runner:** 2 câu (S13 có 11).
+  - q54 `fleet_gate`: phần đổ bóng và viền plate kiểu S09 còn sót. Judge không tự quyết vì câu trích không khớp nguyên văn. Director trả lời qua dialog: chấp nhận như một điểm lệch so với mock theo D1.
+  - q55 `approval_evidence`: dòng cuối của review.md là "APPROVED (automated and static gate)…" có kèm chữ. Session theo dõi nhờ coordinator đưa ghi chú lên trên để dòng cuối chỉ còn `APPROVED`. File đổi xong thì chọn "check again"; runner nghiệm thu rồi commit.
+- **Sự cố:**
+  - Coordinator ghi HANDOFF ở `T-S14/HANDOFF.json` (thư mục gốc của task). Đã nhắc ghi về `evidence/HANDOFF.json` trước khi kịp gây kẹt.
+  - q55 (dòng verdict kèm chữ) và judge không trích nguyên văn đều đã thêm vào `skills/workflow-pilot/reference/failure-signatures.md`.
+  - Worktree tên `T-S14-settings-panel` được runner nhận ra nhờ `28668a9`.
+  - Bản sửa `c0671e1` có hiệu lực: không còn `coordinator_missing` và không còn vòng lặp `approval_evidence`.
+- **Thử orca-memory (assist), slice đầu tiên mà pack thực sự tới tay agent:**
+  - Pack của planner/writer có 6 mục, 1.976 token, đường dẫn tuyệt đối, đã được đưa vào spec của writer.
+  - Writer trích dẫn và làm theo `T-S13-rendered-label-floor-shrink`: S14-03/04 đo cỡ chữ thật lúc hiển thị (`actualFontSize`) ngay từ đầu, có kèm phép thử ép hộp chữ hẹp. Writer cũng dùng `T-S13-fresh-tab-per-run-and-no-leftover-patches` (mở tab mới cho mỗi lần chạy).
+  - **Kết quả:** ba vòng review không có finding nào về cỡ chữ hiển thị. Ở S13, chính lỗi này (F2) đã gây ra một vòng sửa. Đánh giá: **useful** cho 2 mục, irrelevant cho 4 mục còn lại (`gap-pose-fixed-point-needs-damping`, monopoly `lesson-L5`, `LC-S07-04`, `hud-nodes-under-safe-area-parent`).
+  - **Lỗ hổng:** reviewer không có pack nào ("memory used: none — no MEMORY line in the spec"). Pack `memory/review` chỉ được tạo ở bước merge (15:32Z), sau khi review đã xong. Muốn đo hiệu quả với reviewer thì runner phải tạo review pack trước khi spawn reviewer.
+- **Bài học cho người soạn slice:**
+  - Mock phải lấy đúng bảng màu của skin thật (S09), không tự đặt màu. Cả F1 lẫn F3 ở S14 và F3 ở S13 đều là lệch màu giữa mock và skin.
+  - Dặn reviewer trong prompt rằng dòng cuối chỉ được là từ verdict.
