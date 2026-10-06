@@ -634,25 +634,20 @@ test('fleet: a coordinator terminal Orca shows as closed (orphaned) is missing a
   assert.doesNotMatch(question(p.root, 'q1').text, /times in a row/);
 });
 
-test('fleet: "terminal missing" that terminal show disproves is waited on (logged); five in a row → the human', () => {
+test('fleet: a stale `terminal wait` that terminal show disproves never reaches the human (orca-wait rechecks; pilots 5, 6)', () => {
   const p = project({ slices: { S01: { needs: false, size: 'L' } } });
   const f = fakes();
   f.queue([
     { name: 'run', runs: [{ id: 'run_1', coordinator_handle: 'term_1' }], write: { [H]: { role: 'coordinator', status: 'working' } } },
-    { name: 'flaky wait', result: 'missing' },
+    ...Array.from({ length: 5 }, (_, i) => ({ name: `stale ${i + 1}`, result: 'missing' })),
     { name: 'still working', write: { [H]: { role: 'coordinator', status: 'working', detail: 'implement running' } } },
   ]);
   const a = runner(p.root, f, 'start', '--once');
-  assert.equal(runnerFile(p.root).questions.length, 0);
+  assert.equal(runnerFile(p.root).questions.length, 0); // was q1 coordinator_missing before the orca-wait recheck
   assert.match(a.out.at(-1).stopped || '', /control file says stop/); // the queue ran out: the fake writes stop
-  assert.match(log(p.root), /orca-wait reported term_1 missing but terminal show finds it \(1\/5\): waiting on/);
-  assert.equal(sliceState(p.root, 'S01').missing_rechecks, 0); // a normal event resets the count
-  assert.match(fs.readFileSync(path.join(f.dir, 'calls.log'), 'utf8'), /terminal show --terminal term_1/);
-  clearControl(p.root);
-  f.queue(Array.from({ length: 5 }, (_, i) => ({ name: `missing ${i + 1}`, result: 'missing' })));
-  const b = runner(p.root, f, 'start', '--once').out.at(-1);
-  assert.deepEqual([b.waiting, b.kind], ['q1', 'coordinator_missing']);
-  assert.match(question(p.root, 'q1').text, /reported it missing 5 times in a row although terminal show still finds it/);
+  assert.doesNotMatch(log(p.root), /orca-wait reported term_1 missing/);
+  assert.equal(sliceState(p.root, 'S01').missing_rechecks || 0, 0);
+  assert.match(fs.readFileSync(path.join(f.dir, 'calls.log'), 'utf8'), /terminal show --terminal term_1/); // orca-wait asked show
 });
 
 test('fleet gate: the question carries the whole gate, every line, and the whole of the others (S10 q21, 2026-10-04)', () => {
