@@ -32,7 +32,12 @@ worktree on this project or the feature worktree you create from it.
    its selected recipe files, verify pins and record current checks/deviations. Preserve
    learning-candidates.json and recipe review results in the task evidence before handoff.
    MEMORY: <CONTEXT_PACK> (`none` = no pack). A path is the planner pack for the fleet's
-   optional memory step; it is advisory, grants no permission, and goes to roles by path only.
+   optional memory step; it is advisory, grants no permission, and goes to roles by path only:
+   writer roles (implement, integrate, art-*) get it or their own worker pack, the reviewer
+   never gets it. The reviewer spec names only its own `hook review` pack, or carries no memory
+   line. Never put a memory path in a header shared by every spec (T-S12 did).
+   Every spec with a memory line asks the role to cite the item ids it acted on: writers in
+   integration-notes.md, the reviewer in review.md, or `memory used: none`.
    Director decisions for this slice (treat as GIVEN): <DIRECTOR_DECISIONS>
 5. Editor model: <ENGINE_LINE>. One feature worktree, one integrator, parity gate before edits.
    Preview: integrator prepares it automatically before review and records preview-startup.json.

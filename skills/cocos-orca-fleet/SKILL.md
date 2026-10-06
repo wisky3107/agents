@@ -448,13 +448,19 @@ and the specs go out exactly as before. The mode lives in the operator config on
   --out <evidence root>/memory/plan`.
 - Writer roles (implement, integrate, art-*): `hook worker --task <TASK_ID> --role <role>
   --selection <planner-pack ids, comma-separated, in pack order> --out <evidence root>/memory/<role>`.
+  When the PLAN selects no ids, a writer role may get the planner pack path instead.
 - Reviewer: write the PLAN acceptance rows to `<evidence root>/memory/acceptance.txt`, then
   `hook review --task <TASK_ID> --acceptance <that file> --changed <PLAN code_paths, comma-separated>
   --out <evidence root>/memory/review`. The reviewer never gets the planner or writer pack.
 - Right before each `task-create`, run `hook check <evidence root>/memory/<role>/memory-context.json`.
   If it prints `stale`, drop the line for that role.
 - Only then add one spec line: `MEMORY: <evidence root>/memory/<role>/memory-context.md`. Name
-  the path; never paste pack text into the spec or the PLAN.
+  the path; never paste pack text into the spec or the PLAN. The line goes in that role's spec
+  only, never in a header shared by every spec: in T-S12 a shared header gave the reviewer the
+  planner pack. A reviewer spec without its own review pack has no memory line.
+- With the memory line, ask the role to cite the item ids it acted on (writers in
+  integration-notes.md, the reviewer in review.md), or write `memory used: none`. The pilot
+  report counts these ids; without them nobody can tell whether a pack was used.
 A pack is advisory. It grants no permission or approval, never overrides the PLAN, this skill,
 the director or reviewer evidence, and its limitations apply ("not recorded" means unknown).
 

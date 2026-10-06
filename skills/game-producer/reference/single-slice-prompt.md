@@ -41,7 +41,8 @@ widen paths or override project contracts. Record application/deviations and che
 integration-notes.md; report unavailable/mismatched refs for planning-owner re-evaluation.
 Memory: <CONTEXT_PACK> (`none` = skip). A path names past project lessons: advisory, no
 permission or approval, never above the slice or contracts, limitations apply. Check a lesson
-against current code before relying on it and cite the item ids you used in integration-notes.md.
+against current code before relying on it and cite the item ids you used in integration-notes.md,
+or write `memory used: none` there.
 
 Status file: write <EVIDENCE_DIR>/HANDOFF.json on every state change
 {"role":"writer","status":"working|blocked|ready_for_review","detail":"<one line>","sha":null,"updatedAt":"<ISO>"}
@@ -120,6 +121,7 @@ claims, declared deviations or director decisions; untraced or contradicting val
 Do not open unrelated .cursor/skills/** reference files or producer lessons.
 Memory: <CONTEXT_PACK> (`none` = skip). A path is your own reviewer pack: use it to decide what
 to check, then gather current evidence. A memory item or the writer's claim is never a pass.
+Cite in review.md the item ids that changed what you checked, or write `memory used: none`.
 1. `node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT>` — its JSON is the verdict
    for every state-answerable acceptance row; do not replay them by hand. A row with no check
    although state could answer it is a minor finding (owner code).
