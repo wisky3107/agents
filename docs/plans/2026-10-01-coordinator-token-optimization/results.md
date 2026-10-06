@@ -230,3 +230,23 @@ Policy line: `S12 GIVEN`. Kết quả (token-report `--since 2026-10-06T03:23Z`,
   - **Ghi chú dựng UI theo cụm qua Funplay** (gửi lúc 03:5xZ) nằm trong hàng đợi của codex rồi được nạp đúng lúc. Coordinator chép nó vào `specs/integrate.md`, và integrator dựng scene theo cụm.
   - **Hai giới hạn của Cocos mà rule 35 nên ghi lại:** mỗi script chỉ có một `@ccclass`, nên `UiRefs.ts` phải tách thành nhiều file; và tên root của prefab luôn bằng tên file, nên file prefab cũng phải đặt tên `{Kind} - {label}`.
   - **Diff scene/prefab rất lớn:** 193 file, khoảng 175k dòng. Gần như toàn bộ là JSON serialized, budget không đếm phần này.
+
+### Pilot 6 — S13 chapter-home (L, fleet), từ 2026-10-06 08:52Z
+
+Slice director yêu cầu ngày 2026-10-06 (S13-D1..D5, contract `03765f8` và `b5ad2d9`): màn Home có thẻ Continue, đếm số mẫu đã ghép theo từng chương, nút Home trên HUD, và save lên schema 2. Đây là màn hình mới đầu tiên được dựng thẳng trong scene sau S12, theo rule 35 và cách dựng theo cụm qua Funplay.
+
+Pilot này chạy lần đầu với:
+- bản sửa runner tìm worktree theo token `Sxx` (`28668a9`);
+- check `S03-04` đã sửa (`7124dd0`). Ở pilot 5, check này gây ra 2 câu hỏi.
+
+Cấu hình lúc khởi chạy:
+- runner pid 75783, terminal `term_f584c2c9…`;
+- coordinator codex gpt-6-luna-high, terminal `term_74556afc…`;
+- writer claude sonnet high, reviewer claude opus medium;
+- judge claude sonnet, autopilot retry_once, manual_required defer.
+
+Policy line: `S13 GIVEN`.
+
+Sự cố ngay lúc khởi chạy (q43 `prompt_not_sent`): codex mở menu cập nhật 0.160.1 khi khởi động và nuốt mất prompt. Session theo dõi chọn "Skip until next version" rồi "close it and spawn again". Runner có thể nhận diện màn hình này để tự bấm Skip.
+
+Kết quả (token-report `--since 2026-10-06T08:52Z`) sẽ ghi khi slice merge.
