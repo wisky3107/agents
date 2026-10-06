@@ -595,6 +595,42 @@ test('fleet: the newest review file is the verdict; defer never covers a review 
   assert.deepEqual(sliceState(p.root, 'S01').manual_deferred, ['fps on the named device', 'GP-22 spot-check']);
 });
 
+test('fleet: a fresh review round written as review.md (higher round, cites the last review-rN.md) is no verdict_override (pilot 8 q3, q6)', () => {
+  const p = project({ slices: { S01: { needs: false, size: 'L' } } });
+  const f = fakes();
+  const evidence = { [evRel('S01', 'final-report.md')]: 'x', [evRel('S01', 'stats.json')]: {}, [evRel('S01', 'runtime-state.json')]: { status: 'verified' } };
+  f.queue([
+    { name: 'round 1', runs: [{ id: 'run_1', coordinator_handle: 'term_1' }], write: { [H]: { role: 'coordinator', status: 'working' }, [evRel('S01', 'review-r1.md')]: '# T-S01 review (round 1)\n\nF1\n\nCHANGES_REQUESTED\n' } },
+    { name: 'round 2 offered', write: { ...evidence, [H]: { role: 'coordinator', status: 'offer_commit' }, [evRel('S01', 'review.md')]: '# T-S01 review — S01 (round 2)\n\nInputs: review-r1.md (round 1: CHANGES_REQUESTED).\n\n## F1 re-verify: FIXED\n\nAPPROVED\n' } },
+    { name: 'committed', write: { [H]: { role: 'coordinator', status: 'committed', sha: 'f00d' } } },
+  ]);
+  const a = runner(p.root, f, 'start', '--once').out.at(-1);
+  assert.equal(runnerFile(p.root).questions.filter((q) => q.kind === 'verdict_override').length, 0);
+  assert.deepEqual(f.sends().at(-1), { to: 'term_1', text: FLEET_COMMIT_TEXT });
+  assert.equal(a.kind, 'merge_source_missing');
+  // the S01 shape: a later "round N" in the heading names an earlier round; a BOM is no heading change
+  const s01 = project({ slices: { S01: { needs: false, size: 'L' } } });
+  const g1 = fakes();
+  g1.queue([
+    { name: 'round 3', runs: [{ id: 'run_1', coordinator_handle: 'term_1' }], write: { [H]: { role: 'coordinator', status: 'working' }, [evRel('S01', 'review-r3.md')]: 'F7\n\nCHANGES_REQUESTED\n' } },
+    { name: 'round 4 offered', write: { ...evidence, [H]: { role: 'coordinator', status: 'offer_commit' }, [evRel('S01', 'review.md')]: '\uFEFF# T-S01 review: independent reviewer (claude opus), round 4 (re-review after fix round 2, the last one)\n\nF7 from review-r3.md: FIXED\n\nAPPROVED\n' } },
+  ]);
+  runner(s01.root, g1, 'start', '--once');
+  assert.equal(runnerFile(s01.root).questions.filter((q) => q.kind === 'verdict_override').length, 0);
+  assert.deepEqual(g1.sends().at(-1), { to: 'term_1', text: FLEET_COMMIT_TEXT });
+  // a review.md that does not name a later round, or does not cite the round it overrides, is still asked
+  for (const body of ['# T-S01 review — S01 (round 1)\n\nreview-r1.md\n\nAPPROVED\n', '# T-S01 review (round 2)\n\nno new review ran\n\nAPPROVED\n', 'round 2: review-r1.md settled\n\nAPPROVED\n']) {
+    const q = project({ slices: { S01: { needs: false, size: 'L' } } });
+    const g = fakes();
+    g.queue([
+      { name: 'round 1', runs: [{ id: 'run_1', coordinator_handle: 'term_1' }], write: { [H]: { role: 'coordinator', status: 'working' }, [evRel('S01', 'review-r1.md')]: 'F1\n\nCHANGES_REQUESTED\n' } },
+      { name: 'offered', write: { ...evidence, [H]: { role: 'coordinator', status: 'offer_commit' }, [evRel('S01', 'review.md')]: body } },
+    ]);
+    const o = runner(q.root, g, 'start', '--once').out.at(-1);
+    assert.equal(o.kind, 'verdict_override', body);
+  }
+});
+
 test('fleet: a fix-round status never offers offer_commit; "check again" on the same files waits; back to the lane (S13 q48-q53)', () => {
   const p = project({ slices: { S01: { needs: false, size: 'L' } } });
   const f = fakes();
