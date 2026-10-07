@@ -633,3 +633,12 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 6. **Sự cố:** không có. Live run Chrome của agent run-smoke giữa chừng (check S02-03 ERROR null node) là trạng thái WIP trước fix round, không thành vấn đề khi merge.
 7. **Memory:** reviewer và các worker trích `cocos-playbook/recipes/rendered-text-floor-probe r1` (4 file) và một item cc-love-train. Integrator ghi `none` và nêu lý do. Kết luận: hữu ích, công thức đo floor được dùng nhất quán.
 8. **Bài học:** quyết định kênh Chrome cho cả dự án làm biến mất loại chi phí lớn nhất của S01. Gate PATH GAP vẫn còn: bước pre-check khi soạn slice (step 2) nên grep các file core có union/type/layout table mà slice sẽ chạm.
+- 12:20Z **Chrome headless fallback đã đưa vào workflow** (director: "đưa chrome headless vào các skill và template liên quan như là một biện pháp fallback nếu orca browser không work"):
+  - `run-smoke --channel orca|chrome|auto`: auto chạy lại trên Chrome headless khi Orca gặp lỗi infra, ghi `channel`/`fallback`/`orcaReport`.
+  - Rule 60 + preview playbook, frozen-tab.md, prompt worker/reviewer/verify/release đều dùng `--channel auto`.
+  - Runner: INFRA_BLOCKED do tab đóng băng → spawn một reviewer mới trước khi chuyển sang Cursor.
+  - Playwright cài dùng chung tại `~/.agents/tools/playwright`.
+  - Reviewer độc lập: CHANGES_REQUESTED (7 điểm) → đã sửa hết → APPROVED.
+  - Merge: ~/.agents `3010d85` (3 file trùng với WIP của session khác, đã merge 3 chiều, WIP vẫn nguyên); cc-game `67a34e0`, playable `61923a0`, cc4 `4be7849` (giữ `--scene`/`--url`), project `b4072e0`, agent-skills `e596ea6`. Không push.
+  - Runner firefighter restart lúc 12:20Z: pid 18782 → 26545.
+  - Game hiện có chỉ nhận bản mới sau `/update-skills`.
