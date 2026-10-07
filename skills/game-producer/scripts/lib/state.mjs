@@ -107,7 +107,12 @@ export function acquireLock(root, mode, terminalHandle = process.env.ORCA_TERMIN
     }
     fs.rmSync(aside, { force: true });
   }
-  const mine = { pid: process.pid, host: os.hostname(), started_at: now(), mode, terminal_handle: terminalHandle };
+  // reopens_editor: this runner reopens main's editor before a single lane uses it (lib/editors.mjs),
+  // so tools/res-guard may close it while the runner waits; an older runner's lock lacks the field
+  const mine = {
+    pid: process.pid, host: os.hostname(), started_at: now(), mode, terminal_handle: terminalHandle,
+    reopens_editor: process.env.PRODUCER_RUNNER_RES_GUARD !== 'off',
+  };
   fs.mkdirSync(path.dirname(f), { recursive: true });
   try {
     // `wx`: two runners starting at the same moment cannot both create the lock

@@ -15,6 +15,10 @@ import { spawnSync, spawn } from 'node:child_process';
 
 export const RUNNER = new URL('../scripts/producer-runner.mjs', import.meta.url).pathname;
 
+// never the real res-guard (lib/editors.mjs): its gate reads this machine's memory. Children inherit
+// it through env(); runner-res-guard.test.mjs points it at a fake guard.
+process.env.PRODUCER_RUNNER_RES_GUARD ??= 'off';
+
 export const NOTES = (policy, slices = '{}', extra = '', fleetExtra = '') => `# AGENT_NOTES.md
 
 \`\`\`yaml

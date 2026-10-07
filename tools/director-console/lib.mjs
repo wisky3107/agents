@@ -18,6 +18,8 @@ export const CFG = {
   playbook: env.CONSOLE_PLAYBOOK ?? path.join(HOME, 'Works/games/cocos-playbook'),
   orcaBin: env.CONSOLE_ORCA_BIN ?? 'orca',
   logs: env.CONSOLE_LOG_DIR ?? path.join(HOME, '.agents/logs'),
+  resGuardHome: env.CONSOLE_RES_GUARD_HOME ?? path.join(HOME, '.agents'), // tools/res-guard's run/ and logs/
+  resGuardCli: env.CONSOLE_RES_GUARD_CLI ?? path.join(HOME, '.agents/tools/res-guard/res-guard.mjs'),
 };
 
 const om = {
@@ -268,7 +270,48 @@ export function attention(ps = projects(), pd = pending(ps)) {
     key: `unregistered:${u.path}`, kind: 'system', level: 'info', project: path.basename(u.path), since: u.last_task_at ?? null,
     title: `${path.basename(u.path)} chưa đăng ký orca-memory`, body: 'Dự án đang chạy nhưng mọi hook memory đều tắt.', href: '#quests', quest: 'system',
   });
+  for (const a of resourceAlerts()) add({ ...a, kind: 'system', href: '#resources' });
   return { at: new Date().toISOString(), items };
+}
+
+// ------------------------------------------------------------------ resources (tools/res-guard)
+
+const rgState = () => readJson(path.join(CFG.resGuardHome, 'run', 'res-guard', 'state.json'), null);
+const RG_STALE_MS = 10 * 60000; // the watcher ticks every 60 s
+
+/** res-guard's live alert rows (swap, pressure, disk, too many editors), or one row when its watcher stopped. */
+function resourceAlerts() {
+  const st = rgState();
+  if (!st?.lastTick) return [];
+  if (Date.now() - Date.parse(st.lastTick) > RG_STALE_MS) {
+    return [{ key: 'res-guard:stale', level: 'warning', since: st.lastTick, title: 'res-guard ngừng theo dõi máy', body: `Lần đo cuối ${st.lastTick}. Kiểm tra launchd com.agents.res-guard.` }];
+  }
+  return (st.alerts ?? []).map((a) => ({ key: `res-guard:${a.key}`, level: a.level, since: null, title: `Tài nguyên máy: ${a.title}`, body: a.body }));
+}
+
+/** The watcher's last sample, its editor verdicts, a 24 h trend (≤ 288 points) and its recent events. */
+export function resources() {
+  const st = rgState() ?? {};
+  const dir = path.join(CFG.resGuardHome, 'logs', 'res-guard');
+  const day = (ms) => new Date(ms).toISOString().slice(0, 10);
+  const since = Date.now() - 24 * 3600000;
+  const rows = [...new Set([day(since), day(Date.now())])].flatMap((d) => readJsonl(path.join(dir, `samples-${d}.jsonl`))).filter((x) => Date.parse(x.at) >= since);
+  const every = Math.max(1, Math.ceil(rows.length / 288));
+  const trend = rows.filter((_, i) => i % every === 0).map((x) => ({
+    at: x.at, availPct: x.availPct, swapGB: Math.round(x.swapUsedMB / 102.4) / 10, editors: x.editors?.length ?? 0, pressure: x.pressure,
+  }));
+  return {
+    at: new Date().toISOString(),
+    installed: fs.existsSync(path.join(HOME, 'Library', 'LaunchAgents', 'com.agents.res-guard.plist')),
+    lastTick: st.lastTick ?? null,
+    stale: !st.lastTick || Date.now() - Date.parse(st.lastTick) > RG_STALE_MS,
+    last: st.last ?? null,
+    alerts: st.alerts ?? [],
+    editors: st.editorVerdicts ?? [],
+    omniroute: st.omniroute ?? null,
+    trend,
+    events: tail(readJsonl(path.join(CFG.resGuardHome, 'logs', 'res-guard.jsonl')), 40).reverse(),
+  };
 }
 
 /**
@@ -363,6 +406,12 @@ const ACTIONS = {
   'memory.retract': (b) => [OM_CLI(), 'retract', need(b.record, 'record'), '--note', need(b.note, 'note')],
   'memory.refresh': () => [OM_CLI(), 'refresh'],
   'triage.dismiss': (b) => [OM_CLI(), 'dismiss', need(b.source, 'source'), '--note', need(b.note, 'note')],
+  // res-guard closes only a Creator running on exactly that checkout (close-editor.sh, then SIGTERM)
+  'editor.close': (b) => {
+    const p = need(b.project, 'project');
+    if (!path.isAbsolute(p)) throw new Error('project must be an absolute path');
+    return [CFG.resGuardCli, 'close-editor', '--project', p, '--reason', 'director console'];
+  },
   'draft.apply': (b) => {
     // the person's edits (verdict, confirmed) go into the draft first; apply-draft writes the ledger
     const root = fs.realpathSync(path.join(memHome(), 'reports', 'judge-drafts'));
