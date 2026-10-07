@@ -494,3 +494,14 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
    - Viết slice theo bước pre-check của workflow-pilot (đọc code thật, liệt kê check phải giữ nguyên, quyết định mở đã có khuyến nghị sẵn) cho slice chạy một mạch, không gate và không vòng sửa.
    - Ở dự án đã ổn định, slice M cấu hình/build vừa rẻ vừa ít rủi ro.
    - Muốn build staging/prod chạy được thì cần URL thật từ BE (FOLLOWUPS #25).
+
+### Pilot 10 — cc-love-train S09 real-api (M, single lane), từ 2026-10-07 06:38Z
+
+- **Mục đích:** tích hợp API thật của BE (bond protocol, tài liệu `reference/love-train/api/`). Director yêu cầu: "check changes hiện tại tạo slice để tích hợp api thiệt".
+  - Contract: `5265ff0`. Gate: `533fe4a`, ghi "Duyệt cả 8, chạy luôn" và chọn chạy thật select/act mỗi loại 1 lần.
+- **Kiểm tra trước khi viết slice** (gọi thử BE Dev bằng ticket test, chỉ đọc):
+  - `/bond/state` trả `selected: false`, có 5 action kèm balance; `/wallet` trả TIM 530.
+  - CORS preflight bị 403 với mọi origin trừ `games-dev.yeah1games.vn`, nên slice có thêm proxy local cùng origin (S09-D8) và FOLLOWUPS #27.
+  - HttpApi được viết lại tại chỗ, giữ nguyên `ILoveTrainApi`. Nhờ vậy chỉ phải khai báo trước việc viết lại `tests/http-api.spec.ts`; check S01–S08 vẫn chạy trên mock.
+- **Ticket test:** chỉ lưu ở `local/love-train-test-ticket.txt` (đã gitignore), không có trong commit nào. Đã grep để kiểm tra.
+- **Cấu hình chạy:** runner pid 68618, terminal `term_3c9f64e1…`; writer opus high `term_8511230a…`; memory off.
