@@ -737,3 +737,15 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - **Finding (lỗi runner, chưa sửa):**
   1. "mark blocked" sau `send_failed` ở phase commit của single lane bỏ lại code đã approve, chưa commit, trong main. Runner vẫn chọn slice single-lane tiếp theo trên checkout dirty. Cần: chặn select khi main có thay đổi chưa commit của slice khác, và không đưa "mark blocked" ra khi review APPROVED mà commit chưa xảy ra.
   2. `agent_prompt_blocked` khi gửi vào writer: chưa rõ nguyên nhân (writer kẹt ở prompt?), terminal đã mất.
+
+### Pilot 13 — cc-love-train S11 api-loading (M, single lane), từ 2026-10-07 15:10Z
+
+- **Mục đích:** pilot workflow tổng quát với một slice tính năng mới sau ship. Director yêu cầu: "làm tính năng loading khi api đang load, khi api được call sẽ block touch từ người dùng (tuỳ chỗ), sau khi load quá lâu cỡ 3s thì hiện loading tham khảo game cc-woay-msb". Quyền: delegated. Contracts + gate `15152f4` (S11-D1..D8 GIVEN, tôi tự quyết theo quyền delegated).
+- **Kiểm tra trước khi viết slice:**
+  - cc-woay-msb: `UIManager.setLoading(true, 2.0)` chặn touch ngay và hiện `PopupLoading` sau delay. Cờ chỉ là boolean, không có bộ đếm, không có test.
+  - love-train có sẵn cùng `setLoading` trong template, nhưng chưa nơi nào gọi khi request API và chưa có panel loading. `showDialog` gọi `setLoading(false)`, việc này sẽ xoá block của API, nên S11-D4 đổi sang ref-count.
+  - Smoke checks tap bằng `node.emit`, cách này đi xuyên qua BlockInputEvents. Vì vậy acceptance chứng minh block bằng `isBlocking`, hit test hoặc pointer thật, kèm một negative control.
+  - Các check có thể bị ảnh hưởng đã được khai báo trước: s10-display-size (tên node), S05-08 (toast Layer4), S09-02..07 (danh sách request). Lỗi có sẵn #37 (s06-tracking trên CDP) được ghi vào acceptance.
+  - Bộ đếm delay chạy trên scheduler của Cocos, không dùng setTimeout, vì smoke dùng `director.tick`.
+  - Recipe: `full-screen-cover-overlay-real-edges` (sha pinned).
+- **Cấu hình:** runner pid 55549, terminal `term_ae063f5e…`; writer opus high `term_b9b7041d…`; reviewer opus; memory assist, plan pack 7 items / ~2.0k tokens.
