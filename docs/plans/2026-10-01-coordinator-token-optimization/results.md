@@ -981,3 +981,14 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
    - Cả writer, integrator và reviewer đều cite. Kết luận: hữu ích, nhất là ở fix round.
 7. **Kit:** slice-check 6 feature, 0 giữ lại. 2 lessons row.
 8. **Tiếp theo:** runner tự sang S07 save-and-guide (single lane, writer spawn 21:52Z).
+
+### Pilot 12 — S07 kết quả (S07 merge 2026-10-07 22:38Z, single lane)
+
+1. **Merge:** slice `328d7f3` trên main, bookkeeping `ec67945`. Thời gian 21:52 → 22:38Z = 46 phút. 0 câu hỏi.
+2. **Review:** 1 vòng, APPROVED, 0 fix round (writer 21:52 → 22:32, review 22:32 → 22:37).
+   - manual_deferred (3): cảm giác ngón tay, notch, âm thanh trên máy thật; chưa lấy mẫu frame trung gian khi dim của popup đang đóng mà guide còn hiện; V2 / …
+3. **Token:** slice-agent 2 sess / 124 turns / 26.7M.
+4. **Memory (assist):** reviewer trích `cc-firefighter-kids/T-S05/s05-guide-milestone-restart-not-resume` r2. Lesson này khiến reviewer kiểm tra thêm hai điều: save bị reset thì bắt đầu lại từ bước 1, và reload giữa lượt xe thì guide hiện lại từ bước 1. Đúng loại lỗi mà firefighter từng gặp.
+   - 2 candidates: `s07-guide-placed-live`, `s07-save-parse-total`. 3 lessons row.
+5. **Không có câu hỏi nào kể cả verify:** single lane không chạy verifier sau merge, nên F6 không lặp lại ở đây.
+6. **Tiếp theo:** runner tự sang S08 release-polish (single lane, slice cuối, writer spawn 22:38Z).
