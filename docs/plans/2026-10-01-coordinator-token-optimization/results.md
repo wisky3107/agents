@@ -721,6 +721,12 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
    - Hướng sửa (chưa làm): runner khi start/resume phát hiện coordinator của Run stale mà có terminal claude resume cùng title → hỏi director, hoặc gửi sẵn câu nhắc "rebind + re-dispatch".
 5. **Finding F2 (chưa sửa):** bộ contract (GAME_BRIEF, HOW_TO, slices/, …) chưa từng được commit trên main. Coordinator mỗi slice phải copy file untracked vào worktree ("as S02 did"). Rủi ro: worktree mới không có contract, và tracked-diff/scope bị nhiễu. Cần director cho phép commit bộ contract.
 
+6. **Director duyệt cả 3 việc** ("duyệt tâts cả"): commit bộ contract trên main dự án `5687370`; xoá worktree s01/s02 (ảnh → `T-S0x/captures/`); sửa runner (fix/orca-restart, đang làm).
+7. **F3 — Creator chết theo terminal integrator (lặp lại S01 q3/q4):** 15:50Z review r1 INFRA_BLOCKED vì coordinator đóng terminal integrator, mà Creator là tiến trình con của nó. q6 judge defer; tôi trả lời "send this answer to the lane": mở lại Creator trong terminal Editor riêng không bao giờ đóng, rồi review-r2.
+8. **F4 — pkill của session khác giết mọi terminal Orca lúc ~16:07Z (lần 2 trong slice):** runner, reviewer r2, terminal Editor của S03 đều chết. Coordinator được resume với handle mới `term_0d8fbb0b`.
+   - **Bẫy cổng:** :7458 vẫn trả 200, nhưng là Creator của firefighter S08 (pid 56686, `--project …/cc-firefighter-kids/S08-release-polish`). Cổng preview không được pin, nên sau khi Creator restart, cổng có thể thuộc dự án khác. Reviewer kiểm tra bằng curl sẽ review nhầm game.
+   - Gỡ ở 16:55Z: báo coordinator run-use, mở lại Creator S03 (đọc cổng thật), dispatch lại review-r2 kèm URL đúng; relaunch runner (pid 65557).
+
 ### Pilot 11 — S05 sự cố và khôi phục (2026-10-07 14:12 → 14:53Z)
 
 - **Chuỗi sự cố:**
