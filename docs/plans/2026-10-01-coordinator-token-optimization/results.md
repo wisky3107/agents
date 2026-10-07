@@ -462,3 +462,18 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Fleet lane cần cách giữ worktree đang review luôn được chọn trong Orca, hoặc một kênh runtime khác (Playwright headless). Nếu không, phần runtime của mọi slice L sẽ bị hoãn.
 - Release: deploy đầu tiên của project Vercel mới phải ép target preview. Runner tự push main trước bước ship.
 - Delegated authority chạy ổn: tôi quyết 4 gate (q5, q7, q8 và câu q4 sửa tay) mà không phải dừng. Các câu đụng tài khoản bên ngoài (Vercel) vẫn để director quyết.
+
+### Pilot 9 — cc-love-train S08 env-config (M, single lane), from 2026-10-07 03:58Z
+
+- **Purpose:** a general-workflow pilot that adds one slice after a ship. The slice was authored from the director's request "làm một slice mới cho kế hoạch này", about per-environment config (dev/staging/prod). Contracts: `3d88c91`. Gate: `071cf65` (S08-D1..D5 GIVEN, "Duyệt cả 5, chạy luôn").
+- **What it exercises:**
+  - It is the first slice added after a release slice that has already shipped. S08 sits before S07 in `slices:` because the validator requires release-polish last, and S07 (shipped) depends on S08.
+  - It is the first single-lane slice under the runner since the fixes `b5111b2` and `9c21526`, and the first with the Vietnamese dialog on from the start.
+- **Config:**
+  - Runner pid 11196, terminal `term_9d5dc635…`.
+  - Writer `claude opus high` on `term_1d17b4f9…`. Reviewer and judge are opus. Autopilot `retry_once`, `manual_required: defer`, memory `off`.
+- **Pre-check while authoring:**
+  - No smoke check reads game-config directly.
+  - The specs build GameConfig from JSON, so applyEnv must keep the shape.
+  - `build-templates/web-mobile/index.ejs` (S07-D1) is customised, so the env stamp goes into the built index.html instead.
+- **Authority:** the same delegated authority as pilot 8. Push main after the merge. No deploy (S08 has no ship step).
