@@ -992,3 +992,43 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
    - 2 candidates: `s07-guide-placed-live`, `s07-save-parse-total`. 3 lessons row.
 5. **Không có câu hỏi nào kể cả verify:** single lane không chạy verifier sau merge, nên F6 không lặp lại ở đây.
 6. **Tiếp theo:** runner tự sang S08 release-polish (single lane, slice cuối, writer spawn 22:38Z).
+
+### Pilot 12 — S08 kết quả (S08 merge 2026-10-07 23:37Z, single lane, slice cuối)
+
+1. **Merge:** slice `a8e9b18` trên main, bookkeeping `133db8b`. Thời gian 22:38 → 23:37Z = 59 phút. 0 câu hỏi.
+2. **Review:** 2 vòng.
+   - round 1 CHANGES_REQUESTED: F1 check `S08-05-branding` không fail khi build để title mặc định; phải sửa thành red trên title mặc định, green trên build thật. F2 đồng bộ smoke runner của dự án (tuỳ chọn, đưa vào FOLLOWUPS). F3 quyết định D-1 của director.
+   - round 2 APPROVED.
+   - Reviewer kiểm tra lại `preview-startup.json` và `curl` :7456 trước khi review.
+   - Single lane nên round 1 được giữ lại thành `review-round1.md` và không có verdict_override.
+3. **Token:** slice-agent 3 sess / 212 turns / 42.8M.
+4. **Memory (assist):** writer và reviewer trích lesson của chính dự án ở slice trước: `lc-s07-release-log-switch` (đặt `LOG` về `DEBUG` để release build không in console) và `lc-s07-typed-boot-batch` (chỉ báo progress khi mọi batch đã biết tổng). Lesson S07 được harvest rồi dùng ngay ở S08.
+   - 3 candidates (og-image md5, boot indicator, typed batches). 4 lessons row.
+5. **Writer tự để lại cho director:** tag `v1.0.0` và deploy (RC-20 deploy smoke, RC-21 tag).
+
+### Pilot 12 — tổng kết (cc-car-service-kids S03–S08, 2026-10-07 13:46 → 23:37Z)
+
+1. **Kết quả:** 6 slice merge trong pilot (S03–S08), cùng với S01–S02 có từ trước là đủ 8/8.
+   - Thời gian: S03 4 h 10 (fleet, gồm khoảng 1 h hồi phục sau hai lần mất terminal); S04 53 phút; S05 35 phút; S06 2 h 28 (fleet); S07 46 phút; S08 59 phút.
+   - Lane: 2 slice fleet và 4 slice single. Single lane nhanh và không có câu hỏi; fleet tốn khoảng 3 lần token.
+2. **Token** (từ 13:46Z): khoảng **314M**. Fleet: S03 91.4M, S06 89.4M. Single: S04 41.7M, S05 22.4M, S07 26.7M, S08 42.8M.
+3. **Câu hỏi:** q6–q12 = 7 câu.
+   - Judge tự trả lời 1 (q9).
+   - Director tự trả lời 1 (q7).
+   - Tôi trả lời 5:
+     - q6: F3, gửi câu trả lời cho lane.
+     - q8, q11: laterRound, "treat as approved".
+     - q10: race, "continue waiting".
+     - q12: F6, "record merged anyway" kèm bằng chứng Chrome.
+   - Không lần nào chọn stop, blocked hay skip.
+4. **Findings:**
+   - **F1** — Orca restart giữa slice: handle mới, runner chết, mất worker. Đã gỡ tay. Fix "rebind coordinator" ở nhánh `fix/orca-restart` (`3b910c5`, `4dc199d`) **chưa merge**.
+   - **F2** — contract chưa commit trên main. Đã sửa: `5687370` (director duyệt).
+   - **F3** — Creator là tiến trình con của terminal integrator, nên chết khi coordinator đóng terminal đó (S01 q3/q4, S03 q6). Signature row nằm ở nhánh fix.
+   - **F4** — pkill của session khác giết mọi terminal lúc 16:07Z. Cổng :7458 khi đó thuộc firefighter S08, suýt review nhầm game. Đã gỡ tay.
+   - **laterRound rN** (S03 q8, S06 q11): review chỉ cite "r2" / "r1". Fix `622605d`, `7cedc80` ở nhánh fix, **chưa merge**.
+   - **Race gate** (S06 q10): thời gian chờ gate ngắn hơn một lượt làm việc dài của coordinator. Chưa sửa.
+   - **F6** — run-smoke của dự án (= template `2787fe3`) chỉ có kênh Orca. Stub `document.hidden` ném lỗi ở đó, nên verify main fail giả. Reviewer S08 cũng tự nêu (F2 round 1). Chưa sửa.
+5. **Memory (assist):** hữu ích ở mọi slice. Lesson của chính dự án được harvest rồi dùng ngay ở slice sau (S02→S04, S01→S06, S07→S08). Lesson từ các dự án khác (firefighter, block-out, love-train) đã chặn trước các lỗi đã biết: Creator mở scene untitled, audio first-tap, freeze tween khi pause, guide restart.
+6. **manual_deferred phải ký trước khi ship:** 24 mục (S01 5, S02 3, S03 2, S04 2, S05 3, S06 3, S07 3, S08 3). Phần lớn cần máy thật: chạm, notch, âm thanh iOS. Ngoài ra có lời văn tiếng Việt (FOLLOWUPS #1), nghe mix âm thanh, deploy smoke và tag `v1.0.0`.
+7. **Step 3 (ship) chờ director.**
