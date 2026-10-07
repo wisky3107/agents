@@ -757,3 +757,30 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 3. **Token:** slice-agent 2 sess / 176 turns / 42.5M.
 4. **Kiểm chứng fallback:** reviewer chạy `run-smoke --channel auto`. Orca báo "page never became ready" → tự chạy lại trên Chrome headless + Playwright (GPU), có ghi kênh trong review.md. Đây là lần đầu `--channel auto` chạy thật trong một slice.
 5. **Memory:** writer trích lesson `T-S02/s02-gear-gated-entry-keeps-start-hook`. Reviewer ghi `none` kèm lý do (pack không có item liên quan S06).
+
+### Pilot 13 — kết quả (S11 merge 2026-10-07 16:04Z)
+
+1. **Merge:** slice `1fdcd5f`, bookkeeping `919d98b`; harvest xong (413 records), 3 dòng lessons, kit slice-check thêm `kit-api-busy`. Thời gian 15:10 → 16:04Z = 54 phút, không có lúc nào dừng. Main local đi trước origin 3 commit (chưa push).
+2. **Review:** 1 vòng, APPROVED; 0 fix round. Có 1 finding minor F1 (tên node prefab `Mascot`/`Block` sai rule 35). Nguyên nhân là slice tôi soạn đã quy định sẵn hai tên đó, nên ghi FOLLOWUPS #41 (`6c180b9`), không sửa trong slice. manual_deferred (2): playtest staging-proxy trên BE Dev (cần ticket; S11 không đụng HttpApi); cảm giác ngón tay và notch trên máy thật. budget_bump advisory: files 22→24, lines 850→870.
+3. **Token** (sess / turns / context):
+
+| Role | S08 (P9) | S09 (P10) | S11 (P13) |
+|---|---|---|---|
+| single lane (writer + reviewer) | 24.8M | 48.6M | 2 / 237 / 49.4M |
+| producer (LLM) | — | — | 0 (không gọi judge) |
+
+4. **Coordinator:** single lane nên không có coordinator. 49.4M ngang S09 (48.6M), vì cả hai đều là slice M có code runtime và reviewer tự chạy lại probe, viewport, negative control. Avg ctx 208k/turn.
+5. **Câu hỏi runner:** 0. Nudge 1 lần lúc 15:28Z (writer đang chạy smoke dài), sau đó writer tự xong.
+6. **Sự cố:** không có. Theo failure signatures:
+   - `run-smoke.mjs` của project chưa có `--channel auto`, writer phải tự chạy Chrome headless (FOLLOWUPS #39). Đây là preflight bước 3 tôi đã bỏ qua.
+   - Race lúc boot của harness ở check đầu tiên (`S03-01`, FOLLOWUPS #40); reviewer tách được khỏi S11.
+   - Writer báo "116 tests", reviewer đo được 107. Writer báo "s06 pair passes alone" nhưng thực ra có probe chạy trước. Reviewer bắt được cả hai (N2). Self-report của writer vẫn cần reviewer đo lại.
+7. **Memory (assist):** plan pack 7 items / ~2.0k tokens.
+   - Writer trích `T-S03/s03-sync-smoke-async-flow-director-tick` (check đồng bộ: giữ mock wait, chạy `director.tick`) và recipe `full-screen-cover-overlay-real-edges`.
+   - Reviewer trích 4 item. Đáng giá nhất là `T-S05/smoke-chain-async-error-flows`: vì S11 dời `failNext` ra sau latency, reviewer buộc S05-01..08 phải xanh trên code mới và tự chạy `mock-api.spec`.
+   - Kết luận: hữu ích. Lesson S05 đã chặn đúng loại hồi quy đã biết.
+8. **Bài học:**
+   - Soạn slice: tên node quy định trong slice phải theo rule 35 và khớp với các prefab cùng loại. Toạ độ trong mock phải bằng số trong slice và EXPECT (N1: baseline của mock ≈ y −158, slice ghi −150). Đã thêm vào bước 2 của workflow-pilot (`d48a1c9`).
+   - Pre-check "node.emit đi xuyên qua BlockInputEvents" đã có tác dụng: writer chứng minh block bằng pointer thật (Playwright) kèm negative control, reviewer chạy lại được.
+   - Preflight: diff `run-smoke.mjs` với template trước khi launch (đã thêm vào skill).
+   - Workflow: chạy hoàn toàn không người trông (0 câu hỏi, 1 vòng review, 54 phút). Đây là slice nhanh nhất trong chuỗi love-train sau ship.
