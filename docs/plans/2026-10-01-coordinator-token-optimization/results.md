@@ -607,3 +607,15 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
    - (c) Judge chưa được kiểm chứng live sau sửa (không có câu hỏi thuộc loại judge sau 08:23Z).
    - (d) Lỗi zero-width có thể ảnh hưởng mọi prompt có đường dẫn tuyệt đối `.cursor/`. Nên quét các spec/prompt template của fleet.
 - 09:28Z: laterRound fix merged `dd0c105` (reviewer độc lập APPROVED; siết thêm: không tính "fix round N" / "round N.x"; thêm dòng failure-signature). Restart runner giữa S02 (đang ở fleet, 0 câu hỏi mở): pid 66586 → 18782, terminal `term_44f61cd4…`, resume "continue at fleet".
+
+### Pilot 11 — cc-love-train S10 build-optimize (M, single lane), từ 2026-10-07 10:11Z
+
+- **Mục đích:** director yêu cầu tối ưu dung lượng build và thời gian loading, với quy tắc ảnh tối đa 2048 px (giữ tỉ lệ, kích thước hiển thị trong game không đổi). Contracts `b907c7d`, gate `6c95f4a` ("Duyệt cả 7, chạy luôn").
+- **Đo trước khi viết slice:**
+  - Build 34 MB; texture nén 15.8 MB. File `.pvr` của bg-care nặng 8.39 MB vì ảnh 1920×2520 bị độn lên 4096×4096.
+  - Font khoảng 2.5 MB, nhạc nền 1 MB.
+  - Chỉ có 2 ảnh vượt 2048 (bg-care, bg-select-train-wall, cả hai 1920×2520 → 1560×2048).
+  - TrainWall đang để RAW nên phải chuyển sang CUSTOM; Background vốn đã CUSTOM.
+  - Chỉ layout-system.spec chứa 1920/2520, và đó là số liệu thiết kế nên không bị ảnh hưởng.
+  - Theo slice-schema, build không có ngưỡng dung lượng cố định, nên tiêu chí là "thấp hơn số đo baseline" (S10-D6).
+- **Cấu hình:** runner pid 2608, terminal `term_cd9280ee…`; writer opus high `term_24b7fd41…`; memory off.
