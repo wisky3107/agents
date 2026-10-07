@@ -553,3 +553,10 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - **Finding 1, judge bỏ front matter:** `prose()` loại front matter của slice, nhưng acceptance/runtime_checks nằm ở đó (S01 dòng 1–204/236). Vì vậy judge trích đúng dòng runtime_checks vẫn bị từ chối (q1, q4). Sửa ở `548dc10`, có test.
 - **Finding 2, zero-width trong "cursor":** model nhận chữ "cursor" trong prompt thành `.c‍ursor`, nên Read mọi đường dẫn `.cursor/…` trả not found. Đã tái hiện bằng `claude -p` (q6, judge tự báo). Judge giờ đọc evidence qua symlink không chứa chữ đó: `6fb902e`, có test. Có thể ảnh hưởng mọi worker được giao đường dẫn tuyệt đối `.cursor/…` (memory pack, evidence); chưa kiểm.
 - **Finding 3, tab preview Orca:** Chrome headless bên ngoài Orca load trang sạch (scene sẵn ~2 s, `fireCrew` có, không page error; Chrome thật + Metal 61 fps), nên đây không phải lỗi game. Lỗi nằm ở kênh tab Orca khi run-smoke điều khiển, tab cc-love-train :7456 dùng chung pane. 08:10Z director GIVEN: runtime review S01 chạy bằng Playwright + Chrome headless GPU; đã chuyển cho reviewer vòng 4.
+- 2026-10-07 08:1xZ: director yêu cầu "deploy vercel prod bản staging (BE dev) để người khác cùng test".
+  - Deploy cùng bản build staging (`df364e5`, 20261007_145236) lên **production** của project `love-train-preview` (dpl_99MP4GWUucaxFEunPNsuEhXJ678q). Gắn vào alias public `https://love-train-preview-delta.vercel.app`, không cần đăng nhập Vercel.
+  - Vẫn dùng rewrite `/api-proxy/*` → BE Dev và chèn `__LT_API_BASE__` vào bản copy trong thư mục tạm.
+  - Kiểm tra ẩn danh: `/` 200, env staging, `/.env.local` `/.git/config` `/.vercel/project.json` đều 404, có `x-robots-tag: noindex`; proxy `/bond/state` dùng ticket test trả success, ticket sai trả 401.
+  - Probe CDP headless chỉ đọc: game boot vào màn chăm thú với Mèo, Tim 580, gọi `/bond/state` 200 và `/wallet` 200, 0 lỗi console.
+  - State tài khoản test lúc này: điểm 0, Tim 580, lượt còn x1–x2. Có người đã test thêm và làm đầy thanh, không phải do pilot.
+  - Lưu ý: proxy public cho phép bất kỳ ai có ticket gọi BE Dev qua domain này; không có ticket thì nhận 401.
