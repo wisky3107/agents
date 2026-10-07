@@ -696,3 +696,15 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
    - Không còn verdict_override.
 5. **Finding mới (chưa sửa):** Orca browser cũng làm hỏng lane art hero (orca-gpt-image-gen), không chỉ runtime review. Đề xuất: khi gặp `browser_tab_not_found`, `codex-image-gen` là fallback mặc định cho hero, ghi rõ trong ASSET_MANIFEST/notes, không cần gate. Cần director quyết vì đây là chính sách chất lượng art.
 6. **Memory:** các role trích lesson của chính dự án (`T-S01/t-s01-step-systems-not-director-tick`, `T-S02/s02-gear-gated-entry-keeps-start-hook`). Vòng lặp harvest → pack hoạt động trong cùng dự án. Kết luận: hữu ích.
+
+### Pilot 11 — S04 kết quả (S04 merge 2026-10-07 13:26Z, single lane)
+
+1. **Merge:** slice `6db1d9e` commit trực tiếp trên main (single lane), bookkeeping `db45d62`. Thời gian 12:56 → 13:26Z = 30 phút. 0 câu hỏi.
+2. **Review:** 1 vòng, APPROVED, 0 fix round. manual_deferred (2): iOS Safari phát âm thanh sau lần chạm đầu (A3), không có thiết bị.
+3. **Token:** slice-agent 2 sess / 118 turns / 23.7M (writer + reviewer).
+4. **Kiểm chứng fallback Chrome (lần đầu ở single lane, không ai can thiệp):**
+   - Reviewer gặp đúng lỗi tab Orca đóng băng ("page never became ready"), tự nhận ra theo frozen-tab.md và chạy review trên Chrome headless.
+   - Có ghi kênh: `chrome (Orca tab frozen, run-smoke Orca run: …)`.
+   - Reviewer cũng ghi rằng run-smoke của dự án là bản trước khi có fallback (đúng như ghi chú trong frozen-tab.md), nên tự chạy check bằng Playwright.
+   - Không có câu hỏi infra nào lên director.
+5. **Memory:** writer và reviewer trích `cocos-playbook/recipes/gesture-gated-web-audio-router r4`, có kiểm sha.
