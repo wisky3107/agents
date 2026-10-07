@@ -1679,40 +1679,62 @@ def scorecard_md(con, projects: list[str], flags: list[dict], exps: list[dict]) 
 
 
 DASHBOARD_CSS = """
-:root { color-scheme: light; --surface: #fcfcfb; --panel: #f3f2ee; --line: #dddcd6;
-  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #6f6e69;
-  --good: #0ca30c; --warning: #fab219; --critical: #d03b3b; --na: #8a8983; }
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+/* "Sticker Sheet" skin, shared with the director console: cream paper, 2px ink borders, hard offset
+   shadows, coloured stickers with ink text. Status always shows its icon and label, never colour alone. */
+:root { color-scheme: light; --bg: #FFF4D6; --surface: #FFFFFF; --surface-2: #FFF9E8; --fg: #111111; --muted: #3F3F46;
+  --border: #111111; --rule: #E3DCC8; --hard: #111111;
+  --yellow: #FFD23F; --pink: #FF6BB5; --blue: #7CC4FF; --green: #7EE0A1; --coral: #FFB199; }
 @media (prefers-color-scheme: dark) { :root:where(:not([data-theme="light"])) {
-  color-scheme: dark; --surface: #1a1a19; --panel: #242422; --line: #3a3a37;
-  --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #9a998f; --na: #8a8983; } }
-:root[data-theme="dark"] { color-scheme: dark; --surface: #1a1a19; --panel: #242422; --line: #3a3a37;
-  --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #9a998f; --na: #8a8983; }
+  color-scheme: dark; --bg: #141414; --surface: #1F1F1F; --surface-2: #2A2A2A; --fg: #FAFAFA; --muted: #C4C4C4;
+  --border: #FAFAFA; --rule: #3A3A3A; --hard: #FFD23F; } }
+:root[data-theme="dark"] { color-scheme: dark; --bg: #141414; --surface: #1F1F1F; --surface-2: #2A2A2A; --fg: #FAFAFA;
+  --muted: #C4C4C4; --border: #FAFAFA; --rule: #3A3A3A; --hard: #FFD23F; }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--surface); color: var(--text-primary);
-  font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-main { max-width: 1200px; margin: 0 auto; padding: 24px 16px 48px; }
-h1 { font-size: 22px; margin: 0 0 4px; } h2 { font-size: 16px; margin: 32px 0 8px; }
-.sub { color: var(--text-secondary); margin: 0 0 16px; overflow-wrap: anywhere; }
-.totals { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 8px; }
-.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 8px; }
-.tile { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
-  min-width: 0; overflow-wrap: anywhere; }
-.tile .k { color: var(--text-secondary); font-size: 12px; }
-.tile .v { font-size: 18px; font-weight: 600; margin: 2px 0; }
-.tile .s { font-size: 12px; color: var(--text-muted); }
-.badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
-  color: var(--text-primary); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
-.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
-.good .dot { background: var(--good); } .warning .dot { background: var(--warning); }
-.critical .dot { background: var(--critical); } .na .dot { background: transparent; border: 2px solid var(--na); }
-.fixed .dot { background: var(--na); }
-.wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
-table { border-collapse: collapse; width: 100%; font-size: 13px; }
-th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
-th { color: var(--text-secondary); font-weight: 600; background: var(--panel); position: sticky; top: 0; }
-td.num { text-align: right; font-variant-numeric: tabular-nums; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 "Space Grotesk", system-ui, -apple-system, sans-serif;
+  font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+main { max-width: 1280px; margin: 0 auto; padding: 24px 20px 56px; background: var(--bg); color: var(--fg); }
+.crumb { font: 12px/1.3 "Space Mono", ui-monospace, monospace; text-transform: uppercase; color: var(--muted); }
+h1 { font-size: 40px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; margin: 2px 0 0; }
+h2 { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 700; margin: 36px 0 12px; }
+h2::before { content: ""; width: 12px; height: 12px; flex: none; background: var(--pink); border: 2px solid #111; border-radius: 3px; transform: rotate(45deg); }
+.tags { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 22px; }
+.tag { display: inline-flex; align-items: center; min-height: 26px; padding: 4px 8px; border: 2px solid var(--border); border-radius: 6px;
+  background: var(--surface); font: 700 11.5px/1.45 "Space Mono", ui-monospace, monospace; text-transform: uppercase; overflow-wrap: anywhere; }
+.sub { color: var(--muted); margin: -4px 0 12px; font-size: 14px; overflow-wrap: anywhere; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr)); gap: 16px; }
+.stat { padding: 14px 16px; border: 2px solid #111; border-radius: 10px; box-shadow: 4px 4px 0 var(--hard); color: #111; }
+.stat .k { font: 700 12px/1.2 "Space Mono", ui-monospace, monospace; text-transform: uppercase; }
+.stat .v { font-size: 40px; font-weight: 700; line-height: 1; margin-top: 10px; }
+.st-critical { background: var(--coral); } .st-warning { background: var(--yellow); } .st-fixed { background: var(--blue); }
+.st-good { background: var(--green); } .st-na { background: var(--surface); color: var(--fg); border-color: var(--border); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); gap: 18px; }
+.tile { background: var(--surface); border: 2px solid var(--border); border-radius: 10px; box-shadow: 4px 4px 0 var(--hard);
+  padding: 14px 16px; min-width: 0; overflow-wrap: anywhere; }
+.tile.critical, .tile.warning, .tile.fixed { color: #111; border-color: #111; }
+.tile.critical { background: var(--coral); } .tile.warning { background: var(--yellow); } .tile.fixed { background: var(--blue); }
+.tile .k { font: 700 11.5px/1.35 "Space Mono", ui-monospace, monospace; text-transform: uppercase; }
+.tile .v { font-size: 17px; font-weight: 700; margin: 8px 0; }
+.tile .s { font-size: 13.5px; font-weight: 500; margin-top: 8px; }
+.badge { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border: 2px solid var(--border);
+  border-radius: 6px; background: var(--surface); color: var(--fg); font: 700 11.5px/1 "Space Mono", ui-monospace, monospace;
+  text-transform: uppercase; white-space: nowrap; }
+.badge.good, .badge.warning, .badge.critical, .badge.fixed { color: #111; border-color: #111; }
+.badge.good { background: var(--green); } .badge.warning { background: var(--yellow); }
+.badge.critical { background: var(--coral); } .badge.fixed { background: var(--blue); }
+.dot { display: none; }
+.wrap { overflow-x: auto; background: var(--surface); border: 2px solid var(--border); border-radius: 10px; box-shadow: 4px 4px 0 var(--hard); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font: 700 11.5px/1.25 "Space Mono", ui-monospace, monospace; text-transform: uppercase; background: var(--surface-2);
+  border-bottom: 2px solid var(--border); position: sticky; top: 0; }
+td { font-weight: 500; }
+td.num { text-align: right; }
+td.nowrap { white-space: nowrap; font-size: 13px; }
+tbody tr:hover td { background: var(--surface-2); }
 tr:last-child td { border-bottom: none; }
-.muted { color: var(--text-muted); }
+.muted { color: var(--muted); }
+@media (max-width: 640px) { h1 { font-size: 30px; } .stat .v { font-size: 32px; } main { padding: 18px 14px 40px; } }
 """
 ICON = {'good': '✓', 'warning': '▲', 'critical': '✖', 'fixed': '↻', 'na': '–'}
 
@@ -1726,12 +1748,13 @@ def badge(status: str) -> str:
     return f'<span class="badge {status}"><span class="dot"></span>{ICON[status]} {esc(STATUS_LABEL[status])}</span>'
 
 
-def html_table(head: list[str], rows: list[list], num: set[int] = frozenset()) -> str:
+def html_table(head: list[str], rows: list[list], num: set[int] = frozenset(), nowrap: set[int] = frozenset()) -> str:
     if not rows:
         return '<p class="muted">Không có dữ liệu.</p>'
     th = ''.join(f'<th>{esc(h)}</th>' for h in head)
     body = ''.join('<tr>' + ''.join(
         f'<td class="num">{esc(c)}</td>' if i in num else (f'<td>{c}</td>' if isinstance(c, str) and c.startswith('<span class="badge')
+                                                           else f'<td class="nowrap">{esc(c)}</td>' if i in nowrap
                                                            else f'<td>{esc(c)}</td>')
         for i, c in enumerate(r)) + '</tr>' for r in rows)
     return f'<div class="wrap"><table><thead><tr>{th}</tr></thead><tbody>{body}</tbody></table></div>'
@@ -1746,21 +1769,24 @@ def dashboard_html(con, projects: list[str], flags: list[dict], exps: list[dict]
     order = {'critical': 0, 'warning': 1, 'fixed': 2, 'good': 3, 'na': 4}
     hot = [f for f in sorted(flags, key=lambda f: (order[f['status']], f['category'])) if f['status'] in ('critical', 'warning', 'fixed')]
     tiles = ''.join(
-        f'<div class="tile"><div class="k">{esc(f["category"])} · {esc(f["kpi"])} · {esc(f["scope"])}</div>'
+        f'<div class="tile {f["status"]}"><div class="k">{esc(f["category"])} · {esc(f["kpi"])} · {esc(f["scope"])}</div>'
         f'<div class="v">{esc(f["text"])}</div>{badge(f["status"])}<div class="s">{esc(f["action"])}</div></div>' for f in hot)
     parts = [
         *([f'<title>Workflow scorecard</title><style>{DASHBOARD_CSS}</style><main lang="vi">'] if fragment else [
             '<!doctype html><html lang="vi"><head><meta charset="utf-8">',
             '<meta name="viewport" content="width=device-width, initial-scale=1">',
             f'<title>Workflow scorecard</title><style>{DASHBOARD_CSS}</style></head><body><main>']),
-        '<h1>Workflow scorecard</h1>',
-        f'<p class="sub">Cập nhật {esc(now_iso())} · dự án: {esc(", ".join(projects))} · số nhỏ là tín hiệu định hướng</p>',
-        '<div class="totals">' + ''.join(f'{badge(s)} <span class="muted">{count[s]}</span>' for s in ('critical', 'warning', 'fixed', 'good', 'na')) + '</div>',
+        '<div class="crumb">Workflow / scorecard</div><h1>Workflow scorecard</h1>',
+        '<div class="tags">' + ''.join(f'<span class="tag">{esc(t)}</span>' for t in (
+            f'cập nhật {now_iso()}', f'dự án: {", ".join(projects)}', 'số nhỏ = tín hiệu định hướng')) + '</div>',
+        '<div class="stats">' + ''.join(
+            f'<div class="stat st-{s}"><div class="k">{ICON[s]} {esc(STATUS_LABEL[s])}</div><div class="v">{count[s]}</div></div>'
+            for s in ('critical', 'warning', 'fixed', 'good', 'na')) + '</div>',
         '<h2>Cần xử lý</h2>', f'<div class="tiles">{tiles}</div>' if tiles else '<p class="muted">Không có KPI đỏ hoặc vàng.</p>',
         '<h2>Tất cả KPI</h2>',
         html_table(['hạng mục', 'KPI', 'phạm vi', 'trạng thái', 'giá trị', 'n', 'ngưỡng'],
                    [[f['category'], f['kpi'], f['scope'], badge(f['status']), f['text'], f['n'], f['threshold']]
-                    for f in sorted(flags, key=lambda f: (f['category'], order[f['status']], f['scope']))], {5}),
+                    for f in sorted(flags, key=lambda f: (f['category'], order[f['status']], f['scope']))], {5}, {2, 6}),
         '<h2>Producer runner: mỗi slice</h2>',
         html_table(['project', 'slice', 'phase', 'e2e phút', 'lần dừng', 'phút chờ'],
                    q(f'''SELECT r.project, r.slice, r.phase, r.e2e_min,
