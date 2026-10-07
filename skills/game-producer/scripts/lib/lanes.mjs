@@ -404,7 +404,9 @@ function laterRound(text, lastRound) {
   // it cites that round by file, or by number below the heading ("Fix verification (round 4 findings)",
   // cc-firefighter-kids S01 q7)
   const body = text.slice(text.indexOf(head) + head.length);
-  return Boolean(n && m && Number(m[1]) > n && (text.includes(path.basename(lastRound)) || new RegExp(`(?<!fix )\\bround ${n}\\b(?![.\\d])`, 'i').test(body)));
+  // or by the shorthand "r<N>" ("## r2 fix_routing — re-test", "| r2 finding | r3 result |"; pilot 12 S03 q8) —
+  // not "fix r2" (the fix round's number) or "r2.5"
+  return Boolean(n && m && Number(m[1]) > n && (text.includes(path.basename(lastRound)) || new RegExp(`(?<!fix )\\b(?:round |r)${n}\\b(?![.\\d])`, 'i').test(body)));
 }
 
 /**
