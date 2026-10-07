@@ -84,7 +84,7 @@ function evidenceDir(project, slice) {
  */
 export function judgeView(dir, slice) {
   if (!/cursor/i.test(dir)) return dir;
-  const base = path.join(os.tmpdir(), 'producer-judge');
+  const base = /cursor/i.test(os.tmpdir()) ? '/tmp/producer-judge' : path.join(os.tmpdir(), 'producer-judge');
   const link = path.join(base, `${crypto.createHash('sha1').update(dir).digest('hex').slice(0, 10)}-${slice || 'x'}-evidence`);
   try {
     fs.mkdirSync(base, { recursive: true });
