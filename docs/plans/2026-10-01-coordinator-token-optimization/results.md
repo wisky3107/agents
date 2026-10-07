@@ -796,3 +796,16 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - **Finding (workflow):**
   1. Worker có thể chạy `pkill -f <pattern> <flag>` và giết toàn bộ fleet. Cần thêm vào guardrails của template và prompt worker: "không pkill/pgrep theo pattern; chỉ kill đúng pid".
   2. `ensureEditor` chỉ mở lại editor khi res-guard bật. Sau một vụ kill hàng loạt, runner không tự mở lại editor main cho single lane.
+
+### Pilot 14 — cc-love-train S12 pet-spines (M, single lane), từ 2026-10-07 16:47Z
+
+- **Mục đích:** pilot workflow tổng quát với slice nhập asset có thêm code. Director đã thêm 7 spine riêng cho từng pet và yêu cầu "mỗi con vật sẽ có anim idle và một anim đặc biệt … play khi xuất hiện ở màn hình chọn pet và khi được pet". Tôi hỏi lại hai điểm (nghĩa của "khi được pet", và Cún chưa có spine); director từ chối hộp câu hỏi và trả lời "tiếp tục submit". Trong lúc đó thư mục Dog đã được thêm. Tôi tự chốt mặc định theo quyền delegated: mọi care type đều play anim đặc biệt, và việc đổi lại chỉ cần sửa data (S12-D9). Contracts + nguồn spine ở `a447505`.
+- **Kiểm tra trước khi viết slice** (đã áp dụng bước 2 vừa bổ sung):
+  - **Phát hiện chặn:** `majorMinor` không parse được nhãn `4.2-from-4.3.26`, nên nếu chỉ thay file thì cả 7 pet đều rơi về ảnh tĩnh. Sửa parser nằm trong slice (S12-D6).
+  - Panda giống hệt gau-truc (cùng PNG), chỉ khác nhãn version. Origin của Panda nằm ở y −68, các con khác ở chân, nên slice thêm `offset_y`.
+  - Chiều cao rig dao động 751–993 px, nên thêm dải ±10 % quanh R7.
+  - Không có uuid nào trong meta trùng với assets/.
+  - Các check đọc anim theo data (S05-01 dung thứ được lúc `usingSpine` còn false).
+  - Spine nạp qua resources theo từng pet, để ~2.2 MB không vào boot scene (giữ kết quả của S10).
+- **Preflight bước 3 (template sync), lần đầu làm đủ:** smoke-test của project bằng đúng template base, nên chép bản template `--channel auto` sang (`995097d`, đóng #39, 77/77 test của skill pass).
+- **Cấu hình:** runner pid 50921, terminal `term_d31fd1c1…`; writer opus high `term_318dcee6…`; reviewer opus; memory assist, plan pack 6 items / ~1.8k tokens.
