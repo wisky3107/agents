@@ -834,3 +834,31 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
   - q21 (gate deploy preview) **để mở chờ director**, đã gửi PushNotification. Lý do: dự án chưa link Vercel, và `build/deploy.sh` chạy `vercel deploy --yes` từ `build/web-mobile` sẽ auto-link theo tên thư mục vào project `web-mobile` đang có, vốn của cc-monopoly (prod cc-monopoly.vercel.app). Coordinator bắt được lỗi này trước khi publish.
   - **Finding template:** `deploy.sh` của cc-game-template cũng vậy. Mọi game đều deploy từ thư mục tên `web-mobile`, nên game nào chưa link sẽ đè lên project `web-mobile` đầu tiên trên tài khoản. Đề xuất: không có `build/.vercel` thì dừng hẳn, hoặc tự `vercel link --project <repo-slug>`. Không bao giờ để `--yes` tự link theo tên thư mục.
 - 17:45Z: writer xong (S12 smoke 7/7, full 57/61, các check đỏ có từ trước đều pass khi chạy riêng, specs 18/18; trên 05 chiều cao 690–747 px, chân lệch 0 px; build +2.1 MB). Reviewer opus `term_7d94a712…` đang chạy. **Phát hiện môi trường (F-42):** import map của preview trong cache app Creator dùng chung cho mọi Creator 3.8.8 đang mở. Một project spine-3.8 đã ghi đè nó lúc 23:53 (giờ địa phương), làm preview của love-train chạy spine 3.8 và cả 7 pet rơi về ảnh tĩnh. Writer khắc phục bằng `engine rebuild`. Đây là rủi ro xuyên project khi nhiều pilot chạy song song; đã ghi failure signature.
+
+### Pilot 12 — S03 kết quả (S03 merge 2026-10-07 17:56Z)
+
+1. **Merge:** `aaaf269` (slice `131f388`), bookkeeping `1950b99`. Thời gian 13:46 → 17:56Z = 4 h 10, trong đó khoảng 1 h mất vì hai lần mọi terminal Orca bị giết (14:25Z Orca restart, 16:07Z pkill của session khác).
+2. **Review:** 3 vòng.
+   - r1: INFRA_BLOCKED (Creator chết theo terminal integrator, F3).
+   - r2: CHANGES_REQUESTED (F1 tên dụng cụ co còn 11.9 css px ở V3, F2 chú thích sổ tay 7.6 css px, F3 capô tràn mép phải; F4–F5 minor).
+   - r3: APPROVED sau 1 fix round, chạy trên Chrome headless ở :7459.
+   - Smoke 11/11 PASS ở V1/V2/V3, 0 lỗi console.
+   - manual_deferred: lời văn 9 câu fact (FOLLOWUPS #1, director), cảm giác chạm ngón tay / notch trên máy thật.
+   - Vượt ngân sách (advisory): files 24→27, lines 1300→1455, nodes 52→58.
+3. **Token** (từ 13:46Z): fleet-orch 1 sess / 109 turns / 20.9M; fleet-worker 11 sess / 397 turns / 67.6M + codex 1 / 2.0M; producer 22.4k. Số này gồm cả các session resume và task dispatch lại sau hai lần bị giết. fleet-orch: wait 28 % + mechanical 41 % context, tức khoảng 69 % có thể thay bằng script.
+4. **Câu hỏi:**
+   - q6 (lane_blocked, F3): judge defer; tôi trả lời "send this answer to the lane" (Creator vào terminal Editor riêng, review-r2).
+   - q7 (lane_blocked sau pkill): judge defer; director tự trả lời "tiếp tục review".
+   - q8 (verdict_override): review.md là round 3, có test lại từng finding của r2, nhưng chỉ cite bằng chữ tắt "r2" (không ghi `review-r2.md`, không ghi "round 2"). Tôi trả lời "treat as approved" sau khi đọc review.md. Đã giao fix `laterRound` (chấp nhận `rN`) cho nhánh fix/orca-restart.
+5. **Dọn dẹp:** worktree S03 bị `worktree_rm` giữ lại ("dirty") chỉ vì các bản copy contract untracked. Worktree tạo trước commit `5687370` nên đây là lần cuối gặp. Đã kiểm tra các bản copy trùng main, 66 PNG đã copy về `T-S03/captures/`, worktree đã xoá.
+6. **Memory (assist):**
+   - Writer trích `cc-firefighter-kids/T-S01/t-s01-step-systems-not-director-tick` (timer trong `tick(dt)` của system, smoke dùng `gc.advance`) và `cc-block-out/T-S04/LC-S04-3`.
+   - Integrator (lần đầu và fix-scene) trích `cc-block-out/T-S08/editor-untitled-scene`: Creator mới mở ra một scene untitled, `open_scene` với `target` là db url đã sửa được. Lesson này đã chặn trước một lỗi đã biết, và chặn hai lần vì Creator phải mở lại nhiều lần.
+   - Reviewer: "memory used: none".
+   - 5 learning candidates, trong đó có `t-s03-int-untitled-scene-and-open-scene-target`.
+   - Kết luận: hữu ích, nhất là sau mỗi lần Creator restart.
+7. **Kit:** slice-check 3 feature, 0 giữ lại (candidate `t-s03-factbook-kit-signal` để curation sau).
+8. **Bài học:**
+   - Pkill hoặc Orca restart giết **mọi** lane đang chạy trên máy, không chỉ lane của session gây ra. Sau mỗi lần như vậy phải làm lại ba bước: run-use, dispatch lại task, relaunch runner.
+   - Cổng preview không được pin. Sau khi Creator restart, `curl :7458` trả 200 không chứng minh đó là game của slice. Phải kiểm tra `--project` của pid đang lắng nghe, hoặc title trang.
+9. **Tiếp theo:** runner đã tự sang S04 paint-shop (single lane, writer spawn 17:56Z), vì director gate S04 đã GIVEN.
