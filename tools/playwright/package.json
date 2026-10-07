@@ -1,0 +1,8 @@
+{
+  "name": "agents-playwright",
+  "private": true,
+  "description": "Shared Playwright install for run-smoke --channel chrome|auto and Chrome headless runtime review (every Cocos project resolves it here).",
+  "dependencies": {
+    "playwright": "^1.55.0"
+  }
+}

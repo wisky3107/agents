@@ -862,11 +862,31 @@ function singleStep(ctx, s, phase) {
  * Policy no_cursor, or cursor failing too → the human. Not 200 → the writer restarts the preview
  * once, then a fresh review; again → the human.
  */
+const FROZEN_TAB = /frame-starved|\brAF\b|requestAnimationFrame|hasFocus|closed the connection/i;
+// …unless the review shows the fallback itself could not run, or the sandbox reached nothing
+const NOT_FROZEN = /playwright not found|curl: \(?\d*\)? ?000|\b000\b.*curl/i;
+const isFrozenTab = (text) => FROZEN_TAB.test(text) && !NOT_FROZEN.test(text);
+const readText = (f) => {
+  try {
+    return fs.readFileSync(f, 'utf8');
+  } catch {
+    return '';
+  }
+};
+
 function infraBlocked(ctx, s) {
   const { root } = ctx.project;
   const port = slicePort(root, ctx.id);
   if (!io.closeTerminal(s.reviewer)) st.log(root, ctx.id, `could not confirm reviewer ${s.reviewer} closed`);
   const code = port ? io.httpStatus(port) : 0;
+  // a frozen Orca tab (no frames while its pane is hidden) is not a sandbox that cannot reach
+  // localhost: one fresh reviewer, whose prompt runs smoke with --channel auto → Chrome headless
+  // (cocos-orca-fleet/reference/orca/frozen-tab.md; cc-firefighter-kids S01 lost 3 rounds to it)
+  if (code === 200 && !s.frozen_retry && isFrozenTab(readText(st.reviewFiles(evidenceDir(root, ctx.id)).verdict))) {
+    st.log(root, ctx.id, `INFRA_BLOCKED for a frozen Orca tab while 127.0.0.1:${port} answers 200: a fresh reviewer with the Chrome headless fallback`);
+    setPhase(root, ctx.id, 'spawn-reviewer', { reviewer: null, frozen_retry: 1 });
+    return null;
+  }
   if (code === 200) {
     const current = s.reviewer_next || reviewerAgent(ctx);
     // the localhost fallback is Cursor: only when Cursor answers (policy no_cursor or a failed probe → ask)

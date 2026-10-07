@@ -231,7 +231,8 @@ Producer:
          <evidence>/HANDOFF.json (see Waiting), never on terminal text
       d. APPROVED (incl. any budget_bump in advisory mode) → commit (auto_commit) → harvest evidence → merge +
          worktree rm (auto_merge) → slices[next] = merged
-         INFRA_BLOCKED → not a fix round: swap reviewer to cursor auto / integrator recovery, re-review
+         INFRA_BLOCKED → not a fix round: frozen Orca tab → one fresh reviewer (Chrome headless fallback);
+         else swap reviewer to cursor auto / integrator recovery, re-review
          CHANGES_REQUESTED after lane's fix rounds → slices[next] = blocked → one `ask`
          manual_required → slices[next] = blocked (release.manual_required: defer → merge, record
          the checks; Step 2d); reuse existing preview escalation (see Preview)
@@ -490,7 +491,10 @@ when it was the only blocker/major, the verdict counts as APPROVED. `gate:<pct>`
 `tripo_credits` over its cap → `blocked`, one `ask`, in every mode.
 
 `INFRA_BLOCKED` (review.md last line): not a fix round, no notes entry beyond one line. Your own
-`curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<port>/` → 200 ⇒ the reviewer agent
+`curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<port>/` → 200 and the review names a
+frozen Orca tab (rAF 0, hasFocus false, "never became ready", "closed the connection") ⇒ one fresh
+reviewer of the same agent: its prompt runs smoke with `--channel auto`, which falls back to Chrome
+headless (cocos-orca-fleet/reference/orca/frozen-tab.md). Otherwise 200 ⇒ the reviewer agent
 cannot reach localhost: spawn the same review on `cursor --model auto` and lock that for the
 rest of the run. Non-200 ⇒ integrator recovery, then a fresh review. `producer-runner.mjs`
 launches every reviewer with bootstrap's current command, so there is no stale launch to correct

@@ -88,7 +88,7 @@ test('single lane: one nudge at idle 2, resume lane at idle 3; a stale review.md
   assert.match(log(p.root), /writer term_1 stopped \(idle, idle_streak 3\): resume lane/);
 });
 
-test('single lane: INFRA_BLOCKED with the port up → cursor for the rest of the run (or ask under no_cursor); port down → writer restarts once, then ask', async () => {
+test('single lane: INFRA_BLOCKED with the port up → cursor for the rest of the run (a frozen Orca tab first gets one fresh reviewer; or ask under no_cursor); port down → writer restarts once, then ask', async () => {
   const server = spawn(process.execPath, ['-e', "const s=require('http').createServer((q,r)=>r.end('ok')).listen(0,'127.0.0.1',()=>console.log(s.address().port))"]);
   const port = await new Promise((r) => server.stdout.once('data', (d) => r(Number(String(d).trim()))));
   const infra = { [H]: { role: 'reviewer', status: 'infra_blocked' }, [evRel('S01', 'review.md')]: 'curl: 000\nINFRA_BLOCKED\n' };
@@ -106,6 +106,30 @@ test('single lane: INFRA_BLOCKED with the port up → cursor for the rest of the
     // never the same sandboxed reviewer again (SKILL anti-pattern); the switch is locked run-wide
     assert.deepEqual(f.spawns().slice(1).map((s) => s.agent), ['claude --model opus', 'cursor --model auto']);
     assert.equal(runnerFile(p.root).reviewer_override, 'cursor --model auto');
+
+    // a frozen Orca tab: one fresh reviewer of the same agent (its prompt falls back to Chrome headless), then Cursor
+    const fz = single();
+    const ff = fakes();
+    const frozen = { [H]: { role: 'reviewer', status: 'infra_blocked' }, [evRel('S01', 'review.md')]: 'run-smoke: page never became ready; rAF 0/2s, hasFocus false\nINFRA_BLOCKED\n' };
+    ff.queue([
+      { write: { ...W('ready_for_review'), ...preview(port) } },
+      { name: 'frozen', write: frozen },
+      { name: 'frozen again', write: frozen },
+      { name: 'approved', write: R('approved', 'APPROVED') },
+      commitStep('S01'),
+    ]);
+    assert.equal(runner(fz.root, ff, 'start', '--once').out.find((o) => o.merged)?.commit, lastCommit(ff));
+    assert.deepEqual(ff.spawns().slice(1).map((x) => x.agent), ['claude --model opus', 'claude --model opus', 'cursor --model auto']);
+    assert.match(log(fz.root), /INFRA_BLOCKED for a frozen Orca tab while 127\.0\.0\.1:\d+ answers 200: a fresh reviewer with the Chrome headless fallback/);
+
+    // a sandbox that reached nothing (curl 000) or a missing Playwright is not a frozen tab: straight to Cursor
+    for (const body of ['curl: 000; page never became ready, frozen?\nINFRA_BLOCKED\n', 'rAF 0, then run-smoke --channel chrome: playwright not found\nINFRA_BLOCKED\n']) {
+      const nz = single();
+      const nf = fakes();
+      nf.queue([{ write: { ...W('ready_for_review'), ...preview(port) } }, { name: 'not frozen', write: { [H]: { role: 'reviewer', status: 'infra_blocked' }, [evRel('S01', 'review.md')]: body } }, { name: 'approved', write: R('approved', 'APPROVED') }, commitStep('S01')]);
+      runner(nz.root, nf, 'start', '--once');
+      assert.deepEqual(nf.spawns().slice(1).map((x) => x.agent), ['claude --model opus', 'cursor --model auto'], body);
+    }
 
     const n = project({ notes: NOTES(`${POLICY} no_cursor=true`), slices: { S01: { needs: false } } });
     const g = fakes();

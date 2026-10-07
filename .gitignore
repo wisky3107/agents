@@ -5,3 +5,7 @@ __pycache__/
 /run/
 # install-wrapper: machine-local symlink to tools/agy-account/bin/agy
 /bin/
+
+# shared Playwright install (tools/playwright/README.md)
+/tools/playwright/node_modules/
+/tools/playwright/package-lock.json

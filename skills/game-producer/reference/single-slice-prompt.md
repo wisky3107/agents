@@ -67,10 +67,10 @@ Build:
    scene-tool / Funplay per .cursor/skills/cocos-editor/SKILL.md, refresh + reopen, no MissingScript.
 4. Preview: reuse the healthy URL or run_project_preview({mode:"browser"}) once; verify title;
    write <EVIDENCE_DIR>/preview-startup.json (projectPath, previewUrl, status, checkedAt).
-5. Verify: node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT> must be green;
+5. Verify: node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT> --channel auto must be green;
    play the feel rows once; batch state reads into one eval. Screenshots: ONE preview.png total.
-   "page never became ready" → first ~/.agents/skills/cocos-orca-fleet/reference/orca/frozen-tab.md
-   (rAF probe; a frozen tab → select it, or run the checks on headless Chrome CDP as a declared deviation).
+   A frozen Orca tab falls back to Chrome headless by itself (`channel` in the JSON;
+   ~/.agents/skills/cocos-orca-fleet/reference/orca/frozen-tab.md); play the feel rows there too.
    Then `node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice <SLICE_FILE> --out <EVIDENCE_DIR>/static-check.txt` must
    not end RESULT FAIL: it runs tsc, the ES5 web build, EVERY spec in tests/ (old ones too), slice
    scope, the smoke-guard lint, the docs/evidence/ paths the slice names and the integration-notes
@@ -124,11 +124,12 @@ Do not open unrelated .cursor/skills/** reference files or producer lessons.
 Memory: <CONTEXT_PACK> (`none` = skip). A path is your own reviewer pack: use it to decide what
 to check, then gather current evidence. A memory item or the writer's claim is never a pass.
 Cite in review.md the item ids that changed what you checked, or write `memory used: none`.
-1. `node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT>` — its JSON is the verdict
+1. `node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT> --channel auto` — its JSON is the verdict
    for every state-answerable acceptance row; do not replay them by hand. A row with no check
-   although state could answer it is a minor finding (owner code). "page never became ready" →
-   ~/.agents/skills/cocos-orca-fleet/reference/orca/frozen-tab.md first: a frozen Orca tab is never
-   INFRA_BLOCKED on its own (select the tab, or run the checks on headless Chrome CDP and record it).
+   although state could answer it is a minor finding (owner code). A frozen Orca tab falls back to
+   Chrome headless by itself; run the feel, pointer and viewport rows in that Chrome too
+   (~/.agents/skills/cocos-orca-fleet/reference/orca/frozen-tab.md §3) and name the channel. A
+   frozen tab is never INFRA_BLOCKED.
 2. Play only the feel rows and the slice `playtest` steps smoke cannot express (Orca browser,
    eval-first, one object per eval; flags in ~/.agents/skills/cocos-orca-fleet/reference/orca/cheatsheet-browser.md,
    not `--help`). Missing tween/particle/transition = major, "plays dry" counts.
