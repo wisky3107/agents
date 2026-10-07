@@ -829,3 +829,7 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
    - ở `send_failed:commit`, khi review đã APPROVED thì bỏ "mark blocked", thay bằng "committed by hand, check again" (runner tìm commit trên main);
    - không chọn slice single-lane khi main còn dirty với file của slice khác.
 - 17:16Z: writer đầu tiên bị đánh dấu idle 3 lần (nudge lúc 16:55Z), terminal đã exited. HANDOFF dừng ở "code + pets.json done (tsc clean); importing spines, then scene wiring…". Runner tự mở lane resume `term_8e891269…`, lane này làm tiếp scene, checks S12-01..05 và preview. Smoke tự fallback Orca → Chrome (`page never became ready`) nhờ bản sync `--channel auto` (995097d). Cùng dấu hiệu với pilot 11 S10; đã ghi vào failure-signatures (lần này không cần ai can thiệp).
+- 17:48Z S08:
+  - q20 (gate: xoá 12 file .meta folder mồ côi): director chọn A.
+  - q21 (gate deploy preview) **để mở chờ director**, đã gửi PushNotification. Lý do: dự án chưa link Vercel, và `build/deploy.sh` chạy `vercel deploy --yes` từ `build/web-mobile` sẽ auto-link theo tên thư mục vào project `web-mobile` đang có, vốn của cc-monopoly (prod cc-monopoly.vercel.app). Coordinator bắt được lỗi này trước khi publish.
+  - **Finding template:** `deploy.sh` của cc-game-template cũng vậy. Mọi game đều deploy từ thư mục tên `web-mobile`, nên game nào chưa link sẽ đè lên project `web-mobile` đầu tiên trên tài khoản. Đề xuất: không có `build/.vercel` thì dừng hẳn, hoặc tự `vercel link --project <repo-slug>`. Không bao giờ để `--yes` tự link theo tên thư mục.
