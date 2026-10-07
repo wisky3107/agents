@@ -708,3 +708,15 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
    - Reviewer cũng ghi rằng run-smoke của dự án là bản trước khi có fallback (đúng như ghi chú trong frozen-tab.md), nên tự chạy check bằng Playwright.
    - Không có câu hỏi infra nào lên director.
 5. **Memory:** writer và reviewer trích `cocos-playbook/recipes/gesture-gated-web-audio-router r4`, có kiểm sha.
+
+### Pilot 12 — cc-car-service-kids S03 engine-and-facts (L, fleet lane), resume từ 2026-10-07 14:47Z
+
+1. **Mục đích:** resume + pilot workflow chung (director: "giúp tôi resume và pilot dự án cc-car-service-kids"). Authority: auto-answer (mặc định). Director gate S01–S08 đã GIVEN trên policy line từ trước.
+2. **Trạng thái khi nhận:** S01, S02 đã merge (`2cec4e5`, `3448858`). S03 spawn lúc 13:46Z (coordinator `claude --model sonnet`, Run `run_7cdeacdbb507`). scan / art-manifest / art-2d xong; writer code đang làm dở.
+3. **Config:** runner pid 23548 (term_16d20f5a), coordinator term_6ddc03a3 (sau takeover), writer/reviewer `claude --model sonnet --effort high`, judge sonnet, autopilot retry_once, memory **assist** (pack `T-S03/evidence/memory/plan/memory-context.md`).
+4. **Finding F1 — Orca restart giữa slice (signature mới):**
+   - Khoảng 14:25Z Orca restart. Runner (pid 38027) chết theo terminal của nó. Mọi terminal claude được Orca mở lại bằng `--resume` với **handle mới**. Coordinator (term_424d → term_6ddc) mất vòng `orca-wait` và đứng ở prompt. Terminal writer `implement` mất hẳn, task quay về `ready`. Run vẫn ghi handle cũ.
+   - Không ai phát hiện trong khoảng 20 phút: runner đã chết, coordinator nằm idle.
+   - Gỡ: gửi cho coordinator `run-use --id <run>` + dispatch lại implement (giữ phần code dở trong worktree) + quay lại vòng wait. Sau đó `producer-runner launch` → "took over the lock of dead pid", log "coordinator is now term_6ddc… (takeover)". Writer mới: term_57dda41b.
+   - Hướng sửa (chưa làm): runner khi start/resume phát hiện coordinator của Run stale mà có terminal claude resume cùng title → hỏi director, hoặc gửi sẵn câu nhắc "rebind + re-dispatch".
+5. **Finding F2 (chưa sửa):** bộ contract (GAME_BRIEF, HOW_TO, slices/, …) chưa từng được commit trên main. Coordinator mỗi slice phải copy file untracked vào worktree ("as S02 did"). Rủi ro: worktree mới không có contract, và tracked-diff/scope bị nhiễu. Cần director cho phép commit bộ contract.
