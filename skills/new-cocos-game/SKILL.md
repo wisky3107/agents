@@ -71,7 +71,7 @@ New Cocos Game:
 - [ ] 5. Wait until MCP for THIS project answers (Funplay pin / cocos-cli pinned port)
 - [ ] 5b. Fill AGENT_NOTES.md (bootstrap facts + fleet agent defaults + release.goal/deploy from intake)
 - [ ] 6. Initial commit
-- [ ] 6a. Register the project with orca-memory whenever the launcher exists (mode off; data owner from intake)
+- [ ] 6a. Register the project with orca-memory whenever the launcher exists (data owner from intake), then set the mode from intake item 9 (off unless the user asked)
 - [ ] 6b. If brief_author=fable → game-brief (idea|media) writes root contracts
 - [ ] 7. /setup-project with the brief (auto defaults unless special asks)
 - [ ] 8. If implement=yes → Orca agent in project (producer | single | fleet orchestrator)
@@ -135,6 +135,13 @@ Ask only what's missing:
 8. **Data owner** (only when `~/.orca-memory/bin/orca-memory` exists): who owns the game's data
    (e.g. `internal`), for Step 6a. Ask in the same intake message as any other missing item;
    never guess it and never leave it to the end of the run.
+9. **Memory mode** (only with the launcher; announce in one line, do not ask) for Step 6a:
+   - `assist`: the request asks for memory help: "memory hỗ trợ", "được memory hỗ trợ",
+     "orca memory", "memory assist", "dùng memory".
+   - `shadow`: "memory shadow", "chỉ đo memory", "memory không inject".
+   - `off` (default): the request says nothing about memory.
+   Keep the user's words; Step 6a quotes them in the mode note. cc-love-train asked for "các
+   config để được memory và playbook hỗ trợ" and was left off because this item did not exist.
 
 Do not invent a brief. No brief → still copy + register + open + MCP gate + commit,
 then stop before Step 6b / setup-project.
@@ -402,10 +409,18 @@ register; say so in the final report with the command above so the operator can 
 command appends the project with memory mode `off` and refuses a duplicate id or an overlapping
 path; that refusal is not a bootstrap failure. Leave out any fact you do not know (engine, mode,
 target) rather than guessing. Report the printed `{"registered":…}` line (or the refusal) in the
-final message. Turning memory on is a separate, deliberate operator step
-(`orca-memory mode --project <id> shadow --note "why"`); never do it here, and never on the
-user's behalf without an explicit request. `orca-memory doctor` lists active checkouts that were
-never registered.
+final message.
+
+Then apply intake item 9. Leave `off` alone. For `shadow` or `assist`, run once after a
+successful register:
+
+```bash
+"$M" mode --project <project id> <shadow|assist> --note "bootstrap request <date>: '<the user's words>'"
+```
+
+Only the user's own request turns memory on: never pick `shadow` or `assist` from a default,
+a brief, a template or another skill. Report the printed `{"from":"off","to":…}` line in the
+final message. `orca-memory doctor` lists active checkouts that were never registered.
 
 ---
 
