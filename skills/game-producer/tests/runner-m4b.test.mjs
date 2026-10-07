@@ -122,6 +122,15 @@ test('single lane: INFRA_BLOCKED with the port up → cursor for the rest of the
     assert.deepEqual(ff.spawns().slice(1).map((x) => x.agent), ['claude --model opus', 'claude --model opus', 'cursor --model auto']);
     assert.match(log(fz.root), /INFRA_BLOCKED for a frozen Orca tab while 127\.0\.0\.1:\d+ answers 200: a fresh reviewer with the Chrome headless fallback/);
 
+    // a sandbox that reached nothing (curl 000) or a missing Playwright is not a frozen tab: straight to Cursor
+    for (const body of ['curl: 000; page never became ready, frozen?\nINFRA_BLOCKED\n', 'rAF 0, then run-smoke --channel chrome: playwright not found\nINFRA_BLOCKED\n']) {
+      const nz = single();
+      const nf = fakes();
+      nf.queue([{ write: { ...W('ready_for_review'), ...preview(port) } }, { name: 'not frozen', write: { [H]: { role: 'reviewer', status: 'infra_blocked' }, [evRel('S01', 'review.md')]: body } }, { name: 'approved', write: R('approved', 'APPROVED') }, commitStep('S01')]);
+      runner(nz.root, nf, 'start', '--once');
+      assert.deepEqual(nf.spawns().slice(1).map((x) => x.agent), ['claude --model opus', 'cursor --model auto'], body);
+    }
+
     const n = project({ notes: NOTES(`${POLICY} no_cursor=true`), slices: { S01: { needs: false } } });
     const g = fakes();
     g.queue([{ write: { ...W('ready_for_review'), ...preview(port) } }, { name: 'infra', write: infra }]);

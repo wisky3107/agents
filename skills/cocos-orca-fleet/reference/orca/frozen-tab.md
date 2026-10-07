@@ -17,6 +17,9 @@ visible.
    On an Orca infra error it reruns the same checks in Playwright + real Google Chrome headless on
    the GPU and reports `channel: "chrome"` with `fallback: { from: "orca", reason }`. A check FAIL on
    Orca is a real failure, never a reason to switch.
+   A report with no `channel` field comes from a project whose run-smoke predates the fallback
+   (it ignores the flag): run `/update-skills`, or run the same check files by hand in Chrome with the
+   snippet from the template's smoke-test SKILL.md §Chrome headless fallback, and save the JSON.
 2. **Probe by hand only to explain a failure:**
    ```
    orca eval --json --expression "new Promise((r) => { let n = 0; const t = setTimeout(() => r({ raf: n, timeout: true, vis: document.visibilityState, focus: document.hasFocus() }), 2000); const f = () => (++n >= 10 ? (clearTimeout(t), r({ raf: n, timeout: false })) : requestAnimationFrame(f)); requestAnimationFrame(f); })"
@@ -25,8 +28,8 @@ visible.
 3. **Runtime review beyond smoke** (feel rows, real pointer input, viewport matrix, fps) runs in the
    same Chrome when the Orca tab is frozen, with the launch config from
    `.cursor/skills/smoke-test/SKILL.md` §Chrome headless fallback: one page per V-row
-   (`newPage({ viewport })`), real `page.mouse` / `page.touchscreen` input, `fireCrew`-style test
-   hooks, screenshots per row. These rows are verified, not `manual_required`. Only device-only
+   (`newPage({ viewport })`), real `page.mouse` / `page.touchscreen` input, the game's test hooks,
+   screenshots per row. These rows are verified, not `manual_required`. Only device-only
    rows (real notch, finger feel, audio on a phone) stay manual.
 4. **Record the channel**: `channel: chrome (Orca tab frozen, probe <result>)` in review.md, the
    `channel` field in runtime-state.json, and the run-smoke JSON as evidence.

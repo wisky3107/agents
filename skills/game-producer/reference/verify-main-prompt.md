@@ -20,7 +20,7 @@ do not open .cursor/skills/** unless a step names the file.
    active config's includeModules lists both the parent feature and its selected backend (for
    example physics + physics-ammo).
 4. Preview: reuse the healthy browser preview or run run_project_preview({mode:"browser"}) once,
-   then `node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <port of that preview>` must be
+   then `node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <port of that preview> --channel auto` must be
    green. Do not replay feel rows; the slice review already did. A big suite takes minutes: run it
    with a Bash timeout of 600000 (or in the background) and stdout to a file, e.g.
    `> <EVIDENCE_DIR>/verify-smoke.json`, then read that file. When
