@@ -920,3 +920,39 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
    - Thêm một lesson `cc-car-service-kids/T-S03` bare-finger.
    - Đây là lần thứ hai (sau pilot 11 S04) lesson audio first-tap được dùng qua lại giữa các dự án. 0 lessons row mới.
 5. **Tiếp theo:** runner sang S06 shell-and-settings (L, fleet, Run `run_af36acfe1731`, coordinator term_d4a2829a). Đến 19:48Z, art-2d có 3/10 ảnh fail look check; coordinator tự retry và dựng lại các task phụ thuộc.
+
+### Pilot 11 — S08 kết quả (S08 merge 2026-10-07 19:24Z, fleet, release slice)
+
+1. **Merge:** `e05238f` (slice `9984859`), bookkeeping `129acaf`. Thời gian 16:48 → 19:24Z = 2 h 36, trong đó ~1 h chờ gate deploy q21. `worktree_rm` đã xoá worktree, copy 54 ảnh chụp về `T-S08/captures/` (fix 671104b chạy lần 2).
+2. **Review:** 2 vòng, 2 fix round.
+   - r1 CHANGES_REQUESTED. F1 (major): Dim của popup không phủ mép màn hình thật ở V2/V3, trong khi integrator đã ghi PASS. Kèm 5 lỗi minor.
+   - r2 APPROVED.
+   - manual_deferred (8): RC-07 cảm giác chạm tay thật; RC-11 mở khoá âm thanh iOS Safari; RC-12 fps trên một điện thoại tầm trung cụ thể; RC-03 thời gian tap → frame đầu < 500 ms; RC-06 pinch/long-press; …
+3. **Câu hỏi:** đều do director trả lời.
+   - q19: debug handle trong release, slice tự mâu thuẫn → A.
+   - q20: xoá 12 file .meta folder mồ côi → A.
+   - q21: deploy preview → B, bỏ deploy (dự án chưa link Vercel; deploy.sh sẽ link vào project cc-monopoly).
+4. **Token:** fleet-orch 1 / 81 / 14.0M; fleet-worker 3 / 335 / 82.5M; producer 43.7k.
+5. **Memory:** coordinator và reviewer trích `cc-love-train/T-S07/lc-s07-release-safe-smoke`.
+6. **Step 3:** runner (`producer_mode: runner`) giao Step 3 cho một LLM producer (`term_698717e5…`, 19:24:37Z). Producer đang **chờ director ký nhận** các mục manual_deferred.
+   - Lựa chọn mặc định "Waive all, proceed (Recommended)" sẽ build và **deploy preview**, dù director đã chọn B ở q21, và dự án chưa có `build/.vercel` → rủi ro publish đè lên project `web-mobile` của cc-monopoly.
+   - Pilot không trả lời câu này (quyết định ship).
+   - **Finding:** prompt Step 3 không đọc quyết định "skip deploy" ở gate của S08 và vẫn đề xuất deploy.
+
+### Pilot 11 — tổng kết (cc-firefighter-kids S01→S08, 2026-10-07 06:30 → 19:24Z)
+
+- **8/8 slice đã merge**, khoảng 13 giờ đồng hồ (có 2 vụ kill hàng loạt và 1 lần reboot).
+- **Context Claude:** 475M trên 63 session (+ codex 10.6M). Coordinator fleet: S01 22.1M, S02 14.5M, S03 14.8M, S08 14.0M (S02/S03/S08 giảm ~40 % so với baseline S01). Single lane: S04 23.7M, S05 42.4M, S06 49.2M, S07 38.8M.
+- **Bản sửa workflow đã merge trong pilot:**
+  - judge đọc front matter (548dc10);
+  - judge đọc evidence qua symlink không chứa chữ "cursor" (6fb902e);
+  - laterRound nhận số vòng (dd0c105);
+  - fallback Chrome headless cho cả 5 nguồn template (3010d85 + template);
+  - dọn worktree cùng ảnh chụp (671104b).
+- **Finding còn mở:**
+  1. "mark blocked" sau `send_failed:commit` của single lane để lại code đã APPROVED trong main chưa commit, và runner chọn slice tiếp theo trên checkout dirty (S05, S07).
+  2. Worker/session chạy `pkill -f <pattern> -n` giết toàn bộ fleet (S06 writer 14:23Z, một session khác 16:07Z) → cần guardrail.
+  3. `deploy.sh` tự link theo tên thư mục `web-mobile` → dễ publish đè sang project khác.
+  4. Step 3 không mang theo quyết định "skip deploy" của slice.
+  5. `ensureEditor` chỉ chạy khi res-guard bật.
+  6. Lane art hero (orca-gpt-image-gen) fail với `browser_tab_not_found` (S03).
