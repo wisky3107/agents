@@ -928,6 +928,30 @@ test('worktree_rm: an evidence file written after the evidence step is copied be
   assert.equal(fs.existsSync(q.wt), true);
 });
 
+test('worktree_rm: untracked review captures (docs/evidence/<Sxx>/, a PNG in the evidence dir) are copied to main, then removed; another slice\'s capture keeps it', () => {
+  const { f, root, wt } = committedFleet();
+  write(wt, 'docs/evidence/S01/V1-ingame.png', 'PNG v1');
+  write(wt, 'docs/evidence/S01/feel/spray.png', 'PNG spray');
+  write(wt, evRel('S01', 'smoke-shot.png'), 'PNG smoke');
+  f.queue([VERIFIED]);
+  runner(root, f, 'start', '--once');
+  assert.equal(journal(root).steps.worktree_rm.kept, undefined);
+  assert.match(journal(root).steps.worktree_rm.note, /3 capture\(s\) → \.cursor\/evidence\/tasks\/T-S01\/captures\//);
+  assert.equal(fs.existsSync(wt), false);
+  const cap = (...p) => fs.readFileSync(path.join(root, '.cursor', 'evidence', 'tasks', 'T-S01', 'captures', ...p), 'utf8');
+  assert.equal(cap('docs', 'evidence', 'S01', 'V1-ingame.png'), 'PNG v1');
+  assert.equal(cap('docs', 'evidence', 'S01', 'feel', 'spray.png'), 'PNG spray');
+  assert.equal(cap(...evRel('S01', 'smoke-shot.png').split('/')), 'PNG smoke');
+  // a capture outside this slice's folder is not this slice's to drop
+  const q = committedFleet();
+  write(q.wt, 'docs/evidence/S01/V1-ingame.png', 'PNG v1');
+  write(q.wt, 'docs/evidence/S02/early.png', 'PNG other');
+  q.f.queue([VERIFIED]);
+  runner(q.root, q.f, 'start', '--once');
+  assert.equal(journal(q.root).steps.worktree_rm.kept, 'dirty');
+  assert.equal(fs.existsSync(q.wt), true);
+});
+
 test('bookkeeping commit: AGENT_NOTES.md and the tracked evidence only, by path — other changes and untracked files stay out', () => {
   const { f, root, sha } = committedFleet();
   // the director's own edit of a tracked file (staged ones block the merge itself) and an Editor's new
