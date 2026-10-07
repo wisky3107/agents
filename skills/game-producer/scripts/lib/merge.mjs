@@ -26,6 +26,29 @@ const RUNNER_FILE_RE = /^(?:producer-state\.json|producer-log\.md|merge-journal\
 // newer: in lego-stack T-S13 a 5-byte "none" stub there overwrote the real pack at merge.
 const PRODUCER_OWNED = ['/evidence/memory/plan/'];
 
+/**
+ * Untracked review captures (worktree-relative paths from `git status`), worktree → main's ignored
+ * `.cursor/evidence/tasks/T-<id>/captures/<same path>`, so removing the worktree loses none. → null | error text
+ */
+function copyCaptures(root, wt, id, files, prefix) {
+  if (!files.length) return null;
+  const top = git(wt, ['rev-parse', '--show-toplevel']).stdout.trim();
+  const to = path.join(root, '.cursor', 'evidence', 'tasks', `T-${id}`, 'captures');
+  try {
+    for (const f of files) {
+      // the project-relative part, never path math on wt: a symlinked worktree path (/tmp → /private/tmp)
+      // would put the copy outside captures/ and then lose it with the worktree
+      const dest = path.join(to, f.slice(prefix.length));
+      if (!f.startsWith(prefix) || path.relative(to, dest).startsWith('..')) return `captures: ${f} is outside the project`;
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.copyFileSync(path.join(top, f), dest);
+    }
+    return null;
+  } catch (e) {
+    return `captures: ${e.message}`;
+  }
+}
+
 /** The slice's evidence, worktree → main (no PNGs, no runner files, no producer-owned pack). → null | error text */
 function copyEvidence(root, wt, id) {
   const from = path.join(wt, '.cursor', 'evidence', 'tasks', `T-${id}`) + '/';
@@ -580,20 +603,33 @@ export function mergeStep(ctx, s, kit) {
       // worktree is never clean (pilot 1): changes only under this slice's evidence dir, already copied
       // to main by the evidence step, may go; anything else keeps the worktree
       let force = false;
+      let captures = [];
+      const prefix = git(j.wt, ['rev-parse', '--show-prefix']).stdout.trim();
       if (!kept) {
         const changed = changedPaths(j.wt);
         if (changed.length) {
-          const ev = `${git(j.wt, ['rev-parse', '--show-prefix']).stdout.trim()}.cursor/evidence/tasks/T-${id}/`;
+          const ev = `${prefix}.cursor/evidence/tasks/T-${id}/`;
           // only what copyEvidence carries: a PNG or a runner file there would be lost by --force
           const carried = (f) => f.startsWith(ev) && !/\.png$/i.test(f) && !RUNNER_FILE_RE.test(path.basename(f));
-          if (j.steps.evidence?.not_copied || !changed.every(carried)) kept = 'dirty';
+          // review captures nobody commits (PLAYTEST: docs/evidence/<Sxx>/*.png; a PNG in the evidence
+          // dir): copied to main's ignored evidence dir below, so they never keep the worktree
+          // (cc-firefighter-kids S01/S02 worktrees stayed forever over 6–7 MB of untracked PNGs)
+          const untracked = new Set(git(j.wt, ['ls-files', '--others', '--exclude-standard', '-z']).stdout.split('\0').filter(Boolean).map((f) => prefix + f));
+          const capture = (f) => untracked.has(f) && (f.startsWith(`${prefix}docs/evidence/${id}/`) || (f.startsWith(ev) && /\.png$/i.test(f)));
+          captures = changed.filter(capture);
+          if (j.steps.evidence?.not_copied || !changed.every((f) => carried(f) || capture(f))) kept = 'dirty';
           else force = true;
+        }
+        // PNGs in an ignored evidence dir never show as changes and the evidence copy skips them: keep them too
+        if (!kept) {
+          const ignored = git(j.wt, ['ls-files', '--others', '--ignored', '--exclude-standard', '-z', '--', `.cursor/evidence/tasks/T-${id}/`]).stdout.split('\0');
+          for (const f of ignored) if (/\.png$/i.test(f) && !captures.includes(prefix + f)) captures.push(prefix + f);
         }
       }
       if (!kept) {
         // copy again right before the removal: a file written after the evidence step (a resume hours
         // later, the coordinator still writing) reaches main too — ignored files go with the worktree
-        const err = copyEvidence(root, j.wt, id);
+        const err = copyEvidence(root, j.wt, id) || copyCaptures(root, j.wt, id, captures, prefix);
         if (err) kept = `evidence copy failed: ${err}`;
       }
       if (!kept) {
@@ -601,7 +637,7 @@ export function mergeStep(ctx, s, kit) {
         if (r.status !== 0 || r.parsed?.ok === false) kept = `rm failed: ${r.parsed?.error?.code || r.parsed?.error?.message || r.status}`;
       }
       stepDone(root, id, 'worktree_rm', kept ? { kept, note: `worktree kept (${kept})` }
-        : { note: force ? 'removed: only its evidence files had changed, copied to main first (branch kept)' : 'removed (branch kept)' });
+        : { note: force ? `removed: only its evidence files had changed, copied to main first${captures.length ? ` (${captures.length} capture(s) → .cursor/evidence/tasks/T-${id}/captures/)` : ''} (branch kept)` : 'removed (branch kept)', ...(captures.length ? { captures: captures.length } : {}) });
       return null;
     }
 
