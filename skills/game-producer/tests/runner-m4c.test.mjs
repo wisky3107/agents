@@ -6,7 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { loadProject, editSliceNote } from '../scripts/lib/project.mjs';
 import { harvestNote } from '../scripts/lib/merge.mjs';
-import { NOTES, POLICY, project, fakes, runner, runnerChild, until, evRel, ev, sliceState } from './harness.mjs';
+import { NOTES, POLICY, project, fakes, runner, runnerChild, until, evRel, ev, sliceState, clearControl } from './harness.mjs';
 
 // Merge journal (plan M4c) on a real git repo with a real slice worktree; the Editor scripts, the
 // probe, wait-mcp, `orca worktree rm` and the verifier lane are fakes.
@@ -88,6 +88,94 @@ const runnerFile = (root) => JSON.parse(fs.readFileSync(path.join(root, '.cursor
 const lessonCount = (root) => fs.readFileSync(path.join(root, '.cursor', 'evidence', 'lessons.jsonl'), 'utf8').trim().split('\n').length;
 const merges = (root) => g(root, 'rev-list', '--merges', 'HEAD').stdout.trim().split('\n').filter(Boolean).length;
 const editorLog = (f) => (fs.existsSync(path.join(f.dir, 'editor.log')) ? fs.readFileSync(path.join(f.dir, 'editor.log'), 'utf8').trim().split('\n') : []);
+
+test('fleet: HANDOFF committed with a sha main already has while the branch is ahead → wait, never "already in main" (pilot 8 S06 q11)', () => {
+  const { f, root, wt, sha } = fleet();
+  const baseSha = g(root, 'rev-parse', 'HEAD').stdout.trim();
+  // the coordinator wrote "committed" with the base sha before its slice commit was named
+  write(wt, evRel('S01', 'HANDOFF.json'), { role: 'coordinator', status: 'committed', sha: baseSha, detail: 'APPROVED fix_rounds=0' });
+  const st0 = JSON.parse(fs.readFileSync(ev(root, 'S01', 'producer-state.json'), 'utf8'));
+  fs.writeFileSync(ev(root, 'S01', 'producer-state.json'), JSON.stringify({ ...st0, phase: 'committing', commit_sha: null, commit_base: 0 }));
+  fs.writeFileSync(path.join(f.dir, 'runs.json'), JSON.stringify([{ id: 'run_1', coordinator_handle: 'term_c' }]));
+  runner(root, f, 'start', '--once', { timeout: 4000, env: { PRODUCER_RUNNER_IDLE_MS: '50' } });
+  const state = JSON.parse(fs.readFileSync(ev(root, 'S01', 'producer-state.json'), 'utf8'));
+  assert.equal(state.phase, 'committing');
+  assert.equal(fs.existsSync(ev(root, 'S01', 'merge-journal.json')), false);
+  assert.match(fs.readFileSync(ev(root, 'S01', 'producer-log.md'), 'utf8'), new RegExp(`HANDOFF says committed ${baseSha.slice(0, 7)}, but main already has it and the worktree branch is at ${sha.slice(0, 7)}`));
+  assert.equal(merges(root), 0);
+  // the HANDOFF names the slice commit: merged for real
+  write(wt, evRel('S01', 'HANDOFF.json'), { role: 'coordinator', status: 'committed', sha, detail: 'APPROVED fix_rounds=0' });
+  clearControl(root);
+  f.queue([VERIFIED]);
+  const out = runner(root, f, 'start', '--once').out;
+  assert.deepEqual(out.find((o) => o.merged), { merged: 'S01', commit: sha });
+  assert.equal(merges(root), 1);
+});
+
+test('fleet: a stale committed sha that never changes is asked after the grace period; the branch tip answer merges it', () => {
+  const { f, root, wt, sha } = fleet();
+  const baseSha = g(root, 'rev-parse', 'HEAD').stdout.trim();
+  write(wt, evRel('S01', 'HANDOFF.json'), { role: 'coordinator', status: 'committed', sha: baseSha, detail: 'APPROVED fix_rounds=0' });
+  const st0 = JSON.parse(fs.readFileSync(ev(root, 'S01', 'producer-state.json'), 'utf8'));
+  fs.writeFileSync(ev(root, 'S01', 'producer-state.json'), JSON.stringify({ ...st0, phase: 'committing', commit_sha: null, commit_base: 0 }));
+  fs.writeFileSync(path.join(f.dir, 'runs.json'), JSON.stringify([{ id: 'run_1', coordinator_handle: 'term_c' }]));
+  const env1 = { PRODUCER_RUNNER_IDLE_MS: '50', PRODUCER_RUNNER_STALE_SHA_MS: '200' };
+  runner(root, f, 'start', '--once', { timeout: 6000, env: env1 }); // first sight: logged, waits
+  assert.equal(sliceState(root, 'S01').phase, 'committing');
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
+  clearControl(root);
+  const o = runner(root, f, 'start', '--once', { timeout: 6000, env: env1 }).out.find((x) => x.blocked);
+  assert.deepEqual([o.blocked, o.options], ['commit_sha_stale', ['the branch tip is the slice commit', 'HANDOFF is right, merge as is', 'mark blocked', 'stop']]);
+  assert.equal(merges(root), 0);
+  runner(root, f, 'answer', '--id', o.question, '--choice', 'the branch tip is the slice commit');
+  clearControl(root);
+  f.queue([VERIFIED]);
+  const out = runner(root, f, 'start', '--once').out;
+  assert.deepEqual(out.find((x) => x.merged), { merged: 'S01', commit: sha });
+  assert.equal(merges(root), 1);
+});
+
+test('fleet: "HANDOFF is right, merge as is" takes the HANDOFF as it is when answered, not the stale sha first seen', () => {
+  const { f, root, wt, sha } = fleet();
+  const baseSha = g(root, 'rev-parse', 'HEAD').stdout.trim();
+  write(wt, evRel('S01', 'HANDOFF.json'), { role: 'coordinator', status: 'committed', sha: baseSha, detail: 'APPROVED fix_rounds=0' });
+  const st0 = JSON.parse(fs.readFileSync(ev(root, 'S01', 'producer-state.json'), 'utf8'));
+  fs.writeFileSync(ev(root, 'S01', 'producer-state.json'), JSON.stringify({ ...st0, phase: 'committing', commit_sha: null, commit_base: 0 }));
+  fs.writeFileSync(path.join(f.dir, 'runs.json'), JSON.stringify([{ id: 'run_1', coordinator_handle: 'term_c' }]));
+  const env1 = { PRODUCER_RUNNER_IDLE_MS: '50', PRODUCER_RUNNER_STALE_SHA_MS: '200' };
+  runner(root, f, 'start', '--once', { timeout: 6000, env: env1 });
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
+  clearControl(root);
+  const o = runner(root, f, 'start', '--once', { timeout: 6000, env: env1 }).out.find((x) => x.blocked);
+  assert.equal(o.blocked, 'commit_sha_stale');
+  // the coordinator names the slice commit while the question is open
+  write(wt, evRel('S01', 'HANDOFF.json'), { role: 'coordinator', status: 'committed', sha, detail: 'APPROVED fix_rounds=0' });
+  runner(root, f, 'answer', '--id', o.question, '--choice', 'HANDOFF is right, merge as is');
+  clearControl(root);
+  f.queue([VERIFIED]);
+  const out = runner(root, f, 'start', '--once').out;
+  assert.deepEqual(out.find((x) => x.merged), { merged: 'S01', commit: sha });
+  assert.equal(merges(root), 1);
+});
+
+test('fleet: a committed sha main has and a worktree branch main also has (nothing new) is no stale sha', () => {
+  const { f, root, wt } = fleet();
+  // the slice commit was merged by hand already: branch tip and HANDOFF sha are both in main
+  g(root, 'merge', '--no-ff', '-q', '--no-edit', 'S01-feature');
+  const tip = g(wt, 'rev-parse', 'HEAD').stdout.trim();
+  write(wt, evRel('S01', 'HANDOFF.json'), { role: 'coordinator', status: 'committed', sha: tip, detail: 'APPROVED fix_rounds=0' });
+  const st0 = JSON.parse(fs.readFileSync(ev(root, 'S01', 'producer-state.json'), 'utf8'));
+  fs.writeFileSync(ev(root, 'S01', 'producer-state.json'), JSON.stringify({ ...st0, phase: 'committing', commit_sha: null, commit_base: 0 }));
+  fs.writeFileSync(path.join(f.dir, 'runs.json'), JSON.stringify([{ id: 'run_1', coordinator_handle: 'term_c' }]));
+  runner(root, f, 'start', '--once', { timeout: 6000, env: { PRODUCER_RUNNER_IDLE_MS: '50' } });
+  assert.doesNotMatch(fs.readFileSync(ev(root, 'S01', 'producer-log.md'), 'utf8'), /waiting for the HANDOFF to name the slice commit/);
+  assert.equal(sliceState(root, 'S01').commit_sha, tip);
+  clearControl(root);
+  f.queue([VERIFIED]);
+  const out = runner(root, f, 'start', '--once').out;
+  assert.match(fs.readFileSync(ev(root, 'S01', 'producer-log.md'), 'utf8'), /merge: merge done \(already in main\)/);
+  assert.deepEqual(out.find((x) => x.merged), { merged: 'S01', commit: tip });
+});
 
 test('fleet merge journal: harvest → evidence → close both Editors → merge --no-ff → worktree rm → reopen → verify → record', async () => {
   const { f, root, wt, sha } = fleet();

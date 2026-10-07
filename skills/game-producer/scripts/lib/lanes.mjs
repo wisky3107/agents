@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { sliceFront, sliceSize, sliceWorktrees, budgetMode, liteWhenNoAssets, isCc4, ripStudy } from './project.mjs';
 import * as st from './state.mjs';
 import * as io from './orca.mjs';
-import { mergeStep, applyMergeAnswer, MERGE_KINDS } from './merge.mjs';
+import { mergeStep, applyMergeAnswer, MERGE_KINDS, isAncestor } from './merge.mjs';
 import * as cq from './coordq.mjs';
 import { ready as agentReady, family } from '../../../cocos-orca-fleet/scripts/agent-ready.mjs';
 
@@ -956,14 +956,52 @@ function namesSlice(ctx, c) {
   return gitOut(ctx.project.root, ['show', '--name-only', '--format=', c.sha]).split('\n').some((f) => id.test(f));
 }
 
+/**
+ * A fleet HANDOFF "committed" whose sha main already has while the worktree branch still has commits
+ * main lacks: the coordinator named the base (or a pre-commit HEAD) before its commit landed. Taken
+ * as is, the merge sees "already in main" and never merges the branch (pilot 8 S06: 00647e9 for
+ * 60efb0e, fixed in the HANDOFF 9 s later). → the branch tip, or null when the sha is fine.
+ */
+function staleFleetSha(ctx, s, sha) {
+  if (ctx.lane !== 'fleet' || !isAncestor(ctx.project.root, sha)) return null;
+  const wt = s.worktree || fleetHandoff(ctx.project.root, ctx.id).wt;
+  if (!wt) return null;
+  const tip = spawnSync('git', ['-C', wt, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout?.trim();
+  return tip && !tip.startsWith(sha) && !isAncestor(ctx.project.root, tip) ? tip : null;
+}
+
+// how long a stale committed sha may wait for the HANDOFF to catch up before the director is asked
+const STALE_SHA_MS = () => Number(process.env.PRODUCER_RUNNER_STALE_SHA_MS || 180000);
+
+/**
+ * HANDOFF committed with a sha → the merge phase, unless the sha is stale: then wait for the HANDOFF
+ * to catch up (S06: 9 s), and past STALE_SHA_MS (the coordinator died, or the branch moved on after
+ * the slice commit) ask which commit is the slice's.
+ */
+function committedTo(ctx, s, sha) {
+  const tip = staleFleetSha(ctx, s, sha);
+  if (tip) {
+    if (s.stale_commit_sha !== sha) {
+      st.writeSliceState(ctx.project.root, ctx.id, { stale_commit_sha: sha, stale_commit_since: Date.now() });
+      st.log(ctx.project.root, ctx.id, `HANDOFF says committed ${sha.slice(0, 7)}, but main already has it and the worktree branch is at ${tip.slice(0, 7)}: waiting for the HANDOFF to name the slice commit`);
+      return PAUSE;
+    }
+    if (Date.now() - (s.stale_commit_since || 0) < STALE_SHA_MS()) return PAUSE;
+    return ask(s, 'commit_sha_stale',
+      `HANDOFF says committed ${sha.slice(0, 7)}, which main already has, but the worktree branch is at ${tip.slice(0, 7)} (not in main) and the HANDOFF has not changed for ${Math.round(STALE_SHA_MS() / 1000)} s: merging ${sha.slice(0, 7)} would merge nothing`,
+      ['the branch tip is the slice commit', 'HANDOFF is right, merge as is', 'mark blocked', 'stop'], { ref: tip, obs: `commit_sha_stale@${sha}` });
+  }
+  setPhase(ctx.project.root, ctx.id, 'merge', { commit_sha: sha });
+  return null;
+}
+
 function committing(ctx, s, w, h, held = false) {
   const { root } = ctx.project;
   if (w.event === 'orca-error') return orcaError(root, ctx.id, s, w);
   if (h.fresh && !h.ok) return badHandoff(root, ctx.id, s, '(lane HANDOFF.json)');
   parsedAgain(root, ctx.id, s, h);
   if (h.status === 'committed' && h.sha) {
-    setPhase(root, ctx.id, 'merge', { commit_sha: h.sha });
-    return null;
+    return committedTo(ctx, s, h.sha);
   }
   const lane = ctx.lane === 'fleet' ? 'coordinator' : 'writer';
   if (h.status === 'blocked') return ask(s, 'lane_blocked', `commit blocked: ${h.detail || 'no detail'}`, LANE_BLOCKED_OPTIONS, { obs: `lane_blocked@${h.mtime}` });
@@ -1106,10 +1144,7 @@ function fleetStep(ctx, s, phase) {
   if (h.fresh && !h.ok) return badHandoff(root, id, s, handoff);
   parsedAgain(root, id, s, h);
   const obs = (code) => `${code}@${h.mtime || 0}`;
-  if (h.status === 'committed' && h.sha) {
-    setPhase(root, id, 'merge', { commit_sha: h.sha });
-    return null;
-  }
+  if (h.status === 'committed' && h.sha) return committedTo(ctx, s, h.sha);
   if (h.status === 'offer_commit') {
     setPhase(root, id, 'accept', { bad_handoff: 0 });
     return null;
@@ -1200,6 +1235,17 @@ export function applyAnswer(ctx, q) {
       ack();
       st.log(root, id, `the director took ${q.ref.slice(0, 7)} as the slice commit`);
       return setPhase(root, id, 'merge', { commit_sha: q.ref });
+    case 'commit_sha_stale:the branch tip is the slice commit':
+      if (!/^[0-9a-f]{40}$/.test(q.ref || '')) throw new Error('no branch tip recorded with the question');
+      st.log(root, id, `the director took the branch tip ${q.ref.slice(0, 7)} as the slice commit`);
+      return setPhase(root, id, 'merge', { commit_sha: q.ref });
+    case 'commit_sha_stale:HANDOFF is right, merge as is': {
+      // the HANDOFF as it is now: the coordinator may have named the slice commit while the question was open
+      const h = readHandoff(fleetHandoff(root, id).file, -1);
+      const sha = h.status === 'committed' && h.sha ? h.sha : s.stale_commit_sha;
+      st.log(root, id, `the director kept the HANDOFF commit ${String(sha).slice(0, 7)}`);
+      return setPhase(root, id, 'merge', { commit_sha: sha });
+    }
     case 'commit_stalled:resend commit':
       ack();
       return sendOnce(ctx, `commit:${q.id}`, laneHandle, commitText(ctx), { commit_idles: 0 });
