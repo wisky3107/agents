@@ -511,3 +511,29 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
   I ratified both as delegated director (S09-D9).
   Authoring finding (mine): the pre-check missed that a new error code forces edits to every exhaustive `Record<ApiErrorCode>`, and that a slice which replaces an earlier decision (S08-D4) must name the spec asserting it. Lesson for game-brief/workflow-pilot step 2: grep for exhaustive enum maps and for specs that pin the decision being superseded.
 - Ticket grep over the working tree (excluding local/): 0 hits.
+
+### Pilot 10 — kết quả (S09 merge 2026-10-07 07:32Z)
+
+1. **Merge:** S09 commit `e5c2bfd`, single lane, commit thẳng vào main. Bookkeeping `df364e5`. Main đã push lên origin. Từ lúc launch (06:38Z) đến merge mất 54 phút, không lần nào bị dừng.
+2. **Review:** 1 vòng, APPROVED, không có vòng sửa.
+   - Runner không hỏi câu nào. Điểm duy nhất cần quyết là writer xin duyệt hai chỗ sửa ngoài paths; tôi duyệt sẵn (S09-D9) trước khi reviewer chạm tới.
+   - Smoke chạy trên CDP headless: 43/44 PASS, S09 7/7. Check fail duy nhất là `s07-release` (template branding trên editor preview), lỗi có sẵn từ baseline S08.
+   - Orca run-smoke lại bị infra_error (tab 0 rAF, worktree không được chọn), nên reviewer chuyển sang CDP headless.
+3. **Token:** slice-agent 2 session, 212 turn, 48.6M. So với S08 (24.6M) thì gấp đôi, ngang S05 (43.3M). Đây là slice adapter giao thức, có cả chạy live và 7 smoke check mới.
+4. **Câu hỏi runner:** 0.
+5. **Gọi BE thật** (BE Dev, qua proxy local, bằng ticket test):
+   - Writer: vào game 1 lần (`/bond/state` + `/wallet`), select 1 lần (CAT, gói FREE: Tim +10, CARE_FEED +1), act 1 lần (FEED, thanh từ 0 lên 5).
+   - Reviewer: vào game 1 lần, chỉ đọc.
+   - Tôi: đọc state 2 lần. Đúng giới hạn S09-D3.
+   - State tài khoản sau test: CAT, 5 điểm, Tim 540, FEED 11.
+   - Grep ticket trong commit, tree, evidence và PNG: 0 lần.
+6. **Sự cố:** không có sự cố runner. Phát hiện:
+   - Lỗi lúc viết slice: thiếu hai chỗ phải sửa là `Record<ApiErrorCode>` exhaustive và spec S08 đang khẳng định quyết định cũ. Đã duyệt bằng S09-D9.
+   - `api.cdn_base` phải nằm trong game-config, vì `EnvConfig.applyEnv` bỏ các key overlay lạ (F-30).
+   - Kênh CDP headless giải được vấn đề Orca không render, đáng đưa vào workflow làm kênh runtime chuẩn.
+7. **Memory:** off.
+8. **Bài học:**
+   - Pre-check khi viết slice phải grep các map enum exhaustive và các spec đang khẳng định quyết định sắp bị thay.
+   - Với API có CORS chặt, phải probe preflight trước khi viết slice; proxy local cùng origin là cách test nhanh nhất.
+   - Ticket test chỉ để ở `local/` (gitignored) và luôn được scrub khỏi log. Cách này giữ được ticket an toàn qua cả writer lẫn reviewer.
+   - Reviewer dùng CDP headless khi tab Orca không render. Đây là ứng viên để sửa điểm nghẽn lớn nhất của pilot 8.
