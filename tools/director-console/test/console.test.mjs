@@ -63,8 +63,10 @@ before(async () => {
   fs.writeFileSync(path.join(playbook, 'registry.json'), JSON.stringify({ recipes: [{ id: 'r1', status: 'candidate', path: 'recipes/r1.md', summary: 'one recipe' }] }));
   fs.writeFileSync(path.join(playbook, 'recipes', 'r1.md'), '# r1\n');
   fs.writeFileSync(path.join(root, 'secret.md'), 'outside');
+  // res-guard: no watcher state until the resources test writes one; a fake CLI records its argv
+  fs.writeFileSync(path.join(root, 'res-guard.mjs'), `import fs from 'node:fs';\nfs.appendFileSync(${JSON.stringify(path.join(root, 'rg-argv.jsonl'))}, JSON.stringify(process.argv.slice(2)) + '\\n');\nconsole.log('closed');\n`);
   port = 17000 + Math.floor(Math.random() * 2000);
-  srv = spawn(process.execPath, [SERVER], { env: { ...process.env, ORCA_MEMORY_HOME: home, CONSOLE_PORT: String(port), CONSOLE_TOKEN: TOKEN, CONSOLE_GAMES_ROOT: games, CONSOLE_RUNNER_DIR: runnerDir, CONSOLE_ORCA_BIN: orca, CONSOLE_PLAYBOOK: playbook, CONSOLE_LOG_DIR: logs, PRODUCER_RUNNER_TRANSLATE_CMD: translator, CC_SPAWN_REGISTRY: path.join(root, 'spawns.jsonl'), CONSOLE_TAILNET_HOST: 'mac.tail0.ts.net', CONSOLE_TAILNET_USERS: 'me@example.com' }, stdio: ['ignore', 'pipe', 'inherit'] });
+  srv = spawn(process.execPath, [SERVER], { env: { ...process.env, ORCA_MEMORY_HOME: home, CONSOLE_PORT: String(port), CONSOLE_TOKEN: TOKEN, CONSOLE_GAMES_ROOT: games, CONSOLE_RUNNER_DIR: runnerDir, CONSOLE_ORCA_BIN: orca, CONSOLE_PLAYBOOK: playbook, CONSOLE_LOG_DIR: logs, CONSOLE_RES_GUARD_HOME: path.join(root, 'rg'), CONSOLE_RES_GUARD_CLI: path.join(root, 'res-guard.mjs'), PRODUCER_RUNNER_TRANSLATE_CMD: translator, CC_SPAWN_REGISTRY: path.join(root, 'spawns.jsonl'), CONSOLE_TAILNET_HOST: 'mac.tail0.ts.net', CONSOLE_TAILNET_USERS: 'me@example.com' }, stdio: ['ignore', 'pipe', 'inherit'] });
   await new Promise((resolve) => srv.stdout.once('data', resolve));
 });
 
@@ -194,4 +196,32 @@ test('agent-written files: deferred checks and round counts in every shape becom
   assert.deepEqual(deferredItems({ items: { status: 'manual', items: ['real device'] } }), ['real device']);
   assert.deepEqual(deferredItems(null), []);
   assert.deepEqual([rounds(2), rounds([{ round: 1 }, { round: 2 }]), rounds({ count: 3 }), rounds('x'), rounds(null)], [2, 2, 3, null, null]);
+});
+
+test('resources: res-guard state becomes the resources payload and live attention rows; editor.close runs only its CLI with an absolute path', async () => {
+  const rg = path.join(root, 'rg');
+  fs.mkdirSync(path.join(rg, 'run', 'res-guard'), { recursive: true });
+  fs.mkdirSync(path.join(rg, 'logs', 'res-guard'), { recursive: true });
+  const now = new Date().toISOString();
+  const last = { at: now, availPct: 38, pressure: 'warn', swapUsedMB: 4700, compressorMB: 6000, diskFreeGB: 58, editors: [{ pid: 9, project: '/g/cc-a', footMB: 2300 }], claude: { n: 3, footMB: 900 }, omniroute: { pid: 5, footMB: 1000 }, top: [] };
+  const state = { lastTick: now, last, alerts: [{ key: 'swap:high', level: 'warning', title: 'Swap 4.6 GB', body: 'CocosCreator 0.5 GB' }],
+    editorVerdicts: [{ pid: 9, project: '/g/cc-a', footMB: 2300, verdict: 'keep', why: 'in use: worker S07 (pid 1)' }] };
+  fs.writeFileSync(path.join(rg, 'run', 'res-guard', 'state.json'), JSON.stringify(state));
+  fs.writeFileSync(path.join(rg, 'logs', 'res-guard', `samples-${now.slice(0, 10)}.jsonl`), [JSON.stringify({ ...last, at: new Date(Date.now() - 60000).toISOString() }), JSON.stringify(last)].join('\n') + '\n');
+  fs.writeFileSync(path.join(rg, 'logs', 'res-guard.jsonl'), JSON.stringify({ at: now, kind: 'editor_close', project: '/g/cc-b', why: 'idle 21 min' }) + '\n');
+  const r = (await call('GET', '/api/resources')).json;
+  assert.equal(r.stale, false);
+  assert.deepEqual(r.trend.map((p) => [p.availPct, p.swapGB, p.editors]), [[38, 4.6, 1], [38, 4.6, 1]]);
+  assert.equal(r.editors[0].verdict, 'keep');
+  assert.equal(r.events[0].kind, 'editor_close');
+  const keys = (await call('GET', '/api/attention')).json.items.map((i) => i.key);
+  assert.ok(keys.includes('res-guard:swap:high'));
+  // a watcher that stopped ticking is one warning row, not stale numbers
+  fs.writeFileSync(path.join(rg, 'run', 'res-guard', 'state.json'), JSON.stringify({ ...state, lastTick: '2026-10-07T00:00:00Z' }));
+  const rows = (await call('GET', '/api/attention')).json.items.filter((i) => i.key.startsWith('res-guard:'));
+  assert.deepEqual(rows.map((i) => [i.key, i.level, i.href]), [['res-guard:stale', 'warning', '#resources']]);
+  assert.equal((await call('POST', '/api/action/editor.close', { body: { project: 'relative/path' } })).status, 400);
+  assert.equal((await call('POST', '/api/action/editor.close', { body: { project: '/g/cc-a' } })).json.ok, true);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root, 'rg-argv.jsonl'), 'utf8').trim()), ['close-editor', '--project', '/g/cc-a', '--reason', 'director console']);
+  fs.rmSync(path.join(rg, 'run'), { recursive: true });
 });

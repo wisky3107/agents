@@ -20,6 +20,7 @@ import * as st from './state.mjs';
 import * as io from './orca.mjs';
 import { mergeStep, applyMergeAnswer, MERGE_KINDS, isAncestor } from './merge.mjs';
 import * as cq from './coordq.mjs';
+import { admit, ensureEditor, closeMain } from './editors.mjs';
 import { ready as agentReady, family } from '../../../cocos-orca-fleet/scripts/agent-ready.mjs';
 
 const REF = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'reference');
@@ -570,6 +571,8 @@ function spawnOnce(ctx, key, opts) {
     return ask(s, 'spawn_unconfirmed', `a ${key} spawn started at ${since} was interrupted and the spawn registry has no terminal for it; check Orca for a "${opts.title}" terminal`,
       ['no lane terminal exists, spawn it', 'reattach the handle given in --text', 'mark blocked', 'stop'], { ref: key });
   }
+  // res-guard admission: a machine short on memory holds the spawn, the step asks again next idle tick
+  if (!admit(ctx, root, `the ${key} spawn`)) return PAUSE;
   const intent = st.now();
   st.writeSliceState(root, id, { [`${key}_spawning`]: intent });
   let r;
@@ -709,11 +712,16 @@ function staticGate(ctx, s, h) {
   return false;
 }
 
+// single-lane spawns of an agent that works in main's editor: reopen it first if res-guard closed it.
+// Not the wait phases: a live writer or reviewer runs the editor itself (and res-guard keeps it open).
+const EDITOR_PHASES = new Set(['spawn-writer', 'respawn-writer', 'spawn-reviewer']);
+
 function singleStep(ctx, s, phase) {
   const { project, id } = ctx;
   const root = project.root;
   const handoff = handoffMain(root, id);
   const evidence = evidenceDir(root, id);
+  if (EDITOR_PHASES.has(phase) && !ensureEditor(ctx, phase)) return PAUSE;
 
   if (phase === 'spawn-writer') {
     const pack = planPack(ctx, s, prompts(project, id));
@@ -1090,7 +1098,10 @@ function fleetStep(ctx, s, phase) {
       st.log(root, id, `fleet Run ${run}`);
     }
   }
-  if (wt && wt !== s.worktree) st.writeSliceState(root, id, { worktree: wt });
+  if (wt && wt !== s.worktree) {
+    st.writeSliceState(root, id, { worktree: wt });
+    closeMain(ctx, wt); // main's editor only waits while the fleet works in the worktree
+  }
   // never pick the coordinator by worktree or title: the Run names it, the spawn handle until then
   const w = wait(ctx, s, 'fleet', run ? { handoff, run } : { handoff, handle: s.coordinator });
   const coordinator = w.handle || s.coordinator;

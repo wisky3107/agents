@@ -103,9 +103,12 @@ to Source=generate. Review checks behavior parity scenarios as well as EXPECT vi
   cc4: `cocos-cli-mcp.config.json`). Two editors (main + feature worktree, or two different games)
   can therefore run side by side; the rule is that **this fleet edits through exactly one of them**:
   the feature worktree's. Hence: one feature worktree per fleet, one integrator, one editor lock.
-  Writer and Art share that worktree with disjoint path allowlists. The main-checkout editor opened
-  by `/new-cocos-game` may stay open (it owns a different port) but nobody in the fleet touches it;
-  close it if RAM is tight (`scripts/close-mcp.sh --kill` on cc4; `scripts/close-editor.sh` on 3.8).
+  Writer and Art share that worktree with disjoint path allowlists. Nobody in the fleet touches the
+  main-checkout editor, and it does not stay open: once the feature worktree exists the producer
+  runner closes it, and `~/.agents/tools/res-guard` (launchd, every minute) closes a main editor that
+  only waits; the merge's `reopen` step opens it again for the verifier. Without the runner, close it
+  yourself (`scripts/close-mcp.sh --kill` on cc4; `scripts/close-editor.sh` on 3.8) — a 16 GB Mac
+  holds about two editors next to the agents.
 - **Parity is by project identity, not by a global port.** Before any editor mutation the integrator
   runs `probe.mjs` in the worktree against the pinned URL. Wrong project / unreachable → stop, `ask`;
   never edit through another checkout's channel.

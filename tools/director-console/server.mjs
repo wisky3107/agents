@@ -91,6 +91,7 @@ const GET = {
   '/api/playbook': () => lib.playbook(),
   '/api/recipe': (q) => ({ path: q.get('path'), text: lib.recipeText(q.get('path')) }),
   '/api/actions': () => ({ actions: lib.ACTION_NAMES, log: lib.actionLog() }),
+  '/api/resources': () => lib.resources(),
 };
 
 const server = http.createServer(async (req, res) => {
