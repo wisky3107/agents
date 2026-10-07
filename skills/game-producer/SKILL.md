@@ -109,6 +109,11 @@ node ~/.agents/skills/game-producer/scripts/producer-runner.mjs start --dry-run 
   (`reference/judge-prompt.md`) answers fleet gates and lane questions the contracts already settle,
   unknown HANDOFF statuses and verdict-line mismatches; it can only pick an offered option or defer,
   never stop / block. Other providers are not verified yet: their questions go to the director.
+- **Question language** (`release.question_lang`; a missing key means `vi` since 2026-10-07, while `""`
+  or `en` keeps English): the macOS answer dialog shows the question, the judge's reason and every
+  option translated by one `claude -p` sonnet call (`lib/translate.mjs`), cached on the question as
+  `q.lang`. The pick still maps to the exact English option. The director console's runner cards
+  show the same translation.
 - **Cursor that cannot log in** (`cursor-agent status` can say "Logged in" while every run waits at
   the login screen): the runner probes once per run (`cocos-orca-fleet/scripts/agent-ready.mjs`).
   Cursor off and a lane, coordinator, verifier or LLM producer on a Cursor spec → before that spawn,

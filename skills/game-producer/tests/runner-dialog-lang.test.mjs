@@ -109,11 +109,20 @@ test('question_lang vi: a failed or incomplete translation leaves the dialog in 
   assert.ok(q1(s.p).lang.failed);
 });
 
-test('no question_lang: no translate call, English dialog', () => {
+test('no question_lang key: Vietnamese by default', () => {
   const s = setup({ lang: '', replies: [] });
   run(s);
-  assert.equal(translateCalls(s.f), 0);
-  assert.deepEqual(osaRuns(s.f)[0].args.slice(2, 4), ['Answer', 'Later']);
+  assert.equal(translateCalls(s.f), 1);
+  assert.deepEqual(osaRuns(s.f)[0].args.slice(2, 4), ['Trả lời', 'Để sau']);
+});
+
+test('question_lang "" or en: no translate call, English dialog', () => {
+  for (const lang of ['""', 'en']) {
+    const s = setup({ lang, replies: [] });
+    run(s);
+    assert.equal(translateCalls(s.f), 0, lang);
+    assert.deepEqual(osaRuns(s.f)[0].args.slice(2, 4), ['Answer', 'Later'], lang);
+  }
 });
 
 test('question_lang vi: options the model reordered are rejected (the pick maps by position)', () => {

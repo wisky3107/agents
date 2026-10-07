@@ -1,6 +1,7 @@
 /**
  * The director's language for the answer dialog (pilot 8, 2026-10-06: the director could not read the
- * cut-off English question and options). AGENT_NOTES `release.question_lang: vi` → one `claude -p`
+ * cut-off English question and options). AGENT_NOTES `release.question_lang: vi` (the default since
+ * 2026-10-07 when the key is missing; `""` keeps English) → one `claude -p`
  * call per question turns the question, the judge's reason and every option into that language,
  * kept on the question (`q.lang`, keyed by a hash of what was translated: a refreshed question is
  * translated again) so a reopened dialog does not ask again. The answer still goes in as the exact
@@ -21,9 +22,14 @@ const MODEL = 'sonnet';
 const TIMEOUT_MS = 120000;
 const RETRY_MS = 10 * 60 * 1000;
 
-/** The language the director reads questions in (`release.question_lang`), or null for English. */
+// The director reads Vietnamese (2026-10-07): a project with no `question_lang` key gets it.
+const DEFAULT_LANG = 'vi';
+
+/** The language the director reads questions in (`release.question_lang`; missing → DEFAULT_LANG,
+ *  `""` or `en` → English), or null for English. */
 export function questionLang(project) {
-  const v = String(project?.release?.question_lang || '').trim().toLowerCase();
+  const raw = project?.release?.question_lang;
+  const v = String(raw === undefined ? DEFAULT_LANG : raw ?? '').trim().toLowerCase();
   return NAMES[v] ? v : null;
 }
 

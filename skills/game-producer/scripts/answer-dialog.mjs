@@ -6,7 +6,8 @@
  * through lib/answer.mjs like the CLI. Answered another way meanwhile → the dialog is closed and
  * nothing is written. "Later" closes it; the terminal and `answer` still work.
  *
- * AGENT_NOTES `release.question_lang: vi` (lib/translate.mjs): the question, the judge's reason and
+ * AGENT_NOTES `release.question_lang: vi`, the default when the key is missing (`""` = English;
+ * lib/translate.mjs): the question, the judge's reason and
  * every option are shown translated, each option in full in the prompt and as a short numbered row in
  * the list (list rows cut long text); the pick maps back to the exact English option. The last row
  * opens the whole question (translation and English) in a text editor, then the list comes back.

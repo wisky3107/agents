@@ -261,6 +261,8 @@ export const env = (root, fake) => ({
   PRODUCER_RUNNER_CLAUDE_SETTINGS: path.join(fake.dir, 'claude-settings.json'),
   PRODUCER_RUNNER_NOTIFY_CMD: path.join(fake.dir, 'notify'),
   PRODUCER_RUNNER_DIALOG: '0', // never a real dialog; tests that want one set it with a fake osascript
+  // Vietnamese is the default question language: never a real `claude -p` translation in tests
+  PRODUCER_RUNNER_TRANSLATE_CMD: path.join(fake.dir, 'no-translate'),
   PRODUCER_RUNNER_TTY: '0', // no terminal prompt unless a test pipes one
   PRODUCER_RUNNER_CURSOR: 'on', // no real cursor-agent probe in tests
   CC_SPAWN_REGISTRY: path.join(fake.dir, 'registry.jsonl'),
