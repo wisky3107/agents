@@ -749,3 +749,11 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
   - Bộ đếm delay chạy trên scheduler của Cocos, không dùng setTimeout, vì smoke dùng `director.tick`.
   - Recipe: `full-screen-cover-overlay-real-edges` (sha pinned).
 - **Cấu hình:** runner pid 55549, terminal `term_ae063f5e…`; writer opus high `term_b9b7041d…`; reviewer opus; memory assist, plan pack 7 items / ~2.0k tokens.
+
+### Pilot 11 — S06 kết quả (S06 merge 2026-10-07 15:33Z, single lane)
+
+1. **Merge:** `81c2f33`, bookkeeping `26a2666`. Thời gian 14:53 → 15:33Z = 40 phút (chạy lại từ đầu sau khôi phục S05). 0 câu hỏi.
+2. **Review:** 1 vòng, APPROVED, 0 fix round. manual_deferred (3): nghe Sound/Music off bằng tai; flame flicker vẫn giữ khi Reduce motion bật; backgrounding trên iOS Safari thật (A20).
+3. **Token:** slice-agent 2 sess / 176 turns / 42.5M.
+4. **Kiểm chứng fallback:** reviewer chạy `run-smoke --channel auto`. Orca báo "page never became ready" → tự chạy lại trên Chrome headless + Playwright (GPU), có ghi kênh trong review.md. Đây là lần đầu `--channel auto` chạy thật trong một slice.
+5. **Memory:** writer trích lesson `T-S02/s02-gear-gated-entry-keeps-start-hook`. Reviewer ghi `none` kèm lý do (pack không có item liên quan S06).
