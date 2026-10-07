@@ -3,8 +3,13 @@
 // triage, memory modes and records, pilots, playbook, scorecard). Listens on 127.0.0.1 only, checks
 // the Host header (no DNS rebinding) and wants the session token on every /api call; actions are
 // POST with a JSON body and run only the allowlisted CLIs in lib.mjs.
+// Tailnet access goes through `tailscale serve` (HTTPS proxy to 127.0.0.1, never funnel). A request
+// that came through it (the tailnet Host, or any Tailscale-User-Login header) must also carry a
+// Tailscale-User-Login in CONSOLE_TAILNET_USERS.
 //   node ~/.agents/tools/director-console/server.mjs [--port 7792]
-// Env: CONSOLE_PORT, CONSOLE_TOKEN (default: the .token file, made once), plus the CONSOLE_* paths in lib.mjs.
+// Env: CONSOLE_PORT, CONSOLE_TOKEN (default: the .token file, made once), CONSOLE_TAILNET_HOST
+// (e.g. mac.tailXXXX.ts.net), CONSOLE_TAILNET_USERS (comma-separated logins), plus the CONSOLE_*
+// paths in lib.mjs.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -25,6 +30,29 @@ const TOKEN = process.env.CONSOLE_TOKEN ?? (() => {
   return t;
 })();
 const SCORECARD = path.join(lib.CFG.logs, 'scorecard-dashboard.html');
+// the page's own files only; scripts never inline, so the page CSP can forbid inline script
+const ASSETS = new Set(['app.css', 'app.js', 'graph.js']);
+const CSP = [
+  "default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src https://fonts.gstatic.com", "img-src 'self' data:", "frame-src 'self'", "connect-src 'self'",
+  "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'",
+].join('; ');
+const TAILNET_HOST = (process.env.CONSOLE_TAILNET_HOST ?? '').toLowerCase().replace(/\.$/, '');
+const TAILNET_USERS = new Set((process.env.CONSOLE_TAILNET_USERS ?? '').split(',').map((u) => u.trim().toLowerCase()).filter(Boolean));
+
+/** null when the request may proceed, else why not. */
+function refuse(req) {
+  const host = (req.headers.host ?? '').toLowerCase();
+  const local = host === `127.0.0.1:${PORT}` || host === `localhost:${PORT}`;
+  const tailnet = !!TAILNET_HOST && (host === TAILNET_HOST || host === `${TAILNET_HOST}:443`);
+  if (!local && !tailnet) return 'bad host';
+  const login = req.headers['tailscale-user-login'];
+  if (tailnet || login !== undefined) {
+    // through tailscale serve: only the listed tailnet users, never a tagged or shared node
+    if (!login || !TAILNET_USERS.has(String(login).toLowerCase())) return 'tailnet user not allowed';
+  }
+  return null;
+}
 
 const send = (res, status, body, type = 'application/json; charset=utf-8') => {
   res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' });
@@ -47,7 +75,7 @@ function readBody(req) {
 }
 
 const GET = {
-  '/api/overview': () => ({ projects: lib.projects(), pending: lib.pending(), host: os.hostname(), at: new Date().toISOString() }),
+  '/api/overview': () => ({ projects: lib.projects(), pending: lib.pending(), memory: lib.memorySummary(), host: os.hostname(), at: new Date().toISOString() }),
   '/api/pending': () => lib.pending(),
   '/api/project': (q) => lib.projectDetail(q.get('id')),
   '/api/memory': () => lib.memory(),
@@ -61,10 +89,15 @@ const GET = {
 
 const server = http.createServer(async (req, res) => {
   try {
-    const host = (req.headers.host ?? '').toLowerCase();
-    if (host !== `127.0.0.1:${PORT}` && host !== `localhost:${PORT}`) return send(res, 403, { error: 'bad host' });
-    const url = new URL(req.url, `http://${host}`);
-    if (url.pathname === '/' || url.pathname === '/index.html') return send(res, 200, fs.readFileSync(path.join(HERE, 'public', 'index.html')), 'text/html; charset=utf-8');
+    const why = refuse(req);
+    if (why) return send(res, 403, { error: why });
+    const url = new URL(req.url, 'http://console.local');
+    if (url.pathname === '/' || url.pathname === '/index.html') {
+      res.setHeader('content-security-policy', CSP);
+      return send(res, 200, fs.readFileSync(path.join(HERE, 'public', 'index.html')), 'text/html; charset=utf-8');
+    }
+    const asset = url.pathname.match(/^\/assets\/([a-z0-9-]+\.(css|js))$/);
+    if (asset && ASSETS.has(asset[1])) return send(res, 200, fs.readFileSync(path.join(HERE, 'public', asset[1])), asset[2] === 'css' ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8');
     const tokenOk = (req.headers['x-console-token'] ?? url.searchParams.get('t')) === TOKEN;
     if (url.pathname === '/scorecard') {
       if (!tokenOk) return send(res, 401, { error: 'token' });

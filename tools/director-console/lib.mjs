@@ -56,7 +56,21 @@ export function projects() {
       if (!byPath.has(r)) byPath.set(r, { id: e.name, path: dir, mode: null, registered: false });
     }
   }
-  return [...byPath.values()].map((p) => ({ ...p, runner: runnerOf(p.path) })).sort((a, b) => a.id.localeCompare(b.id));
+  return [...byPath.values()].map((p) => ({ ...p, runner: runnerOf(p.path), levels: levelsOf(p.path) })).sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/** The project's slices in order with their release status: the level map on the console. */
+function levelsOf(root) {
+  const lp = safe(() => runnerProject.loadProject(root));
+  if (!lp) return [];
+  const ids = new Set([...Object.keys(lp.sliceFiles ?? {}), ...Object.keys(lp.release?.slices ?? {})]);
+  return [...ids].filter((s) => /^S\d+/.test(s)).sort(sliceOrder).map((s) => ({ slice: s, status: lp.release?.slices?.[s] ?? 'planned', file: lp.sliceFiles?.[s] ?? null }));
+}
+
+/** Archive size and refresh state for the console header. */
+export function memorySummary() {
+  const records = safe(() => om.archive.loadArchive()) ?? [];
+  return { records: records.length, active: records.filter((r) => r.lifecycle === 'active').length };
 }
 
 function runnerOf(root) {

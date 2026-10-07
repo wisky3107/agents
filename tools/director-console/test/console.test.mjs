@@ -15,10 +15,10 @@ const REAL_RUNNER_LIB = path.join(os.homedir(), '.agents/skills/game-producer/sc
 const TOKEN = 'test-token-123';
 let root, home, repo, srv, port, logs;
 
-const call = (method, p, { token = TOKEN, host, body, type = 'application/json' } = {}) => new Promise((resolve, reject) => {
+const call = (method, p, { token = TOKEN, host, body, type = 'application/json', headers = {} } = {}) => new Promise((resolve, reject) => {
   const data = body === undefined ? null : typeof body === 'string' ? body : JSON.stringify(body);
   const req = http.request({ host: '127.0.0.1', port, path: p, method, headers: {
-    host: host ?? `127.0.0.1:${port}`, ...(token ? { 'x-console-token': token } : {}), ...(data ? { 'content-type': type, 'content-length': Buffer.byteLength(data) } : {}),
+    host: host ?? `127.0.0.1:${port}`, ...headers, ...(token ? { 'x-console-token': token } : {}), ...(data ? { 'content-type': type, 'content-length': Buffer.byteLength(data) } : {}),
   } }, (res) => {
     let s = '';
     res.on('data', (c) => (s += c));
@@ -60,7 +60,7 @@ before(async () => {
   fs.writeFileSync(path.join(playbook, 'recipes', 'r1.md'), '# r1\n');
   fs.writeFileSync(path.join(root, 'secret.md'), 'outside');
   port = 17000 + Math.floor(Math.random() * 2000);
-  srv = spawn(process.execPath, [SERVER], { env: { ...process.env, ORCA_MEMORY_HOME: home, CONSOLE_PORT: String(port), CONSOLE_TOKEN: TOKEN, CONSOLE_GAMES_ROOT: games, CONSOLE_RUNNER_DIR: runnerDir, CONSOLE_ORCA_BIN: orca, CONSOLE_PLAYBOOK: playbook, CONSOLE_LOG_DIR: logs }, stdio: ['ignore', 'pipe', 'inherit'] });
+  srv = spawn(process.execPath, [SERVER], { env: { ...process.env, ORCA_MEMORY_HOME: home, CONSOLE_PORT: String(port), CONSOLE_TOKEN: TOKEN, CONSOLE_GAMES_ROOT: games, CONSOLE_RUNNER_DIR: runnerDir, CONSOLE_ORCA_BIN: orca, CONSOLE_PLAYBOOK: playbook, CONSOLE_LOG_DIR: logs, CONSOLE_TAILNET_HOST: 'mac.tail0.ts.net', CONSOLE_TAILNET_USERS: 'me@example.com' }, stdio: ['ignore', 'pipe', 'inherit'] });
   await new Promise((resolve) => srv.stdout.once('data', resolve));
 });
 
@@ -77,6 +77,28 @@ test('local only: a foreign Host is refused, every /api call needs the token, th
   assert.equal(page.status, 200);
   assert.match(page.text, /Director Console/);
   assert.equal((await call('GET', '/scorecard', { token: null })).status, 401);
+});
+
+test('page: assets come only from the allowlist, under a CSP with no inline script', async () => {
+  const page = await call('GET', '/', { token: null });
+  assert.doesNotMatch(page.text, /<script>(?!<\/script>)[^<]/, 'no inline script body');
+  assert.match(page.text, /<script src="\/assets\/app\.js"><\/script>/);
+  for (const f of ['app.css', 'app.js', 'graph.js']) assert.equal((await call('GET', `/assets/${f}`, { token: null })).status, 200, f);
+  for (const f of ['server.mjs', '..%2Fserver.mjs', 'index.html', 'evil.js']) assert.equal((await call('GET', `/assets/${f}`, { token: null })).status, 404, f);
+  const csp = await new Promise((resolve) => http.get({ host: '127.0.0.1', port, path: '/', headers: { host: `127.0.0.1:${port}` } }, (res) => { res.resume(); resolve(res.headers['content-security-policy']); }));
+  assert.match(csp, /script-src 'self'/);
+  assert.match(csp, /frame-ancestors 'none'/);
+});
+
+test('tailnet: through tailscale serve only the listed login gets in, and the token is still required', async () => {
+  const tn = { host: 'mac.tail0.ts.net' };
+  assert.equal((await call('GET', '/api/overview', tn)).status, 403, 'tailnet host without a login header');
+  assert.equal((await call('GET', '/api/overview', { ...tn, headers: { 'tailscale-user-login': 'other@example.com' } })).status, 403);
+  assert.equal((await call('GET', '/api/overview', { ...tn, headers: { 'tailscale-user-login': 'ME@example.com' } })).status, 200);
+  assert.equal((await call('GET', '/api/overview', { ...tn, token: null, headers: { 'tailscale-user-login': 'me@example.com' } })).status, 401);
+  assert.equal((await call('GET', '/', { host: 'mac.tail0.ts.net:443', token: null, headers: { 'tailscale-user-login': 'me@example.com' } })).status, 200);
+  assert.equal((await call('GET', '/api/overview', { headers: { 'tailscale-user-login': 'other@example.com' } })).status, 403, 'a forwarded login on the local host is checked too');
+  assert.equal((await call('GET', '/api/overview', { host: 'other.tail0.ts.net' })).status, 403);
 });
 
 test('overview: projects with memory mode and runner state; pending holds only open questions, with note rules', async () => {

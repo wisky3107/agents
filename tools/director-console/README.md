@@ -11,9 +11,30 @@ node --test ~/.agents/tools/director-console/test/console.test.mjs
 
 The launchd job `com.agents.director-console` (plist in `launchd/`) keeps it running at login.
 Open the printed URL once, in Orca's browser or any browser on this Mac; the page keeps the token
-for the session. The token lives in `.token` (0600, made on first start, gitignored);
-delete the file and restart to rotate it. Deep links: `#pending`, `#workflow/<project>`, `#memory`,
-`#pilot`, `#playbook`, `#scorecard`, `#log`.
+for the session. The token lives in `.token` (0600, made on first start, gitignored); delete the
+file and restart to rotate it. Deep links: `#map`, `#quests`, `#worlds/<project>`, `#memory`,
+`#pilot/<project>`, `#playbook`, `#scorecard`, `#log`.
+
+## The page
+
+`public/index.html` loads `app.css`, `graph.js` (the SVG kit: icons, tooltip, level map, workflow
+graph, verdict columns) and `app.js` (shell, router, overlays and views). There is no inline script,
+so the page CSP can forbid it.
+- **Bản đồ**: HUD tiles, the workflow ↔ memory loop as a node graph with live counts (click a node
+  to go where it is handled), and every project as a level map of its slices.
+- **Nhiệm vụ**: one list of everything waiting on you, filterable by kind, project or text. Runner
+  questions are answered in place; judge drafts take verdict pills and per-row confirmation;
+  triage rows can be dismissed; system issues come with their fix.
+- **Dự án**: a project's level map (pick a slice to see its merge-journal timeline, memory and
+  deferred checks), the runner control deck and live Orca terminals.
+- **Memory / Pilot / Playbook / Scorecard / Nhật ký**: modes as segmented controls, archive
+  bars, a record explorer and drawer (promote/retract), stacked verdict columns with a table view,
+  and recipe cards with filters plus a rendered recipe drawer.
+
+Search everything with ⌘K or `/`. The theme follows the OS, or the toggle in the sidebar. Verdict
+colors are the validated categorical slots 1-5 in both themes; status colors always come with an
+icon and a label. On phones a bottom tab bar replaces the sidebar, and wide graphs scroll inside
+their own panel.
 
 ## How it reads and writes
 
@@ -36,6 +57,15 @@ delete the file and restart to rotate it. Deep links: `#pending`, `#workflow/<pr
 | `draft.apply` | writes the director's verdict and confirmed edits into the judge draft, then `orca-memory pilot apply-draft --file …` |
 
 Every action is appended to `~/.agents/logs/director-console.jsonl` (the **Nhật ký** tab).
+
+## Tailnet access
+
+`tailscale serve --bg --https=443 http://127.0.0.1:7792` publishes the page to this Mac's tailnet
+name only (`https://wikzs-macbook-pro.tail12c0c4.ts.net/?t=<token>`); the server itself still
+listens on 127.0.0.1. Never use `tailscale funnel`: that puts the page on the public internet.
+Tailscale replaces any client-sent `Tailscale-User-Login` header with the caller's real identity.
+A request through it must carry a login listed in `CONSOLE_TAILNET_USERS`, so tagged and shared
+nodes are refused, and it still needs the token. Undo with `tailscale serve --https=443 off`.
 
 ## Safety
 
