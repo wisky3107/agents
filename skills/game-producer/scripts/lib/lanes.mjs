@@ -388,7 +388,7 @@ export function manualItems(...sources) {
 /**
  * A fresh review round written as review.md, not an override of the last numbered round: its heading
  * names a higher round than review-r<N>.md and it cites that file (it re-verified that round's
- * findings). Every fleet fix round ends this way (pilot 8: S01 q3 round 4 over review-r3.md, S02 q6
+ * findings, by file or by round number). Every fleet fix round ends this way (pilot 8: S01 q3 round 4 over review-r3.md, S02 q6
  * round 2 over review-r1.md).
  */
 function laterRound(text, lastRound) {
@@ -396,7 +396,10 @@ function laterRound(text, lastRound) {
   const head = text.replace(/^\uFEFF/, '').split('\n').find((l) => l.trim()) || '';
   // the first "round N" is the review's own; later ones name earlier rounds ("round 4 (after fix round 2)")
   const m = head.match(/^#+ .*?\bround (\d+)\b/i);
-  return Boolean(n && m && Number(m[1]) > n && text.includes(path.basename(lastRound)));
+  // it cites that round by file, or by number below the heading ("Fix verification (round 4 findings)",
+  // cc-firefighter-kids S01 q7)
+  const body = text.slice(text.indexOf(head) + head.length);
+  return Boolean(n && m && Number(m[1]) > n && (text.includes(path.basename(lastRound)) || new RegExp(`(?<!fix )\\bround ${n}\\b(?![.\\d])`, 'i').test(body)));
 }
 
 /**

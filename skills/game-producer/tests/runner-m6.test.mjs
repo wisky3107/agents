@@ -618,8 +618,19 @@ test('fleet: a fresh review round written as review.md (higher round, cites the 
   runner(s01.root, g1, 'start', '--once');
   assert.equal(runnerFile(s01.root).questions.filter((q) => q.kind === 'verdict_override').length, 0);
   assert.deepEqual(g1.sends().at(-1), { to: 'term_1', text: FLEET_COMMIT_TEXT });
+  // the cc-firefighter-kids S01 q7 shape: the round is cited by number, not by file name
+  const s07 = project({ slices: { S01: { needs: false, size: 'L' } } });
+  const g7 = fakes();
+  g7.queue([
+    { name: 'round 4', runs: [{ id: 'run_1', coordinator_handle: 'term_1' }], write: { [H]: { role: 'coordinator', status: 'working' }, [evRel('S01', 'review-r4.md')]: 'F1\n\nCHANGES_REQUESTED\n' } },
+    { name: 'round 5 offered', write: { ...evidence, [H]: { role: 'coordinator', status: 'offer_commit' }, [evRel('S01', 'review.md')]: '# T-S01 review — round 5 (re-review after fix round 1) — reviewer (claude sonnet, high)\n\n## Fix verification (round 4 findings)\n| F1 | FIXED |\n\nAPPROVED\n' } },
+  ]);
+  runner(s07.root, g7, 'start', '--once');
+  assert.equal(runnerFile(s07.root).questions.filter((q) => q.kind === 'verdict_override').length, 0);
+  assert.deepEqual(g7.sends().at(-1), { to: 'term_1', text: FLEET_COMMIT_TEXT });
   // a review.md that does not name a later round, or does not cite the round it overrides, is still asked
-  for (const body of ['# T-S01 review — S01 (round 1)\n\nreview-r1.md\n\nAPPROVED\n', '# T-S01 review (round 2)\n\nno new review ran\n\nAPPROVED\n', 'round 2: review-r1.md settled\n\nAPPROVED\n']) {
+  // (a "round 1" only in the heading is the fix round's number, not a citation)
+  for (const body of ['# T-S01 review (round 2, after fix round 1)\n\nlooks fine\n\nAPPROVED\n', '# T-S01 review (round 2)\n\nafter fix round 1 all good; round 1.1 notes\n\nAPPROVED\n', '# T-S01 review — S01 (round 1)\n\nreview-r1.md\n\nAPPROVED\n', '# T-S01 review (round 2)\n\nno new review ran\n\nAPPROVED\n', 'round 2: review-r1.md settled\n\nAPPROVED\n']) {
     const q = project({ slices: { S01: { needs: false, size: 'L' } } });
     const g = fakes();
     g.queue([
