@@ -477,3 +477,20 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
   - The specs build GameConfig from JSON, so applyEnv must keep the shape.
   - `build-templates/web-mobile/index.ejs` (S07-D1) is customised, so the env stamp goes into the built index.html instead.
 - **Authority:** the same delegated authority as pilot 8. Push main after the merge. No deploy (S08 has no ship step).
+
+### Pilot 9 — kết quả (S08 merge 2026-10-07 04:33Z)
+
+1. S08 commit `f0a0432` ở single lane, commit thẳng trên main; bookkeeping `87d8971`; main đã push lên origin. Từ lúc launch (03:58Z) đến merge mất 35 phút, không dừng lần nào.
+2. Review: 1 vòng, APPROVED ngay, không có vòng sửa. `check-slice` đạt. Runner không hỏi câu nào.
+   - Code khoảng 430 dòng, nằm trong budget 600. Evidence được commit kèm (smoke JSON, PNG), nên `--stat` hiện 42 file và 4957 dòng.
+3. Token: tổng 24.8M context.
+   - slice-agent: 2 session, 161 turn, 24.6M. So với S03 58.4M, S04 52.7M, S05 43.3M thì giảm 43–58%.
+   - producer: 1 turn, 0.15M.
+4. Câu hỏi runner: 0.
+5. Sự cố: không có.
+   - Runner không giao lại Step 3: `step3:end_to_end` đã được giao một lần, nên lần này runner chỉ báo "again".
+   - Phát hiện: slice thêm vào sau một release slice đã ship vẫn chạy đúng khi đặt trước S07 trong `slices:` và cho S07 phụ thuộc vào nó.
+6. Bài học:
+   - Viết slice theo bước pre-check của workflow-pilot (đọc code thật, liệt kê check phải giữ nguyên, quyết định mở đã có khuyến nghị sẵn) cho slice chạy một mạch, không gate và không vòng sửa.
+   - Ở dự án đã ổn định, slice M cấu hình/build vừa rẻ vừa ít rủi ro.
+   - Muốn build staging/prod chạy được thì cần URL thật từ BE (FOLLOWUPS #25).
