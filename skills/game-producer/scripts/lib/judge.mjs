@@ -16,6 +16,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import * as st from './state.mjs';
 import * as io from './orca.mjs';
@@ -74,6 +75,26 @@ function evidenceDir(project, slice) {
     return path.dirname(file);
   }
   return path.join(st.sliceDir(project.root, slice), 'evidence');
+}
+
+/**
+ * The judge's view of `dir`: a model reads "cursor" in its prompt with a zero-width joiner inside
+ * (".c\u200dursor"), so every Read of a `.cursor/…` path came back not found (cc-firefighter-kids
+ * S01 q6; reproduced with claude -p). A symlink under the temp dir names the same files without it.
+ */
+export function judgeView(dir, slice) {
+  if (!/cursor/i.test(dir)) return dir;
+  const base = path.join(os.tmpdir(), 'producer-judge');
+  const link = path.join(base, `${crypto.createHash('sha1').update(dir).digest('hex').slice(0, 10)}-${slice || 'x'}-evidence`);
+  try {
+    fs.mkdirSync(base, { recursive: true });
+    if (fs.existsSync(link) && fs.realpathSync(link) === fs.realpathSync(dir)) return link;
+    fs.rmSync(link, { force: true });
+    fs.symlinkSync(dir, link);
+    return link;
+  } catch {
+    return dir;
+  }
 }
 
 /**
@@ -160,6 +181,7 @@ export function consult(project, q) {
   if (!/^HANDOFF says approved\b/.test(q.text) || !verdictIsApproved(dir)) options = options.filter((o) => o !== 'treat as approved');
   if (!options.length) return { defer: 'no option the judge may choose' };
   const quoteNeeded = FROM_CONTRACTS.has(q.kind);
+  const view = judgeView(dir, q.slice);
   const schema = {
     type: 'object',
     properties: { choice: { type: 'string', enum: [...options, 'defer'] }, text: { type: 'string' }, quote: { type: 'string' }, reason: { type: 'string' } },
@@ -172,10 +194,10 @@ export function consult(project, q) {
     '--strict-mcp-config', '--disable-slash-commands', '--permission-prompts', 'none', '--json-schema', JSON.stringify(schema),
     ...(spec.model ? ['--model', spec.model] : []),
     // --restricted confines reads to the working dirs: a fleet lane's evidence is in its worktree
-    ...(path.relative(project.root, dir).startsWith('..') ? ['--add-dir', dir] : [])];
+    ...(path.relative(project.root, view).startsWith('..') ? ['--add-dir', view] : [])];
   io.appendRegistry({ ts: st.now(), project: project.root, cwd: project.root, role: 'judge', slice: q.slice || null, agentSpec: spec.spec, command: 'claude -p (judge)', title: `judge-${q.id}`, handle: null });
   const r = spawnSync(bin, args, {
-    cwd: project.root, input: prompt(project, q, options, dir), encoding: 'utf8', timeout: 300000, maxBuffer: 16 * 1024 * 1024,
+    cwd: project.root, input: prompt(project, q, options, view), encoding: 'utf8', timeout: 300000, maxBuffer: 16 * 1024 * 1024,
     env: { ...process.env, ...settingsEnv(), CC_ROLE: 'judge', CC_PROJECT: project.root, CC_SLICE: q.slice || '' },
   });
   if (r.error || r.status !== 0) return { defer: `judge call failed (${r.error?.code || `exit ${r.status}`}): ${(r.stderr || '').trim().slice(-160)}` };

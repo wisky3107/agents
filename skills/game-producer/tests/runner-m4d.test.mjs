@@ -337,8 +337,12 @@ test('judge: a fleet lane\'s worktree evidence is added to the sandbox; an unkno
     assert.match(consult(loadProject(p.root), q).defer, /judge deferred/);
     const call = f.judgeCalls()[0];
     const ev = path.join(wt, '.cursor', 'evidence', 'tasks', 'T-S01', 'evidence');
-    assert.equal(call.args[call.args.indexOf('--add-dir') + 1], ev);
-    assert.match(call.input, new RegExp(`slice evidence in\\n?\\s*${ev.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}`));
+    // the judge sees the evidence through a link without "cursor" in it (a model reads it as ".c\u200dursor")
+    const view = call.args[call.args.indexOf('--add-dir') + 1];
+    assert.doesNotMatch(view, /cursor/i);
+    assert.equal(fs.readlinkSync(view), ev);
+    assert.match(call.input, new RegExp(`slice evidence in\\n?\\s*${view.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}`));
+    assert.doesNotMatch(call.input, /\.cursor\/evidence/);
     assert.match(call.input, /- treat as offer_commit\n\n/); // "treat as approved" is not offered for an unknown status
     // a quote lifted from a yaml fence is not contract prose
     const { quoted } = await import('../scripts/lib/judge.mjs');
