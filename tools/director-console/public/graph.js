@@ -113,7 +113,8 @@
       const [state, ic, label] = levelState(lv.status);
       const m = meta[lv.slice] ?? {};
       const g = s('g', { class: `node lvl ${state}${selected === lv.slice ? ' sel' : ''}`, tabindex: onPick ? 0 : null, role: onPick ? 'button' : null, 'aria-label': `${lv.slice} ${label}` });
-      if (state === 'live') g.append(s('path', { class: 'halo', d: hexPath(x, y, r + 2) }));
+      const off = small ? 2 : 3; // hard offset shadow, sticker style
+      g.append(s('path', { class: 'hex-shadow', d: hexPath(x + off, y + off, r) }));
       g.append(s('path', { class: 'hex', d: hexPath(x, y, r) }));
       g.append(iconAt(ic, x, y, small ? 11 : 18, 'lvl-icon'));
       if (!small) {
@@ -138,7 +139,7 @@
   // ------------------------------------------------------------------ workflow graph
   /** nodes: [{id, x, y, title, sub, count, state, icon, onPick}], edges: [{from, to, state}] */
   function flowGraph(nodes, edges, { width = 1000, height = 360 } = {}) {
-    const W = 176, H = 66;
+    const W = 186, H = 66;
     const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
     // fills its panel on wide screens and keeps a readable minimum (the wrapper scrolls) on phones
     const root = s('svg', { class: 'graph fluid', viewBox: `0 0 ${width} ${height}`, style: `min-width:${Math.round(width * 0.82)}px;max-width:${Math.round(width * 1.35)}px`, role: 'img', 'aria-label': 'Sơ đồ luồng workflow và memory' });
@@ -176,12 +177,12 @@
     }
     for (const n of nodes) {
       const g = s('g', { class: `node ${n.state ?? ''}`, tabindex: 0, role: 'button', 'aria-label': `${n.title}: ${n.sub ?? ''}` });
-      if (n.state === 'live') g.append(s('rect', { class: 'halo', x: n.x, y: n.y, width: W, height: H, rx: 12 }));
-      g.append(s('rect', { class: 'node-box', x: n.x, y: n.y, width: W, height: H, rx: 12 }));
+      g.append(s('rect', { class: 'node-shadow', x: n.x + 4, y: n.y + 4, width: W, height: H, rx: 10 }));
+      g.append(s('rect', { class: 'node-box', x: n.x, y: n.y, width: W, height: H, rx: 10 }));
       g.append(s('circle', { cx: n.x + 26, cy: n.y + H / 2, r: 15, class: 'node-ic-bg' }));
       g.append(iconAt(n.icon, n.x + 26, n.y + H / 2, 16, 'node-ic'));
-      g.append(s('text', { x: n.x + 50, y: n.y + 28, 'font-size': 13, 'font-weight': 650, class: 't-hud' }, n.title));
-      g.append(s('text', { x: n.x + 50, y: n.y + 46, 'font-size': 11, class: 't-muted' }, n.sub ?? ''));
+      g.append(s('text', { x: n.x + 50, y: n.y + 29, 'font-size': 15, 'font-weight': 700 }, n.title));
+      g.append(s('text', { x: n.x + 50, y: n.y + 47, 'font-size': 11.5, 'font-weight': 500, class: 't-muted' }, n.sub ?? ''));
       if (n.count != null) {
         const label = String(n.count), bw = 12 + label.length * 7;
         g.append(s('rect', { x: n.x + W - bw - 8, y: n.y - 9, width: bw, height: 19, rx: 9.5, class: `count ${n.countTone ?? ''}` }));
@@ -225,8 +226,8 @@
         const hpx = v * k, isTop = si === segs.length - 1;
         const yTop = y - hpx, hh = Math.max(hpx - 2, 1); // 2px surface gap above each segment
         const shape = isTop
-          ? s('path', { d: `M${x} ${y}V${yTop + 4}Q${x} ${yTop} ${x + 4} ${yTop}H${x + bw - 4}Q${x + bw} ${yTop} ${x + bw} ${yTop + 4}V${y}Z`, fill: `var(--v-${name})` })
-          : s('rect', { x, y: yTop + 2, width: bw, height: hh, fill: `var(--v-${name})` });
+          ? s('path', { class: 'vseg', d: `M${x} ${y}V${yTop + 4}Q${x} ${yTop} ${x + 4} ${yTop}H${x + bw - 4}Q${x + bw} ${yTop} ${x + bw} ${yTop + 4}V${y}Z`, fill: `var(--v-${name})` })
+          : s('rect', { class: 'vseg', x, y: yTop + 2, width: bw, height: hh, fill: `var(--v-${name})` });
         tipOn(shape, `${r.slice} · ${label[name]}: ${v}`);
         root.append(shape);
         y = yTop;

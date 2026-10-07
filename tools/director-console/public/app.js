@@ -36,8 +36,9 @@
     for (const c of kids.flat(Infinity)) if (c != null && c !== false) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
     return el;
   }
+  const qtag = (ic, label) => h('span', { class: 'q-tag' }, icon(ic, 15), label);
   const chip = (text, tone = '', ic = null) => h('span', { class: `chip ${tone}` }, ic ? icon(ic, 13) : null, text);
-  const empty = (text, ic = 'check') => h('div', { class: 'empty' }, icon(ic, 28), h('div', {}, text));
+  const empty = (text, ic = 'check', sub = null) => h('div', { class: 'empty' }, h('div', { class: 'em-ic' }, icon(ic, 24)), h('div', {}, text), sub ? h('div', { class: 'em-sub' }, sub) : null);
   const when = (iso) => (iso ? new Date(iso).toLocaleString('vi-VN', { hour12: false, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
   function ago(iso) {
     if (!iso) return '—';
@@ -163,24 +164,25 @@
   // ---------------------------------------------------------------- shell
   const shell = {};
   function buildShell() {
-    const navBtns = ROUTES.map(([id, label, ic]) => {
+    const tabs = ROUTES.map(([id, label, ic]) => {
       const badge = h('span', { class: 'badge', hidden: true });
-      const b = h('button', { class: 'nav-btn', onclick: () => go(id), type: 'button' }, icon(ic, 18), h('span', { class: 'grow' }, label), badge);
+      const b = h('button', { class: 'tab', onclick: () => go(id), type: 'button', title: label }, icon(ic, 17), h('span', { class: 'lbl' }, label), badge);
       b.dataset.id = id;
       return [id, b, badge];
     });
-    shell.nav = navBtns;
-    const themeBtn = h('button', { class: 'nav-btn', type: 'button', onclick: cycleTheme }, icon('moon', 18), h('span', { class: 'grow', id: 'theme-label' }, ''));
-    const side = h('nav', { class: 'side', 'aria-label': 'Điều hướng' },
-      h('div', { class: 'brand' }, h('div', { class: 'brand-mark' }, icon('bolt', 18)), h('div', {}, h('b', {}, 'Director'), h('span', {}, 'workflow console'))),
-      navBtns.map(([, b]) => b),
-      h('div', { class: 'side-foot' }, themeBtn, h('div', { class: 'small muted', style: { padding: '0 11px' } }, 'Tìm nhanh ', h('span', { class: 'kbd' }, '⌘K'), ' hoặc ', h('span', { class: 'kbd' }, '/'))));
-    shell.title = h('h1', {}, '');
-    shell.crumb = h('div', { class: 'crumb' }, '');
-    shell.pips = h('div', { class: 'pips' });
-    const searchBtn = h('button', { class: 'search-btn', type: 'button', onclick: () => openPalette() }, icon('search', 15), h('span', { class: 'lbl grow' }, 'Tìm dự án, slice, recipe…'), h('span', { class: 'kbd lbl' }, '⌘K'));
-    const top = h('header', { class: 'top' }, h('div', {}, shell.title, shell.crumb), h('span', { class: 'grow' }), shell.pips, searchBtn);
-    shell.content = h('main', { class: 'content', id: 'content' });
+    shell.nav = tabs;
+    shell.themeBtn = h('button', { class: 'btn icon-only', type: 'button', onclick: cycleTheme }, icon('moon', 18));
+    const searchBtn = h('button', { class: 'btn', type: 'button', onclick: () => openPalette(), title: 'Tìm nhanh (⌘K hoặc /)' }, icon('search', 17), h('span', { class: 'search-lbl' }, 'Tìm'), h('span', { class: 'kbd search-lbl' }, '⌘K'));
+    const top = h('header', { class: 'topbar' }, h('div', { class: 'inner' },
+      h('button', { class: 'brand-sticker', type: 'button', onclick: () => go('map') }, 'Director ✦'),
+      h('nav', { class: 'tabs', 'aria-label': 'Điều hướng' }, tabs.map(([, b]) => b)),
+      h('div', { class: 'top-right' }, searchBtn, shell.themeBtn)));
+    shell.crumb = h('div', { class: 'crumb' });
+    shell.title = h('h1', {});
+    shell.tags = h('div', { class: 'tags' });
+    shell.actions = h('div', { class: 'actions' },
+      h('button', { class: 'btn icon-only', type: 'button', title: 'Tải lại dữ liệu', onclick: () => refresh(true) }, icon('refresh', 18)));
+    shell.content = h('div', { id: 'content' });
     const bottomIds = ['map', 'quests', 'worlds', 'memory'];
     shell.bottom = bottomIds.map((id) => {
       const r = ROUTES.find(([x]) => x === id);
@@ -191,7 +193,9 @@
     });
     const more = h('button', { type: 'button', onclick: () => openPalette() }, icon('search', 20), 'Thêm');
     const bottom = h('nav', { class: 'bottom-nav', 'aria-label': 'Điều hướng nhanh' }, shell.bottom.map(([, b]) => b), more);
-    document.body.replaceChildren(h('div', { class: 'app' }, side, h('div', { class: 'main' }, top, shell.content)), bottom);
+    document.body.replaceChildren(top,
+      h('main', { class: 'main' }, h('div', { class: 'page-head' }, h('div', {}, shell.crumb, shell.title, shell.tags), shell.actions), shell.content),
+      bottom);
     applyTheme();
   }
 
@@ -205,8 +209,8 @@
     let t = 'auto';
     try { t = localStorage.getItem('console-theme') || 'auto'; } catch {}
     if (t === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
-    const lbl = document.getElementById('theme-label');
-    if (lbl) lbl.textContent = { auto: 'Giao diện: theo máy', dark: 'Giao diện: tối', light: 'Giao diện: sáng' }[t];
+    const label = { auto: 'Giao diện: theo máy (bấm để đổi)', dark: 'Giao diện: tối (bấm để đổi)', light: 'Giao diện: sáng (bấm để đổi)' }[t];
+    if (shell.themeBtn) { shell.themeBtn.title = label; shell.themeBtn.setAttribute('aria-label', label); }
   }
 
   // quest counts by kind, from the overview
@@ -216,11 +220,12 @@
     return { runner: p.questions.length, draft: p.drafts.length, triage: p.triage.length, system, manual: p.manual_deferred.reduce((n, d) => n + d.items.length, 0) };
   }
 
+  const CRUMB = { map: 'TỔNG QUAN', quests: 'VIỆC CẦN QUYẾT', worlds: 'DỰ ÁN', memory: 'ORCA-MEMORY', pilot: 'PILOT M08', playbook: 'COCOS-PLAYBOOK', scorecard: 'WORKFLOW', log: 'THAO TÁC' };
   function updateChrome() {
     const ov = store.ov;
     const r = ROUTES.find(([id]) => id === route.view);
-    shell.title.textContent = r[1];
-    shell.crumb.textContent = route.arg ? route.arg : `cập nhật ${ago(ov?.at)}`;
+    shell.crumb.textContent = `DIRECTOR / ${CRUMB[route.view]}${route.arg ? ` / ${route.arg.toUpperCase()}` : ''}`;
+    shell.title.textContent = route.arg && ['worlds', 'pilot'].includes(route.view) ? route.arg : r[1];
     document.title = `${r[1]} · Director`;
     for (const list of [shell.nav, shell.bottom]) for (const [id, b] of list) b.classList.toggle('on', id === route.view);
     if (!ov) return;
@@ -233,10 +238,13 @@
     }
     const live = ov.projects.filter((p) => p.runner?.alive).length;
     const rf = ov.pending.refresh;
-    shell.pips.replaceChildren(...[
-      h('span', { class: 'chip outline', title: 'Runner đang chạy' }, h('span', { class: `pip ${live ? 'live' : ''}` }), `${live} runner`),
-      c.runner ? h('span', { class: 'chip bad', title: 'Câu hỏi của runner đang chặn' }, icon('alert', 13), `${c.runner} chặn`) : null,
-      rf ? h('span', { class: `chip ${rf.ok && !rf.stale ? 'outline' : 'bad'} hide-s`, title: 'Lần refresh kho gần nhất' }, h('span', { class: `pip ${rf.ok && !rf.stale ? 'good' : 'bad'}` }), `kho ${ago(rf.at)}`) : null].filter(Boolean));
+    const rfOk = rf && rf.ok && !rf.stale;
+    shell.tags.replaceChildren(...[
+      h('span', { class: 'tag' }, icon('clock', 13), `cập nhật ${ago(ov.at)}`),
+      h('span', { class: `tag ${live ? 'warn' : ''}` }, h('span', { class: `pip ${live ? 'live' : ''}` }), `${live} runner chạy`),
+      c.runner ? h('span', { class: 'tag bad' }, icon('alert', 13), `${c.runner} câu hỏi chặn runner`) : null,
+      rf ? h('span', { class: `tag ${rfOk ? 'good' : 'bad'}` }, icon(rfOk ? 'check' : 'alert', 13), `kho refresh ${ago(rf.at)}`) : h('span', { class: 'tag bad' }, icon('alert', 13), 'kho chưa refresh'),
+    ].filter(Boolean));
   }
 
   // ---------------------------------------------------------------- render loop
@@ -283,14 +291,14 @@
     const rf = ov.pending.refresh;
     const decisions = c.runner + c.draft + c.triage + c.system;
     const stat = (label, value, foot, tone, ic, onclick) =>
-      h('div', { class: `stat tone-${tone} ${onclick ? 'link' : ''}`, onclick, role: onclick ? 'button' : null, tabindex: onclick ? 0 : null },
+      h('div', { class: `stat s-${tone} ${onclick ? 'link' : ''}`, onclick, role: onclick ? 'button' : null, tabindex: onclick ? 0 : null },
         h('div', { class: 'label' }, icon(ic, 14), label), h('div', { class: `value ${typeof value === 'string' ? 'text' : ''}` }, value), h('div', { class: 'foot' }, foot));
     const stats = h('div', { class: 'stats' },
-      stat('Việc chờ bạn', decisions, c.runner ? `${c.runner} câu hỏi đang chặn runner` : `${c.draft} bảng nháp · ${c.triage} triage`, c.runner ? 'bad' : decisions ? 'warn' : 'good', 'flag', () => go('quests')),
-      stat('Runner đang chạy', live.length, live.map((p) => `${p.id} ${p.runner.slice ?? ''}`).join(', ') || 'không có', live.length ? 'accent' : 'good', 'bolt', () => go('worlds')),
-      stat('Dự án', ov.projects.length, `${assist} assist · ${ov.projects.filter((p) => p.mode === 'shadow').length} shadow`, 'accent', 'globe', () => go('worlds')),
-      stat('Kho bài học', ov.memory.records, `${ov.memory.active} đang dùng`, 'accent', 'archive', () => go('memory')),
-      stat('Refresh kho', rf ? ago(rf.at) : 'chưa', rf ? (rf.ok ? (rf.stale ? 'cũ hơn 48 giờ' : 'ổn') : `lỗi ở ${rf.failed_step}`) : 'chưa chạy lần nào', rf?.ok && !rf.stale ? 'good' : 'bad', 'refresh', () => go('memory')));
+      stat('Việc chờ bạn', decisions, c.runner ? `${c.runner} câu hỏi đang chặn runner` : `${c.draft} bảng nháp · ${c.triage} triage`, c.runner ? 'coral' : decisions ? 'yellow' : 'green', 'flag', () => go('quests')),
+      stat('Runner đang chạy', live.length, live.map((p) => `${p.id} ${p.runner.slice ?? ''}`).join(', ') || 'không có', 'pink', 'bolt', () => go('worlds')),
+      stat('Dự án', ov.projects.length, `${assist} assist · ${ov.projects.filter((p) => p.mode === 'shadow').length} shadow`, 'blue', 'globe', () => go('worlds')),
+      stat('Kho bài học', ov.memory.records, `${ov.memory.active} đang dùng`, 'lilac', 'archive', () => go('memory')),
+      stat('Refresh kho', rf ? ago(rf.at) : 'chưa', rf ? (rf.ok ? (rf.stale ? 'cũ hơn 48 giờ' : 'ổn') : `lỗi ở ${rf.failed_step}`) : 'chưa chạy lần nào', rf?.ok && !rf.stale ? 'green' : 'coral', 'refresh', () => go('memory')));
 
     // the workflow + memory loop as a node graph with live numbers
     const lvAll = ov.projects.flatMap((p) => p.levels.map((l) => ({ ...l, project: p.id })));
@@ -318,7 +326,7 @@
       { from: 'pack', to: 'verdict', state: '', label: 'judge' },
       { from: 'verdict', to: 'director', state: c.draft ? 'on' : '' },
     ];
-    const flow = panel('Luồng workflow · memory', { icon: 'map', sub: 'Nhấn vào một node để đi tới chỗ xử lý. Đường sáng chạy = đang có việc.' },
+    const flow = panel('Luồng workflow · memory', { icon: 'map', sub: 'Nhấn vào một node để đi tới chỗ xử lý. Đường hồng chạy = đang có việc.' },
       h('div', { class: 'graph-wrap' }, flowGraph(nodes, edges, { width: 946, height: 316 })));
 
     // worlds: each project as a compact level strip
@@ -367,7 +375,7 @@
       h('option', { value: '' }, 'Mọi dự án'), projects.map((p) => h('option', { value: p, selected: ui.questProject === p }, p)));
     const search = h('input', { class: 'input', placeholder: 'Lọc theo chữ…', value: ui.questQ });
     search.addEventListener('input', () => { ui.questQ = search.value; drawList(); });
-    const listEl = h('div');
+    const listEl = h('div', { style: { marginTop: '20px' } });
     const drawList = () => {
       const needle = ui.questQ.toLowerCase();
       const shown = qs.filter((q) => (ui.questType === 'all' ? q.type !== 'manual' : q.type === ui.questType)
@@ -390,8 +398,8 @@
       system: () => ['refresh', 'Hệ thống', 'q-system', q.data.kind === 'refresh' ? 'refresh kho lỗi hoặc cũ' : `chưa đăng ký memory: ${q.data.path.split('/').pop()}`],
     };
     const meta = META[q.type]();
-    return h('div', { class: `quest ${meta[2]}`, role: 'button', tabindex: 0, style: { cursor: 'pointer' }, onclick: () => { ui.questType = q.type; go('quests'); } },
-      h('div', { class: 'quest-h' }, icon(meta[0], 16), h('b', {}, meta[1]), q.project ? chip(q.project, 'outline') : null, h('span', { class: 'grow' }), q.at ? h('span', { class: 'small muted' }, ago(q.at)) : null),
+    return h('div', { class: `quest mini ${meta[2]}`, role: 'button', tabindex: 0, style: { cursor: 'pointer' }, onclick: () => { ui.questType = q.type; go('quests'); } },
+      h('div', { class: 'quest-h' }, qtag(meta[0], meta[1]), q.project ? chip(q.project, 'outline') : null, h('span', { class: 'grow' }), q.at ? h('span', { class: 'small muted' }, ago(q.at)) : null),
       h('div', { class: 'small ink2', style: { marginTop: '4px' } }, meta[3]));
   }
 
@@ -424,7 +432,7 @@
       });
     }, { cls: /^stop/i.test(o.choice) ? 'danger' : '', title: o.note === 'required' ? 'Cần ghi chú' : null }));
     return h('div', { class: 'quest q-runner' },
-      h('div', { class: 'quest-h' }, icon('alert', 16), h('b', {}, 'Runner hỏi'), chip(q.project, 'outline'), q.slice ? chip(q.slice, 'accent') : null, chip(q.kind, 'warn'), h('span', { class: 'grow' }), h('span', { class: 'small muted' }, `${q.id} · ${ago(q.asked_at)}`)),
+      h('div', { class: 'quest-h' }, qtag('alert', 'Runner hỏi'), chip(q.project, 'outline'), q.slice ? chip(q.slice, 'accent') : null, chip(q.kind, 'warn'), h('span', { class: 'grow' }), h('span', { class: 'small muted' }, `${q.id} · ${ago(q.asked_at)}`)),
       longText(q.text),
       q.detail && q.detail !== q.text ? h('details', { style: { marginTop: '6px' } }, h('summary', {}, 'Chi tiết'), h('pre', { class: 'code' }, q.detail)) : null,
       h('div', { style: { marginTop: '10px' } }, note),
@@ -469,7 +477,7 @@
       btn('Xác nhận tất cả có verdict', () => { picks.forEach((p) => { if (p.verdict) p.ok = true; }); drawRows(); }, { cls: 'sm' }),
       btn('Bỏ chọn', () => { picks.forEach((p) => { p.ok = false; }); drawRows(); }, { cls: 'ghost sm' }));
     return h('div', { class: 'quest q-draft' },
-      h('div', { class: 'quest-h' }, icon('flask', 16), h('b', {}, 'Bảng nháp verdict'), chip(d.project, 'outline'), chip(d.slice, 'accent'), h('span', { class: 'grow' }), h('span', { class: 'small muted' }, `${d.model} · ${ago(d.created_at)}`)),
+      h('div', { class: 'quest-h' }, qtag('flask', 'Bảng nháp verdict'), chip(d.project, 'outline'), chip(d.slice, 'accent'), h('span', { class: 'grow' }), h('span', { class: 'small muted' }, `${d.model} · ${ago(d.created_at)}`)),
       h('p', { class: 'small muted', style: { margin: '6px 0' } }, 'Drafter đọc record theo nghĩa đen; các dòng useful hoặc tin cậy thấp cần bạn xem kỹ.'),
       h('div', { class: 'legend' }, VERDICTS.map((v) => h('span', { title: VHELP[v] }, h('span', { class: 'swatch', style: { background: `var(--v-${v})` } }), `${VLABEL[v]}: ${VHELP[v]}`))),
       bulk, rowsEl, h('div', { class: 'quest-actions', style: { alignItems: 'center' } }, applyBtn, counter));
@@ -477,7 +485,7 @@
 
   function triageCard(t) {
     return h('div', { class: 'quest q-triage' },
-      h('div', { class: 'quest-h' }, icon('archive', 16), h('b', {}, 'Triage'), chip(t.source.split(':')[0], 'outline')),
+      h('div', { class: 'quest-h' }, qtag('archive', 'Triage'), chip(t.source.split(':')[0], 'outline')),
       h('div', { class: 'mono small', style: { marginTop: '6px' } }, t.source), h('div', { class: 'quest-body' }, t.reason),
       h('div', { class: 'quest-actions' }, btn('Bỏ qua dòng này', () => act('triage.dismiss', { source: t.source }, {
         title: 'Bỏ qua dòng triage', body: `${t.source}\nÁp dụng ở lần refresh tiếp theo.`, fields: [{ name: 'note', label: 'Lý do', required: true }], ok: 'Bỏ qua',
@@ -487,20 +495,20 @@
   function systemCard(s) {
     if (s.kind === 'refresh') {
       return h('div', { class: 'quest q-system' },
-        h('div', { class: 'quest-h' }, icon('refresh', 16), h('b', {}, s.ok ? 'Kho lâu chưa refresh' : `Refresh lỗi ở ${s.failed_step}`), h('span', { class: 'grow' }), h('span', { class: 'small muted' }, ago(s.at))),
+        h('div', { class: 'quest-h' }, qtag('refresh', 'Hệ thống'), h('b', {}, s.ok ? 'Kho lâu chưa refresh' : `Refresh lỗi ở ${s.failed_step}`), h('span', { class: 'grow' }), h('span', { class: 'small muted' }, ago(s.at))),
         h('div', { class: 'quest-actions' }, btn('Chạy refresh ngay', () => act('memory.refresh', {}, { title: 'Chạy refresh kho', body: 'backup → normalize → verify → rebuild-index', ok: 'Chạy' }), { cls: 'primary', ic: 'refresh' })));
     }
     const cmd = `orca-memory register --path ${s.path} --domain cocos --data-owner <owner>`;
     return h('div', { class: 'quest q-system' },
-      h('div', { class: 'quest-h' }, icon('alert', 16), h('b', {}, 'Dự án chưa đăng ký memory'), h('span', { class: 'grow' }), h('span', { class: 'small muted' }, `${s.tasks} task · ${ago(s.last_task_at)}`)),
+      h('div', { class: 'quest-h' }, qtag('alert', 'Hệ thống'), h('b', {}, 'Dự án chưa đăng ký memory'), h('span', { class: 'grow' }), h('span', { class: 'small muted' }, `${s.tasks} task · ${ago(s.last_task_at)}`)),
       h('div', { class: 'mono small', style: { marginTop: '6px' } }, s.path),
       h('pre', { class: 'code' }, cmd),
       h('div', { class: 'quest-actions' }, btn('Chép lệnh', () => navigator.clipboard?.writeText(cmd).then(() => toast('Đã chép lệnh.')), { cls: 'sm', ic: 'doc' })));
   }
 
   function manualCard(d) {
-    return h('div', { class: 'quest' },
-      h('div', { class: 'quest-h' }, icon('hand', 16), h('b', {}, 'Kiểm tra tay trước release'), chip(d.project, 'outline'), chip(d.slice, 'accent'), h('span', { class: 'grow' }), h('span', { class: 'small muted' }, `${d.items.length} việc`)),
+    return h('div', { class: 'quest q-manual' },
+      h('div', { class: 'quest-h' }, qtag('hand', 'Kiểm tra tay'), chip(d.project, 'outline'), chip(d.slice, 'accent'), h('span', { class: 'grow' }), h('span', { class: 'small muted' }, `${d.items.length} việc`)),
       h('ul', { style: { margin: '8px 0 0', paddingLeft: '18px' } }, d.items.map((i) => h('li', { class: 'small', style: { margin: '3px 0' } }, i))));
   }
 
@@ -532,7 +540,7 @@
     d.release ? h('div', { class: 'small ink2', style: { marginTop: '2px' } }, `release.goal ${d.release.goal ?? '—'} · current_slice ${d.release.current_slice || '—'}`) : null,
     r ? controlDeck(d) : null);
 
-    const map = panel('Bản đồ slice', { icon: 'map', sub: 'Lục giác = slice. Xanh lá = đã merge/ship, cyan nhấp nháy = đang làm, xám = chưa làm. Số tím = record memory được trích dẫn.' },
+    const map = panel('Bản đồ slice', { icon: 'map', sub: 'Mỗi lục giác là một slice: xanh lá = đã merge/ship, vàng nhún nhảy = đang làm, trắng = chưa làm, cam = bị chặn. Số hồng = record memory được trích dẫn.' },
       h('div', { class: 'graph-wrap', id: 'lvl-wrap' }, levelMap(levels, { meta, selected: sel, onPick: (lv) => { ui.worldSlice[d.id] = lv.slice; render(); } })));
     setTimeout(() => { // keep the selected level in view
       const wrap = document.getElementById('lvl-wrap');
@@ -543,7 +551,7 @@
     const s = d.slices.find((x) => x.slice === sel);
     const detail = s ? sliceDetail(d, s) : panel('Slice', {}, empty('Chọn một slice trên bản đồ.'));
     const terms = panel(`Terminal Orca · ${d.terminals.length}`, { icon: 'terminal' },
-      d.terminals.length ? d.terminals.map((t) => h('div', { class: 'quest', style: { padding: '10px 12px' } },
+      d.terminals.length ? d.terminals.map((t) => h('div', { class: 'quest mini' },
         h('div', { class: 'quest-h' }, icon('terminal', 15), h('b', {}, t.title ?? t.handle), t.agent ? chip(t.agent, 'outline') : null, h('span', { class: `pip ${t.connected ? 'good' : 'bad'}` }), h('span', { class: 'grow' }), h('span', { class: 'mono small muted' }, t.handle.slice(0, 18))),
         h('details', { style: { marginTop: '4px' } }, h('summary', { class: 'small' }, `output cuối · ${t.last_output_at ? ago(new Date(t.last_output_at).toISOString()) : '—'}`), h('pre', { class: 'code' }, t.preview || '(trống)'))))
         : empty('Không có terminal Orca nào của dự án này.', 'terminal'));
@@ -622,7 +630,7 @@
         return row;
       }));
     };
-    const lifecycle = h('div', { class: 'stats' }, Object.entries(a.by_lifecycle).map(([k, v]) => h('div', { class: `stat ${k === 'active' ? 'tone-good' : 'tone-accent'}` }, h('div', { class: 'label' }, k), h('div', { class: 'value' }, v))));
+    const lifecycle = h('div', { class: 'stats' }, Object.entries(a.by_lifecycle).map(([k, v]) => h('div', { class: `stat ${k === 'active' ? 's-green' : 's-blue'}` }, h('div', { class: 'label' }, k), h('div', { class: 'value' }, v))));
     const archive = panel(`Kho bài học · ${a.records} record`, { icon: 'archive' }, lifecycle,
       h('div', { class: 'grid cols-2', style: { marginTop: '14px' } },
         h('div', {}, h('div', { class: 'small muted hud', style: { marginBottom: '8px' } }, 'THEO DỰ ÁN'), bars(a.by_project)),
@@ -662,7 +670,7 @@
       const rs = (await api(`/api/records?q=${encodeURIComponent(ui.recQ)}&project=${encodeURIComponent(ui.recProject)}`))
         .filter((r) => (!ui.recKind || r.kind === ui.recKind) && (!ui.recLife || r.lifecycle === ui.recLife));
       out.replaceChildren(rs.length ? h('div', { class: 'small muted', style: { marginBottom: '6px' } }, `${rs.length} record${rs.length === 100 ? ' (tối đa 100, lọc hẹp hơn để xem thêm)' : ''}`) : null,
-        ...(rs.length ? rs.map((r) => h('div', { class: 'quest', role: 'button', tabindex: 0, style: { cursor: 'pointer', padding: '10px 12px 10px 16px', '--q': r.lifecycle === 'active' ? 'var(--good)' : 'var(--line-2)' }, onclick: () => openRecord(r.record_id) },
+        ...(rs.length ? rs.map((r) => h('div', { class: 'quest mini q-record', role: 'button', tabindex: 0, style: { cursor: 'pointer' }, onclick: () => openRecord(r.record_id) },
           h('div', { class: 'quest-h' }, h('span', { class: 'mono small' }, r.record_id), h('span', { class: 'grow' }), chip(r.kind, 'outline'), chip(r.topic, 'outline'), r.lifecycle !== 'active' ? chip(r.lifecycle, 'warn') : null),
           h('div', { class: 'small ink2', style: { marginTop: '4px' } }, r.claim))) : [empty('Không có record nào khớp.', 'search')]));
     }
@@ -710,10 +718,10 @@
     const unjudged = r.slices.reduce((n, s) => n + (s.unjudged_items ?? 0), 0);
     const phases = ['baseline', 'shadow', 'assist'].map((ph) => [ph, r.slices.filter((s) => s.phase === ph).length]).filter(([, n]) => n);
     const tiles = h('div', { class: 'stats' },
-      phases.map(([ph, n]) => h('div', { class: 'stat tone-accent' }, h('div', { class: 'label' }, `slice ${ph}`), h('div', { class: 'value' }, n))),
-      h('div', { class: 'stat tone-good' }, h('div', { class: 'label' }, icon('check', 14), 'useful'), h('div', { class: 'value' }, sum('useful')), h('div', { class: 'foot' }, `${sum('redundant')} redundant · ${sum('irrelevant')} irrelevant`)),
-      h('div', { class: 'stat tone-accent' }, h('div', { class: 'label' }, icon('star', 14), 'trích dẫn'), h('div', { class: 'value' }, cited), h('div', { class: 'foot' }, 'record agent khai báo đã dùng')),
-      h('div', { class: `stat ${unjudged ? 'tone-warn' : 'tone-good'}` }, h('div', { class: 'label' }, 'chưa judge'), h('div', { class: 'value' }, unjudged), h('div', { class: 'foot' }, unjudged ? 'drafter sẽ soạn nháp' : 'đã judge hết')));
+      phases.map(([ph, n]) => h('div', { class: `stat ${ph === 'assist' ? 's-yellow' : ph === 'shadow' ? 's-pink' : 's-blue'}` }, h('div', { class: 'label' }, `slice ${ph}`), h('div', { class: 'value' }, n))),
+      h('div', { class: 'stat s-green' }, h('div', { class: 'label' }, icon('check', 14), 'useful'), h('div', { class: 'value' }, sum('useful')), h('div', { class: 'foot' }, `${sum('redundant')} redundant · ${sum('irrelevant')} irrelevant`)),
+      h('div', { class: 'stat s-lilac' }, h('div', { class: 'label' }, icon('star', 14), 'trích dẫn'), h('div', { class: 'value' }, cited), h('div', { class: 'foot' }, 'record agent khai báo đã dùng')),
+      h('div', { class: `stat ${unjudged ? 's-coral' : 's-green'}` }, h('div', { class: 'label' }, 'chưa judge'), h('div', { class: 'value' }, unjudged), h('div', { class: 'foot' }, unjudged ? 'drafter sẽ soạn nháp' : 'đã judge hết')));
     const rows = r.slices.filter((s) => s.phase !== 'baseline').map((s) => ({ slice: s.slice, phase: s.phase, verdicts: s.verdicts, unjudged: s.unjudged_items }));
     const legend = h('div', { class: 'legend' }, VERDICTS.map((v) => h('span', { title: VHELP[v] }, h('span', { class: 'swatch', style: { background: `var(--v-${v})` } }), VLABEL[v])));
     const chart = panel('Verdict theo slice', { icon: 'chart', sub: 'Mỗi cột là một slice, chồng theo verdict. Số trên cột = tổng verdict; "8?" = 8 item chưa judge. Bảng bên dưới có đủ số liệu.' },
