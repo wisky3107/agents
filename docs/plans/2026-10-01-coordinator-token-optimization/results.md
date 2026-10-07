@@ -673,3 +673,13 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
    - Khi viết slice tối ưu, chỉ đưa vào acceptance các con số mà pre-check chứng minh là giảm được, ví dụ font chỉ giảm nếu không còn tham chiếu.
    - Cold load trên mạng giả lập có độ dao động khoảng 1.6 MB, nên phải chạy nhiều lần và lấy median. Chỉ những thay đổi lớn hơn mức dao động mới được tính là "giảm".
    - Kênh CDP headless hiện là kênh runtime duy nhất chạy ổn định. Ở cả 3 slice gần nhất, tab Orca đều không render.
+- 12:55Z **Worktree không được dọn** (director: "tìm hiểu tại sao worktree đã done chưa được clean?"):
+  - Nguyên nhân: `worktree_rm` chỉ chấp nhận thay đổi nằm trong thư mục evidence. Ảnh chụp review ở `docs/evidence/Sxx/*.png` (PLAYTEST yêu cầu, nhưng không ai commit) làm mọi worktree fleet bị giữ lại vì "dirty". PNG trong thư mục evidence (bị ignore) thì mất luôn theo worktree.
+  - Sửa: `671104b` (ảnh chụp → `.cursor/evidence/tasks/T-Sxx/captures/` trên main, sau đó mới xoá).
+    - Reviewer độc lập: CHANGES_REQUESTED (đường dẫn qua symlink làm ảnh bị copy ra ngoài `captures/`) → đã sửa → APPROVED. Merge 3 chiều vào `merge.mjs` đang có WIP của session khác.
+    - Dòng failure-signature mới.
+  - Dọn tay:
+    - firefighter s01/s02: ảnh đã copy về `captures/`, worktree đã xoá.
+    - block-out S10/S11, bus-fever: `git worktree prune`.
+    - Để nguyên: car-service s02 và monopoly (code chưa commit), car-service s01 (cần xem file trong `slices/`).
+  - Runner restart lúc S03 đang commit: pid 26545 → mới.
