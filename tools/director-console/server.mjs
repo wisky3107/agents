@@ -75,8 +75,14 @@ function readBody(req) {
 }
 
 const GET = {
-  '/api/overview': () => ({ projects: lib.projects(), pending: lib.pending(), memory: lib.memorySummary(), host: os.hostname(), at: new Date().toISOString() }),
+  '/api/overview': () => {
+    const projects = lib.projects();
+    const pending = lib.pending(projects);
+    return { projects, pending, attention: lib.attention(projects, pending).items, memory: lib.memorySummary(), host: os.hostname(), at: new Date().toISOString() };
+  },
   '/api/pending': () => lib.pending(),
+  // what a hidden tab polls for notifications: no archive load, unlike the overview
+  '/api/attention': () => lib.attention(),
   '/api/project': (q) => lib.projectDetail(q.get('id')),
   '/api/memory': () => lib.memory(),
   '/api/records': (q) => lib.searchRecords(q.get('q') ?? '', q.get('project') ?? ''),

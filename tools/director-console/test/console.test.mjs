@@ -38,7 +38,8 @@ before(async () => {
   fs.mkdirSync(path.join(repo, '.cursor', 'evidence', 'tasks', 'T-S01', 'evidence'), { recursive: true });
   execFileSync('git', ['init', '-q', repo]);
   fs.writeFileSync(path.join(repo, '.cursor', 'producer-runner.json'), JSON.stringify({ slice: 'S01', step: 'lane', questions: [
-    { id: 'q1', kind: 'fleet_gate', slice: 'S01', asked_at: '2026-10-07T00:00:00Z', text: 'gate: pick one', options: ['A: go', 'answer with --text', 'stop'], answer: null },
+    { id: 'q1', kind: 'fleet_gate', slice: 'S01', asked_at: '2026-10-07T00:00:00Z', text: 'gate: pick one', options: ['A: go', 'answer with --text', 'stop'], answer: null,
+      key: 'S01:fleet_gate:gate_1', ref: 'gate_1', obs: null, judge: { at: '2026-10-07T00:00:10Z', defer: 'a scope call: the director decides' } },
     { id: 'q0', kind: 'verify_manual', slice: 'S01', text: 'done', options: ['ok'], answer: { choice: 'ok' } },
   ] }));
   fs.writeFileSync(path.join(repo, '.cursor', 'evidence', 'tasks', 'T-S01', 'evidence', 'manual-deferred.json'), JSON.stringify({ items: ['real device rotation'], policy: 'defer' }));
@@ -54,13 +55,16 @@ before(async () => {
   fs.writeFileSync(path.join(runnerDir, 'producer-runner.mjs'), `import fs from 'node:fs';\nfs.appendFileSync(${JSON.stringify(path.join(root, 'runner-argv.jsonl'))}, JSON.stringify(process.argv.slice(2)) + '\\n');\nconsole.log(JSON.stringify({ ok: true }));\n`);
   const orca = path.join(root, 'orca');
   fs.writeFileSync(orca, '#!/bin/sh\necho \'{"result":{"terminals":[]}}\'\n', { mode: 0o755 });
+  // stands in for `claude -p` in the runner's translate.mjs: one Vietnamese entry per option
+  const translator = path.join(root, 'translate');
+  fs.writeFileSync(translator, `#!${process.execPath}\nlet s = '';\nprocess.stdin.on('data', (c) => (s += c)).on('end', () => {\n  const n = Number(s.match(/exactly (\\d+) entries/)[1]);\n  console.log(JSON.stringify({ structured_output: { summary: 'Cổng: chọn một hướng', why: 'Đây là quyết định phạm vi', options: Array.from({ length: n }, (_, i) => ({ n: i + 1, text: 'Lựa chọn ' + (i + 1) + ' đầy đủ', label: 'Lựa chọn ' + (i + 1) })) } }));\n});\n`, { mode: 0o755 });
   const playbook = path.join(root, 'playbook');
   fs.mkdirSync(path.join(playbook, 'recipes'), { recursive: true });
   fs.writeFileSync(path.join(playbook, 'registry.json'), JSON.stringify({ recipes: [{ id: 'r1', status: 'candidate', path: 'recipes/r1.md', summary: 'one recipe' }] }));
   fs.writeFileSync(path.join(playbook, 'recipes', 'r1.md'), '# r1\n');
   fs.writeFileSync(path.join(root, 'secret.md'), 'outside');
   port = 17000 + Math.floor(Math.random() * 2000);
-  srv = spawn(process.execPath, [SERVER], { env: { ...process.env, ORCA_MEMORY_HOME: home, CONSOLE_PORT: String(port), CONSOLE_TOKEN: TOKEN, CONSOLE_GAMES_ROOT: games, CONSOLE_RUNNER_DIR: runnerDir, CONSOLE_ORCA_BIN: orca, CONSOLE_PLAYBOOK: playbook, CONSOLE_LOG_DIR: logs, CONSOLE_TAILNET_HOST: 'mac.tail0.ts.net', CONSOLE_TAILNET_USERS: 'me@example.com' }, stdio: ['ignore', 'pipe', 'inherit'] });
+  srv = spawn(process.execPath, [SERVER], { env: { ...process.env, ORCA_MEMORY_HOME: home, CONSOLE_PORT: String(port), CONSOLE_TOKEN: TOKEN, CONSOLE_GAMES_ROOT: games, CONSOLE_RUNNER_DIR: runnerDir, CONSOLE_ORCA_BIN: orca, CONSOLE_PLAYBOOK: playbook, CONSOLE_LOG_DIR: logs, PRODUCER_RUNNER_TRANSLATE_CMD: translator, CC_SPAWN_REGISTRY: path.join(root, 'spawns.jsonl'), CONSOLE_TAILNET_HOST: 'mac.tail0.ts.net', CONSOLE_TAILNET_USERS: 'me@example.com' }, stdio: ['ignore', 'pipe', 'inherit'] });
   await new Promise((resolve) => srv.stdout.once('data', resolve));
 });
 
@@ -110,6 +114,44 @@ test('overview: projects with memory mode and runner state; pending holds only o
   assert.deepEqual(q.map((x) => x.id), ['q1']);
   assert.deepEqual(q[0].options.map((o) => [o.choice, o.note]), [['A: go', 'optional'], ['answer with --text', 'required'], ['stop', null]]);
   assert.deepEqual(r.json.pending.manual_deferred, [{ project: 'cc-a', slice: 'S01', items: ['real device rotation'] }]);
+});
+
+test('runner question: everything the dialog shows, and a Vietnamese translation through the runner\'s own translate code', async () => {
+  let q = (await call('GET', '/api/pending')).json.questions[0];
+  assert.deepEqual([q.key, q.ref, q.judge.defer, q.also], ['S01:fleet_gate:gate_1', 'gate_1', 'a scope call: the director decides', []]);
+  assert.ok(q.context[0].startsWith('cc-a'), 'where the run stands, from the runner\'s questionContext');
+  // English until the background translation lands, then Vietnamese from q.lang
+  for (let i = 0; i < 50 && !q.vi; i++) {
+    await new Promise((r) => setTimeout(r, 100));
+    q = (await call('GET', '/api/pending')).json.questions[0];
+  }
+  assert.equal(q.vi_state, 'ok');
+  assert.deepEqual([q.vi.summary, q.vi.why], ['Cổng: chọn một hướng', 'Đây là quyết định phạm vi']);
+  assert.deepEqual(q.options.map((o) => [o.choice, o.vi_label, o.vi_text]), [['A: go', 'Lựa chọn 1', 'Lựa chọn 1 đầy đủ'], ['answer with --text', 'Lựa chọn 2', 'Lựa chọn 2 đầy đủ'], ['stop', 'Lựa chọn 3', 'Lựa chọn 3 đầy đủ']]);
+  // cached on the question like the runner's dialog does, so neither asks again
+  const stored = JSON.parse(fs.readFileSync(path.join(repo, '.cursor', 'producer-runner.json'), 'utf8')).questions.find((x) => x.id === 'q1');
+  assert.equal(stored.lang.summary, 'Cổng: chọn một hướng');
+  assert.equal((await call('GET', '/api/attention')).json.items.find((x) => x.kind === 'runner').body, 'Cổng: chọn một hướng');
+});
+
+test('attention: one keyed row per thing that needs the director; a stopped runner is not "down"', async () => {
+  assert.equal((await call('GET', '/api/attention', { token: null })).status, 401);
+  const r = await call('GET', '/api/attention');
+  assert.equal(r.status, 200);
+  const byKey = Object.fromEntries(r.json.items.map((x) => [x.key, x]));
+  assert.deepEqual(Object.keys(byKey).sort(), ['runner-down:cc-a:S01:', 'runner:cc-a:q1']);
+  assert.deepEqual([byKey['runner:cc-a:q1'].level, byKey['runner:cc-a:q1'].quest, byKey['runner:cc-a:q1'].href], ['critical', 'runner', '#quests']);
+  assert.equal(byKey['runner-down:cc-a:S01:'].href, '#worlds/cc-a');
+  assert.ok(!r.json.items.some((x) => x.kind === 'manual'), 'deferred manual checks wait for ship, not for a decision');
+  // the overview carries the same rows, so a visible tab needs no second call
+  assert.deepEqual((await call('GET', '/api/overview')).json.attention.map((x) => x.key).sort(), Object.keys(byKey).sort());
+  const control = path.join(repo, '.cursor', 'producer.control');
+  fs.writeFileSync(control, 'stop\n');
+  try {
+    assert.deepEqual((await call('GET', '/api/attention')).json.items.map((x) => x.key), ['runner:cc-a:q1']);
+  } finally {
+    fs.rmSync(control);
+  }
 });
 
 test('actions: only allowlisted, JSON only; runner.answer runs the runner CLI with the same argv and is logged', async () => {

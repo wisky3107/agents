@@ -30,6 +30,8 @@ const om = {
 const runnerState = await import(path.join(CFG.runnerDir, 'lib/state.mjs'));
 const runnerProject = await import(path.join(CFG.runnerDir, 'lib/project.mjs'));
 const runnerAnswer = await import(path.join(CFG.runnerDir, 'lib/answer.mjs'));
+const runnerContext = await import(path.join(CFG.runnerDir, 'lib/context.mjs'));
+const runnerTranslate = await import(path.join(CFG.runnerDir, 'lib/translate.mjs'));
 
 const readJson = (f, fallback = null) => {
   try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return fallback; }
@@ -144,15 +146,55 @@ function orcaTerminals() {
 
 // ------------------------------------------------------------------ pending decisions
 
+const TRANSLATE_RETRY_MS = 10 * 60 * 1000; // translate.mjs RETRY_MS
+const translating = new Map(); // `${root}#${id}#${key}` → the runner's translate call in flight
+const pidAlive = (pid) => {
+  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+};
+
+/**
+ * The question in Vietnamese. The runner's own `q.lang` when it was made from this exact question;
+ * else the runner's translate code (one `claude -p` sonnet call, cached on the question like the
+ * dialog does) is started in the background for every project, not only those with
+ * `release.question_lang: vi`, and the card shows English until the next refresh picks it up.
+ */
+function viTranslation(root, q) {
+  const key = runnerTranslate.questionKey('vi', q);
+  if (q.lang?.lang === 'vi' && q.lang.key === key && !q.lang.failed) return { vi: q.lang, state: 'ok' };
+  if (q.lang?.key === key && q.lang.failed && Date.now() - Date.parse(q.lang.at) < TRANSLATE_RETRY_MS) return { vi: null, state: 'failed', error: q.lang.failed };
+  const job = `${root}#${q.id}#${key}`;
+  if (translating.has(job)) return { vi: null, state: 'translating' };
+  if (env.CONSOLE_TRANSLATE === 'off') return { vi: null, state: 'off' };
+  const project = safe(() => runnerProject.loadProject(root));
+  // a Vietnamese project's open dialog is translating this question already
+  if (project && runnerTranslate.questionLang(project) === 'vi' && q.dialog_pid && pidAlive(q.dialog_pid)) return { vi: null, state: 'translating' };
+  // translate.mjs reads only release.question_lang from the project
+  const vi = { ...(project ?? {}), release: { ...(project?.release ?? {}), question_lang: 'vi' } };
+  const context = safe(() => runnerContext.questionContext(root, q)) ?? [];
+  const settled = () => !runnerState.readRunner(root).questions?.find((x) => x.id === q.id && !x.answer);
+  translating.set(job, runnerTranslate.translated(root, vi, q, context, settled).catch(() => null).finally(() => translating.delete(job)));
+  return { vi: null, state: 'translating' };
+}
+
+/** An open runner question with all the runner's dialog shows, plus its Vietnamese translation. */
+function questionView(p, q) {
+  const tr = viTranslation(p.path, q);
+  return {
+    project: p.id, id: q.id, kind: q.kind, slice: q.slice ?? null, asked_at: q.asked_at, text: q.text, detail: q.detail ?? null,
+    options: (q.options ?? []).map((o, i) => ({ choice: o, note: runnerAnswer.textNeed(q, o), vi_label: tr.vi?.labels?.[i] ?? null, vi_text: tr.vi?.options?.[i] ?? null })),
+    judge: q.judge ? { at: q.judge.at ?? null, defer: q.judge.defer ?? null, choice: q.judge.choice ?? null, reason: q.judge.reason ?? null } : null,
+    context: safe(() => runnerContext.questionContext(p.path, q)) ?? [],
+    ref: q.ref ?? null, obs: q.obs ?? null, key: q.key ?? null, also: q.also ?? [], notified: q.notified ?? null,
+    vi: tr.vi ? { summary: tr.vi.summary, why: tr.vi.why || null, at: tr.vi.at ?? null } : null,
+    vi_state: tr.state, vi_error: tr.error ?? null,
+  };
+}
+
 /** Everything that waits on the director, across systems. */
-export function pending() {
-  const ps = projects();
+export function pending(ps = projects()) {
   const questions = ps.flatMap((p) => {
     if (!p.runner) return [];
-    return (runnerState.readRunner(p.path).questions ?? []).filter((q) => !q.answer).map((q) => ({
-      project: p.id, id: q.id, kind: q.kind, slice: q.slice ?? null, asked_at: q.asked_at, text: q.text, detail: q.detail ?? null,
-      options: (q.options ?? []).map((o) => ({ choice: o, note: runnerAnswer.textNeed(q, o) })),
-    }));
+    return (runnerState.readRunner(p.path).questions ?? []).filter((q) => !q.answer).map((q) => questionView(p, q));
   });
   const home = memHome();
   const draftRoot = path.join(home, 'reports', 'judge-drafts');
@@ -175,6 +217,58 @@ export function pending() {
     refresh: refresh ? { at: refresh.at, ok: refresh.ok, failed_step: refresh.failed_step, stale: ageH > 48 } : null,
     manual_deferred: deferred, unregistered,
   };
+}
+
+const clip = (s, n = 200) => {
+  const t = String(s ?? '').replace(/\s+/g, ' ').trim();
+  return t.length > n ? `${t.slice(0, n - 1)}…` : t;
+};
+
+/**
+ * What needs the director now, one row per item with a stable key. The page announces each key
+ * once (a card in the page, plus an OS notification when allowed) and marks it resolved when the
+ * key goes away. Deferred manual checks are left out: they wait for ship, not for a decision.
+ */
+export function attention(ps = projects(), pd = pending(ps)) {
+  const items = [];
+  const add = (it) => items.push({ project: null, tag: null, since: null, quest: null, ...it, body: clip(it.body) });
+  for (const q of pd.questions) add({
+    key: `runner:${q.project}:${q.id}`, kind: 'runner', tag: q.kind ?? null, level: 'critical', project: q.project, since: q.asked_at ?? null,
+    title: `${q.project}${q.slice ? ` ${q.slice}` : ''}: runner đang chờ bạn trả lời`, body: q.vi?.summary ?? q.text, href: '#quests', quest: 'runner',
+  });
+  // A runner that died mid-slice: no live lock, still in the lane step, and nobody asked it to stop.
+  // Keyed by the dead runner's pid: the runner file's `updated` moves with every cache or answer write.
+  for (const p of ps) {
+    const r = p.runner;
+    if (!r || r.alive || r.step !== 'lane' || ['stop', 'pause'].includes(r.control?.cmd)) continue;
+    add({
+      key: `runner-down:${p.id}:${r.slice}:${r.lock?.pid ?? ''}`, kind: 'runner-down', level: 'critical', project: p.id, since: r.updated ?? null,
+      title: `${p.id}: runner dừng giữa ${r.slice}`, body: `Runner không còn chạy, ${r.slice} chưa xong và không có lệnh stop/pause. Xem log rồi chạy lại runner.`,
+      href: `#worlds/${encodeURIComponent(p.id)}`,
+    });
+  }
+  for (const d of pd.drafts) add({
+    key: `draft:${d.project}:${d.slice}:${d.created_at ?? ''}`, kind: 'draft', level: 'warning', project: d.project, since: d.created_at ?? null,
+    title: `${d.project} ${d.slice}: bản nháp chấm memory chờ duyệt`, body: `${d.rows?.length ?? 0} dòng cần verdict của bạn.`, href: '#quests', quest: 'draft',
+  });
+  for (const t of pd.triage) add({
+    key: `triage:${t.source}`, kind: 'triage', level: 'warning', project: String(t.source).split(':')[0],
+    title: 'Memory triage: một dòng cần xem', body: `${t.source}: ${t.reason ?? ''}`, href: '#quests', quest: 'triage',
+  });
+  const rf = pd.refresh;
+  if (rf && !rf.ok) add({
+    key: `refresh-failed:${rf.at}`, kind: 'system', level: 'critical', since: rf.at,
+    title: 'Refresh kho memory bị lỗi', body: `Bước lỗi: ${rf.failed_step ?? '?'}. Kho giữ bản cũ cho tới khi sửa.`, href: '#quests', quest: 'system',
+  });
+  else if (rf?.stale) add({
+    key: `refresh-stale:${rf.at}`, kind: 'system', level: 'warning', since: rf.at,
+    title: 'Kho memory quá 48 giờ chưa refresh', body: 'Job refresh 09:03 không chạy hoặc không ghi báo cáo.', href: '#quests', quest: 'system',
+  });
+  for (const u of pd.unregistered) add({
+    key: `unregistered:${u.path}`, kind: 'system', level: 'info', project: path.basename(u.path), since: u.last_task_at ?? null,
+    title: `${path.basename(u.path)} chưa đăng ký orca-memory`, body: 'Dự án đang chạy nhưng mọi hook memory đều tắt.', href: '#quests', quest: 'system',
+  });
+  return { at: new Date().toISOString(), items };
 }
 
 /**

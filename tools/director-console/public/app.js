@@ -149,6 +149,7 @@
   const ui = {
     questType: 'all', questProject: '', questQ: '', worldSlice: {}, recQ: '', recProject: '', recKind: '', recLife: '',
     pbQ: '', pbTags: new Set(), pbSource: '', pilotProject: null,
+    notes: {}, // runner answer notes being typed, kept across the 20 s re-render
   };
   const ROUTES = [
     ['map', 'Bản đồ', 'map'], ['quests', 'Nhiệm vụ', 'flag'], ['worlds', 'Dự án', 'globe'], ['memory', 'Memory', 'chip'],
@@ -160,6 +161,180 @@
     route = { view: ROUTES.some(([id]) => id === v) ? v : 'map', arg: rest.length ? decodeURIComponent(rest.join('/')) : null };
   }
   const go = (hash) => { if (location.hash === `#${hash}`) render(); else location.hash = hash; };
+
+  // ---------------------------------------------------------------- notifications
+  // Every attention row from the server (lib.attention) has a stable key. A key this browser has not
+  // seen becomes a card in the page and an unread entry under the bell; on macOS and Windows, once
+  // the director allows it, also an OS notification while the tab is hidden or unfocused. A key that
+  // goes away marks its entry resolved and closes its OS notification. State is per browser.
+  const NOTE_KEY = 'console-notify';
+  const LEVEL_ICON = { critical: 'alert', warning: 'flag', info: 'bell' };
+  const LEVEL_ORDER = { critical: 0, warning: 1, info: 2 };
+  const DESKTOP_OS = (() => {
+    const p = (navigator.userAgentData?.platform || navigator.platform || '').toLowerCase();
+    const ua = navigator.userAgent || '';
+    if (p.startsWith('win') || /Windows NT/.test(ua)) return 'Windows';
+    // iPadOS also says Macintosh; it has touch points
+    if ((p.startsWith('mac') || /Macintosh/.test(ua)) && !(navigator.maxTouchPoints > 1)) return 'macOS';
+    return null;
+  })();
+  const osNotes = new Map(); // key → Notification still on screen
+  const osSupported = () => !!DESKTOP_OS && 'Notification' in window && window.isSecureContext;
+  const osReady = () => osSupported() && Notification.permission === 'granted' && loadNotes().osOn;
+
+  function loadNotes() {
+    let s = null;
+    try { s = JSON.parse(localStorage.getItem(NOTE_KEY) || 'null'); } catch {}
+    return s && typeof s === 'object' && Array.isArray(s.feed) ? s : { known: null, feed: [], osOn: true, snooze: 0 };
+  }
+  function saveNotes(s) { try { localStorage.setItem(NOTE_KEY, JSON.stringify(s)); } catch {} }
+  const unreadCount = (s = loadNotes()) => s.feed.filter((f) => !f.read && !f.resolved).length;
+  function editNotes(fn) { const s = loadNotes(); fn(s); saveNotes(s); drawBell(); }
+
+  /** Diff the live rows against what this browser knows; returns the rows to announce. */
+  async function ingestAttention(items) {
+    const diff = () => {
+      const s = loadNotes();
+      const now = new Date().toISOString();
+      const live = new Set(items.map((it) => it.key));
+      // the first look in a new browser takes what is already waiting as read, with no alerts
+      const first = s.known === null;
+      const known = s.known ?? {};
+      const fresh = items.filter((it) => !(it.key in known));
+      for (const it of fresh) known[it.key] = now;
+      for (const k of Object.keys(known)) {
+        if (live.has(k)) continue;
+        delete known[k];
+        for (const f of s.feed) if (f.key === k && !f.resolved) f.resolved = now;
+        osNotes.get(k)?.close();
+      }
+      s.feed.unshift(...fresh.map((it) => ({ ...it, at: now, read: first, resolved: null })));
+      const weekAgo = Date.now() - 7 * 864e5;
+      s.feed = s.feed.filter((f, i) => i < 80 && !(f.resolved && Date.parse(f.resolved) < weekAgo));
+      s.known = known;
+      saveNotes(s);
+      return first ? [] : fresh;
+    };
+    // two open tabs must not both announce the same key
+    const fresh = navigator.locks ? await navigator.locks.request(NOTE_KEY, diff) : diff();
+    if (fresh.length) announce(fresh);
+    drawBell();
+  }
+
+  function announce(fresh) {
+    const rows = [...fresh].sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level]);
+    const batch = rows.length > 3 ? {
+      key: null, level: rows[0].level, href: '#quests', quest: 'all',
+      title: `${rows.length} việc mới đang chờ bạn`, body: rows.slice(0, 4).map((r) => `• ${r.title}`).join('\n'),
+    } : null;
+    (batch ? [batch] : rows).forEach(noteCard);
+    // the OS only hears about it when the director is not looking at this tab
+    if (!osReady() || (!document.hidden && document.hasFocus())) return;
+    (batch ? [batch] : rows).forEach(osNotify);
+  }
+
+  function osNotify(it) {
+    try {
+      const n = new Notification(it.title, { body: it.body || '', tag: it.key ? `director:${it.key}` : undefined, requireInteraction: it.level === 'critical', silent: it.level === 'info' });
+      n.onclick = () => { window.focus(); n.close(); openNote(it); };
+      if (it.key) {
+        osNotes.set(it.key, n);
+        n.onclose = () => { if (osNotes.get(it.key) === n) osNotes.delete(it.key); };
+      }
+    } catch (e) { console.warn('notification', e); }
+  }
+
+  function openNote(it) {
+    if (it.key) editNotes((s) => s.feed.forEach((f) => { if (f.key === it.key) f.read = true; }));
+    if (it.quest) ui.questType = it.quest;
+    closeOverlay();
+    go((it.href || '#quests').replace(/^#/, ''));
+  }
+
+  function noteCard(it) {
+    const stack = document.querySelector('.note-stack') ?? document.body.appendChild(h('div', { class: 'note-stack', 'aria-live': 'polite' }));
+    const card = h('div', { class: `note-card l-${it.level}`, role: 'status', onclick: () => { card.remove(); openNote(it); } },
+      h('div', { class: 'note-ic' }, icon(LEVEL_ICON[it.level] ?? 'bell', 16)),
+      h('div', { class: 'note-txt' }, h('b', {}, it.title), it.body ? h('div', {}, it.body) : null),
+      h('button', { class: 'btn ghost sm icon-only', type: 'button', title: 'Đóng', onclick: (e) => { e.stopPropagation(); card.remove(); } }, icon('x', 14)));
+    stack.prepend(card);
+    while (stack.children.length > 4) stack.lastChild.remove();
+    // a runner question or a failed refresh stays until it is dealt with or closed
+    if (it.level !== 'critical') setTimeout(() => card.remove(), 12000);
+  }
+
+  function drawBell() {
+    if (!shell.bellBadge) return;
+    const n = unreadCount();
+    shell.bellBadge.hidden = !n;
+    shell.bellBadge.textContent = n > 99 ? '99+' : n;
+    const label = n ? `Thông báo: ${n} chưa đọc` : 'Thông báo';
+    shell.bellBtn.title = label;
+    shell.bellBtn.setAttribute('aria-label', label);
+    if (shell.baseTitle) document.title = `${n ? `(${n}) ` : ''}${shell.baseTitle}`;
+    drawPermBanner();
+  }
+
+  function drawPermBanner() {
+    const old = document.querySelector('.perm-banner');
+    const want = osSupported() && Notification.permission === 'default' && Date.now() > (loadNotes().snooze || 0);
+    if (!want) { old?.remove(); return; }
+    if (old) return;
+    const b = h('div', { class: 'perm-banner', role: 'region', 'aria-label': 'Thông báo hệ điều hành' },
+      h('div', { class: 'note-ic' }, icon('bell', 18)),
+      h('div', { class: 'grow' }, h('b', {}, `Bật thông báo ${DESKTOP_OS}?`),
+        h('div', { class: 'small' }, 'Để biết ngay khi runner hỏi bạn, có bản nháp chờ duyệt hay kho memory lỗi, kể cả khi tab đang ẩn.')),
+      h('div', { class: 'perm-actions' },
+        btn('Để sau', () => { editNotes((s) => { s.snooze = Date.now() + 3 * 864e5; }); }, { cls: 'ghost sm' }),
+        btn('Bật', askOsPermission, { cls: 'primary sm', ic: 'bell' })));
+    document.body.append(b);
+  }
+
+  /** Must run from a click: Safari and Firefox ignore a permission request without one. */
+  async function askOsPermission() {
+    let p = 'default';
+    try { p = await Notification.requestPermission(); } catch {}
+    editNotes((s) => { s.osOn = p === 'granted'; });
+    if (p === 'granted') osNotify({ key: null, level: 'info', href: '#quests', title: 'Director: đã bật thông báo', body: `Thông báo hiện trên ${DESKTOP_OS} khi có việc cần bạn và tab console không được xem.` });
+    else if (p === 'denied') toast('Trình duyệt đã chặn thông báo. Mở cài đặt trang (biểu tượng cạnh thanh địa chỉ) › Notifications › Allow, rồi tải lại.', true);
+    if (document.querySelector('.drawer.notes')) openNotes();
+  }
+
+  function osPanel() {
+    const box = (...kids) => h('div', { class: 'os-panel' }, h('div', { class: 'note-ic' }, icon('bell', 16)), h('div', { class: 'grow' }, ...kids));
+    if (!DESKTOP_OS) return box(h('b', {}, 'Thông báo trong trang'), h('div', { class: 'small' }, 'Thông báo hệ điều hành chỉ bật trên macOS và Windows.'));
+    if (!('Notification' in window)) return box(h('b', {}, 'Trình duyệt này không có thông báo'), h('div', { class: 'small' }, 'Ví dụ trình duyệt nhúng của Orca. Mở console bằng Chrome, Safari hoặc Edge để bật.'));
+    if (!window.isSecureContext) return box(h('b', {}, 'Cần https hoặc 127.0.0.1'), h('div', { class: 'small' }, 'Trình duyệt chỉ cho thông báo trên kết nối an toàn.'));
+    const perm = Notification.permission;
+    if (perm === 'default') return box(h('b', {}, `Thông báo ${DESKTOP_OS}: chưa bật`), h('div', { class: 'small' }, 'Trình duyệt sẽ hỏi quyền một lần.'), h('div', { class: 'row' }, btn('Bật thông báo', askOsPermission, { cls: 'primary sm', ic: 'bell' })));
+    if (perm === 'denied') return box(h('b', {}, `Thông báo ${DESKTOP_OS}: bị chặn`), h('div', { class: 'small' }, 'Mở cài đặt trang (biểu tượng cạnh thanh địa chỉ) › Notifications › Allow, rồi tải lại trang.'));
+    const on = loadNotes().osOn;
+    const where = DESKTOP_OS === 'macOS' ? 'System Settings › Notifications › tên trình duyệt' : 'Settings › System › Notifications › tên trình duyệt';
+    return box(h('b', {}, `Thông báo ${DESKTOP_OS}: ${on ? 'đang bật' : 'đang tắt'}`),
+      h('div', { class: 'small' }, `Chỉ hiện khi tab console bị ẩn hoặc không được chọn. Không thấy gì? Xem ${where}, và chế độ Focus / Do Not Disturb.`),
+      h('div', { class: 'row' },
+        btn(on ? 'Tắt' : 'Bật lại', () => { editNotes((s) => { s.osOn = !on; }); openNotes(); }, { cls: 'sm' }),
+        on ? btn('Gửi thử', () => osNotify({ key: null, level: 'info', href: '#quests', title: 'Director: thông báo thử', body: 'Bấm vào đây để mở console.' }), { cls: 'sm ghost', ic: 'bell' }) : null));
+  }
+
+  function openNotes() {
+    const s = loadNotes();
+    const rows = s.feed.map((f) => h('button', { class: `note-row l-${f.level} ${f.read ? '' : 'unread'} ${f.resolved ? 'resolved' : ''}`, type: 'button', onclick: () => openNote(f) },
+      h('div', { class: 'note-ic' }, icon(LEVEL_ICON[f.level] ?? 'bell', 15)),
+      h('div', { class: 'note-txt' }, h('b', {}, f.title), f.body ? h('div', { class: 'small' }, f.body) : null,
+        h('div', { class: 'note-meta' }, f.project ? h('span', {}, f.project) : null, f.tag ? h('span', {}, f.tag) : null, h('span', {}, ago(f.at)), f.resolved ? chip('đã xử lý', 'good', 'check') : null))));
+    const d = drawer('Thông báo',
+      osPanel(),
+      h('div', { class: 'row', style: { marginTop: '14px' } }, h('span', { class: 'muted small grow' }, `${unreadCount(s)} chưa đọc · ${s.feed.length} gần đây`),
+        btn('Đọc hết', () => { editNotes((x) => x.feed.forEach((f) => { f.read = true; })); openNotes(); }, { cls: 'sm ghost', ic: 'check', disabled: !unreadCount(s) })),
+      h('div', { class: 'note-list' }, rows.length ? rows : empty('Chưa có thông báo nào.', 'bell', 'Việc mới cần bạn sẽ hiện ở đây.')));
+    d.classList.add('notes');
+  }
+
+  async function pollAttention() {
+    try { await ingestAttention((await api('/api/attention')).items ?? []); } catch {}
+  }
+  window.addEventListener('storage', (e) => { if (e.key === NOTE_KEY) drawBell(); });
 
   // ---------------------------------------------------------------- shell
   const shell = {};
@@ -173,10 +348,12 @@
     shell.nav = tabs;
     shell.themeBtn = h('button', { class: 'btn icon-only', type: 'button', onclick: cycleTheme }, icon('moon', 18));
     const searchBtn = h('button', { class: 'btn', type: 'button', onclick: () => openPalette(), title: 'Tìm nhanh (⌘K hoặc /)' }, icon('search', 17), h('span', { class: 'search-lbl' }, 'Tìm'), h('span', { class: 'kbd search-lbl' }, '⌘K'));
+    shell.bellBadge = h('span', { class: 'badge', hidden: true });
+    shell.bellBtn = h('button', { class: 'btn icon-only bell', type: 'button', onclick: openNotes, title: 'Thông báo' }, icon('bell', 18), shell.bellBadge);
     const top = h('header', { class: 'topbar' }, h('div', { class: 'inner' },
       h('button', { class: 'brand-sticker', type: 'button', onclick: () => go('map') }, 'Director ✦'),
       h('nav', { class: 'tabs', 'aria-label': 'Điều hướng' }, tabs.map(([, b]) => b)),
-      h('div', { class: 'top-right' }, searchBtn, shell.themeBtn)));
+      h('div', { class: 'top-right' }, searchBtn, shell.bellBtn, shell.themeBtn)));
     shell.crumb = h('div', { class: 'crumb' });
     shell.title = h('h1', {});
     shell.tags = h('div', { class: 'tags' });
@@ -226,7 +403,8 @@
     const r = ROUTES.find(([id]) => id === route.view);
     shell.crumb.textContent = `DIRECTOR / ${CRUMB[route.view]}${route.arg ? ` / ${route.arg.toUpperCase()}` : ''}`;
     shell.title.textContent = route.arg && ['worlds', 'pilot'].includes(route.view) ? route.arg : r[1];
-    document.title = `${r[1]} · Director`;
+    shell.baseTitle = `${r[1]} · Director`;
+    drawBell();
     for (const list of [shell.nav, shell.bottom]) for (const [id, b] of list) b.classList.toggle('on', id === route.view);
     if (!ov) return;
     const c = questCounts(ov);
@@ -274,6 +452,7 @@
       return;
     }
     store.proj = {};
+    await ingestAttention(store.ov.attention ?? []);
     if (force || (!openOverlay && !isTyping() && !rendering && ['map', 'quests', 'worlds'].includes(route.view))) await render();
     else updateChrome();
   }
@@ -411,32 +590,73 @@
     return systemCard(q.data);
   }
 
-  function longText(text, limit = 700) {
-    const box = h('div', { class: 'quest-body' });
-    if (text.length <= limit) { box.textContent = text; return box; }
-    let open = false;
-    const more = h('button', { class: 'btn ghost sm', type: 'button' }, 'Xem thêm');
-    const draw = () => { box.textContent = open ? text : `${text.slice(0, limit)}…`; more.textContent = open ? 'Thu gọn' : 'Xem thêm'; };
-    more.addEventListener('click', () => { open = !open; draw(); });
-    draw();
-    return h('div', {}, box, more);
-  }
+  // the runner's question kinds, in the director's words; the raw kind stays on the chip
+  const KIND_VI = {
+    fleet_gate: 'Cổng quyết định của fleet', lane_blocked: 'Lane bị chặn', director_gate: 'Cổng giám đốc duyệt',
+    approval_evidence: 'Bằng chứng duyệt chưa đủ', verdict_override: 'Verdict review cần xác nhận', verdict_mismatch: 'Verdict lệch nhau',
+    verify_failed: 'Bước verify lỗi', verify_manual: 'Cần kiểm tra tay', coordinator_missing: 'Không thấy coordinator',
+    unknown_status: 'Trạng thái lane không rõ', commit_stalled: 'Commit chưa xong', commit_sha_stale: 'SHA commit đã cũ',
+    prompt_not_sent: 'Prompt chưa gửi tới terminal', manual_required: 'Cần thao tác tay',
+  };
+  const NOTE_VI = { required: 'cần ghi chú', optional: 'ghi chú tuỳ chọn' };
+  const section = (label, ...kids) => h('div', { class: 'q-sec' }, h('div', { class: 'q-sec-h' }, label), ...kids);
+  let translateRetry = null;
 
   function runnerCard(q) {
+    const noteKey = `${q.project}#${q.id}`;
     const note = h('textarea', { class: 'input', placeholder: 'Ghi chú / câu trả lời cho lane (bắt buộc với lựa chọn có dấu *)' });
-    const opts = q.options.map((o) => btn(o.choice + (o.note === 'required' ? ' *' : ''), () => {
+    note.value = ui.notes[noteKey] ?? '';
+    note.addEventListener('input', () => { ui.notes[noteKey] = note.value; });
+    const vi = q.vi;
+    const answer = (o, i) => {
       if (o.note === 'required' && !note.value.trim()) { toast('Lựa chọn này cần ghi chú.', true); note.focus(); return; }
+      const label = o.vi_label ? `${i + 1}. ${o.vi_label}` : `${i + 1}. ${o.choice}`;
       act('runner.answer', { project: q.project, id: q.id, choice: o.choice, text: note.value }, {
-        title: `Trả lời ${q.project} ${q.id}`, body: `Lựa chọn: ${o.choice}${note.value.trim() ? `\nGhi chú: ${note.value.trim()}` : ''}`, ok: 'Gửi cho runner',
-        danger: /^stop/i.test(o.choice),
-      });
-    }, { cls: /^stop/i.test(o.choice) ? 'danger' : '', title: o.note === 'required' ? 'Cần ghi chú' : null }));
+        title: `Trả lời ${q.project} ${q.id}`, ok: 'Gửi cho runner', danger: /^stop/i.test(o.choice),
+        body: `Lựa chọn: ${label}\nRunner nhận nguyên văn: "${o.choice}"${note.value.trim() ? `\nGhi chú: ${note.value.trim()}` : ''}`,
+      }).then((r) => { if (r?.ok) delete ui.notes[noteKey]; });
+    };
+    const opts = h('div', { class: 'opt-list' }, q.options.map((o, i) => h('button', {
+      class: `opt-row ${/^stop/i.test(o.choice) ? 'danger' : ''}`, type: 'button', onclick: () => answer(o, i), title: `Runner nhận: ${o.choice}`,
+    },
+    h('span', { class: 'opt-num' }, i + 1),
+    h('span', { class: 'opt-txt' },
+      h('b', {}, (o.vi_label ?? o.choice) + (o.note === 'required' ? ' *' : '')),
+      o.vi_text && o.vi_text !== o.vi_label ? h('span', { class: 'small' }, o.vi_text) : null,
+      h('span', { class: 'opt-en' }, o.choice, o.note ? ` · ${NOTE_VI[o.note] ?? o.note}` : '')))));
+
+    const trState = {
+      translating: () => chip('đang dịch sang tiếng Việt…', 'warn', 'clock'),
+      failed: () => chip(`dịch lỗi, thử lại sau 10 phút: ${q.vi_error ?? ''}`.slice(0, 160), 'bad', 'alert'),
+      off: () => chip('chưa có bản tiếng Việt', 'outline'),
+    }[q.vi_state]?.() ?? null;
+    if (q.vi_state === 'translating' && !translateRetry) translateRetry = setTimeout(() => { translateRetry = null; refresh(false); }, 9000);
+
+    const why = vi?.why ?? q.judge?.defer ?? null;
+    const english = h('details', { class: 'q-more' }, h('summary', {}, vi ? 'Nguyên văn tiếng Anh (runner)' : 'Chi tiết gốc của runner'),
+      h('pre', { class: 'code' }, [
+        q.text, q.detail && q.detail !== q.text ? `\n\nChi tiết:\n${q.detail}` : '',
+        q.judge?.defer ? `\n\nJudge (${when(q.judge.at)}): ${q.judge.defer}` : '',
+        q.judge?.choice ? `\n\nJudge chọn: ${q.judge.choice} — ${q.judge.reason ?? ''}` : '',
+        `\n\nOptions:\n${q.options.map((o, i) => `${i + 1}. ${o.choice}`).join('\n')}`,
+      ].join('')));
+    const tech = h('details', { class: 'q-more' }, h('summary', {}, 'Mã kỹ thuật'),
+      h('div', { class: 'kv' }, [
+        ['id', q.id], ['loại', q.kind], ['key', q.key], ['gate / ref', q.ref], ['obs', q.obs],
+        ['cùng chờ (also)', q.also?.length ? q.also.join(', ') : null], ['hỏi lúc', when(q.asked_at)], ['đã báo', q.notified ? when(q.notified) : null],
+        ['bản dịch', vi?.at ? `sonnet · ${when(vi.at)}` : q.vi_state],
+      ].filter(([, v]) => v).map(([k, v]) => [h('span', { class: 'muted' }, k), h('span', { class: 'mono' }, v)])));
+
     return h('div', { class: 'quest q-runner' },
-      h('div', { class: 'quest-h' }, qtag('alert', 'Runner hỏi'), chip(q.project, 'outline'), q.slice ? chip(q.slice, 'accent') : null, chip(q.kind, 'warn'), h('span', { class: 'grow' }), h('span', { class: 'small muted' }, `${q.id} · ${ago(q.asked_at)}`)),
-      longText(q.text),
-      q.detail && q.detail !== q.text ? h('details', { style: { marginTop: '6px' } }, h('summary', {}, 'Chi tiết'), h('pre', { class: 'code' }, q.detail)) : null,
+      h('div', { class: 'quest-h' }, qtag('alert', 'Runner hỏi'), chip(q.project, 'outline'), q.slice ? chip(q.slice, 'accent') : null,
+        chip(KIND_VI[q.kind] ? `${KIND_VI[q.kind]} · ${q.kind}` : q.kind, 'warn'), h('span', { class: 'grow' }),
+        h('span', { class: 'small muted' }, `${q.id} · ${when(q.asked_at)} · ${ago(q.asked_at)}`)),
+      q.context?.length ? h('div', { class: 'q-context' }, q.context.map((l) => h('div', {}, l))) : null,
+      section(vi ? 'Câu hỏi' : 'Câu hỏi (nguyên văn tiếng Anh)', trState, h('div', { class: 'quest-body' }, vi?.summary ?? q.text)),
+      why ? section(vi?.why ? 'Vì sao judge để bạn quyết' : 'Vì sao judge để bạn quyết (tiếng Anh)', h('div', { class: 'q-why' }, why)) : null,
+      section('Các lựa chọn', opts),
       h('div', { style: { marginTop: '10px' } }, note),
-      h('div', { class: 'quest-actions' }, opts));
+      english, tech);
   }
 
   function draftCard(d) {
@@ -873,5 +1093,7 @@
   readHash();
   window.addEventListener('hashchange', () => { closeOverlay(); render(); window.scrollTo(0, 0); });
   refresh(true);
-  setInterval(() => { if (!document.hidden) refresh(false); }, 20000);
+  // a hidden tab keeps polling the light attention list (browsers slow it to about once a minute)
+  setInterval(() => { if (!document.hidden) refresh(false); else pollAttention(); }, 20000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(false); });
 })();

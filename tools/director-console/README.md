@@ -25,13 +25,41 @@ so the page CSP can forbid it.
 - **Nhiệm vụ**: one list of everything waiting on you, filterable by kind, project or text. Runner
   questions are answered in place; judge drafts take verdict pills and per-row confirmation;
   triage rows can be dismissed; system issues come with their fix.
+  - A runner question card shows everything the runner's own dialog shows, in Vietnamese:
+    - where the run stands (`questionContext`);
+    - the question;
+    - why the judge left it to you;
+    - every option, with its Vietnamese label, its full text, the exact English choice the runner receives, and whether it needs a note.
+  - The English original, the judge's reason and the technical ids (key, gate/ref, obs, also) sit in two expandable sections.
+  - A note you type survives the 20 s refresh.
+  - The Vietnamese comes from the runner's `q.lang` when it was made from this exact question. Otherwise the server starts the runner's own `translate.mjs` in the background: one `claude -p` sonnet call, for every project, not only those with `release.question_lang: vi`. The call is cached on the question the same way the dialog caches it, so neither one asks twice. `CONSOLE_TRANSLATE=off` turns this off.
 - **Dự án**: a project's level map (pick a slice to see its merge-journal timeline, memory and
   deferred checks), the runner control deck and live Orca terminals.
 - **Memory / Pilot / Playbook / Scorecard / Nhật ký**: modes as segmented controls, archive
   bars, a record explorer and drawer (promote/retract), stacked verdict columns with a table view,
   and recipe cards with filters plus a rendered recipe drawer.
 
-Search everything with ⌘K or `/`. The theme follows the OS, or the toggle in the sidebar. Verdict
+Search everything with ⌘K or `/`. The theme follows the OS, or the toggle in the top bar.
+
+## Notifications
+
+`lib.attention()` lists everything that needs you now, one row per item with a stable key. It covers:
+- open runner questions;
+- a runner that died mid-slice (step `lane`, no live lock, no stop/pause);
+- judge drafts and triage rows;
+- a failed or stale memory refresh;
+- active unregistered checkouts.
+
+Deferred manual checks are left out, because they wait for ship. The rows come with
+`/api/overview` and alone from `/api/attention`.
+
+The page announces each key once per browser:
+- **In the page:** a card at the top right (runner questions and a failed refresh stay until closed), an unread entry under the bell, and `(n)` in the tab title.
+- **On macOS and Windows:** once you allow it, through the browser, also an OS notification while the tab is hidden or unfocused. A banner asks for that permission, and the bell drawer can test, mute or explain a block.
+
+A key that goes away marks its entry resolved and closes its OS notification. The first look in a new browser takes what is already waiting as read, with no alerts. More than three new rows at once become one summary.
+
+A hidden tab keeps polling `/api/attention` every 20 s, which browsers slow to about once a minute. Nothing arrives while no console tab is open. The bell's state lives in localStorage, per browser. Verdict
 colors are the validated categorical slots 1-5 in both themes; status colors always come with an
 icon and a label. On phones a bottom tab bar replaces the sidebar, and wide graphs scroll inside
 their own panel.
@@ -57,6 +85,10 @@ their own panel.
 | `draft.apply` | writes the director's verdict and confirmed edits into the judge draft, then `orca-memory pilot apply-draft --file …` |
 
 Every action is appended to `~/.agents/logs/director-console.jsonl` (the **Nhật ký** tab).
+
+There is one write outside that table: the Vietnamese translation of an open runner question. It
+goes onto the question's `lang` field through the runner's own `translated()`, under the runner
+file lock. It is a cache, not a decision, and the runner's dialog reads the same field.
 
 ## Tailnet access
 
