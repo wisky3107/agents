@@ -630,7 +630,7 @@ test('fleet: a fresh review round written as review.md (higher round, cites the 
   assert.deepEqual(g7.sends().at(-1), { to: 'term_1', text: FLEET_COMMIT_TEXT });
   // a review.md that does not name a later round, or does not cite the round it overrides, is still asked
   // (a "round 1" only in the heading is the fix round's number, not a citation)
-  for (const body of ['# T-S01 review (round 2, after fix round 1)\n\nlooks fine\n\nAPPROVED\n', '# T-S01 review — S01 (round 1)\n\nreview-r1.md\n\nAPPROVED\n', '# T-S01 review (round 2)\n\nno new review ran\n\nAPPROVED\n', 'round 2: review-r1.md settled\n\nAPPROVED\n']) {
+  for (const body of ['# T-S01 review (round 2, after fix round 1)\n\nlooks fine\n\nAPPROVED\n', '# T-S01 review (round 2)\n\nafter fix round 1 all good; round 1.1 notes\n\nAPPROVED\n', '# T-S01 review — S01 (round 1)\n\nreview-r1.md\n\nAPPROVED\n', '# T-S01 review (round 2)\n\nno new review ran\n\nAPPROVED\n', 'round 2: review-r1.md settled\n\nAPPROVED\n']) {
     const q = project({ slices: { S01: { needs: false, size: 'L' } } });
     const g = fakes();
     g.queue([

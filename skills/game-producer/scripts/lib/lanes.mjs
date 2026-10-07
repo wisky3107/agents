@@ -399,7 +399,7 @@ function laterRound(text, lastRound) {
   // it cites that round by file, or by number below the heading ("Fix verification (round 4 findings)",
   // cc-firefighter-kids S01 q7)
   const body = text.slice(text.indexOf(head) + head.length);
-  return Boolean(n && m && Number(m[1]) > n && (text.includes(path.basename(lastRound)) || new RegExp(`\\bround ${n}\\b`, 'i').test(body)));
+  return Boolean(n && m && Number(m[1]) > n && (text.includes(path.basename(lastRound)) || new RegExp(`(?<!fix )\\bround ${n}\\b(?![.\\d])`, 'i').test(body)));
 }
 
 /**
