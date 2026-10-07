@@ -720,3 +720,20 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
    - Gỡ: gửi cho coordinator `run-use --id <run>` + dispatch lại implement (giữ phần code dở trong worktree) + quay lại vòng wait. Sau đó `producer-runner launch` → "took over the lock of dead pid", log "coordinator is now term_6ddc… (takeover)". Writer mới: term_57dda41b.
    - Hướng sửa (chưa làm): runner khi start/resume phát hiện coordinator của Run stale mà có terminal claude resume cùng title → hỏi director, hoặc gửi sẵn câu nhắc "rebind + re-dispatch".
 5. **Finding F2 (chưa sửa):** bộ contract (GAME_BRIEF, HOW_TO, slices/, …) chưa từng được commit trên main. Coordinator mỗi slice phải copy file untracked vào worktree ("as S02 did"). Rủi ro: worktree mới không có contract, và tracked-diff/scope bị nhiễu. Cần director cho phép commit bộ contract.
+
+### Pilot 11 — S05 sự cố và khôi phục (2026-10-07 14:12 → 14:53Z)
+
+- **Chuỗi sự cố:**
+  - 14:12Z S05 review APPROVED. Runner gửi "commit" cho writer thì fail (`agent_prompt_blocked`, 2 lần).
+  - q12: director chọn "mark blocked" qua dialog.
+  - Runner chọn ngay S06 (single lane) trong **cùng main checkout**, khi S05 còn chưa commit. Writer S06 sửa đè lên 4 file S05 cũng sửa (SaveSystem, GameEvents, MissionFlowSystem, PopupDefine).
+  - ~14:27Z Orca restart: runner và các writer chết, mọi terminal đều `terminal_handle_stale`.
+- **Khôi phục** (director: "giúp tôi resume dự án cc-firefighter-kids"):
+  - Backup toàn bộ trạng thái vào `T-S06/evidence/s06-partial-backup/`.
+  - 4 file S05 dựng lại byte-for-byte từ output `cat` của writer S06 lúc 14:16:18Z, trước lần sửa đầu tiên của nó (14:20:10Z). Cắt phần S06 append khỏi GameEvents rồi dùng làm mốc để tách luồng cat của 3 file.
+  - tests 91/91, khớp lúc approve.
+  - Commit `d475832` (khôi phục `assets/.meta` theo F2 của reviewer). S05 → phase merge → runner tự chạy harvest/record/notes (`972a406`). S06 khởi động lại sạch lúc 14:53Z (runner pid 34791).
+  - Không re-smoke được vì preview chết theo Orca; nội dung giống bản đã review.
+- **Finding (lỗi runner, chưa sửa):**
+  1. "mark blocked" sau `send_failed` ở phase commit của single lane bỏ lại code đã approve, chưa commit, trong main. Runner vẫn chọn slice single-lane tiếp theo trên checkout dirty. Cần: chặn select khi main có thay đổi chưa commit của slice khác, và không đưa "mark blocked" ra khi review APPROVED mà commit chưa xảy ra.
+  2. `agent_prompt_blocked` khi gửi vào writer: chưa rõ nguyên nhân (writer kẹt ở prompt?), terminal đã mất.
