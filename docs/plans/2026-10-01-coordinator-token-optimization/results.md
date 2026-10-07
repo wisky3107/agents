@@ -862,3 +862,35 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
    - Pkill hoặc Orca restart giết **mọi** lane đang chạy trên máy, không chỉ lane của session gây ra. Sau mỗi lần như vậy phải làm lại ba bước: run-use, dispatch lại task, relaunch runner.
    - Cổng preview không được pin. Sau khi Creator restart, `curl :7458` trả 200 không chứng minh đó là game của slice. Phải kiểm tra `--project` của pid đang lắng nghe, hoặc title trang.
 9. **Tiếp theo:** runner đã tự sang S04 paint-shop (single lane, writer spawn 17:56Z), vì director gate S04 đã GIVEN.
+
+### Pilot 14 — kết quả (S12 merge 2026-10-07 18:18Z)
+
+1. **Merge:** slice `56f6285`, bookkeeping `c793e45`; harvest xong (422 records), 3 dòng lessons. Kit slice-check: 0 feature. Thời gian 16:47 → 18:18Z = 1 h 31. Trong đó ~29 phút mất cho writer đầu bị idle cho tới khi runner mở lane resume (16:55 nudge → 17:16 resume). Main local đi trước origin 9 commit (chưa push).
+2. **Review:** 1 vòng, APPROVED; 0 fix round.
+   - F1 minor: scale 0.94 của Cáo không được khai báo. Giá trị đúng (ở 1.0 đầu Cáo nằm sau tag pill trên 01), nên tôi duyệt thành S12-D10 (`882103c`) thay vì mở follow-up.
+   - Writer tự ghi FOLLOWUPS #42–#45: import map dùng chung, race lúc boot rộng hơn, anim đặc biệt nhô sau pill, ARCHITECTURE thiếu `preload`.
+   - manual_deferred (3): cảm giác ngón tay, notch V3, playtest throttle trên máy thật.
+   - budget_bump advisory: lines 700 → 4127, vì JSON/atlas của spine bị tính là dòng code (lần sau loại file asset dạng text khỏi budget lines).
+3. **Token** (sess / turns / context):
+
+| Role | S09 (P10) | S11 (P13) | S12 (P14) |
+|---|---|---|---|
+| single lane (writer ×2 + reviewer) | 48.6M | 2 / 237 / 49.4M | 3 / 321 / 60.2M |
+| producer (LLM) | — | 0 | 0 |
+
+4. **So sánh:** +22 % so với S11. Một phần do lane resume phải đọc lại ngữ cảnh (1st turn 73.9k), một phần do F-42 (preview bị flip runtime, phải chẩn đoán và rebuild hai lần, ở writer và reviewer). Avg ctx 187k/turn, thấp hơn S11 (208k).
+5. **Câu hỏi runner:** 0.
+6. **Sự cố:**
+   - Writer idle → lane resume (failure signature mới, `1d4ac46`; lần thứ hai sau pilot 11 S10). Runner tự khôi phục.
+   - F-42: import map của preview trong cache app Creator dùng chung cho mọi Creator 3.8.8. Một editor project spine-3.8 đã flip runtime preview của love-train sang spine 3.8, hai lần (23:53 local trong pha writer, 17:54:47Z trong pha review). Signature `efd8a4f`. Candidate fix: preflight probe `sp.SPINE_VERSION` trên preview cho project dùng Spine.
+   - Smoke tự fallback Orca → Chrome nhờ sync template (`995097d`): 0 vòng INFRA.
+7. **Memory (assist):** plan pack 6 items / ~1.8k tokens.
+   - Writer và reviewer đều trích `T-S01/lt-s01-spine-version-guard` và `T-S01/lt-s01-spine43-on-42-runtime`.
+   - Lesson thứ hai khiến reviewer probe runtime version khi pet chuyển sang ảnh tĩnh giữa run. Nhờ vậy reviewer phát hiện flip môi trường thay vì báo hồi quy code.
+   - Kết luận: hữu ích, lesson đã chặn một kết luận sai.
+   - Learning candidates mới: `lt-s12-shared-preview-import-map`, `lt-s12-cached-failure-for-sync-check`.
+8. **Bài học:**
+   - Soạn slice: pre-check version label đã đúng chỗ. Parser chặn cả 7 pet, slice khai báo trước nên writer sửa ngay.
+   - Soạn slice: playtest dùng `?mock_scenario=new_account` không phải fixture có thật (`new_user_free` mới đúng; review N7). S11 cũng ghi `new_account`. Pre-check nên grep danh sách scenario của MockApi.
+   - Soạn slice: `change_budget.lines` nên loại file asset dạng text (spine JSON/atlas).
+   - Workflow: khi nhiều project Creator 3.8.8 mở song song, preview của project Spine có thể chạy sai runtime. Cần một probe trong preflight/run-smoke (chưa làm, ghi ở signature).
