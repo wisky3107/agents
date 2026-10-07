@@ -561,3 +561,11 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
   - State tài khoản test lúc này: điểm 0, Tim 580, lượt còn x1–x2. Có người đã test thêm và làm đầy thanh, không phải do pilot.
   - Lưu ý: proxy public cho phép bất kỳ ai có ticket gọi BE Dev qua domain này; không có ticket thì nhận 401.
 - 08:23Z: merged `a13efa7` (548dc10 + 6fb902e + temp-dir hardening + 3 dòng failure-signatures). Reviewer độc lập APPROVED cả hai commit; suite 147 + 25 xanh. Đã restart runner để nạp `judge.mjs`: pid 44237 → 66586, terminal `term_f348588b…`, dry-run "continue at fleet", không có blocker.
+- 08:46Z: review vòng 4 chạy bằng Chrome headless (đúng như đã ủy quyền), kết quả CHANGES_REQUESTED: 2 blocker, 3 major, 1 minor.
+  - F1: camera của Canvas là PERSPECTIVE, game bị zoom ~1.55x.
+  - F4: pointer thật lệch (−180, +320) design px, vì Canvas cũ 1080x1920.
+  - F5: tween người được cứu trượt xuống thang không chạy.
+  - F2: chữ popup xuống dòng từng ký tự.
+  - F3: chữ dưới 14 CSS px ở V4.
+  Smoke trên tab Orca (6/6 PASS, chỉ kiểm state) đã che F1/F2/F4/F5. Kênh Chrome là thứ lộ ra lỗi game thật; ba vòng INFRA_BLOCKED trước đó đã giấu chúng. Bài học cho smoke: check S01 chỉ đọc state nên không bắt được lỗi camera/input.
+  - Fix round 1 (writer, phần code): HANDOFF ready_for_review. Không có câu hỏi mở.
