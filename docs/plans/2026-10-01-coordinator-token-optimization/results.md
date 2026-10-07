@@ -1032,3 +1032,8 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 5. **Memory (assist):** hữu ích ở mọi slice. Lesson của chính dự án được harvest rồi dùng ngay ở slice sau (S02→S04, S01→S06, S07→S08). Lesson từ các dự án khác (firefighter, block-out, love-train) đã chặn trước các lỗi đã biết: Creator mở scene untitled, audio first-tap, freeze tween khi pause, guide restart.
 6. **manual_deferred phải ký trước khi ship:** 24 mục (S01 5, S02 3, S03 2, S04 2, S05 3, S06 3, S07 3, S08 3). Phần lớn cần máy thật: chạm, notch, âm thanh iOS. Ngoài ra có lời văn tiếng Việt (FOLLOWUPS #1), nghe mix âm thanh, deploy smoke và tag `v1.0.0`.
 7. **Step 3 (ship) chờ director.**
+8. **Cập nhật sau tổng kết:** fix `fix/orca-restart` đã merge vào master `aed5a7b` (fast-forward). Suites xanh: game-producer 160/160, cocos-orca-fleet 25/25. Review APPROVED.
+   - Câu hỏi `coordinator_missing` có thêm lựa chọn "rebind the coordinator given in --text". Runner sẽ tự gửi lệnh run-use, dispatch lại task bị mất, rồi cho coordinator quay lại vòng chờ. Nếu Run không đổi trong 10 phút thì runner hỏi lại.
+   - `laterRound` chấp nhận "rN", loại trừ các cách viết "fix r2", "r2.5", path và id.
+   - Thêm signature F3.
+   - Lúc merge không có runner nào đang chạy, nên không cần restart.
