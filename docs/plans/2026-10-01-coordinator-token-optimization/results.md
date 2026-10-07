@@ -784,3 +784,15 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
    - Pre-check "node.emit đi xuyên qua BlockInputEvents" đã có tác dụng: writer chứng minh block bằng pointer thật (Playwright) kèm negative control, reviewer chạy lại được.
    - Preflight: diff `run-smoke.mjs` với template trước khi launch (đã thêm vào skill).
    - Workflow: chạy hoàn toàn không người trông (0 câu hỏi, 1 vòng review, 54 phút). Đây là slice nhanh nhất trong chuỗi love-train sau ship.
+
+### Pilot 11 — S07 resume sau `pkill -n` (2026-10-07 16:07 → 16:26Z)
+
+- **Sự cố:** 16:07Z một session Claude khác chạy `pkill -f "director-console/server.mjs" -n`. BSD pkill coi `-n` là pattern thứ hai, nên giết mọi process có "-n" trong argv: wrapper login của mọi terminal Orca, mọi Cocos editor. Runner S07 (pid 34791), writer và reviewer S07 chết theo. Reviewer mới spawn 18 giây, chưa viết gì, nên không có slice nào đã APPROVED mà chưa commit.
+- **Nguyên nhân sự cố S05 cũng là pkill:** writer S06 chạy `pkill -f 'cat' -n` lúc 14:23:32Z, cùng kiểu, ~4 phút trước khi mọi terminal mất (máy reboot lúc 14:28Z).
+- **Resume** (director: "resume"):
+  - Mở lại editor main (`open-editor.sh` + wait-mcp, 105 tool). Preview 7456 trả 200 đúng dự án.
+  - S07 `reviewer: null` → runner tự spawn reviewer mới. Relaunch runner pid 13416 lúc 16:26Z.
+  - Writer S07 đã chết: nếu commit send fail thì commit tay rồi chọn "drop the message", không bao giờ "mark blocked". Luật này đã đưa vào cron.
+- **Finding (workflow):**
+  1. Worker có thể chạy `pkill -f <pattern> <flag>` và giết toàn bộ fleet. Cần thêm vào guardrails của template và prompt worker: "không pkill/pgrep theo pattern; chỉ kill đúng pid".
+  2. `ensureEditor` chỉ mở lại editor khi res-guard bật. Sau một vụ kill hàng loạt, runner không tự mở lại editor main cho single lane.
