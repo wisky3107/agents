@@ -642,3 +642,34 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
   - Merge: ~/.agents `3010d85` (3 file trùng với WIP của session khác, đã merge 3 chiều, WIP vẫn nguyên); cc-game `67a34e0`, playable `61923a0`, cc4 `4be7849` (giữ `--scene`/`--url`), project `b4072e0`, agent-skills `e596ea6`. Không push.
   - Runner firefighter restart lúc 12:20Z: pid 18782 → 26545.
   - Game hiện có chỉ nhận bản mới sau `/update-skills`.
+
+### Pilot 11 — kết quả (S10 merge 2026-10-07 11:40Z)
+
+1. **Merge:** S10 commit `5a12b86`, single lane, commit thẳng trên main; bookkeeping `3d3f2c5`. Main đã push. Từ launch (10:11Z) tới merge mất 1h29m: có một lần runner thay writer đang idle bằng lane resume (11:20Z), và có chờ câu trả lời q18.
+2. **Review:** 1 vòng, APPROVED, không có vòng sửa.
+   - Smoke chạy bằng CDP headless: 43/45. Hai check fail đã có từ trước (s07-release là branding trên editor preview, cộng một lỗi baseline).
+   - Tab Orca vẫn đứng ở cả writer lẫn reviewer.
+3. **Token:** slice-agent 3 session, 309 turn, 58.4M; producer 16.9k. So với S08 24.6M và S09 48.6M: phiên writer bị thay cộng với lane resume làm tăng số turn.
+4. **Câu hỏi runner:**
+   - q18 `lane_blocked`: acceptance #3 đòi "font bytes lower", nhưng `bold.ttf` vẫn được hai popup của template tham chiếu. Director trả lời qua dialog: "font bytes không cần giảm". Đã ghi S10-D8.
+5. **Số đo trước → sau** (`docs/evidence/S10/report.md`):
+   - Build: **33.21 MB → 22.09 MB (−33%)**.
+   - PVRTC: 10.00 → 2.00 MB. File `.pvr` lớn nhất: 8.00 → 2.00 MB. File còn lại là `bg-care-gradient`, nằm ngoài paths (FOLLOWUPS #34).
+   - ASTC: 1.70 → 1.31 MB; ETC: 3.39 → 2.61 MB; PNG: 7.57 → 7.14 MB.
+   - Root (icon, og-image): 2.25 → 0.75 MB.
+   - Engine và font không đổi: đã thử crop engine nhưng phải revert (FOLLOWUPS #35); `bold.ttf` còn được tham chiếu (#33).
+   - Cold load (9 Mbit/s, 150 ms RTT, median 3 lần chạy):
+     - nhánh PVRTC (iPhone cũ): **23.9 s → 16.8 s, 21.1 → 13.9 MB**;
+     - ASTC: 16.3 → 15.7 s; ETC: 17.8 → 17.0 s; PNG: 15.4 → 15.1 s;
+     - số byte của các nhánh ASTC/PNG chỉ giảm trong mức nhiễu.
+   - Nhạc nền không còn được tải lúc boot.
+   - So sánh hình ở V1: lệch 0 px, mean |diff| ≤ 1.36/255, không thấy banding.
+   - Hai ảnh nền giờ là 1560×2048, hiển thị vẫn 1920×2520. TrainWall đã chuyển sang CUSTOM.
+6. **Sự cố:**
+   - Writer idle 3 lần, có thể do kẹt ở smoke trên tab Orca. Runner tự mở lane resume để gỡ.
+   - Acceptance ghi "font bytes lower" mà không kiểm tra font đó có còn được tham chiếu không. Đây là lỗi pre-check khi viết slice: lẽ ra phải grep tham chiếu font trước khi đặt yêu cầu.
+7. **Memory:** off.
+8. **Bài học:**
+   - Khi viết slice tối ưu, chỉ đưa vào acceptance các con số mà pre-check chứng minh là giảm được, ví dụ font chỉ giảm nếu không còn tham chiếu.
+   - Cold load trên mạng giả lập có độ dao động khoảng 1.6 MB, nên phải chạy nhiều lần và lấy median. Chỉ những thay đổi lớn hơn mức dao động mới được tính là "giảm".
+   - Kênh CDP headless hiện là kênh runtime duy nhất chạy ổn định. Ở cả 3 slice gần nhất, tab Orca đều không render.
