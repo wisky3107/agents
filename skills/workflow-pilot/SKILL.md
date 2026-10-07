@@ -81,6 +81,9 @@ memory trial pick content that touches topics with many archived lessons
   numbers in the slice and EXPECT (pilot 13: `Mascot`/`Block` drifted, review F1);
 - template sync is not optional: diff the project's `run-smoke.mjs` against the template
   before launch (pilot 13 ran without `--channel auto`, FOLLOWUPS #39).
+- fixtures: every `?mock_scenario=` / fixture id in the playtest exists in the mock's
+  scenario list (pilots 13–14 wrote `new_account`; the fixture is `new_user_free`); keep
+  text assets (Spine JSON/atlas) out of `change_budget.lines`.
 
 Then: mock SVG in `docs/mockups/Sxx-*.svg` for a new screen, contract deltas (HOW_TO row,
 EXPECT row naming the mock, MILESTONES slices + dag + table row, RELEASE_CHECKLIST rows,

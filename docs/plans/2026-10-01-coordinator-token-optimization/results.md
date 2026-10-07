@@ -721,6 +721,12 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
    - Hướng sửa (chưa làm): runner khi start/resume phát hiện coordinator của Run stale mà có terminal claude resume cùng title → hỏi director, hoặc gửi sẵn câu nhắc "rebind + re-dispatch".
 5. **Finding F2 (chưa sửa):** bộ contract (GAME_BRIEF, HOW_TO, slices/, …) chưa từng được commit trên main. Coordinator mỗi slice phải copy file untracked vào worktree ("as S02 did"). Rủi ro: worktree mới không có contract, và tracked-diff/scope bị nhiễu. Cần director cho phép commit bộ contract.
 
+6. **Director duyệt cả 3 việc** ("duyệt tâts cả"): commit bộ contract trên main dự án `5687370`; xoá worktree s01/s02 (ảnh → `T-S0x/captures/`); sửa runner (fix/orca-restart, đang làm).
+7. **F3 — Creator chết theo terminal integrator (lặp lại S01 q3/q4):** 15:50Z review r1 INFRA_BLOCKED vì coordinator đóng terminal integrator, mà Creator là tiến trình con của nó. q6 judge defer; tôi trả lời "send this answer to the lane": mở lại Creator trong terminal Editor riêng không bao giờ đóng, rồi review-r2.
+8. **F4 — pkill của session khác giết mọi terminal Orca lúc ~16:07Z (lần 2 trong slice):** runner, reviewer r2, terminal Editor của S03 đều chết. Coordinator được resume với handle mới `term_0d8fbb0b`.
+   - **Bẫy cổng:** :7458 vẫn trả 200, nhưng là Creator của firefighter S08 (pid 56686, `--project …/cc-firefighter-kids/S08-release-polish`). Cổng preview không được pin, nên sau khi Creator restart, cổng có thể thuộc dự án khác. Reviewer kiểm tra bằng curl sẽ review nhầm game.
+   - Gỡ ở 16:55Z: báo coordinator run-use, mở lại Creator S03 (đọc cổng thật), dispatch lại review-r2 kèm URL đúng; relaunch runner (pid 65557).
+
 ### Pilot 11 — S05 sự cố và khôi phục (2026-10-07 14:12 → 14:53Z)
 
 - **Chuỗi sự cố:**
@@ -822,3 +828,207 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 5. **Finding (lặp lần 2, cần sửa sớm):** dialog `send_failed` cho commit vẫn đưa "mark blocked" ra như một lựa chọn bình thường, và director đã chọn nó cả hai lần. Đề xuất:
    - ở `send_failed:commit`, khi review đã APPROVED thì bỏ "mark blocked", thay bằng "committed by hand, check again" (runner tìm commit trên main);
    - không chọn slice single-lane khi main còn dirty với file của slice khác.
+- 17:16Z: writer đầu tiên bị đánh dấu idle 3 lần (nudge lúc 16:55Z), terminal đã exited. HANDOFF dừng ở "code + pets.json done (tsc clean); importing spines, then scene wiring…". Runner tự mở lane resume `term_8e891269…`, lane này làm tiếp scene, checks S12-01..05 và preview. Smoke tự fallback Orca → Chrome (`page never became ready`) nhờ bản sync `--channel auto` (995097d). Cùng dấu hiệu với pilot 11 S10; đã ghi vào failure-signatures (lần này không cần ai can thiệp).
+- 17:48Z S08:
+  - q20 (gate: xoá 12 file .meta folder mồ côi): director chọn A.
+  - q21 (gate deploy preview) **để mở chờ director**, đã gửi PushNotification. Lý do: dự án chưa link Vercel, và `build/deploy.sh` chạy `vercel deploy --yes` từ `build/web-mobile` sẽ auto-link theo tên thư mục vào project `web-mobile` đang có, vốn của cc-monopoly (prod cc-monopoly.vercel.app). Coordinator bắt được lỗi này trước khi publish.
+  - **Finding template:** `deploy.sh` của cc-game-template cũng vậy. Mọi game đều deploy từ thư mục tên `web-mobile`, nên game nào chưa link sẽ đè lên project `web-mobile` đầu tiên trên tài khoản. Đề xuất: không có `build/.vercel` thì dừng hẳn, hoặc tự `vercel link --project <repo-slug>`. Không bao giờ để `--yes` tự link theo tên thư mục.
+- 17:45Z: writer xong (S12 smoke 7/7, full 57/61, các check đỏ có từ trước đều pass khi chạy riêng, specs 18/18; trên 05 chiều cao 690–747 px, chân lệch 0 px; build +2.1 MB). Reviewer opus `term_7d94a712…` đang chạy. **Phát hiện môi trường (F-42):** import map của preview trong cache app Creator dùng chung cho mọi Creator 3.8.8 đang mở. Một project spine-3.8 đã ghi đè nó lúc 23:53 (giờ địa phương), làm preview của love-train chạy spine 3.8 và cả 7 pet rơi về ảnh tĩnh. Writer khắc phục bằng `engine rebuild`. Đây là rủi ro xuyên project khi nhiều pilot chạy song song; đã ghi failure signature.
+
+### Pilot 12 — S03 kết quả (S03 merge 2026-10-07 17:56Z)
+
+1. **Merge:** `aaaf269` (slice `131f388`), bookkeeping `1950b99`. Thời gian 13:46 → 17:56Z = 4 h 10, trong đó khoảng 1 h mất vì hai lần mọi terminal Orca bị giết (14:25Z Orca restart, 16:07Z pkill của session khác).
+2. **Review:** 3 vòng.
+   - r1: INFRA_BLOCKED (Creator chết theo terminal integrator, F3).
+   - r2: CHANGES_REQUESTED (F1 tên dụng cụ co còn 11.9 css px ở V3, F2 chú thích sổ tay 7.6 css px, F3 capô tràn mép phải; F4–F5 minor).
+   - r3: APPROVED sau 1 fix round, chạy trên Chrome headless ở :7459.
+   - Smoke 11/11 PASS ở V1/V2/V3, 0 lỗi console.
+   - manual_deferred: lời văn 9 câu fact (FOLLOWUPS #1, director), cảm giác chạm ngón tay / notch trên máy thật.
+   - Vượt ngân sách (advisory): files 24→27, lines 1300→1455, nodes 52→58.
+3. **Token** (từ 13:46Z): fleet-orch 1 sess / 109 turns / 20.9M; fleet-worker 11 sess / 397 turns / 67.6M + codex 1 / 2.0M; producer 22.4k. Số này gồm cả các session resume và task dispatch lại sau hai lần bị giết. fleet-orch: wait 28 % + mechanical 41 % context, tức khoảng 69 % có thể thay bằng script.
+4. **Câu hỏi:**
+   - q6 (lane_blocked, F3): judge defer; tôi trả lời "send this answer to the lane" (Creator vào terminal Editor riêng, review-r2).
+   - q7 (lane_blocked sau pkill): judge defer; director tự trả lời "tiếp tục review".
+   - q8 (verdict_override): review.md là round 3, có test lại từng finding của r2, nhưng chỉ cite bằng chữ tắt "r2" (không ghi `review-r2.md`, không ghi "round 2"). Tôi trả lời "treat as approved" sau khi đọc review.md. Đã giao fix `laterRound` (chấp nhận `rN`) cho nhánh fix/orca-restart.
+5. **Dọn dẹp:** worktree S03 bị `worktree_rm` giữ lại ("dirty") chỉ vì các bản copy contract untracked. Worktree tạo trước commit `5687370` nên đây là lần cuối gặp. Đã kiểm tra các bản copy trùng main, 66 PNG đã copy về `T-S03/captures/`, worktree đã xoá.
+6. **Memory (assist):**
+   - Writer trích `cc-firefighter-kids/T-S01/t-s01-step-systems-not-director-tick` (timer trong `tick(dt)` của system, smoke dùng `gc.advance`) và `cc-block-out/T-S04/LC-S04-3`.
+   - Integrator (lần đầu và fix-scene) trích `cc-block-out/T-S08/editor-untitled-scene`: Creator mới mở ra một scene untitled, `open_scene` với `target` là db url đã sửa được. Lesson này đã chặn trước một lỗi đã biết, và chặn hai lần vì Creator phải mở lại nhiều lần.
+   - Reviewer: "memory used: none".
+   - 5 learning candidates, trong đó có `t-s03-int-untitled-scene-and-open-scene-target`.
+   - Kết luận: hữu ích, nhất là sau mỗi lần Creator restart.
+7. **Kit:** slice-check 3 feature, 0 giữ lại (candidate `t-s03-factbook-kit-signal` để curation sau).
+8. **Bài học:**
+   - Pkill hoặc Orca restart giết **mọi** lane đang chạy trên máy, không chỉ lane của session gây ra. Sau mỗi lần như vậy phải làm lại ba bước: run-use, dispatch lại task, relaunch runner.
+   - Cổng preview không được pin. Sau khi Creator restart, `curl :7458` trả 200 không chứng minh đó là game của slice. Phải kiểm tra `--project` của pid đang lắng nghe, hoặc title trang.
+9. **Tiếp theo:** runner đã tự sang S04 paint-shop (single lane, writer spawn 17:56Z), vì director gate S04 đã GIVEN.
+
+### Pilot 14 — kết quả (S12 merge 2026-10-07 18:18Z)
+
+1. **Merge:** slice `56f6285`, bookkeeping `c793e45`; harvest xong (422 records), 3 dòng lessons. Kit slice-check: 0 feature. Thời gian 16:47 → 18:18Z = 1 h 31. Trong đó ~29 phút mất cho writer đầu bị idle cho tới khi runner mở lane resume (16:55 nudge → 17:16 resume). Main local đi trước origin 9 commit (chưa push).
+2. **Review:** 1 vòng, APPROVED; 0 fix round.
+   - F1 minor: scale 0.94 của Cáo không được khai báo. Giá trị đúng (ở 1.0 đầu Cáo nằm sau tag pill trên 01), nên tôi duyệt thành S12-D10 (`882103c`) thay vì mở follow-up.
+   - Writer tự ghi FOLLOWUPS #42–#45: import map dùng chung, race lúc boot rộng hơn, anim đặc biệt nhô sau pill, ARCHITECTURE thiếu `preload`.
+   - manual_deferred (3): cảm giác ngón tay, notch V3, playtest throttle trên máy thật.
+   - budget_bump advisory: lines 700 → 4127, vì JSON/atlas của spine bị tính là dòng code (lần sau loại file asset dạng text khỏi budget lines).
+3. **Token** (sess / turns / context):
+
+| Role | S09 (P10) | S11 (P13) | S12 (P14) |
+|---|---|---|---|
+| single lane (writer ×2 + reviewer) | 48.6M | 2 / 237 / 49.4M | 3 / 321 / 60.2M |
+| producer (LLM) | — | 0 | 0 |
+
+4. **So sánh:** +22 % so với S11. Một phần do lane resume phải đọc lại ngữ cảnh (1st turn 73.9k), một phần do F-42 (preview bị flip runtime, phải chẩn đoán và rebuild hai lần, ở writer và reviewer). Avg ctx 187k/turn, thấp hơn S11 (208k).
+5. **Câu hỏi runner:** 0.
+6. **Sự cố:**
+   - Writer idle → lane resume (failure signature mới, `1d4ac46`; lần thứ hai sau pilot 11 S10). Runner tự khôi phục.
+   - F-42: import map của preview trong cache app Creator dùng chung cho mọi Creator 3.8.8. Một editor project spine-3.8 đã flip runtime preview của love-train sang spine 3.8, hai lần (23:53 local trong pha writer, 17:54:47Z trong pha review). Signature `efd8a4f`. Candidate fix: preflight probe `sp.SPINE_VERSION` trên preview cho project dùng Spine.
+   - Smoke tự fallback Orca → Chrome nhờ sync template (`995097d`): 0 vòng INFRA.
+7. **Memory (assist):** plan pack 6 items / ~1.8k tokens.
+   - Writer và reviewer đều trích `T-S01/lt-s01-spine-version-guard` và `T-S01/lt-s01-spine43-on-42-runtime`.
+   - Lesson thứ hai khiến reviewer probe runtime version khi pet chuyển sang ảnh tĩnh giữa run. Nhờ vậy reviewer phát hiện flip môi trường thay vì báo hồi quy code.
+   - Kết luận: hữu ích, lesson đã chặn một kết luận sai.
+   - Learning candidates mới: `lt-s12-shared-preview-import-map`, `lt-s12-cached-failure-for-sync-check`.
+8. **Bài học:**
+   - Soạn slice: pre-check version label đã đúng chỗ. Parser chặn cả 7 pet, slice khai báo trước nên writer sửa ngay.
+   - Soạn slice: playtest dùng `?mock_scenario=new_account` không phải fixture có thật (`new_user_free` mới đúng; review N7). S11 cũng ghi `new_account`. Pre-check nên grep danh sách scenario của MockApi.
+   - Soạn slice: `change_budget.lines` nên loại file asset dạng text (spine JSON/atlas).
+   - Workflow: khi nhiều project Creator 3.8.8 mở song song, preview của project Spine có thể chạy sai runtime. Cần một probe trong preflight/run-smoke (chưa làm, ghi ở signature).
+
+### Pilot 12 — S04 kết quả (S04 merge 2026-10-07 18:49Z, single lane)
+
+1. **Merge:** slice `0f6fda4` commit trực tiếp trên main (single lane), bookkeeping `f63a864`. Thời gian 17:56 → 18:49Z = 53 phút. 0 câu hỏi.
+2. **Review:** 1 vòng, APPROVED, 0 fix round. Writer: smoke 17/17 (Chrome), specs 73/73, 5 lượt sơn xe không lỗi console, static WARN chỉ về scope đã khai báo.
+   - manual_deferred (2): notch thật (insets 47/0/34/0) và cảm giác chạm ngón tay (S05); tốc độ phun sơn và squash của sticker đo theo frame.
+3. **Token:** slice-agent 2 sess / 169 turns / 41.7M (writer + reviewer).
+4. **Preview:** :7456 đúng Creator của dự án (pid 61214). `preview-startup.json` ghi pid chủ và title trang, nên không gặp lại bẫy cổng của F4.
+5. **Memory (assist):**
+   - Writer trích lesson của chính dự án: `cc-car-service-kids/T-S02/t-s02-editor-authored-ui-bulk-result` (dựng scene bằng script scene-context, sửa prefab qua `create_prefab_instance` + apply), và một lesson `cc-firefighter-kids/T-S06`.
+   - Reviewer: "memory used: none".
+   - 3 learning candidates về mask/stencil và negative control.
+6. **Kit:** slice-check 1 feature, 0 giữ lại.
+7. **Tiếp theo:** runner tự sang S05 audio-and-juice (single lane).
+
+### Pilot 12 — S05 kết quả (S05 merge 2026-10-07 19:24Z, single lane)
+
+1. **Merge:** slice `eeaf93a` trên main, bookkeeping `ee04a68`. Thời gian 18:49 → 19:24Z = 35 phút. 0 câu hỏi.
+2. **Review:** 1 vòng, APPROVED, 0 fix round (writer 18:49 → 19:16, review 19:16 → 19:23).
+   - manual_deferred (3): độ nghe thật của mix, style, chỗ nối vòng lặp và độ dịu của âm sai/thua (Chrome headless không có loa, director D-1); chạy trên iOS Safari / WebKit và chính sách autoplay của trình duyệt thật; …
+3. **Token:** slice-agent 2 sess / 124 turns / 22.4M.
+4. **Memory (assist):** writer và reviewer đều trích `cc-firefighter-kids/T-S04/t-s04-capture-unlock-first-tap-cue` (mở khoá audio ở capture phase của window, để tiếng của lần chạm đầu cũng phát).
+   - Writer làm theo lesson. Reviewer dùng nó để kiểm tra rằng lần chạm mở khoá có phát tiếng, và không có listener hay audio context nào bị nhân đôi.
+   - Thêm một lesson `cc-car-service-kids/T-S03` bare-finger.
+   - Đây là lần thứ hai (sau pilot 11 S04) lesson audio first-tap được dùng qua lại giữa các dự án. 0 lessons row mới.
+5. **Tiếp theo:** runner sang S06 shell-and-settings (L, fleet, Run `run_af36acfe1731`, coordinator term_d4a2829a). Đến 19:48Z, art-2d có 3/10 ảnh fail look check; coordinator tự retry và dựng lại các task phụ thuộc.
+
+### Pilot 11 — S08 kết quả (S08 merge 2026-10-07 19:24Z, fleet, release slice)
+
+1. **Merge:** `e05238f` (slice `9984859`), bookkeeping `129acaf`. Thời gian 16:48 → 19:24Z = 2 h 36, trong đó ~1 h chờ gate deploy q21. `worktree_rm` đã xoá worktree, copy 54 ảnh chụp về `T-S08/captures/` (fix 671104b chạy lần 2).
+2. **Review:** 2 vòng, 2 fix round.
+   - r1 CHANGES_REQUESTED. F1 (major): Dim của popup không phủ mép màn hình thật ở V2/V3, trong khi integrator đã ghi PASS. Kèm 5 lỗi minor.
+   - r2 APPROVED.
+   - manual_deferred (8): RC-07 cảm giác chạm tay thật; RC-11 mở khoá âm thanh iOS Safari; RC-12 fps trên một điện thoại tầm trung cụ thể; RC-03 thời gian tap → frame đầu < 500 ms; RC-06 pinch/long-press; …
+3. **Câu hỏi:** đều do director trả lời.
+   - q19: debug handle trong release, slice tự mâu thuẫn → A.
+   - q20: xoá 12 file .meta folder mồ côi → A.
+   - q21: deploy preview → B, bỏ deploy (dự án chưa link Vercel; deploy.sh sẽ link vào project cc-monopoly).
+4. **Token:** fleet-orch 1 / 81 / 14.0M; fleet-worker 3 / 335 / 82.5M; producer 43.7k.
+5. **Memory:** coordinator và reviewer trích `cc-love-train/T-S07/lc-s07-release-safe-smoke`.
+6. **Step 3:** runner (`producer_mode: runner`) giao Step 3 cho một LLM producer (`term_698717e5…`, 19:24:37Z). Producer đang **chờ director ký nhận** các mục manual_deferred.
+   - Lựa chọn mặc định "Waive all, proceed (Recommended)" sẽ build và **deploy preview**, dù director đã chọn B ở q21, và dự án chưa có `build/.vercel` → rủi ro publish đè lên project `web-mobile` của cc-monopoly.
+   - Pilot không trả lời câu này (quyết định ship).
+   - **Finding:** prompt Step 3 không đọc quyết định "skip deploy" ở gate của S08 và vẫn đề xuất deploy.
+
+### Pilot 11 — tổng kết (cc-firefighter-kids S01→S08, 2026-10-07 06:30 → 19:24Z)
+
+- **8/8 slice đã merge**, khoảng 13 giờ đồng hồ (có 2 vụ kill hàng loạt và 1 lần reboot).
+- **Context Claude:** 475M trên 63 session (+ codex 10.6M). Coordinator fleet: S01 22.1M, S02 14.5M, S03 14.8M, S08 14.0M (S02/S03/S08 giảm ~40 % so với baseline S01). Single lane: S04 23.7M, S05 42.4M, S06 49.2M, S07 38.8M.
+- **Bản sửa workflow đã merge trong pilot:**
+  - judge đọc front matter (548dc10);
+  - judge đọc evidence qua symlink không chứa chữ "cursor" (6fb902e);
+  - laterRound nhận số vòng (dd0c105);
+  - fallback Chrome headless cho cả 5 nguồn template (3010d85 + template);
+  - dọn worktree cùng ảnh chụp (671104b).
+- **Finding còn mở:**
+  1. "mark blocked" sau `send_failed:commit` của single lane để lại code đã APPROVED trong main chưa commit, và runner chọn slice tiếp theo trên checkout dirty (S05, S07).
+  2. Worker/session chạy `pkill -f <pattern> -n` giết toàn bộ fleet (S06 writer 14:23Z, một session khác 16:07Z) → cần guardrail.
+  3. `deploy.sh` tự link theo tên thư mục `web-mobile` → dễ publish đè sang project khác.
+  4. Step 3 không mang theo quyết định "skip deploy" của slice.
+  5. `ensureEditor` chỉ chạy khi res-guard bật.
+  6. Lane art hero (orca-gpt-image-gen) fail với `browser_tab_not_found` (S03).
+
+### Pilot 12 — S06 kết quả (S06 merge 2026-10-07 21:52Z, fleet)
+
+1. **Merge:** `9430b0b` (slice `6deba05`), bookkeeping `b536146`. Thời gian 19:24 → 21:52Z = 2 h 28.
+   - `worktree_rm` tự xoá worktree (58 ảnh → `T-S06/captures/`). Đây là lần đầu trong dự án này không phải dọn tay, vì từ S06 contract đã được track.
+2. **Art:** art-2d fail 2 lần ở 3 ảnh (icon điểm dừng bị rỗng hoặc loang, con đường trên `bg_map` lệch mock > 8 px).
+   - q9 fleet_gate: judge tự trả lời A, vẽ 3 ảnh bằng script `gen_2d.py` theo đúng hình trong mock, trích dòng acceptance ±8 px.
+   - q10 gate_unresolved là race: runner hỏi lúc 20:08:35, gate được resolve lúc 20:08:38. Tôi trả lời "continue waiting". Finding nhỏ: thời gian chờ gate ngắn hơn một lượt làm việc dài của coordinator.
+3. **Review:** 2 vòng.
+   - r1 CHANGES_REQUESTED: F1 TransitionView tự tắt node trong `onLoad`; F2 cover tính sai đơn vị Canvas px; F3 ba check phụ thuộc thứ tự chạy.
+   - 1 fix round, r2 APPROVED, smoke 34/34 trên Chrome.
+   - q11 verdict_override: lại là signature laterRound. review.md (round 2) chỉ cite "r1" và F-id, không ghi tên file. Tôi trả lời "treat as approved". Bản sửa rN đang ở nhánh fix/orca-restart.
+   - Vượt ngân sách (advisory): files 22→32/33, lines 1350→1765/1820.
+4. **F6 — verify trên main fail chỉ vì kênh chạy (q12 verify_failed):**
+   - Verifier dùng run-smoke **của dự án** (bản template `2787fe3`, chỉ có kênh Orca). Check `s06-tab-hidden` lỗi `Cannot redefine property: hidden` ngay trong stub `Object.defineProperty(document,'hidden', {configurable:true})`, trước khi chạy assertion nào của game. Browser Orca có `hidden` không cho định nghĩa lại.
+   - Cùng 34 check trên main, chạy bằng run-smoke của template `--channel chrome`: 34/34 PASS (`T-S06/evidence/verify-smoke-chrome.json`).
+   - Tôi trả lời "record merged anyway (verify=failed)" kèm note. Không chọn "fixed by hand" vì không có gì được sửa.
+   - Hướng sửa: (a) đồng bộ run-smoke của dự án lên template (bản dự án đúng bằng base `2787fe3`, nên copy được). Hoãn vì S07 đang chạy single lane trên main. (b) Verifier nên chạy lại check bị ERROR trên kênh chrome trước khi hỏi. (c) Rule viết check: stub visibility phải có fallback khi `document.hidden` không cho định nghĩa lại.
+5. **Token** (từ 19:24Z): fleet-orch 1 / 94 / 18.9M; fleet-worker 6 / 342 / 62.3M + codex 3 / 7.0M; producer 25.7k; verifier 1.2M.
+6. **Memory (assist):** dùng nhiều nhất trong cả pilot.
+   - Lesson chính dự án: `T-S01/csk-s01-safe-rect-content-root-on-fixed-canvas` (đúng chỗ của F2: cover tính theo contentScale), `T-S02/t-s02-editor-authored-ui-bulk-result`.
+   - Lesson dự án khác: firefighter `T-S06/s06-freeze-all-tweens-before-popup` và `s06-sprite-sizemode-before-frame`; love-train `T-S03/s03-sync-smoke-async-flow-director-tick` (check wipe chạy bằng `director.tick`).
+   - Cả writer, integrator và reviewer đều cite. Kết luận: hữu ích, nhất là ở fix round.
+7. **Kit:** slice-check 6 feature, 0 giữ lại. 2 lessons row.
+8. **Tiếp theo:** runner tự sang S07 save-and-guide (single lane, writer spawn 21:52Z).
+
+### Pilot 12 — S07 kết quả (S07 merge 2026-10-07 22:38Z, single lane)
+
+1. **Merge:** slice `328d7f3` trên main, bookkeeping `ec67945`. Thời gian 21:52 → 22:38Z = 46 phút. 0 câu hỏi.
+2. **Review:** 1 vòng, APPROVED, 0 fix round (writer 21:52 → 22:32, review 22:32 → 22:37).
+   - manual_deferred (3): cảm giác ngón tay, notch, âm thanh trên máy thật; chưa lấy mẫu frame trung gian khi dim của popup đang đóng mà guide còn hiện; V2 / …
+3. **Token:** slice-agent 2 sess / 124 turns / 26.7M.
+4. **Memory (assist):** reviewer trích `cc-firefighter-kids/T-S05/s05-guide-milestone-restart-not-resume` r2. Lesson này khiến reviewer kiểm tra thêm hai điều: save bị reset thì bắt đầu lại từ bước 1, và reload giữa lượt xe thì guide hiện lại từ bước 1. Đúng loại lỗi mà firefighter từng gặp.
+   - 2 candidates: `s07-guide-placed-live`, `s07-save-parse-total`. 3 lessons row.
+5. **Không có câu hỏi nào kể cả verify:** single lane không chạy verifier sau merge, nên F6 không lặp lại ở đây.
+6. **Tiếp theo:** runner tự sang S08 release-polish (single lane, slice cuối, writer spawn 22:38Z).
+
+### Pilot 12 — S08 kết quả (S08 merge 2026-10-07 23:37Z, single lane, slice cuối)
+
+1. **Merge:** slice `a8e9b18` trên main, bookkeeping `133db8b`. Thời gian 22:38 → 23:37Z = 59 phút. 0 câu hỏi.
+2. **Review:** 2 vòng.
+   - round 1 CHANGES_REQUESTED: F1 check `S08-05-branding` không fail khi build để title mặc định; phải sửa thành red trên title mặc định, green trên build thật. F2 đồng bộ smoke runner của dự án (tuỳ chọn, đưa vào FOLLOWUPS). F3 quyết định D-1 của director.
+   - round 2 APPROVED.
+   - Reviewer kiểm tra lại `preview-startup.json` và `curl` :7456 trước khi review.
+   - Single lane nên round 1 được giữ lại thành `review-round1.md` và không có verdict_override.
+3. **Token:** slice-agent 3 sess / 212 turns / 42.8M.
+4. **Memory (assist):** writer và reviewer trích lesson của chính dự án ở slice trước: `lc-s07-release-log-switch` (đặt `LOG` về `DEBUG` để release build không in console) và `lc-s07-typed-boot-batch` (chỉ báo progress khi mọi batch đã biết tổng). Lesson S07 được harvest rồi dùng ngay ở S08.
+   - 3 candidates (og-image md5, boot indicator, typed batches). 4 lessons row.
+5. **Writer tự để lại cho director:** tag `v1.0.0` và deploy (RC-20 deploy smoke, RC-21 tag).
+
+### Pilot 12 — tổng kết (cc-car-service-kids S03–S08, 2026-10-07 13:46 → 23:37Z)
+
+1. **Kết quả:** 6 slice merge trong pilot (S03–S08), cùng với S01–S02 có từ trước là đủ 8/8.
+   - Thời gian: S03 4 h 10 (fleet, gồm khoảng 1 h hồi phục sau hai lần mất terminal); S04 53 phút; S05 35 phút; S06 2 h 28 (fleet); S07 46 phút; S08 59 phút.
+   - Lane: 2 slice fleet và 4 slice single. Single lane nhanh và không có câu hỏi; fleet tốn khoảng 3 lần token.
+2. **Token** (từ 13:46Z): khoảng **314M**. Fleet: S03 91.4M, S06 89.4M. Single: S04 41.7M, S05 22.4M, S07 26.7M, S08 42.8M.
+3. **Câu hỏi:** q6–q12 = 7 câu.
+   - Judge tự trả lời 1 (q9).
+   - Director tự trả lời 1 (q7).
+   - Tôi trả lời 5:
+     - q6: F3, gửi câu trả lời cho lane.
+     - q8, q11: laterRound, "treat as approved".
+     - q10: race, "continue waiting".
+     - q12: F6, "record merged anyway" kèm bằng chứng Chrome.
+   - Không lần nào chọn stop, blocked hay skip.
+4. **Findings:**
+   - **F1** — Orca restart giữa slice: handle mới, runner chết, mất worker. Đã gỡ tay. Fix "rebind coordinator" ở nhánh `fix/orca-restart` (`3b910c5`, `4dc199d`) **chưa merge**.
+   - **F2** — contract chưa commit trên main. Đã sửa: `5687370` (director duyệt).
+   - **F3** — Creator là tiến trình con của terminal integrator, nên chết khi coordinator đóng terminal đó (S01 q3/q4, S03 q6). Signature row nằm ở nhánh fix.
+   - **F4** — pkill của session khác giết mọi terminal lúc 16:07Z. Cổng :7458 khi đó thuộc firefighter S08, suýt review nhầm game. Đã gỡ tay.
+   - **laterRound rN** (S03 q8, S06 q11): review chỉ cite "r2" / "r1". Fix `622605d`, `7cedc80` ở nhánh fix, **chưa merge**.
+   - **Race gate** (S06 q10): thời gian chờ gate ngắn hơn một lượt làm việc dài của coordinator. Chưa sửa.
+   - **F6** — run-smoke của dự án (= template `2787fe3`) chỉ có kênh Orca. Stub `document.hidden` ném lỗi ở đó, nên verify main fail giả. Reviewer S08 cũng tự nêu (F2 round 1). Chưa sửa.
+5. **Memory (assist):** hữu ích ở mọi slice. Lesson của chính dự án được harvest rồi dùng ngay ở slice sau (S02→S04, S01→S06, S07→S08). Lesson từ các dự án khác (firefighter, block-out, love-train) đã chặn trước các lỗi đã biết: Creator mở scene untitled, audio first-tap, freeze tween khi pause, guide restart.
+6. **manual_deferred phải ký trước khi ship:** 24 mục (S01 5, S02 3, S03 2, S04 2, S05 3, S06 3, S07 3, S08 3). Phần lớn cần máy thật: chạm, notch, âm thanh iOS. Ngoài ra có lời văn tiếng Việt (FOLLOWUPS #1), nghe mix âm thanh, deploy smoke và tag `v1.0.0`.
+7. **Step 3 (ship) chờ director.**
