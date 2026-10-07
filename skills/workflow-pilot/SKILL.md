@@ -76,6 +76,11 @@ memory trial pick content that touches topics with many archived lessons
   tokens the slice will change (node order, schema samples, layout numbers); name each
   check the slice must edit, with the reason, and each one it must pass unmodified;
 - data: save schema, readable versions, test samples; prefer optional fields over a bump.
+- names: every node name the slice prescribes follows the project's scene-structure rule
+  (`{Kind} - {label}`, rule 35) and matches sibling prefabs; mock coordinates equal the
+  numbers in the slice and EXPECT (pilot 13: `Mascot`/`Block` drifted, review F1);
+- template sync is not optional: diff the project's `run-smoke.mjs` against the template
+  before launch (pilot 13 ran without `--channel auto`, FOLLOWUPS #39).
 
 Then: mock SVG in `docs/mockups/Sxx-*.svg` for a new screen, contract deltas (HOW_TO row,
 EXPECT row naming the mock, MILESTONES slices + dag + table row, RELEASE_CHECKLIST rows,

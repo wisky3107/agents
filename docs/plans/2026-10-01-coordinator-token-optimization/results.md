@@ -737,3 +737,88 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - **Finding (lỗi runner, chưa sửa):**
   1. "mark blocked" sau `send_failed` ở phase commit của single lane bỏ lại code đã approve, chưa commit, trong main. Runner vẫn chọn slice single-lane tiếp theo trên checkout dirty. Cần: chặn select khi main có thay đổi chưa commit của slice khác, và không đưa "mark blocked" ra khi review APPROVED mà commit chưa xảy ra.
   2. `agent_prompt_blocked` khi gửi vào writer: chưa rõ nguyên nhân (writer kẹt ở prompt?), terminal đã mất.
+
+### Pilot 13 — cc-love-train S11 api-loading (M, single lane), từ 2026-10-07 15:10Z
+
+- **Mục đích:** pilot workflow tổng quát với một slice tính năng mới sau ship. Director yêu cầu: "làm tính năng loading khi api đang load, khi api được call sẽ block touch từ người dùng (tuỳ chỗ), sau khi load quá lâu cỡ 3s thì hiện loading tham khảo game cc-woay-msb". Quyền: delegated. Contracts + gate `15152f4` (S11-D1..D8 GIVEN, tôi tự quyết theo quyền delegated).
+- **Kiểm tra trước khi viết slice:**
+  - cc-woay-msb: `UIManager.setLoading(true, 2.0)` chặn touch ngay và hiện `PopupLoading` sau delay. Cờ chỉ là boolean, không có bộ đếm, không có test.
+  - love-train có sẵn cùng `setLoading` trong template, nhưng chưa nơi nào gọi khi request API và chưa có panel loading. `showDialog` gọi `setLoading(false)`, việc này sẽ xoá block của API, nên S11-D4 đổi sang ref-count.
+  - Smoke checks tap bằng `node.emit`, cách này đi xuyên qua BlockInputEvents. Vì vậy acceptance chứng minh block bằng `isBlocking`, hit test hoặc pointer thật, kèm một negative control.
+  - Các check có thể bị ảnh hưởng đã được khai báo trước: s10-display-size (tên node), S05-08 (toast Layer4), S09-02..07 (danh sách request). Lỗi có sẵn #37 (s06-tracking trên CDP) được ghi vào acceptance.
+  - Bộ đếm delay chạy trên scheduler của Cocos, không dùng setTimeout, vì smoke dùng `director.tick`.
+  - Recipe: `full-screen-cover-overlay-real-edges` (sha pinned).
+- **Cấu hình:** runner pid 55549, terminal `term_ae063f5e…`; writer opus high `term_b9b7041d…`; reviewer opus; memory assist, plan pack 7 items / ~2.0k tokens.
+
+### Pilot 11 — S06 kết quả (S06 merge 2026-10-07 15:33Z, single lane)
+
+1. **Merge:** `81c2f33`, bookkeeping `26a2666`. Thời gian 14:53 → 15:33Z = 40 phút (chạy lại từ đầu sau khôi phục S05). 0 câu hỏi.
+2. **Review:** 1 vòng, APPROVED, 0 fix round. manual_deferred (3): nghe Sound/Music off bằng tai; flame flicker vẫn giữ khi Reduce motion bật; backgrounding trên iOS Safari thật (A20).
+3. **Token:** slice-agent 2 sess / 176 turns / 42.5M.
+4. **Kiểm chứng fallback:** reviewer chạy `run-smoke --channel auto`. Orca báo "page never became ready" → tự chạy lại trên Chrome headless + Playwright (GPU), có ghi kênh trong review.md. Đây là lần đầu `--channel auto` chạy thật trong một slice.
+5. **Memory:** writer trích lesson `T-S02/s02-gear-gated-entry-keeps-start-hook`. Reviewer ghi `none` kèm lý do (pack không có item liên quan S06).
+
+### Pilot 13 — kết quả (S11 merge 2026-10-07 16:04Z)
+
+1. **Merge:** slice `1fdcd5f`, bookkeeping `919d98b`; harvest xong (413 records), 3 dòng lessons, kit slice-check thêm `kit-api-busy`. Thời gian 15:10 → 16:04Z = 54 phút, không có lúc nào dừng. Main local đi trước origin 3 commit (chưa push).
+2. **Review:** 1 vòng, APPROVED; 0 fix round. Có 1 finding minor F1 (tên node prefab `Mascot`/`Block` sai rule 35). Nguyên nhân là slice tôi soạn đã quy định sẵn hai tên đó, nên ghi FOLLOWUPS #41 (`6c180b9`), không sửa trong slice. manual_deferred (2): playtest staging-proxy trên BE Dev (cần ticket; S11 không đụng HttpApi); cảm giác ngón tay và notch trên máy thật. budget_bump advisory: files 22→24, lines 850→870.
+3. **Token** (sess / turns / context):
+
+| Role | S08 (P9) | S09 (P10) | S11 (P13) |
+|---|---|---|---|
+| single lane (writer + reviewer) | 24.8M | 48.6M | 2 / 237 / 49.4M |
+| producer (LLM) | — | — | 0 (không gọi judge) |
+
+4. **Coordinator:** single lane nên không có coordinator. 49.4M ngang S09 (48.6M), vì cả hai đều là slice M có code runtime và reviewer tự chạy lại probe, viewport, negative control. Avg ctx 208k/turn.
+5. **Câu hỏi runner:** 0. Nudge 1 lần lúc 15:28Z (writer đang chạy smoke dài), sau đó writer tự xong.
+6. **Sự cố:** không có. Theo failure signatures:
+   - `run-smoke.mjs` của project chưa có `--channel auto`, writer phải tự chạy Chrome headless (FOLLOWUPS #39). Đây là preflight bước 3 tôi đã bỏ qua.
+   - Race lúc boot của harness ở check đầu tiên (`S03-01`, FOLLOWUPS #40); reviewer tách được khỏi S11.
+   - Writer báo "116 tests", reviewer đo được 107. Writer báo "s06 pair passes alone" nhưng thực ra có probe chạy trước. Reviewer bắt được cả hai (N2). Self-report của writer vẫn cần reviewer đo lại.
+7. **Memory (assist):** plan pack 7 items / ~2.0k tokens.
+   - Writer trích `T-S03/s03-sync-smoke-async-flow-director-tick` (check đồng bộ: giữ mock wait, chạy `director.tick`) và recipe `full-screen-cover-overlay-real-edges`.
+   - Reviewer trích 4 item. Đáng giá nhất là `T-S05/smoke-chain-async-error-flows`: vì S11 dời `failNext` ra sau latency, reviewer buộc S05-01..08 phải xanh trên code mới và tự chạy `mock-api.spec`.
+   - Kết luận: hữu ích. Lesson S05 đã chặn đúng loại hồi quy đã biết.
+8. **Bài học:**
+   - Soạn slice: tên node quy định trong slice phải theo rule 35 và khớp với các prefab cùng loại. Toạ độ trong mock phải bằng số trong slice và EXPECT (N1: baseline của mock ≈ y −158, slice ghi −150). Đã thêm vào bước 2 của workflow-pilot (`d48a1c9`).
+   - Pre-check "node.emit đi xuyên qua BlockInputEvents" đã có tác dụng: writer chứng minh block bằng pointer thật (Playwright) kèm negative control, reviewer chạy lại được.
+   - Preflight: diff `run-smoke.mjs` với template trước khi launch (đã thêm vào skill).
+   - Workflow: chạy hoàn toàn không người trông (0 câu hỏi, 1 vòng review, 54 phút). Đây là slice nhanh nhất trong chuỗi love-train sau ship.
+
+### Pilot 11 — S07 resume sau `pkill -n` (2026-10-07 16:07 → 16:26Z)
+
+- **Sự cố:** 16:07Z một session Claude khác chạy `pkill -f "director-console/server.mjs" -n`. BSD pkill coi `-n` là pattern thứ hai, nên giết mọi process có "-n" trong argv: wrapper login của mọi terminal Orca, mọi Cocos editor. Runner S07 (pid 34791), writer và reviewer S07 chết theo. Reviewer mới spawn 18 giây, chưa viết gì, nên không có slice nào đã APPROVED mà chưa commit.
+- **Nguyên nhân sự cố S05 cũng là pkill:** writer S06 chạy `pkill -f 'cat' -n` lúc 14:23:32Z, cùng kiểu, ~4 phút trước khi mọi terminal mất (máy reboot lúc 14:28Z).
+- **Resume** (director: "resume"):
+  - Mở lại editor main (`open-editor.sh` + wait-mcp, 105 tool). Preview 7456 trả 200 đúng dự án.
+  - S07 `reviewer: null` → runner tự spawn reviewer mới. Relaunch runner pid 13416 lúc 16:26Z.
+  - Writer S07 đã chết: nếu commit send fail thì commit tay rồi chọn "drop the message", không bao giờ "mark blocked". Luật này đã đưa vào cron.
+- **Finding (workflow):**
+  1. Worker có thể chạy `pkill -f <pattern> <flag>` và giết toàn bộ fleet. Cần thêm vào guardrails của template và prompt worker: "không pkill/pgrep theo pattern; chỉ kill đúng pid".
+  2. `ensureEditor` chỉ mở lại editor khi res-guard bật. Sau một vụ kill hàng loạt, runner không tự mở lại editor main cho single lane.
+
+### Pilot 14 — cc-love-train S12 pet-spines (M, single lane), từ 2026-10-07 16:47Z
+
+- **Mục đích:** pilot workflow tổng quát với slice nhập asset có thêm code. Director đã thêm 7 spine riêng cho từng pet và yêu cầu "mỗi con vật sẽ có anim idle và một anim đặc biệt … play khi xuất hiện ở màn hình chọn pet và khi được pet". Tôi hỏi lại hai điểm (nghĩa của "khi được pet", và Cún chưa có spine); director từ chối hộp câu hỏi và trả lời "tiếp tục submit". Trong lúc đó thư mục Dog đã được thêm. Tôi tự chốt mặc định theo quyền delegated: mọi care type đều play anim đặc biệt, và việc đổi lại chỉ cần sửa data (S12-D9). Contracts + nguồn spine ở `a447505`.
+- **Kiểm tra trước khi viết slice** (đã áp dụng bước 2 vừa bổ sung):
+  - **Phát hiện chặn:** `majorMinor` không parse được nhãn `4.2-from-4.3.26`, nên nếu chỉ thay file thì cả 7 pet đều rơi về ảnh tĩnh. Sửa parser nằm trong slice (S12-D6).
+  - Panda giống hệt gau-truc (cùng PNG), chỉ khác nhãn version. Origin của Panda nằm ở y −68, các con khác ở chân, nên slice thêm `offset_y`.
+  - Chiều cao rig dao động 751–993 px, nên thêm dải ±10 % quanh R7.
+  - Không có uuid nào trong meta trùng với assets/.
+  - Các check đọc anim theo data (S05-01 dung thứ được lúc `usingSpine` còn false).
+  - Spine nạp qua resources theo từng pet, để ~2.2 MB không vào boot scene (giữ kết quả của S10).
+- **Preflight bước 3 (template sync), lần đầu làm đủ:** smoke-test của project bằng đúng template base, nên chép bản template `--channel auto` sang (`995097d`, đóng #39, 77/77 test của skill pass).
+- **Cấu hình:** runner pid 50921, terminal `term_d31fd1c1…`; writer opus high `term_318dcee6…`; reviewer opus; memory assist, plan pack 6 items / ~1.8k tokens.
+
+### Pilot 11 — S07 kết quả (S07 commit 2026-10-07 16:47Z, single lane)
+
+1. **Commit:** `14bbc27` do pilot commit tay. Writer đã chết vì vụ pkill lúc 16:07Z; runner gửi "commit" thì báo `terminal_not_writable`. tests 101/101 chạy lại trước commit. Không đưa vào commit: AGENT_NOTES, `game.scene.index.json(.meta)` (writer ghi rõ "pre-existing, not part of the slice"), PNG trong docs/evidence.
+2. **Review** (reviewer mới, spawn lại lúc 16:26Z): 1 vòng, APPROVED. Smoke 27/27 trên Chrome, unit 101/101. F1 minor: hydrant chạm viền chữ KIDS ở đỉnh nhịp bob. D-1..D-3 là quyết định của director. manual_deferred (3): nháy trắng ở frame đầu trên build; xoay lại trên build; notch/xoay trên máy thật.
+3. **Sự cố lặp lại kiểu S05:** q16 và q17 director chọn "retry" qua dialog, q18 chọn **"mark blocked"** (16:48:09Z), 12 giây sau khi commit tay đã lên main. Runner chọn S08 ngay.
+   - Lần này vô hại: S08 là fleet lane (worktree tách riêng, seed từ `14bbc27` nên đã có S07), và commit có trước lúc S08 được chọn.
+   - Đã sửa cache AGENT_NOTES `S07: blocked → merged` và thêm dòng notes. Status từ git của runner vốn đã tính S07 là merged.
+   - Harvest/record của S07 không chạy (đường blocked ghi 4 lesson rows).
+4. **Token:** slice-agent 6 sess / 204 turns / 38.8M (có writer và reviewer chết, reviewer chạy lại).
+5. **Finding (lặp lần 2, cần sửa sớm):** dialog `send_failed` cho commit vẫn đưa "mark blocked" ra như một lựa chọn bình thường, và director đã chọn nó cả hai lần. Đề xuất:
+   - ở `send_failed:commit`, khi review đã APPROVED thì bỏ "mark blocked", thay bằng "committed by hand, check again" (runner tìm commit trên main);
+   - không chọn slice single-lane khi main còn dirty với file của slice khác.

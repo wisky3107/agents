@@ -153,7 +153,7 @@
   };
   const ROUTES = [
     ['map', 'Bản đồ', 'map'], ['quests', 'Nhiệm vụ', 'flag'], ['worlds', 'Dự án', 'globe'], ['memory', 'Memory', 'chip'],
-    ['pilot', 'Pilot', 'flask'], ['playbook', 'Playbook', 'book'], ['scorecard', 'Scorecard', 'chart'], ['log', 'Nhật ký', 'list'],
+    ['pilot', 'Pilot', 'flask'], ['playbook', 'Playbook', 'book'], ['scorecard', 'Scorecard', 'chart'], ['resources', 'Tài nguyên', 'bolt'], ['log', 'Nhật ký', 'list'],
   ];
   let route = { view: 'map', arg: null };
   function readHash() {
@@ -397,7 +397,7 @@
     return { runner: p.questions.length, draft: p.drafts.length, triage: p.triage.length, system, manual: p.manual_deferred.reduce((n, d) => n + d.items.length, 0) };
   }
 
-  const CRUMB = { map: 'TỔNG QUAN', quests: 'VIỆC CẦN QUYẾT', worlds: 'DỰ ÁN', memory: 'ORCA-MEMORY', pilot: 'PILOT M08', playbook: 'COCOS-PLAYBOOK', scorecard: 'WORKFLOW', log: 'THAO TÁC' };
+  const CRUMB = { map: 'TỔNG QUAN', quests: 'VIỆC CẦN QUYẾT', worlds: 'DỰ ÁN', memory: 'ORCA-MEMORY', pilot: 'PILOT M08', playbook: 'COCOS-PLAYBOOK', scorecard: 'WORKFLOW', resources: 'RES-GUARD', log: 'THAO TÁC' };
   function updateChrome() {
     const ov = store.ov;
     const r = ROUTES.find(([id]) => id === route.view);
@@ -1045,6 +1045,74 @@
   // ======== scorecard + log
   VIEWS.scorecard = async () => [panel('Workflow scorecard', { icon: 'chart', sub: 'Dashboard mới nhất do job scorecard 09:17 tạo.' },
     h('iframe', { class: 'score', src: `/scorecard?t=${encodeURIComponent(TOKEN)}`, sandbox: 'allow-scripts', title: 'Scorecard' }))];
+
+  // ======== resources: res-guard's last sample, the editors and their verdicts, a 24 h trend, events
+  const gb = (mb) => `${(mb / 1024).toFixed(1)} GB`;
+  /** One 24 h line chart: points [{at, v}] scaled into 0..max, with the latest value as a label. */
+  function trendLine(points, { max, color, label, unit }) {
+    const NS = 'http://www.w3.org/2000/svg';
+    const W = 600, H = 90;
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    svg.setAttribute('class', 'trend');
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', label);
+    svg.style.width = '100%';
+    svg.style.height = '90px';
+    if (points.length > 1) {
+      const t0 = Date.parse(points[0].at), t1 = Date.parse(points.at(-1).at) || t0 + 1;
+      const xy = points.map((p) => `${(((Date.parse(p.at) - t0) / Math.max(1, t1 - t0)) * W).toFixed(1)},${(H - 4 - (Math.min(p.v, max) / max) * (H - 8)).toFixed(1)}`);
+      const line = document.createElementNS(NS, 'polyline');
+      line.setAttribute('points', xy.join(' '));
+      line.setAttribute('fill', 'none');
+      line.setAttribute('stroke', color);
+      line.setAttribute('stroke-width', '2.5');
+      line.setAttribute('vector-effect', 'non-scaling-stroke');
+      svg.append(line);
+    }
+    const last = points.at(-1);
+    return h('div', {}, h('div', { class: 'row' }, h('b', { class: 'small' }, label), h('span', { class: 'grow' }),
+      h('span', { class: 'mono small' }, last ? `${last.v}${unit}` : '—')), svg);
+  }
+  const VERDICT_TONE = { keep: 'good', close: 'warn', gone: 'bad' };
+
+  VIEWS.resources = async () => {
+    const r = await api('/api/resources');
+    const s = r.last;
+    if (!s) return [panel('Tài nguyên máy', { icon: 'bolt' }, empty('res-guard chưa đo lần nào.', 'alert', 'Cài watcher: node ~/.agents/tools/res-guard/res-guard.mjs install-launchd'))];
+    const tile = (label, value, foot, tone, ic) => h('div', { class: `stat s-${tone}` },
+      h('div', { class: 'label' }, icon(ic, 14), label), h('div', { class: 'value text' }, value), h('div', { class: 'foot' }, foot));
+    const pressTone = s.pressure === 'critical' ? 'coral' : s.pressure === 'warn' ? 'yellow' : 'green';
+    const stats = h('div', { class: 'stats' },
+      tile('RAM còn trống', `${s.availPct}%`, `áp lực ${s.pressure} · nén ${gb(s.compressorMB)}`, pressTone, 'chip'),
+      tile('Swap', gb(s.swapUsedMB), s.swapUsedMB > 4096 ? 'quá 4 GB: máy sẽ chậm' : 'trong ngưỡng', s.swapUsedMB > 4096 ? 'coral' : 'green', 'layers'),
+      tile('Đĩa trống', `${s.diskFreeGB} GB`, s.diskFreeGB < 20 ? 'dưới 20 GB: swap thiếu chỗ' : 'đủ cho swap', s.diskFreeGB < 20 ? 'coral' : 'blue', 'archive'),
+      tile('Cocos editor', `${s.editors.length}`, s.editors.map((e) => gb(e.footMB)).join(' · ') || 'không mở', s.editors.length > 2 ? 'coral' : 'pink', 'globe'),
+      tile('Claude', `${s.claude.n}`, `${gb(s.claude.footMB)} tổng`, 'lilac', 'terminal'),
+      tile('OmniRoute', s.omniroute?.pid ? gb(s.omniroute.footMB) : 'tắt', r.omniroute?.lastRestart ? `restart ${ago(r.omniroute.lastRestart)}` : 'tự restart khi > 1.5 GB lúc rảnh', 'yellow', 'refresh'));
+    const head = h('div', { class: 'row' },
+      chip(r.stale ? 'watcher ngừng' : `đo ${ago(r.lastTick)}`, r.stale ? 'bad' : 'good', r.stale ? 'alert' : 'clock'),
+      r.installed ? null : chip('chưa cài launchd', 'bad', 'alert'),
+      ...r.alerts.map((a) => chip(a.title, a.level === 'critical' ? 'bad' : 'warn', 'alert')));
+    const trend = panel('24 giờ qua', { icon: 'chart', sub: 'Mỗi phút một mẫu (rút gọn còn ≤ 288 điểm).' }, h('div', { class: 'grid cols-2' },
+      trendLine(r.trend.map((p) => ({ at: p.at, v: p.availPct })), { max: 100, color: 'var(--v-useful)', label: 'RAM còn trống', unit: '%' }),
+      trendLine(r.trend.map((p) => ({ at: p.at, v: p.swapGB })), { max: Math.max(4, ...r.trend.map((p) => p.swapGB)), color: 'var(--v-stale)', label: 'Swap', unit: ' GB' })));
+    const editors = panel('Cocos editor', { icon: 'globe', sub: 'Giữ editor đang hoặc sắp được dùng; editor chỉ đang chờ (primary khi fleet chạy trong worktree, hoặc rảnh 20 phút) sẽ tự đóng.' },
+      r.editors.length ? h('div', { class: 'scroll-x' }, h('table', { class: 't' },
+        h('thead', {}, h('tr', {}, ['Checkout', 'RAM', 'Quyết định', 'Lý do', ''].map((x, i) => h('th', { class: i === 1 ? 'num' : '' }, x)))),
+        h('tbody', {}, r.editors.map((e) => h('tr', {},
+          h('td', { class: 'mono small' }, e.project), h('td', { class: 'num' }, gb(e.footMB)),
+          h('td', {}, chip(e.verdict, VERDICT_TONE[e.verdict] ?? 'outline')), h('td', { class: 'small ink2' }, e.why),
+          h('td', {}, btn('Đóng', () => act('editor.close', { project: e.project }, { title: `Đóng editor · ${e.project.split('/').slice(-2).join('/')}`, body: `${e.why}\n\nEditor đang mở sẽ bị đóng (close-editor.sh). Runner mở lại main khi single lane cần.`, ok: 'Đóng', danger: true }), { cls: 'sm ghost', ic: 'x' }))))))) : empty('Không editor nào đang mở.'));
+    const top = panel('Tốn RAM nhất', { icon: 'list' }, h('div', { class: 'scroll-x' }, h('table', { class: 't' },
+      h('thead', {}, h('tr', {}, ['Tiến trình', 'PID', 'RAM'].map((x, i) => h('th', { class: i ? 'num' : '' }, x)))),
+      h('tbody', {}, s.top.map((t) => h('tr', {}, h('td', {}, t.name), h('td', { class: 'num mono' }, t.pid), h('td', { class: 'num' }, gb(t.footMB))))))));
+    const events = panel('Sự kiện res-guard', { icon: 'bell' }, r.events.length ? h('div', { class: 'timeline' }, r.events.map((e) => h('div', { class: 'tl' },
+      h('span', { class: `dot ${/reap|down|critical/.test(e.kind + (e.level ?? '')) ? 'bad' : ''}` }),
+      h('div', {}, h('div', { class: 'row' }, h('b', { class: 'mono small' }, e.kind), h('span', { class: 'small muted' }, `${when(e.at)} · ${ago(e.at)}`)),
+        h('div', { class: 'small ink2' }, [e.title, e.why, e.project, e.gate, (e.reasons ?? []).join('; '), e.result].filter(Boolean).join(' · ').slice(0, 260)))))) : empty('Chưa có sự kiện.', 'bell'));
+    return [panel('Tài nguyên máy', { icon: 'bolt', right: head }, stats), trend, editors, h('div', { class: 'grid cols-2' }, top, events)];
+  };
 
   VIEWS.log = async () => {
     const a = store.actions = await api('/api/actions');
