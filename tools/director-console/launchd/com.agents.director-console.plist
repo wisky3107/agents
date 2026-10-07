@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.agents.director-console</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/node</string>
+    <string>/Users/wikz/.agents/tools/director-console/server.mjs</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- orca (terminal list) and the CLIs the actions run -->
+    <key>PATH</key><string>/Users/wikz/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+  </dict>
+  <!-- 127.0.0.1:7792 only; the URL with its token is the first line of the log -->
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>StandardOutPath</key><string>/Users/wikz/.agents/logs/director-console.log</string>
+  <key>StandardErrorPath</key><string>/Users/wikz/.agents/logs/director-console.log</string>
+</dict>
+</plist>
