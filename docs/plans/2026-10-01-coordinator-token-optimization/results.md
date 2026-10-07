@@ -569,3 +569,40 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
   - F3: chữ dưới 14 CSS px ở V4.
   Smoke trên tab Orca (6/6 PASS, chỉ kiểm state) đã che F1/F2/F4/F5. Kênh Chrome là thứ lộ ra lỗi game thật; ba vòng INFRA_BLOCKED trước đó đã giấu chúng. Bài học cho smoke: check S01 chỉ đọc state nên không bắt được lỗi camera/input.
   - Fix round 1 (writer, phần code): HANDOFF ready_for_review. Không có câu hỏi mở.
+
+### Pilot 11 — kết quả (S01 merge 2026-10-07 09:21Z)
+
+1. **Merge:** `80f35bb` (slice `4827523`), bookkeeping `a4ffcff`; verify done; kit slice-check ghi `kit-game-types` vào learning-candidates. Thời gian 06:30 → 09:21Z = 2 h 51, trong đó ~1 h 30 mất vào 3 vòng runtime INFRA_BLOCKED (tab Orca). Runner tự chuyển sang S02 (gate S01–S08 GIVEN, autopilot unattended).
+2. **Review:** 5 vòng review, 1 fix round (phần code F3/F5 và phần scene F1/F2/F4). Vòng 1–3 INFRA, vòng 4 CHANGES_REQUESTED (Chrome), vòng 5 APPROVED (Chrome). manual_deferred (2): notch/touch trên máy thật (insets giả lập); audio/guide/pause ngoài scope S01. F6 (dim trễ ~225 ms) là followup nhỏ.
+3. **Token** (sess / turns / context):
+
+| Role | S01 (baseline) | love-train S01 | love-train S07 | firefighter S01 |
+|---|---|---|---|---|
+| fleet-orch | 1 / 191 / 24.8M | 1 / 124 / 28.1M | 1 / 84 / 15.7M | 1 / 111 / 22.1M |
+| fleet-worker | 15 / 1072 / 225.0M | 14 / 874 / 177.6M | 6 / 250 / 43.0M | 10 / 445 / 84.4M (+ codex 3.3M) |
+| producer (judge) | 145.9M | 36.6k | 82.0k | 192.9k (6 phiên judge, 0 lần chọn được) |
+
+4. **Coordinator:** −11 % so với baseline S01, −21 % so với love-train S01 (slice L đầu tiên, gần nhất để so). Ít turn hơn (111 so với 124–191) nhưng ctx/turn ~190k vẫn cao. 3 vòng INFRA tốn thêm ~30 turn chờ và probe.
+5. **Câu hỏi runner:**
+   - q1 (lane_blocked, 0 rAF): judge từ chối quote → director chọn "answered in the lane". Bug front matter.
+   - q2 (lane_blocked): judge defer → director.
+   - q3 (fleet_gate, foreground): director chọn "foregrounded". Không hiệu quả: pane vẫn đói frame.
+   - q4: judge từ chối quote → director chọn rerun. Bug front matter.
+   - q5, q6 (infra): judge defer (q6 báo đường dẫn có zero-width) → director chọn rerun. Chỉ có tác dụng sau khi kênh Chrome được ủy quyền (08:10Z, gửi trực tiếp cho coordinator).
+   - q7 (verdict_override): báo động giả, vì review vòng 5 trích "round 4 findings" chứ không ghi tên file review-r4.md → tôi chọn "treat as approved" sau khi đọc review.md: APPROVED trần, F1–F5 đều FIXED.
+6. **Sự cố và bản sửa:**
+   - Judge bỏ front matter: `548dc10`.
+   - Model đọc "cursor" thành `c‍ursor`, Read fail: `6fb902e`.
+   - Hai sửa trên merge thành `a13efa7`, runner restart lúc 08:23Z.
+   - Tab Orca đói frame: không có sửa code; kênh Chrome headless được director ủy quyền.
+   - laterRound chỉ nhận tên file: `fix/later-round` 8d32a78, đang chờ review độc lập.
+   - Ba lỗi đầu đã có trong failure-signatures; laterRound sẽ thêm khi merge.
+7. **Memory (assist):** pack 7.3 KB, planner skipped:slice.
+   - integration-notes trích `cc-love-train/T-S03/s03-sync-smoke-async-flow-director-tick` và cho biết đã làm theo `cc-monopoly-go/T-S07/lesson-L5` (0-rAF lúc preview khởi động).
+   - Reviewer không trích id nào. Worker vẫn đọc được pack dù có lỗi zero-width (đường dẫn tương đối hoặc Bash).
+   - Kết luận: hữu ích một phần. Lesson 0-rAF đã nhận diện được infra, nhưng không chặn được 3 vòng lãng phí.
+8. **Bài học:**
+   - (a) Smoke chỉ kiểm state (6/6 PASS) đã che camera perspective và input lệch. Smoke S01 cần ít nhất một check bằng pointer thật (click CSS → aim).
+   - (b) Runtime infra block lặp từ 2 lần trở lên → đề xuất kênh Chrome headless sớm, đừng rerun.
+   - (c) Judge chưa được kiểm chứng live sau sửa (không có câu hỏi thuộc loại judge sau 08:23Z).
+   - (d) Lỗi zero-width có thể ảnh hưởng mọi prompt có đường dẫn tuyệt đối `.cursor/`. Nên quét các spec/prompt template của fleet.
