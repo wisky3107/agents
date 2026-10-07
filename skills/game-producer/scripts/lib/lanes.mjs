@@ -56,6 +56,7 @@ export const STALL_NUDGE =
   'handle the batch — including any unread messages to your Run — then keep a foreground `orca-wait coord`.';
 const SINGLE_EVIDENCE = ['integration-notes.md', 'preflight.json', 'preview-startup.json', 'runtime-state.json', 'preview.png', 'stats.json', 'final-report.md'];
 const FLEET_EVIDENCE = ['final-report.md', 'stats.json'];
+const REBIND_MS = () => Number(process.env.PRODUCER_RUNNER_REBIND_MS || 10 * 60 * 1000); // a rebind the Run never shows after this long is asked again
 const REBIND_COORDINATOR = 'rebind the coordinator given in --text';
 /** Recovery message for a coordinator resumed under a new terminal handle (Orca restart; pilot 12). */
 const rebindText = (run, worktree) => `Orca restarted and this terminal now hosts the fleet coordinator (the producer rebinds it; your old terminal handle is gone). Recover in this order. 1) Run: orca orchestration run-use --id ${run} --json — it binds this terminal to the Run. 2) List the Run's tasks (orca orchestration task-list --run ${run} --json) and re-dispatch every task that is ready, or dispatched to a terminal that no longer exists (check with orca terminal show): the worker is gone but its work is not${worktree ? ` — keep the changes already in the worktree ${worktree}` : ' — keep the changes already in its worktree'}; tell the new worker to CONTINUE from the existing changes, not to restart. 3) Go back to the foreground wait loop: node ~/.agents/skills/cocos-orca-fleet/scripts/orca-wait.mjs coord, and never end your turn while a Dispatch is live.`;
@@ -542,7 +543,8 @@ export function flushOutbox(ctx) {
     const carriable = ctx.lane === 'single' && failed.to === s.writer && /^(?:fix:|infra-restart|nudge:)/.test(key);
     const why = key.startsWith('commit')
       ? ' — the lane that must commit is gone; bring it back (or commit by hand), then retry'
-      : key.startsWith('gate:') ? ' — dropping it lets the runner ask this gate again' : '';
+      : key.startsWith('gate:') ? ' — dropping it lets the runner ask this gate again'
+        : key.startsWith('rebind:') ? ' — check the handle in `orca terminal list`; dropping it asks coordinator_missing again' : '';
     return ask(s, 'send_failed', `could not send "${key}" to ${failed.to}: ${failed.failed}${why}`,
       [...(carriable ? ['resume lane carries it'] : []), 'retry the send', 'drop the message', 'mark blocked', 'stop'], { ref: key });
   }
@@ -1101,6 +1103,10 @@ function fleetStep(ctx, s, phase) {
     st.writeSliceState(root, id, { coordinator: w.handle });
     st.log(root, id, `coordinator is now ${w.handle} (takeover)`);
   }
+  if (s.rebind_to && w.handle === s.rebind_to) {
+    st.writeSliceState(root, id, { rebind_to: null, rebind_at: null }); // the Run names the rebound coordinator: done
+    st.log(root, id, `coordinator rebind to ${w.handle} took effect (the Run names it)`);
+  }
   if (w.event === 'orca-error') return orcaError(root, id, s, w);
 
   if (w.event === 'gate') {
@@ -1153,9 +1159,17 @@ function fleetStep(ctx, s, phase) {
     const why = alive ? ` — orca-wait reported it missing ${rechecks} times in a row although terminal show still finds it`
       // pilot 12: an Orca restart gives every terminal a new handle and resumes the claude sessions under the same title
       : ' — Orca may have restarted (terminal handles change): find the resumed coordinator terminal in `orca terminal list` and rebind it';
+    // a rebind the Run never shows (the resumed coordinator ignored the message, or the handle was wrong):
+    // the acked observation would wait in silence for good, so after REBIND_MS it is asked again
+    let again = '';
+    if (s.rebind_to && Date.now() - (s.rebind_at || 0) >= REBIND_MS()) {
+      st.writeSliceState(root, id, { acked: (s.acked || []).filter((x) => !String(x).startsWith('coordinator_missing@')), rebind_to: null, rebind_at: null });
+      s.acked = (s.acked || []).filter((x) => !String(x).startsWith('coordinator_missing@'));
+      again = ` — the rebind to ${s.rebind_to} was sent but the Run still names ${coordinator}: check that terminal runs \`orca orchestration run-use --id ${run}\``;
+    }
     // rebinding needs a Run: run-use binds the new terminal to it
     const options = ['taken over, continue', ...(run ? [REBIND_COORDINATOR] : []), 'mark blocked', 'stop'];
-    return ask(s, 'coordinator_missing', `fleet coordinator ${coordinator} is gone${run ? ` (Run ${run})` : ' and no Run exists yet'}${why}`, options, { obs: `coordinator_missing@${coordinator}` });
+    return ask(s, 'coordinator_missing', `fleet coordinator ${coordinator} is gone${run ? ` (Run ${run})` : ' and no Run exists yet'}${why}${again}`, options, { obs: `coordinator_missing@${coordinator}` });
   };
   if (phase === 'committing') {
     const c = readHandoff(handoff, s.commit_base);
@@ -1318,7 +1332,10 @@ export function applyAnswer(ctx, q) {
     case 'send_failed:drop the message': {
       // a dropped gate decision never reached the coordinator: the gate is open again for a question
       const gate = q.ref.startsWith('gate:') ? q.ref.split(':')[1] : null;
+      // a dropped rebind never reached the new terminal: coordinator_missing is asked again
+      const unrebind = q.ref.startsWith('rebind:') ? { acked: (s.acked || []).filter((x) => !String(x).startsWith('coordinator_missing@')), rebind_to: null, rebind_at: null } : {};
       return st.writeSliceState(root, id, {
+        ...unrebind,
         outbox: { ...s.outbox, [q.ref]: { ...s.outbox[q.ref], dropped: true } },
         ...(gate ? { relayed_gates: (s.relayed_gates || []).filter((g) => g !== gate) } : {}),
       });
@@ -1344,8 +1361,9 @@ export function applyAnswer(ctx, q) {
       const handle = (q.answer.text || '').trim();
       if (!/^\S+$/.test(handle)) throw new Error('give the terminal handle with --text');
       if (!s.run) throw new Error('no Run to rebind the coordinator to');
-      ack(); // until the Run names the new handle the old one's "missing" only waits
-      st.writeSliceState(root, id, { coordinator: handle });
+      // until the Run names the new handle (the resumed coordinator's run-use) the old one's "missing" only
+      // waits; s.coordinator stays the Run's: the fleet wait follows the Run (a takeover logs the change)
+      st.writeSliceState(root, id, { acked: [...(s.acked || []), q.obs].filter(Boolean), rebind_to: handle, rebind_at: Date.now() });
       st.log(root, id, `coordinator rebind: ${s.coordinator} → ${handle} (human; run-use ${s.run} requested)`);
       return sendOnce(ctx, `rebind:${q.id}`, handle, rebindText(s.run, s.worktree));
     }

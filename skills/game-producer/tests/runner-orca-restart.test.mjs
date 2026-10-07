@@ -84,5 +84,45 @@ test('rebind answer: the new terminal is told to run-use the Run and re-dispatch
   assert.equal(sliceState(p.root, 'S01').coordinator, 'term_9');
   assert.match(log(p.root), /coordinator rebind: term_1 → term_9/);
   assert.match(log(p.root), /coordinator is now term_9 \(takeover\)/);
+  assert.match(log(p.root), /coordinator rebind to term_9 took effect/);
+  assert.equal(sliceState(p.root, 'S01').rebind_to, null);
   assert.equal(waits(f).at(-1).on, 'term_9');
+});
+
+test('rebind: until the Run names the new handle the slice keeps the Run\'s coordinator and waits in silence', () => {
+  const { p, f } = missingWithRun();
+  runner(p.root, f, 'answer', '--id', 'q1', '--choice', REBIND, '--text', 'term_9');
+  clearControl(p.root);
+  f.queue([{ name: 'old 1', result: 'missing' }, { name: 'old 2', result: 'missing' }]);
+  runner(p.root, f, 'start', '--once', { env: { PRODUCER_RUNNER_IDLE_MS: '20' } });
+  const s = sliceState(p.root, 'S01');
+  assert.deepEqual([s.coordinator, s.rebind_to], ['term_1', 'term_9']); // the Run still names term_1
+  assert.equal(runnerFile(p.root).questions.length, 1);
+});
+
+test('rebind: a rebind the Run never shows is asked again after the patience window', () => {
+  const { p, f } = missingWithRun();
+  runner(p.root, f, 'answer', '--id', 'q1', '--choice', REBIND, '--text', 'term_9');
+  clearControl(p.root);
+  f.queue([{ name: 'old', result: 'missing' }]);
+  const b = runner(p.root, f, 'start', '--once', { env: { PRODUCER_RUNNER_IDLE_MS: '20', PRODUCER_RUNNER_REBIND_MS: '1' } }).out.at(-1);
+  assert.deepEqual([b.waiting, b.kind], ['q2', 'coordinator_missing']);
+  assert.match(question(p.root, 'q2').text, /rebind to term_9 was sent but the Run still names term_1/);
+  assert.equal(sliceState(p.root, 'S01').rebind_to, null);
+});
+
+test('rebind: a send to a wrong handle is send_failed; dropping it asks coordinator_missing again', () => {
+  const { p, f } = missingWithRun();
+  fs.writeFileSync(path.join(f.dir, 'dead.json'), JSON.stringify(['term_1', 'term_typo']));
+  runner(p.root, f, 'answer', '--id', 'q1', '--choice', REBIND, '--text', 'term_typo');
+  clearControl(p.root);
+  const a = runner(p.root, f, 'start', '--once').out.at(-1);
+  assert.deepEqual([a.waiting, a.kind], ['q2', 'send_failed']);
+  assert.match(question(p.root, 'q2').text, /rebind:q1/);
+  runner(p.root, f, 'answer', '--id', 'q2', '--choice', 'drop the message');
+  clearControl(p.root);
+  f.queue([{ name: 'gone again', result: 'missing' }]);
+  const c = runner(p.root, f, 'start', '--once').out.at(-1);
+  assert.deepEqual([c.waiting, c.kind], ['q3', 'coordinator_missing']); // not silent
+  assert.equal(sliceState(p.root, 'S01').rebind_to, null);
 });

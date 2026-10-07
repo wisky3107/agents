@@ -135,7 +135,8 @@ node ~/.agents/skills/game-producer/scripts/producer-runner.mjs start --dry-run 
   the human names the resumed coordinator's terminal (`orca terminal list`), the runner sends it
   one message — `run-use --id <run>`, re-dispatch the tasks whose worker terminal is gone and have
   the new worker continue from the worktree's changes, back to the foreground `orca-wait coord`
-  loop — and waits until the Run names that handle); one gate question lists every pending gate,
+  loop — and waits, silently, until the Run names that handle: after 10 min without it the question
+  is asked again; a send to a wrong handle is a `send_failed` question); one gate question lists every pending gate,
   the relay names the others (not for a judge answer), and after a relay another gate waits 3 idle
   pauses for the coordinator; the commit line is `approved — commit (producer: Step 2d passed)`; a
   merged worktree whose only changes are evidence files the copy carries (no PNG, no runner file) is
