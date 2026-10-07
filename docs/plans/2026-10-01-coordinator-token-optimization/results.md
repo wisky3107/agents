@@ -683,3 +683,16 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
     - block-out S10/S11, bus-fever: `git worktree prune`.
     - Để nguyên: car-service s02 và monopoly (code chưa commit), car-service s01 (cần xem file trong `slices/`).
   - Runner restart lúc S03 đang commit: pid 26545 → mới.
+
+### Pilot 11 — S03 kết quả (S03 merge 2026-10-07 12:56Z)
+
+1. **Merge:** `64efc6e` (slice `4af0d49`), bookkeeping `2729182`. Thời gian 11:42 → 12:56Z = 1 h 14.
+   - **Lần chạy live đầu tiên của fix 671104b:** `worktree_rm` báo "removed … (20 capture(s) → .cursor/evidence/tasks/T-S03/captures/)". Sau merge main không còn worktree nào.
+2. **Review:** 1 vòng, APPROVED ngay, 0 fix round, chạy trên Chrome. manual_deferred (4): touch/safe-area trên iOS Safari thật; director duyệt nhịp mở khoá map (A19) và độ dễ đọc với trẻ em; …
+3. **Token:** fleet-orch 1 / 81 / 14.8M (−40 % so với baseline S01); fleet-worker 5 / 218 / 37.1M (+ codex 3.3M); producer 41.8k.
+4. **Câu hỏi:**
+   - q9 (lane_blocked): lane ChatGPT image trong Orca browser fail ("created tab not persisted; browser_tab_not_found"). Director trả lời: fallback sang codex-image-gen.
+   - q10 (fleet_gate): duyệt ngoại lệ codex-image-gen cho hero `map_bg`. Judge defer đúng vì contract không quy định lane cho hero.
+   - Không còn verdict_override.
+5. **Finding mới (chưa sửa):** Orca browser cũng làm hỏng lane art hero (orca-gpt-image-gen), không chỉ runtime review. Đề xuất: khi gặp `browser_tab_not_found`, `codex-image-gen` là fallback mặc định cho hero, ghi rõ trong ASSET_MANIFEST/notes, không cần gate. Cần director quyết vì đây là chính sách chất lượng art.
+6. **Memory:** các role trích lesson của chính dự án (`T-S01/t-s01-step-systems-not-director-tick`, `T-S02/s02-gear-gated-entry-keeps-start-hook`). Vòng lặp harvest → pack hoạt động trong cùng dự án. Kết luận: hữu ích.
