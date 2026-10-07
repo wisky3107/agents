@@ -956,3 +956,28 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
   4. Step 3 không mang theo quyết định "skip deploy" của slice.
   5. `ensureEditor` chỉ chạy khi res-guard bật.
   6. Lane art hero (orca-gpt-image-gen) fail với `browser_tab_not_found` (S03).
+
+### Pilot 12 — S06 kết quả (S06 merge 2026-10-07 21:52Z, fleet)
+
+1. **Merge:** `9430b0b` (slice `6deba05`), bookkeeping `b536146`. Thời gian 19:24 → 21:52Z = 2 h 28.
+   - `worktree_rm` tự xoá worktree (58 ảnh → `T-S06/captures/`). Đây là lần đầu trong dự án này không phải dọn tay, vì từ S06 contract đã được track.
+2. **Art:** art-2d fail 2 lần ở 3 ảnh (icon điểm dừng bị rỗng hoặc loang, con đường trên `bg_map` lệch mock > 8 px).
+   - q9 fleet_gate: judge tự trả lời A, vẽ 3 ảnh bằng script `gen_2d.py` theo đúng hình trong mock, trích dòng acceptance ±8 px.
+   - q10 gate_unresolved là race: runner hỏi lúc 20:08:35, gate được resolve lúc 20:08:38. Tôi trả lời "continue waiting". Finding nhỏ: thời gian chờ gate ngắn hơn một lượt làm việc dài của coordinator.
+3. **Review:** 2 vòng.
+   - r1 CHANGES_REQUESTED: F1 TransitionView tự tắt node trong `onLoad`; F2 cover tính sai đơn vị Canvas px; F3 ba check phụ thuộc thứ tự chạy.
+   - 1 fix round, r2 APPROVED, smoke 34/34 trên Chrome.
+   - q11 verdict_override: lại là signature laterRound. review.md (round 2) chỉ cite "r1" và F-id, không ghi tên file. Tôi trả lời "treat as approved". Bản sửa rN đang ở nhánh fix/orca-restart.
+   - Vượt ngân sách (advisory): files 22→32/33, lines 1350→1765/1820.
+4. **F6 — verify trên main fail chỉ vì kênh chạy (q12 verify_failed):**
+   - Verifier dùng run-smoke **của dự án** (bản template `2787fe3`, chỉ có kênh Orca). Check `s06-tab-hidden` lỗi `Cannot redefine property: hidden` ngay trong stub `Object.defineProperty(document,'hidden', {configurable:true})`, trước khi chạy assertion nào của game. Browser Orca có `hidden` không cho định nghĩa lại.
+   - Cùng 34 check trên main, chạy bằng run-smoke của template `--channel chrome`: 34/34 PASS (`T-S06/evidence/verify-smoke-chrome.json`).
+   - Tôi trả lời "record merged anyway (verify=failed)" kèm note. Không chọn "fixed by hand" vì không có gì được sửa.
+   - Hướng sửa: (a) đồng bộ run-smoke của dự án lên template (bản dự án đúng bằng base `2787fe3`, nên copy được). Hoãn vì S07 đang chạy single lane trên main. (b) Verifier nên chạy lại check bị ERROR trên kênh chrome trước khi hỏi. (c) Rule viết check: stub visibility phải có fallback khi `document.hidden` không cho định nghĩa lại.
+5. **Token** (từ 19:24Z): fleet-orch 1 / 94 / 18.9M; fleet-worker 6 / 342 / 62.3M + codex 3 / 7.0M; producer 25.7k; verifier 1.2M.
+6. **Memory (assist):** dùng nhiều nhất trong cả pilot.
+   - Lesson chính dự án: `T-S01/csk-s01-safe-rect-content-root-on-fixed-canvas` (đúng chỗ của F2: cover tính theo contentScale), `T-S02/t-s02-editor-authored-ui-bulk-result`.
+   - Lesson dự án khác: firefighter `T-S06/s06-freeze-all-tweens-before-popup` và `s06-sprite-sizemode-before-frame`; love-train `T-S03/s03-sync-smoke-async-flow-director-tick` (check wipe chạy bằng `director.tick`).
+   - Cả writer, integrator và reviewer đều cite. Kết luận: hữu ích, nhất là ở fix round.
+7. **Kit:** slice-check 6 feature, 0 giữ lại. 2 lessons row.
+8. **Tiếp theo:** runner tự sang S07 save-and-guide (single lane, writer spawn 21:52Z).
