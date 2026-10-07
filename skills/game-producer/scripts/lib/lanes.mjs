@@ -405,8 +405,10 @@ function laterRound(text, lastRound) {
   // cc-firefighter-kids S01 q7)
   const body = text.slice(text.indexOf(head) + head.length);
   // or by the shorthand "r<N>" ("## r2 fix_routing — re-test", "| r2 finding | r3 result |"; pilot 12 S03 q8) —
-  // not "fix r2" (the fix round's number) or "r2.5"
-  return Boolean(n && m && Number(m[1]) > n && (text.includes(path.basename(lastRound)) || new RegExp(`(?<!fix )\\b(?:round |r)${n}\\b(?![.\\d])`, 'i').test(body)));
+  // not the fix round's number ("fix r2", "fix-r2", "fix: r2", "fixed in r2", "r2 fix"), "r2.5", "xr2" or a
+  // path / id ("evidence/r2/", "#r2")
+  const cited = new RegExp(`(?<!fix )\\bround ${n}\\b(?![.\\d])|(?<![\\w/#.-])(?<!\\bfix\\w*(?:\\s+in)?[\\s:(/–—-]*)r${n}\\b(?![.\\d]|[/-]|\\s+fix\\b)`, 'i');
+  return Boolean(n && m && Number(m[1]) > n && (text.includes(path.basename(lastRound)) || cited.test(body)));
 }
 
 /**

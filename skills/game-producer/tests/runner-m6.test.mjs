@@ -640,7 +640,7 @@ test('fleet: a fresh review round written as review.md (higher round, cites the 
   assert.deepEqual(g3.sends().at(-1), { to: 'term_1', text: FLEET_COMMIT_TEXT });
   // a review.md that does not name a later round, or does not cite the round it overrides, is still asked
   // (a "round 1" only in the heading is the fix round's number, not a citation)
-  for (const body of ['# T-S01 review (round 2, after fix round 1)\n\nlooks fine\n\nAPPROVED\n', '# T-S01 review (round 2)\n\nafter fix round 1 all good; round 1.1 notes\n\nAPPROVED\n', '# T-S01 review — S01 (round 1)\n\nreview-r1.md\n\nAPPROVED\n', '# T-S01 review (round 2)\n\nno new review ran\n\nAPPROVED\n', 'round 2: review-r1.md settled\n\nAPPROVED\n', '# T-S01 review (round 2)\n\nafter fix r1 all good; r1.5 notes; xr1 term\n\nAPPROVED\n']) {
+  for (const body of ['# T-S01 review (round 2, after fix round 1)\n\nlooks fine\n\nAPPROVED\n', '# T-S01 review (round 2)\n\nafter fix round 1 all good; round 1.1 notes\n\nAPPROVED\n', '# T-S01 review — S01 (round 1)\n\nreview-r1.md\n\nAPPROVED\n', '# T-S01 review (round 2)\n\nno new review ran\n\nAPPROVED\n', 'round 2: review-r1.md settled\n\nAPPROVED\n', '# T-S01 review (round 2)\n\nafter fix r1 all good; r1.5 notes; xr1 term\n\nAPPROVED\n', ...['fix-r1', 'fix: r1', 'fix  r1', 'fixed in r1', 'fix (r1)', 'after r1 fix', 'see evidence/r1/a.png', 'issue #r1'].map((x) => `# T-S01 review (round 2)\n\n${x} all good\n\nAPPROVED\n`)]) {
     const q = project({ slices: { S01: { needs: false, size: 'L' } } });
     const g = fakes();
     g.queue([
