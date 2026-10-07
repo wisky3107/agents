@@ -908,3 +908,15 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
    - 3 learning candidates về mask/stencil và negative control.
 6. **Kit:** slice-check 1 feature, 0 giữ lại.
 7. **Tiếp theo:** runner tự sang S05 audio-and-juice (single lane).
+
+### Pilot 12 — S05 kết quả (S05 merge 2026-10-07 19:24Z, single lane)
+
+1. **Merge:** slice `eeaf93a` trên main, bookkeeping `ee04a68`. Thời gian 18:49 → 19:24Z = 35 phút. 0 câu hỏi.
+2. **Review:** 1 vòng, APPROVED, 0 fix round (writer 18:49 → 19:16, review 19:16 → 19:23).
+   - manual_deferred (3): độ nghe thật của mix, style, chỗ nối vòng lặp và độ dịu của âm sai/thua (Chrome headless không có loa, director D-1); chạy trên iOS Safari / WebKit và chính sách autoplay của trình duyệt thật; …
+3. **Token:** slice-agent 2 sess / 124 turns / 22.4M.
+4. **Memory (assist):** writer và reviewer đều trích `cc-firefighter-kids/T-S04/t-s04-capture-unlock-first-tap-cue` (mở khoá audio ở capture phase của window, để tiếng của lần chạm đầu cũng phát).
+   - Writer làm theo lesson. Reviewer dùng nó để kiểm tra rằng lần chạm mở khoá có phát tiếng, và không có listener hay audio context nào bị nhân đôi.
+   - Thêm một lesson `cc-car-service-kids/T-S03` bare-finger.
+   - Đây là lần thứ hai (sau pilot 11 S04) lesson audio first-tap được dùng qua lại giữa các dự án. 0 lessons row mới.
+5. **Tiếp theo:** runner sang S06 shell-and-settings (L, fleet, Run `run_af36acfe1731`, coordinator term_d4a2829a). Đến 19:48Z, art-2d có 3/10 ảnh fail look check; coordinator tự retry và dựng lại các task phụ thuộc.
