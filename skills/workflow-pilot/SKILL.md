@@ -55,6 +55,10 @@ Run every check; each one has caught a real stall.
 5. Smoke baseline: the project's smoke suite is green on main (a pre-existing red check
    becomes a question in every later slice — fix it first, as its own small task).
 6. Memory and playbook: answer the **moments** questions for "preflight" (below).
+7. The project's main is pushed when the next slice depends on merges made since the last
+   push: slice worktrees can be seeded from the remote (pilot 7 started S14 without S13).
+   Pushing needs the user's go-ahead; otherwise tell the coordinator to fast-forward the
+   worktree to local main.
 
 Done when: dry-run says `would: …spawn…` with no blockers, validators are ok, and every
 known red check is either fixed or written into the slice as a pre-existing failure.
