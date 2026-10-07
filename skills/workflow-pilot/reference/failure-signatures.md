@@ -1,4 +1,4 @@
-# Failure signatures (seen in pilots 1–8)
+# Failure signatures (seen in pilots 1–11)
 
 Match a symptom here before treating it as new. "Fixed" names the commit that removed the
 cause. When a fixed signature returns, the fix regressed or did not load (a runner started
@@ -26,3 +26,6 @@ before the merge keeps old code).
 | A new project's contracts are untracked on main after the first merge | `git status` on main lists GAME_BRIEF.md, slices/ … as `??` | lanes treat root contracts as forbidden changes and game-brief never committed them (pilot 8) | commit the contract set on main in its own commit; candidate fix: game-brief commits after the contracts gate |
 | Memory pack exists but no role used it | specs MEMORY path; stub in main after merge | relative path; rsync copied a "none" stub over the pack | fixed ~/.agents dcf5dea (absolute path, evidence/memory/plan excluded) |
 | A deploy dir gets `.env.local` | after `vercel link` | link pulls env into the cwd | link before copying the build in, or delete `.env.local` before `deploy`; check the URL returns 404 |
+| Judge defers with "the judge's quote is not a sentence … of the slice file" while the quote is a real acceptance / runtime_checks line | is the line inside the slice's YAML front matter? | `prose()` dropped front matter, where slice contracts live (pilot 11 S01 q1, q4) | answer from the line yourself; fixed ~/.agents fix/judge-frontmatter 548dc10; restart the runner to load it |
+| A role says a `.cursor/…` file is missing, or "the path contains a hidden zero-width character" | `ls` the path: it exists | a model reads "cursor" in its prompt as `.c\u200dursor`, so its Read of the absolute path fails (pilot 11 S01 q6; reproduced with `claude -p`) | judge: fixed 6fb902e (symlink view); other roles: give a relative path or a symlink without the word |
+| Runtime review INFRA_BLOCKED: rAF 0, `document.hasFocus()` false, eval on the game tab "closed the connection"; an about:blank tab answers | load the preview in Playwright headless Chrome: scene ready? | Orca embedded tab starved, often sharing the pane with another project's preview (pilot 11, cc-love-train :7456) | not a game finding; ask the director to authorize Playwright + real Chrome headless (`channel:'chrome'`, `--use-angle=metal`) for the slice's runtime review (60-embedded-browser.mdc needs that explicit say-so) |
