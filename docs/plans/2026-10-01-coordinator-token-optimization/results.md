@@ -560,3 +560,4 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
   - Probe CDP headless chỉ đọc: game boot vào màn chăm thú với Mèo, Tim 580, gọi `/bond/state` 200 và `/wallet` 200, 0 lỗi console.
   - State tài khoản test lúc này: điểm 0, Tim 580, lượt còn x1–x2. Có người đã test thêm và làm đầy thanh, không phải do pilot.
   - Lưu ý: proxy public cho phép bất kỳ ai có ticket gọi BE Dev qua domain này; không có ticket thì nhận 401.
+- 08:23Z: merged `a13efa7` (548dc10 + 6fb902e + temp-dir hardening + 3 dòng failure-signatures). Reviewer độc lập APPROVED cả hai commit; suite 147 + 25 xanh. Đã restart runner để nạp `judge.mjs`: pid 44237 → 66586, terminal `term_f348588b…`, dry-run "continue at fleet", không có blocker.
