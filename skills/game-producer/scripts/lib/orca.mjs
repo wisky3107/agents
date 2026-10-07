@@ -164,7 +164,7 @@ function memoryHook(args, cwd, timeout) {
   const r = spawnSync(bin, ['hook', ...args], { encoding: 'utf8', timeout, cwd });
   let line = null;
   try { line = JSON.parse((r.stdout || '').trim().split('\n').at(-1)); } catch { /* no status line */ }
-  return { ran: true, status: r.status, memory: line?.status ?? null, reason: line?.reason ?? null, unregistered: line?.unregistered ?? null, out: (r.stdout || '').slice(-300) };
+  return { ran: true, status: r.status, memory: line?.status ?? null, reason: line?.reason ?? null, unregistered: line?.unregistered ?? null, refresh: line?.refresh ?? null, out: (r.stdout || '').slice(-300) };
 }
 
 export function memoryHarvest(wt, task, cwd) {

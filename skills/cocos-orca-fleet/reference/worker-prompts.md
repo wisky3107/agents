@@ -219,6 +219,8 @@ Do:
    particle, shake) stay manual. The reviewer runs these first; a missing check for a
    state-answerable row is a finding against you. Write every fail guard so a NaN/undefined
    value fails: `if (!(x <= limit)) fail(...)` or Number.isFinite in the same condition.
+   run-smoke says "page never became ready" → ~/.agents/skills/cocos-orca-fleet/reference/orca/frozen-tab.md
+   before you report infra_blocked: a frozen Orca tab has a workaround.
 6. `tsc` clean; no console.log left behind. Before worker_done, `node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice <PLAN's plan_source slice file> --skip evidence --out evidence/static-check.txt`
    must not end RESULT FAIL (tsc, the ES5 web build, EVERY spec in tests/, scope, smoke-guard
    lint, the integration-notes sections); declare each WARN scope line in integration-notes.md.
@@ -343,6 +345,9 @@ Step 0 — INFRA PREFLIGHT (first 60 seconds, before reading anything else):
 Step 1 — SMOKE FIRST: `node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <port>`.
   Its JSON is the verdict for every state-answerable acceptance row; do not re-play those by
   hand. A row that has no check although state could answer it → finding (owner code, minor).
+  "page never became ready" → ~/.agents/skills/cocos-orca-fleet/reference/orca/frozen-tab.md first:
+  a frozen Orca tab is never INFRA_BLOCKED on its own (select the tab, or run the checks on
+  headless Chrome CDP and record the channel as a deviation).
   Then play ONLY the feel rows and the rows smoke cannot express, per the slice `playtest`.
 
 Static (commit-guard gates 1–4, read-only):

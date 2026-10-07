@@ -433,7 +433,12 @@ function record(ctx, s, j) {
 /** What the harvest really did: the hook exits 0 for off and nothing too, so the note reads its status line. */
 export function harvestNote(h) {
   if (h.status !== 0) return 'failed: the worktree will be kept';
-  if (h.memory === 'harvested') return 'archived';
+  if (h.memory === 'harvested') {
+    // orca-memory refreshes the corpus after a harvest, so the next slice's packs see these lessons
+    const rf = h.refresh;
+    if (!rf || rf.skipped) return 'archived';
+    return rf.ok ? `archived, refreshed (${rf.records ?? '?'} records)` : `archived; refresh failed at ${rf.failed_step}: packs miss it until the daily refresh`;
+  }
   if (h.memory === 'off') return h.unregistered ? `off: ${h.unregistered} is not registered with orca-memory` : `off: ${h.reason || 'memory mode off'}`;
   if (h.memory === 'nothing') return `nothing archived: ${h.reason || 'no evidence'}`;
   return h.memory ? `exit 0, status ${h.memory}` : 'exit 0, no status line';

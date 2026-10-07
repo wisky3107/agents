@@ -316,6 +316,9 @@ test('the evidence copy never overwrites the producer planner pack in main (lego
 test('harvestNote: reads the hook status line, not only the exit code', () => {
   assert.equal(harvestNote({ status: 1, memory: null }), 'failed: the worktree will be kept');
   assert.equal(harvestNote({ status: 0, memory: 'harvested' }), 'archived');
+  assert.equal(harvestNote({ status: 0, memory: 'harvested', refresh: { ok: true, records: 375 } }), 'archived, refreshed (375 records)');
+  assert.equal(harvestNote({ status: 0, memory: 'harvested', refresh: { ok: false, failed_step: 'normalize' } }), 'archived; refresh failed at normalize: packs miss it until the daily refresh');
+  assert.equal(harvestNote({ status: 0, memory: 'harvested', refresh: { skipped: 'ORCA_MEMORY_REFRESH_ON_HARVEST=0' } }), 'archived');
   assert.equal(harvestNote({ status: 0, memory: 'off', reason: 'memory mode off' }), 'off: memory mode off');
   assert.equal(harvestNote({ status: 0, memory: 'nothing', reason: 'no candidates, review, handoff or referenced image' }), 'nothing archived: no candidates, review, handoff or referenced image');
   assert.equal(harvestNote({ status: 0, memory: null }), 'exit 0, no status line');
