@@ -92,13 +92,19 @@ function verdictIsApproved(dir) {
   return Boolean(m) && !/\b(pending|but|unless|if|except|once|after|until|when|however|needs?|provisional\w*|subject|follow|condition\w*|todo|tbd|blocked|changes)\b/i.test(m[1] || '');
 }
 
-/** Contract prose only: no front matter, fenced blocks (yaml, code), headings or table separators. */
+/**
+ * Contract prose only: no fenced blocks (yaml, code), headings or table separators. A slice's
+ * front matter is its contract (acceptance, runtime_checks, decisions), so its values stay and
+ * only the yaml keys and list dashes go — cc-firefighter-kids S01 q4 deferred a runtime_checks line.
+ */
 function prose(text) {
-  return text.replace(/^---\n[\s\S]*?\n---\n/, '').replace(/^```[^\n]*\n[\s\S]*?^```[^\n]*$/gm, '')
+  const fm = text.match(/^---\n([\s\S]*?)\n---\n/);
+  const values = fm ? fm[1].split('\n').map((l) => l.replace(/^\s*(?:-\s+)?(?:[\w-]+:(?:\s+|$))?/, '')).join('\n') + '\n' : '';
+  return (values + text.slice(fm ? fm[0].length : 0)).replace(/^```[^\n]*\n[\s\S]*?^```[^\n]*$/gm, '')
     .split('\n').filter((l) => !/^\s*(#|\|?\s*:?-{3,})/.test(l)).join('\n');
 }
 
-/** Is `quote` (≥ 30 characters) a sentence of the slice file, SCOPE.md or MILESTONES.md prose? */
+/** Is `quote` (≥ 30 characters) a sentence of the slice file (front matter values included), SCOPE.md or MILESTONES.md prose? */
 export function quoted(project, slice, quote) {
   const q = norm(quote);
   if (q.length < 30) return false;

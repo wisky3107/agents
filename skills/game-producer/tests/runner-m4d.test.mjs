@@ -39,6 +39,29 @@ test('judge: answers a lane question with a quoted contract line; read-only sand
   assert.ok(reg.some((r) => r.role === 'judge' && r.cwd === p.root && r.slice === 'S01' && r.handle === null));
 });
 
+test('judge: a slice\'s front matter is contract text — acceptance and runtime_checks lines are quotable, yaml keys are not', async () => {
+  const { quoted } = await import('../scripts/lib/judge.mjs');
+  const p = judged();
+  fs.writeFileSync(path.join(p.root, 'slices', 'S01-x.md'), `---
+id: S01
+size: L
+acceptance:
+  - text: "H-14 matrix: no clipping or overlap at any viewport, rendered hitboxes at least 44 CSS px."
+    evidence: ASSUMPTION
+runtime_checks:                    # → PLAN.runtime_checks
+  - "Smoke: S01-01..S01-06 checks pass via the smoke-test skill on a focused tab (re-apply orca viewport after every reload; 0-rAF stall = INFRA, rerun)"
+---
+# S01
+`);
+  const pj = loadProject(p.root);
+  // cc-firefighter-kids S01 q4: the judge quoted part of a runtime_checks line and was refused
+  assert.equal(quoted(pj, 'S01', 'Smoke: S01-01..S01-06 checks pass via the smoke-test skill on a focused tab (re-apply orca viewport after every reload; '), true);
+  assert.equal(quoted(pj, 'S01', '0-rAF stall = INFRA, rerun'), false); // a fragment under 30 characters is still refused
+  assert.equal(quoted(pj, 'S01', 'no clipping or overlap at any viewport, rendered hitboxes'), true);
+  assert.equal(quoted(pj, 'S01', 'runtime_checks: Smoke: S01-01..S01-06 checks pass'), false); // a yaml key is not contract text
+  assert.equal(quoted(pj, 'S01', 'Ten enemies a wave on every level of the game'), false);
+});
+
 test('judge: defer, forbidden options, a missing or invented quote, broken output, a failed call, an unverified provider → the director', () => {
   const cases = [
     ['defer', { choice: 'defer', reason: 'the contracts do not say' }, /judge deferred: the contracts do not say/],
