@@ -11,6 +11,7 @@ export function textNeed(q, choice) {
   if (q?.kind === 'fleet_gate') return choice === 'answer with --text' ? 'required' : choice === 'stop' ? null : 'optional';
   if (q?.kind === 'coordinator_question') return choice === 'answer with --text' ? 'required' : null; // typed into the coordinator's codex panel
   if (q?.kind === 'spawn_unconfirmed' && choice.startsWith('reattach')) return 'required';
+  if (q?.kind === 'coordinator_missing' && choice.startsWith('rebind')) return 'required'; // the resumed coordinator's handle
   if (q?.kind === 'director_gate' && isGivenChoice(choice)) return 'optional'; // the note goes on the policy line
   return null;
 }
@@ -25,7 +26,9 @@ export function answerProblem(q, choice, text = '') {
   if (!q) return 'no such question';
   if (q.answer) return `${q.id} is already answered (${q.answer.choice})`;
   if (!q.options.includes(choice)) return `choice must be one of: ${q.options.join(', ')}`;
-  if (q.kind === 'spawn_unconfirmed' && choice.startsWith('reattach') && !/^\S+$/.test(text)) return 'give the terminal handle as the note (--text)';
+  if ((q.kind === 'spawn_unconfirmed' && choice.startsWith('reattach')) || (q.kind === 'coordinator_missing' && choice.startsWith('rebind'))) {
+    if (!/^\S+$/.test(text)) return 'give the terminal handle as the note (--text)';
+  }
   if (textNeed(q, choice) === 'required' && !text.trim()) {
     return q.kind === 'fleet_gate' ? 'this gate needs the decision as the note (--text)' : 'give the answer for the lane as the note (--text)';
   }

@@ -130,7 +130,12 @@ node ~/.agents/skills/game-producer/scripts/producer-runner.mjs start --dry-run 
   APPROVED must name a gate whose decision the runner sent (else `verdict_override` — a speed bump
   against the coordinator's say-so, not proof: a new highest round file is read as a review round); a
   "terminal missing" from orca-wait is checked with `orca terminal show` before `coordinator_missing`
-  (5 in a row while Orca still shows it → asked anyway); one gate question lists every pending gate,
+  (5 in a row while Orca still shows it → asked anyway; an Orca restart gives every terminal a new
+  handle, so `coordinator_missing` with a Run also offers "rebind the coordinator given in --text":
+  the human names the resumed coordinator's terminal (`orca terminal list`), the runner sends it
+  one message — `run-use --id <run>`, re-dispatch the tasks whose worker terminal is gone and have
+  the new worker continue from the worktree's changes, back to the foreground `orca-wait coord`
+  loop — and waits until the Run names that handle); one gate question lists every pending gate,
   the relay names the others (not for a judge answer), and after a relay another gate waits 3 idle
   pauses for the coordinator; the commit line is `approved — commit (producer: Step 2d passed)`; a
   merged worktree whose only changes are evidence files the copy carries (no PNG, no runner file) is
@@ -416,7 +421,8 @@ your move. Idle with any other status → stalled (S08 lost ~3 h this way):
 the Delivery you last handled (bare `check` if none), handle the batch — including <unread
 ids> — then keep a foreground `check --wait`". Still idle with no progress after that →
 report to the human. Never close or respawn a fleet coordinator (a replacement needs a
-`run-use` takeover — the human's call) and never do its job for it.
+`run-use` takeover — the human's call; the rebind option of `coordinator_missing` has the resumed
+coordinator run it itself) and never do its job for it.
 
 Read `review.md` only when the status says a verdict exists.
 

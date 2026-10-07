@@ -56,6 +56,9 @@ export const STALL_NUDGE =
   'handle the batch — including any unread messages to your Run — then keep a foreground `orca-wait coord`.';
 const SINGLE_EVIDENCE = ['integration-notes.md', 'preflight.json', 'preview-startup.json', 'runtime-state.json', 'preview.png', 'stats.json', 'final-report.md'];
 const FLEET_EVIDENCE = ['final-report.md', 'stats.json'];
+const REBIND_COORDINATOR = 'rebind the coordinator given in --text';
+/** Recovery message for a coordinator resumed under a new terminal handle (Orca restart; pilot 12). */
+const rebindText = (run, worktree) => `Orca restarted and this terminal now hosts the fleet coordinator (the producer rebinds it; your old terminal handle is gone). Recover in this order. 1) Run: orca orchestration run-use --id ${run} --json — it binds this terminal to the Run. 2) List the Run's tasks (orca orchestration task-list --run ${run} --json) and re-dispatch every task that is ready, or dispatched to a terminal that no longer exists (check with orca terminal show): the worker is gone but its work is not${worktree ? ` — keep the changes already in the worktree ${worktree}` : ' — keep the changes already in its worktree'}; tell the new worker to CONTINUE from the existing changes, not to restart. 3) Go back to the foreground wait loop: node ~/.agents/skills/cocos-orca-fleet/scripts/orca-wait.mjs coord, and never end your turn while a Dispatch is live.`;
 const COORDINATOR = '@coordinator'; // outbox address resolved through run-show at send time
 // a lane's own question: the director (or the judge, from the contracts) answers it in the lane
 const LANE_BLOCKED_OPTIONS = ['send this answer to the lane', 'answered in the lane, continue', 'mark blocked', 'stop'];
@@ -1147,8 +1150,12 @@ function fleetStep(ctx, s, phase) {
       return PAUSE;
     }
     // a fleet coordinator is never respawned: a replacement needs a run-use takeover (the human's call)
-    const why = alive ? ` — orca-wait reported it missing ${rechecks} times in a row although terminal show still finds it` : '';
-    return ask(s, 'coordinator_missing', `fleet coordinator ${coordinator} is gone${run ? ` (Run ${run})` : ' and no Run exists yet'}${why}`, ['taken over, continue', 'mark blocked', 'stop'], { obs: `coordinator_missing@${coordinator}` });
+    const why = alive ? ` — orca-wait reported it missing ${rechecks} times in a row although terminal show still finds it`
+      // pilot 12: an Orca restart gives every terminal a new handle and resumes the claude sessions under the same title
+      : ' — Orca may have restarted (terminal handles change): find the resumed coordinator terminal in `orca terminal list` and rebind it';
+    // rebinding needs a Run: run-use binds the new terminal to it
+    const options = ['taken over, continue', ...(run ? [REBIND_COORDINATOR] : []), 'mark blocked', 'stop'];
+    return ask(s, 'coordinator_missing', `fleet coordinator ${coordinator} is gone${run ? ` (Run ${run})` : ' and no Run exists yet'}${why}`, options, { obs: `coordinator_missing@${coordinator}` });
   };
   if (phase === 'committing') {
     const c = readHandoff(handoff, s.commit_base);
@@ -1331,6 +1338,17 @@ export function applyAnswer(ctx, q) {
       // another full patience window, then asked again (a bare ack waited in silence)
       ack();
       return st.writeSliceState(root, id, { gate_waits: 0, gate_unresolved_waits: (s.gate_unresolved_waits || 0) + 1 });
+    case `coordinator_missing:${REBIND_COORDINATOR}`: {
+      // the Run still names the dead handle until the resumed coordinator runs run-use; resolveTo and the
+      // fleet wait pick the new one up then (the Run names the coordinator, never a title match)
+      const handle = (q.answer.text || '').trim();
+      if (!/^\S+$/.test(handle)) throw new Error('give the terminal handle with --text');
+      if (!s.run) throw new Error('no Run to rebind the coordinator to');
+      ack(); // until the Run names the new handle the old one's "missing" only waits
+      st.writeSliceState(root, id, { coordinator: handle });
+      st.log(root, id, `coordinator rebind: ${s.coordinator} → ${handle} (human; run-use ${s.run} requested)`);
+      return sendOnce(ctx, `rebind:${q.id}`, handle, rebindText(s.run, s.worktree));
+    }
     case 'coordinator_screen:checked the coordinator terminal, continue':
       // the director looked at the terminal: the panel last seen no longer holds the lane on a blind
       // screen (review round 4, V1: otherwise nudges and stall checks stay off for good)
