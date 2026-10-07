@@ -621,3 +621,15 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - **Cấu hình:** runner pid 2608, terminal `term_cd9280ee…`; writer opus high `term_24b7fd41…`; memory off.
 - 11:18Z S02: review r1 chạy thẳng trên Chrome headless (policy GIVEN 860fa72), 0 vòng INFRA (S01 mất 3 vòng), kết quả CHANGES_REQUESTED (F1–F5: kích thước GearUpScreen, overlay). Đang ở fix round 1 (integrator, scene). Reviewer trích memory `rendered-text-floor-probe r1`. q8 (gate paths) do director trả lời 10:10Z; judge defer nhưng trích đúng `paths.code` trong front matter, xác nhận fix 548dc10 chạy live.
 - 11:20Z: writer S10 đầu tiên bị runner đánh dấu idle 3 lần liên tiếp. HANDOFF không cập nhật từ 10:34, lúc đó đã xong code, scene, bản build sau tối ưu và report.md. Runner tự mở lane resume `term_3a5e8056…`. Writer mới cho biết tab Orca vẫn đứng ("page never became ready"), rồi chạy lại smoke bằng CDP headless. Nhiều khả năng writer cũ đứng chờ smoke trên Orca không bao giờ sẵn sàng; terminal đã đóng nên không đọc lại được. Lane resume của runner đã gỡ việc này mà không cần hỏi ai. Đây thêm một bằng chứng nên lấy CDP headless làm kênh runtime mặc định khi tab Orca không render.
+
+### Pilot 11 — S02 kết quả (S02 merge 2026-10-07 11:42Z)
+
+1. **Merge:** `eb45ea1` (slice `2bc2120`), bookkeeping `df902aa`; verify done. Thời gian 09:21 → 11:42Z = 2 h 21, trong đó ~40 phút chờ gate q8. Runner tự chuyển sang S03.
+2. **Review:** 2 vòng (r1 CHANGES_REQUESTED F1–F5, r2 APPROVED), 1 fix round. Cả hai vòng đều chạy trên Chrome headless, 0 vòng INFRA. manual_deferred (3): touch/notch trên máy thật ở V3; audio siren (thuộc S04); director duyệt cảm giác nháy đèn siren 2 Hz so với dòng 4 Hz.
+3. **Token** (sess / turns / context): fleet-orch 1 / 80 / 14.5M; fleet-worker 6 / 254 / 43.3M (+ codex 4.0M); producer (judge) 17.3k.
+4. **Coordinator:** −42 % so với baseline S01 (24.8M) và −34 % so với firefighter S01 (22.1M). Đạt mục tiêu −40 % so với S01. Nguyên nhân: không mất vòng INFRA, chỉ 1 fix round.
+5. **Câu hỏi:** chỉ có q8 (fleet_gate PATH GAP: thêm GameTypes/LayoutSystem/VfxSystem vào code paths). Judge defer với lý do trích đúng `paths.code` trong front matter, xác nhận fix 548dc10. Director trả lời qua dialog.
+   - Sau fix round, verdict_override KHÔNG kích hoạt nữa (fix dd0c105 và review vòng 2 không cần trích tên file).
+6. **Sự cố:** không có. Live run Chrome của agent run-smoke giữa chừng (check S02-03 ERROR null node) là trạng thái WIP trước fix round, không thành vấn đề khi merge.
+7. **Memory:** reviewer và các worker trích `cocos-playbook/recipes/rendered-text-floor-probe r1` (4 file) và một item cc-love-train. Integrator ghi `none` và nêu lý do. Kết luận: hữu ích, công thức đo floor được dùng nhất quán.
+8. **Bài học:** quyết định kênh Chrome cho cả dự án làm biến mất loại chi phí lớn nhất của S01. Gate PATH GAP vẫn còn: bước pre-check khi soạn slice (step 2) nên grep các file core có union/type/layout table mà slice sẽ chạm.
