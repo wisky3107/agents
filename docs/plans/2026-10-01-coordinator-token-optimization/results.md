@@ -606,3 +606,4 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
    - (b) Runtime infra block lặp từ 2 lần trở lên → đề xuất kênh Chrome headless sớm, đừng rerun.
    - (c) Judge chưa được kiểm chứng live sau sửa (không có câu hỏi thuộc loại judge sau 08:23Z).
    - (d) Lỗi zero-width có thể ảnh hưởng mọi prompt có đường dẫn tuyệt đối `.cursor/`. Nên quét các spec/prompt template của fleet.
+- 09:28Z: laterRound fix merged `dd0c105` (reviewer độc lập APPROVED; siết thêm: không tính "fix round N" / "round N.x"; thêm dòng failure-signature). Restart runner giữa S02 (đang ở fleet, 0 câu hỏi mở): pid 66586 → 18782, terminal `term_44f61cd4…`, resume "continue at fleet".
