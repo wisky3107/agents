@@ -828,3 +828,4 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 5. **Finding (lặp lần 2, cần sửa sớm):** dialog `send_failed` cho commit vẫn đưa "mark blocked" ra như một lựa chọn bình thường, và director đã chọn nó cả hai lần. Đề xuất:
    - ở `send_failed:commit`, khi review đã APPROVED thì bỏ "mark blocked", thay bằng "committed by hand, check again" (runner tìm commit trên main);
    - không chọn slice single-lane khi main còn dirty với file của slice khác.
+- 17:16Z: writer đầu tiên bị đánh dấu idle 3 lần (nudge lúc 16:55Z), terminal đã exited. HANDOFF dừng ở "code + pets.json done (tsc clean); importing spines, then scene wiring…". Runner tự mở lane resume `term_8e891269…`, lane này làm tiếp scene, checks S12-01..05 và preview. Smoke tự fallback Orca → Chrome (`page never became ready`) nhờ bản sync `--channel auto` (995097d). Cùng dấu hiệu với pilot 11 S10; đã ghi vào failure-signatures (lần này không cần ai can thiệp).
