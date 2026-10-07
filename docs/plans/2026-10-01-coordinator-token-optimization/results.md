@@ -894,3 +894,17 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
    - Soạn slice: playtest dùng `?mock_scenario=new_account` không phải fixture có thật (`new_user_free` mới đúng; review N7). S11 cũng ghi `new_account`. Pre-check nên grep danh sách scenario của MockApi.
    - Soạn slice: `change_budget.lines` nên loại file asset dạng text (spine JSON/atlas).
    - Workflow: khi nhiều project Creator 3.8.8 mở song song, preview của project Spine có thể chạy sai runtime. Cần một probe trong preflight/run-smoke (chưa làm, ghi ở signature).
+
+### Pilot 12 — S04 kết quả (S04 merge 2026-10-07 18:49Z, single lane)
+
+1. **Merge:** slice `0f6fda4` commit trực tiếp trên main (single lane), bookkeeping `f63a864`. Thời gian 17:56 → 18:49Z = 53 phút. 0 câu hỏi.
+2. **Review:** 1 vòng, APPROVED, 0 fix round. Writer: smoke 17/17 (Chrome), specs 73/73, 5 lượt sơn xe không lỗi console, static WARN chỉ về scope đã khai báo.
+   - manual_deferred (2): notch thật (insets 47/0/34/0) và cảm giác chạm ngón tay (S05); tốc độ phun sơn và squash của sticker đo theo frame.
+3. **Token:** slice-agent 2 sess / 169 turns / 41.7M (writer + reviewer).
+4. **Preview:** :7456 đúng Creator của dự án (pid 61214). `preview-startup.json` ghi pid chủ và title trang, nên không gặp lại bẫy cổng của F4.
+5. **Memory (assist):**
+   - Writer trích lesson của chính dự án: `cc-car-service-kids/T-S02/t-s02-editor-authored-ui-bulk-result` (dựng scene bằng script scene-context, sửa prefab qua `create_prefab_instance` + apply), và một lesson `cc-firefighter-kids/T-S06`.
+   - Reviewer: "memory used: none".
+   - 3 learning candidates về mask/stencil và negative control.
+6. **Kit:** slice-check 1 feature, 0 giữ lại.
+7. **Tiếp theo:** runner tự sang S05 audio-and-juice (single lane).
