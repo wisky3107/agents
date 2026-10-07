@@ -544,3 +544,12 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
   - Kiểm tra: `/` 200, `build-info.json` env staging, `/.env.local` 404, `/.git/config` 404, POST `/api-proxy/wallet` qua Vercel trả `success:true` (TIM 540). Truy cập ẩn danh bị 302 (Vercel Authentication).
   - Chưa chạy smoke trên trình duyệt với URL deploy, vì phải đăng nhập Vercel.
   - Ứng viên sửa: `deploy.sh --env staging --proxy` tự tạo rewrite và chèn API base (FOLLOWUPS #26/#27).
+
+### Pilot 11 — cc-firefighter-kids S01 polished-playable (L, fleet lane), từ 2026-10-07 08:00Z (runner đã chạy từ 06:30Z)
+
+- **Mục đích:** pilot dự án mới (bootstrap + contracts `b3aac7c`), workflow tổng quát. Director: "pilot dự án cc-firefighter-kids". Authority: auto-answer (mặc định); đổi kênh browser là quyết định của director.
+- **Cấu hình:** runner pid 44237, terminal `term_c35c2557…`, launch 06:30:19Z; fleet lane, coordinator `term_479c6a0c…`, worktree `s01-polished-playable` (preview :7458); orchestrator/scanner sonnet, reviewer sonnet high, judge opus, autopilot unattended; memory assist, plan pack 7.3 KB (`T-S01/evidence/memory/plan/`).
+- **Tiếp nhận lúc 08:00Z:** static review sạch (tests 26/26, check-slice PASS). Runtime review INFRA_BLOCKED cả 3 vòng (rAF 0, `hasFocus false`, eval trên tab game trả "Orca runtime closed the connection"). q1–q6 đều do director trả lời tay.
+- **Finding 1, judge bỏ front matter:** `prose()` loại front matter của slice, nhưng acceptance/runtime_checks nằm ở đó (S01 dòng 1–204/236). Vì vậy judge trích đúng dòng runtime_checks vẫn bị từ chối (q1, q4). Sửa ở `548dc10`, có test.
+- **Finding 2, zero-width trong "cursor":** model nhận chữ "cursor" trong prompt thành `.c‍ursor`, nên Read mọi đường dẫn `.cursor/…` trả not found. Đã tái hiện bằng `claude -p` (q6, judge tự báo). Judge giờ đọc evidence qua symlink không chứa chữ đó: `6fb902e`, có test. Có thể ảnh hưởng mọi worker được giao đường dẫn tuyệt đối `.cursor/…` (memory pack, evidence); chưa kiểm.
+- **Finding 3, tab preview Orca:** Chrome headless bên ngoài Orca load trang sạch (scene sẵn ~2 s, `fireCrew` có, không page error; Chrome thật + Metal 61 fps), nên đây không phải lỗi game. Lỗi nằm ở kênh tab Orca khi run-smoke điều khiển, tab cc-love-train :7456 dùng chung pane. 08:10Z director GIVEN: runtime review S01 chạy bằng Playwright + Chrome headless GPU; đã chuyển cho reviewer vòng 4.
