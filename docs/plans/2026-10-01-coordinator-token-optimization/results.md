@@ -505,3 +505,9 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
   - HttpApi được viết lại tại chỗ, giữ nguyên `ILoveTrainApi`. Nhờ vậy chỉ phải khai báo trước việc viết lại `tests/http-api.spec.ts`; check S01–S08 vẫn chạy trên mock.
 - **Ticket test:** chỉ lưu ở `local/love-train-test-ticket.txt` (đã gitignore), không có trong commit nào. Đã grep để kiểm tra.
 - **Cấu hình chạy:** runner pid 68618, terminal `term_3c9f64e1…`; writer opus high `term_8511230a…`; memory off.
+- 07:18Z: S09 writer done (specs 15/15, smoke 7/7, live BE Dev boot/select/act through the proxy, staging and prod builds pass the guard). Review r1 is running. The writer asked to ratify two edits outside the declared paths:
+  - the S08 spec assertion "prod overlay is a placeholder", which S09-D1 had made false;
+  - 4 entries in MockApi's `Record<ApiErrorCode,…>` table, needed to compile.
+  I ratified both as delegated director (S09-D9).
+  Authoring finding (mine): the pre-check missed that a new error code forces edits to every exhaustive `Record<ApiErrorCode>`, and that a slice which replaces an earlier decision (S08-D4) must name the spec asserting it. Lesson for game-brief/workflow-pilot step 2: grep for exhaustive enum maps and for specs that pin the decision being superseded.
+- Ticket grep over the working tree (excluding local/): 0 hits.
