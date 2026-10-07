@@ -30,13 +30,16 @@ const PRODUCER_OWNED = ['/evidence/memory/plan/'];
  * Untracked review captures (worktree-relative paths from `git status`), worktree → main's ignored
  * `.cursor/evidence/tasks/T-<id>/captures/<same path>`, so removing the worktree loses none. → null | error text
  */
-function copyCaptures(root, wt, id, files) {
+function copyCaptures(root, wt, id, files, prefix) {
   if (!files.length) return null;
   const top = git(wt, ['rev-parse', '--show-toplevel']).stdout.trim();
   const to = path.join(root, '.cursor', 'evidence', 'tasks', `T-${id}`, 'captures');
   try {
     for (const f of files) {
-      const dest = path.join(to, path.relative(path.relative(top, wt), f));
+      // the project-relative part, never path math on wt: a symlinked worktree path (/tmp → /private/tmp)
+      // would put the copy outside captures/ and then lose it with the worktree
+      const dest = path.join(to, f.slice(prefix.length));
+      if (!f.startsWith(prefix) || path.relative(to, dest).startsWith('..')) return `captures: ${f} is outside the project`;
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.copyFileSync(path.join(top, f), dest);
     }
@@ -601,10 +604,10 @@ export function mergeStep(ctx, s, kit) {
       // to main by the evidence step, may go; anything else keeps the worktree
       let force = false;
       let captures = [];
+      const prefix = git(j.wt, ['rev-parse', '--show-prefix']).stdout.trim();
       if (!kept) {
         const changed = changedPaths(j.wt);
         if (changed.length) {
-          const prefix = git(j.wt, ['rev-parse', '--show-prefix']).stdout.trim();
           const ev = `${prefix}.cursor/evidence/tasks/T-${id}/`;
           // only what copyEvidence carries: a PNG or a runner file there would be lost by --force
           const carried = (f) => f.startsWith(ev) && !/\.png$/i.test(f) && !RUNNER_FILE_RE.test(path.basename(f));
@@ -619,7 +622,6 @@ export function mergeStep(ctx, s, kit) {
         }
         // PNGs in an ignored evidence dir never show as changes and the evidence copy skips them: keep them too
         if (!kept) {
-          const prefix = git(j.wt, ['rev-parse', '--show-prefix']).stdout.trim();
           const ignored = git(j.wt, ['ls-files', '--others', '--ignored', '--exclude-standard', '-z', '--', `.cursor/evidence/tasks/T-${id}/`]).stdout.split('\0');
           for (const f of ignored) if (/\.png$/i.test(f) && !captures.includes(prefix + f)) captures.push(prefix + f);
         }
@@ -627,7 +629,7 @@ export function mergeStep(ctx, s, kit) {
       if (!kept) {
         // copy again right before the removal: a file written after the evidence step (a resume hours
         // later, the coordinator still writing) reaches main too — ignored files go with the worktree
-        const err = copyEvidence(root, j.wt, id) || copyCaptures(root, j.wt, id, captures);
+        const err = copyEvidence(root, j.wt, id) || copyCaptures(root, j.wt, id, captures, prefix);
         if (err) kept = `evidence copy failed: ${err}`;
       }
       if (!kept) {

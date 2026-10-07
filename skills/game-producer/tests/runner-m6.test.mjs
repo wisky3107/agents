@@ -950,6 +950,28 @@ test('worktree_rm: untracked review captures (docs/evidence/<Sxx>/, a PNG in the
   runner(q.root, q.f, 'start', '--once');
   assert.equal(journal(q.root).steps.worktree_rm.kept, 'dirty');
   assert.equal(fs.existsSync(q.wt), true);
+  // a tracked file under docs/evidence edited after the commit is not a capture
+  const t = committedFleet();
+  write(t.wt, 'docs/evidence/S01/visual-review.md', 'v1\n');
+  g(t.wt, 'add', '-A');
+  g(t.wt, 'commit', '-qm', 'evidence: visual review');
+  const sha3 = g(t.wt, 'rev-parse', 'HEAD').stdout.trim();
+  fs.writeFileSync(ev(t.root, 'S01', 'producer-state.json'), JSON.stringify({ ...sliceState(t.root, 'S01'), commit_sha: sha3 }));
+  write(t.wt, 'docs/evidence/S01/visual-review.md', 'v2\n');
+  t.f.queue([VERIFIED]);
+  runner(t.root, t.f, 'start', '--once');
+  assert.equal(journal(t.root).steps.worktree_rm.kept, 'dirty');
+  // the state names the worktree through a symlink: the captures still land under captures/
+  const sy = committedFleet();
+  const link = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'runner-link-')), 'wt');
+  fs.symlinkSync(sy.wt, link);
+  fs.writeFileSync(ev(sy.root, 'S01', 'producer-state.json'), JSON.stringify({ ...sliceState(sy.root, 'S01'), worktree: link }));
+  write(sy.wt, 'docs/evidence/S01/V2.png', 'PNG v2');
+  sy.f.queue([VERIFIED]);
+  fs.writeFileSync(path.join(sy.f.dir, 'editor-up'), `${link}\n${sy.root}\n`); // the fake Editors answer to the path the state names
+  runner(sy.root, sy.f, 'start', '--once');
+  assert.equal(journal(sy.root).steps.worktree_rm.kept, undefined);
+  assert.equal(fs.readFileSync(path.join(sy.root, '.cursor', 'evidence', 'tasks', 'T-S01', 'captures', 'docs', 'evidence', 'S01', 'V2.png'), 'utf8'), 'PNG v2');
 });
 
 test('bookkeeping commit: AGENT_NOTES.md and the tracked evidence only, by path — other changes and untracked files stay out', () => {
