@@ -809,3 +809,16 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
   - Spine nạp qua resources theo từng pet, để ~2.2 MB không vào boot scene (giữ kết quả của S10).
 - **Preflight bước 3 (template sync), lần đầu làm đủ:** smoke-test của project bằng đúng template base, nên chép bản template `--channel auto` sang (`995097d`, đóng #39, 77/77 test của skill pass).
 - **Cấu hình:** runner pid 50921, terminal `term_d31fd1c1…`; writer opus high `term_318dcee6…`; reviewer opus; memory assist, plan pack 6 items / ~1.8k tokens.
+
+### Pilot 11 — S07 kết quả (S07 commit 2026-10-07 16:47Z, single lane)
+
+1. **Commit:** `14bbc27` do pilot commit tay. Writer đã chết vì vụ pkill lúc 16:07Z; runner gửi "commit" thì báo `terminal_not_writable`. tests 101/101 chạy lại trước commit. Không đưa vào commit: AGENT_NOTES, `game.scene.index.json(.meta)` (writer ghi rõ "pre-existing, not part of the slice"), PNG trong docs/evidence.
+2. **Review** (reviewer mới, spawn lại lúc 16:26Z): 1 vòng, APPROVED. Smoke 27/27 trên Chrome, unit 101/101. F1 minor: hydrant chạm viền chữ KIDS ở đỉnh nhịp bob. D-1..D-3 là quyết định của director. manual_deferred (3): nháy trắng ở frame đầu trên build; xoay lại trên build; notch/xoay trên máy thật.
+3. **Sự cố lặp lại kiểu S05:** q16 và q17 director chọn "retry" qua dialog, q18 chọn **"mark blocked"** (16:48:09Z), 12 giây sau khi commit tay đã lên main. Runner chọn S08 ngay.
+   - Lần này vô hại: S08 là fleet lane (worktree tách riêng, seed từ `14bbc27` nên đã có S07), và commit có trước lúc S08 được chọn.
+   - Đã sửa cache AGENT_NOTES `S07: blocked → merged` và thêm dòng notes. Status từ git của runner vốn đã tính S07 là merged.
+   - Harvest/record của S07 không chạy (đường blocked ghi 4 lesson rows).
+4. **Token:** slice-agent 6 sess / 204 turns / 38.8M (có writer và reviewer chết, reviewer chạy lại).
+5. **Finding (lặp lần 2, cần sửa sớm):** dialog `send_failed` cho commit vẫn đưa "mark blocked" ra như một lựa chọn bình thường, và director đã chọn nó cả hai lần. Đề xuất:
+   - ở `send_failed:commit`, khi review đã APPROVED thì bỏ "mark blocked", thay bằng "committed by hand, check again" (runner tìm commit trên main);
+   - không chọn slice single-lane khi main còn dirty với file của slice khác.
