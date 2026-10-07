@@ -619,3 +619,4 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
   - Chỉ layout-system.spec chứa 1920/2520, và đó là số liệu thiết kế nên không bị ảnh hưởng.
   - Theo slice-schema, build không có ngưỡng dung lượng cố định, nên tiêu chí là "thấp hơn số đo baseline" (S10-D6).
 - **Cấu hình:** runner pid 2608, terminal `term_cd9280ee…`; writer opus high `term_24b7fd41…`; memory off.
+- 11:18Z S02: review r1 chạy thẳng trên Chrome headless (policy GIVEN 860fa72), 0 vòng INFRA (S01 mất 3 vòng), kết quả CHANGES_REQUESTED (F1–F5: kích thước GearUpScreen, overlay). Đang ở fix round 1 (integrator, scene). Reviewer trích memory `rendered-text-floor-probe r1`. q8 (gate paths) do director trả lời 10:10Z; judge defer nhưng trích đúng `paths.code` trong front matter, xác nhận fix 548dc10 chạy live.
