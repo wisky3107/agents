@@ -537,3 +537,10 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
    - Với API có CORS chặt, phải probe preflight trước khi viết slice; proxy local cùng origin là cách test nhanh nhất.
    - Ticket test chỉ để ở `local/` (gitignored) và luôn được scrub khỏi log. Cách này giữ được ticket an toàn qua cả writer lẫn reviewer.
    - Reviewer dùng CDP headless khi tab Orca không render. Đây là ứng viên để sửa điểm nghẽn lớn nhất của pilot 8.
+- 2026-10-07 07:5xZ: director yêu cầu "deploy bản staging lên preview để test".
+  - Build: `build/build.sh --env staging --clean`. Main đã push (`df364e5`).
+  - Deploy từ thư mục tạm không có git lên project Vercel `love-train-preview` với `--target preview`, ra `https://love-train-preview-oik7jmvbv-wikzs-projects-cb94e42c.vercel.app` (dpl_37AxnP6qW8ATwXi2HBhRKmoHmrNR, `vercel inspect` báo target là preview).
+  - BE chặn CORS preflight từ domain Vercel nhưng nhận POST thật với Origin lạ (200). Cách xử lý: `vercel.json` rewrite `/api-proxy/:path*` → BE Dev, chèn `window.__LT_API_BASE__='/api-proxy'` vào bản copy index.html trong thư mục tạm. Source không đổi.
+  - Kiểm tra: `/` 200, `build-info.json` env staging, `/.env.local` 404, `/.git/config` 404, POST `/api-proxy/wallet` qua Vercel trả `success:true` (TIM 540). Truy cập ẩn danh bị 302 (Vercel Authentication).
+  - Chưa chạy smoke trên trình duyệt với URL deploy, vì phải đăng nhập Vercel.
+  - Ứng viên sửa: `deploy.sh --env staging --proxy` tự tạo rewrite và chèn API base (FOLLOWUPS #26/#27).
