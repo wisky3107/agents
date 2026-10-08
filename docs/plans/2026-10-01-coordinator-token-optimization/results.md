@@ -1055,3 +1055,19 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
   - Đề xuất cho recipe `scene-2d-portrait` / smoke-test SKILL: game có input tự map toạ độ thì cần một check "drawn centre → pointer path → đúng target" chạy ở viewport khác 9:16.
 - **Phụ:** S08 xoá `assets/prefabs.meta`/`thirds.meta` nhưng thư mục rỗng vẫn còn, Creator tạo lại meta mỗi lần mở → nên xoá luôn thư mục rỗng.
 - Producer Step 3 (`term_698717e5…`) vẫn đang chờ director. Fix nằm trên main nên build sau sẽ có.
+
+### Pilot 12 — S09 visual-fix sau ship (single lane), từ 2026-10-08 02:20Z
+
+1. **Nguồn:** director xem game sau v1.0.0: "kiểm tra phần visual của game trước mắt là thấy vấn đề bánh xe nằm dưới đường lai của xe". Sau đó chọn "A, tạo slice S09 và chạy qua runner".
+2. **Rà visual** (Chrome headless, 23 ảnh: title, map, 3 loại xe × 5 trạm, popup), 0 lỗi console:
+   - **V1 bánh xe:** bánh cao hơn mép trong của vòm 26 / 15 / 8 px (compact / pickup / minibus), nên nét vòm cắt ngang lốp và thân xe thấp hơn bánh. Số bánh trong `CAR_TYPES` là "ASSUMPTION, tune on the preview" từ S01/S02, chưa ai chỉnh. Đo trên alpha của `car_*_lines.png`, đã thử live (ảnh trước/sau ở `docs/mockups/S09-wheels-target.png`).
+   - **V2 lốp xẹp:** `resetTyre()` cho mọi xe xẹp lốp kèm ốc, kể cả ticket không có việc thay lốp (Day 3 wash · fuel · paint). Có từ S02, khi bắt đầu có ticket hỗn hợp.
+   - Map, sổ tay, settings, guide khớp mockup.
+3. **Finding workflow (F7):** 8 slice với hơn 10 vòng review không bắt được V1 và V2.
+   - Review chỉ so tọa độ với mock theo ±px, không kiểm tra "sprite ghép nằm trong phần khoét của art nền" (bánh trong vòm).
+   - Review không kiểm tra trạng thái hình có khớp dữ liệu không (lốp xẹp ↔ ticket).
+   - Số ASSUMPTION kiểu "tune on the preview" không có ai chịu trách nhiệm chỉnh.
+   - Hướng sửa: thêm mục "composed-art fit + state↔visual" vào hướng dẫn visual review, và check-slice cảnh báo khi một ASSUMPTION "tune on the preview" còn sống qua review.
+4. **Contract** (`3e96122`): `slices/S09-visual-fix.md` (M, gồm bảng arch đo được và 4 quyết định director), MILESTONES (`slices: […, S07, S09, S08]` vì validator bắt release-polish đứng cuối; `dag S09: [S08]`), HOW_TO H-35, EXPECT, RC-31. Validator ok (9 slice), coverage ok.
+   - Commit chỉ các path của S09: session Step 3 của director còn stage `docs/retro.md`, AGENT_NOTES, `manual-deferred.json` (chưa commit). Slice có risk dặn writer commit với path cụ thể.
+5. **Config:** runner pid 26366 (term_a4aec5d3), writer term_e8f654f1 (`claude sonnet high`), memory assist (6 item, 1935 token; có `lt-s01-glow-padded-sprite-native-size`). v1.0.0 đã tag local trên `133db8b`, nên S09 sẽ nằm sau tag.
