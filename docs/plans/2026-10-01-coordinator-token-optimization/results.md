@@ -1296,3 +1296,18 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Delegated decision q41 (19:14Z): allow both — new `Canvas/HUD/Panel - Street Props` right after `Sprite - Street` (under hydrant/rope) for the crosswalk; essential-rect pair-rule gains a `decor` kind that only adds rects (S13-02 = 0 intersections V1–V4), never relaxes essential pairs. Judge deferred it (outside scene_objects/paths.code).
 - Finding: third slice in a row where the brief's node layout ignored that the HUD street sprite covers World (S12 rope, S13 crosswalk) — the brief author should read real sibling order before naming node paths.
 - Memory: S09 essential-rect-registry lesson cited again.
+
+### Pilot 12 — S17 kết quả (S17 merge 2026-10-08 20:48Z, fleet)
+
+1. **Merge:** `049ce4a`, bookkeeping `d3a7481`. Thời gian 19:15 → 20:51Z = 1 h 36.
+2. **Câu hỏi:** q30 (thiếu 4 path), judge defer vì coi là "plan sign-off". Tôi approve theo quyền delegated và ghi thành S17-D4 (`76ab514`).
+3. **Giọng đọc (S17-D1, quyết định delegated của tôi):**
+   - VI: VieNeu-TTS v3 Turbo, ONNX, Apache-2.0, giọng mẫu "Mỹ Duyên".
+   - EN: Kokoro-82M (Apache-2.0) qua kokoro-onnx (MIT), giọng `af_heart`.
+   - Chạy offline, không tốn phí. `LICENSE.md` ghi engine, model, revision, sha và attribution. Mỗi ngôn ngữ 146 file.
+   - Không ngôn ngữ nào phải để không lồng tiếng.
+4. **Review:** 1 vòng APPROVED, 0 fix round. Implement đầu tiên fail và được dispatch lại. manual_deferred (3): nghe chất lượng giọng và việc nhạc nhỏ đi khi có lời đọc trên loa thật, phát âm…
+5. **Worktree tự xoá**, 2 ảnh. Verify trên main pass.
+6. **Token:** fleet-orch 1 / 80 / 13.9M; fleet-worker 5 / 292 / 62.4M + codex 1.1M; verifier 1.2M. Tổng khoảng 79M.
+7. **Memory:** writer trích lại `s11-relax-settings-row-layout-from-row-count` để thêm hàng Giọng đọc. Lesson S11 được dùng ở 3 slice: S16, S17 và chính S11.
+8. **Tiếp theo:** S19 car-surface (polish đầu tiên, fleet, Run `run_ef6fb9a1ed64`). Art (noise texture RGB) đã PASS, đang implement shader.
