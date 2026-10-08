@@ -1311,3 +1311,9 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 6. **Token:** fleet-orch 1 / 80 / 13.9M; fleet-worker 5 / 292 / 62.4M + codex 1.1M; verifier 1.2M. Tổng khoảng 79M.
 7. **Memory:** writer trích lại `s11-relax-settings-row-layout-from-row-count` để thêm hàng Giọng đọc. Lesson S11 được dùng ở 3 slice: S16, S17 và chính S11.
 8. **Tiếp theo:** S19 car-surface (polish đầu tiên, fleet, Run `run_ef6fb9a1ed64`). Art (noise texture RGB) đã PASS, đang implement shader.
+
+### Pilot 15 — S14 kết quả (S14 merge 2026-10-08 21:22Z, fleet)
+
+- Merged: b7f9c5c (merge 664b042, bookkeeping c95654a). Wall 1 h 18 m (20:06→21:25Z). Review APPROVED after 1 fix round (3 bugs in the new smoke checks, not game code); smoke 46/46 (chrome). manual_deferred to S18: mid-flight rotation, two-jet fps on the S08 phone.
+- Delegated decision q42 (20:29Z): A1+B1 — timer ring moved (660,830)→(660,866) because the mock put it 41×31 px over window cell w13 (GP-01 probe kept strict, declared mock deviation); helper truck targets the highest fire among windows whose 48 px jet path crosses no waiting person (child safety over "highest fire"), idles if none, unit + smoke S14-02 assert zero crossings. Judge deferred (A1 departs from the mock, A2 relaxes the probe).
+- Finding: fourth brief geometry miss (mock coordinate over a window cell). Again the writer could not open a gate during its live Dispatch; the coordinator routed it through HANDOFF + a gate on integrate, which the runner did surface (q42) — better than S12.
