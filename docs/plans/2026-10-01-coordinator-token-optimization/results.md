@@ -1199,3 +1199,15 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
   - 13:38Z: test gọi OmniRoute OK, tôi nhắc cả hai agent, cả hai làm việc lại.
   - Mất khoảng 4 h của S14. Signature F10 mở rộng cho 503 và timeout.
   - Đề xuất: (a) runner nhắc lại khi màn hình có `API Error`; (b) stall detection nên đọc màn hình worker, không chỉ HANDOFF của coordinator; (c) cảnh báo sức khoẻ OmniRoute (director console).
+
+### Pilot 15 — S09 kết quả (S09 merge 2026-10-08 13:43Z, fleet)
+
+- Merged: 5bcceb3 (merge 5c4de2f, bookkeeping d685f67). Wall 6 h 09 m (07:34→13:43Z), of which ~3 h 50 m was the commit step stalled on OmniRoute (Mac slept 17:10 local, then claude circuit breaker open until ~13:37Z).
+- Review: 2 rounds, 2 fix rounds (fix-art-window, fix-code, fix-code2), integrate 3 rounds; final APPROVED; smoke 33/33 (chrome), tests 137/137; budget bump none.
+- Tokens: fleet-orch 16.9M (102 turns, ~64 % script-replaceable), fleet workers claude 92.2M + codex 2.3M (art), slice-agent 3.4M, producer 82k → ~115M.
+- Questions 10 (q22–q31): 3 fleet gates went to the director (judge deferred all three: sfx_v11 deferred; HELP! bubble/ladder geometry Q1 a Q2 a; rider face under popup → popup delay 0.8 s), 2 gate_unresolved + 5 commit_stalled were the OmniRoute outages (401 at 07:53Z, 503 circuit breaker 10:12–13:37Z).
+- Findings:
+  1. OmniRoute auth/circuit-breaker blips kill a coordinator turn silently; the runner sees "gate still pending" / "idle after commit". Signatures added (741b4f3, be9f739). Open: the runner could read the coordinator screen for `API Error: 401|503` and resend by itself instead of asking.
+  2. Contract-geometry gaps the brief author missed (bubble vs the upper cell at 180 px row pitch; static vs moving ladder; face hidden by popup) became 3 director gates. The brief gate should run a geometry pass on a mock against row pitch / popup rects before handoff.
+  3. Runner bookkeeping commit stages the whole AGENT_NOTES.md, so the director's uncommitted Step-3 ship line and the brief/policy edits went into d685f67 (content correct, but not the runner's to commit).
+- Memory (assist): cited `design-space-touch-target-floor r4` (playbook recipe) and `cc-monopoly-go/T-S06/lesson-L4` (measure the drawn layer, not the logical rect) in integration notes and review; L4 visibly shaped the overlap probe.
