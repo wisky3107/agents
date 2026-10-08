@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { specCommands, slicePaths, outOfScope, nanUnsafe, es5Errors, sliceFacts, evidenceRe, section, classifyErrors } from '../scripts/check-slice.mjs';
+import { specCommands, slicePaths, outOfScope, nanUnsafe, es5Errors, sliceFacts, evidenceRe, section, classifyErrors, assumptionNotes } from '../scripts/check-slice.mjs';
 
 const SCRIPT = new URL('../scripts/check-slice.mjs', import.meta.url).pathname;
 
@@ -191,4 +191,17 @@ test('end to end: an older spec with no Run: header is WARN, not a block', () =>
   const r = exec(d, '--only', 'specs');
   assert.equal(r.status, 0, r.stdout);
   assert.match(r.stdout, /WARN specs: 1\/1 specs pass, 1 not run[^\n]*\n  not run[^\n]*\n    tests\/legacy\.spec\.ts\n/);
+});
+
+test('assumptions: a "tune on the preview" note in a changed source file is a WARN, not a block', () => {
+  assert.deepEqual(assumptionNotes('a\n// ASSUMPTION, Tune On The Preview\n').map((h) => h.line), [2]);
+  assert.deepEqual(assumptionNotes('const wheelY = 40; // measured from the arch\n'), []);
+  const { d } = repo();
+  fs.mkdirSync(path.join(d, 'src'));
+  fs.writeFileSync(path.join(d, 'src/ServiceConfig.ts'), 'export const WHEEL_Y = -40; // ASSUMPTION, tune on the preview\n');
+  fs.writeFileSync(path.join(d, 'docs.md'), 'tune on the preview\n');
+  const r = exec(d, '--only', 'assumptions');
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, /WARN assumptions: 1 value\(s\)[^\n]*\n  src\/ServiceConfig\.ts:1:/);
+  assert.match(r.stdout, /RESULT WARN \(assumptions\)/);
 });

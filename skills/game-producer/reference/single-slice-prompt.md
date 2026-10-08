@@ -133,6 +133,11 @@ Cite in review.md the item ids that changed what you checked, or write `memory u
 2. Play only the feel rows and the slice `playtest` steps smoke cannot express (Orca browser,
    eval-first, one object per eval; flags in ~/.agents/skills/cocos-orca-fleet/reference/orca/cheatsheet-browser.md,
    not `--help`). Missing tween/particle/transition = major, "plays dry" counts.
+   Composed art fit: crop every sprite layered onto base art with cut-outs or outlines (wheels in
+   arches, eyes in windows, items in slots) at 2x; the base outline must not cross the part and
+   the part sits inside its cut-out (px tolerance vs the mock is not evidence). State vs visual:
+   for each entity whose look depends on data (ticket, level, fault, unlocked) capture one case
+   where the data says "no" and check the visual agrees. Either miss = major.
 3. Static: changed paths ⊆ slice paths; quote the writer's `check-change-budget.sh --report` line
    (code_only — scene/prefab/index/meta/plan never count). Over budget → write a
    `budget_bump: <from>→<to>` line above the verdict. Budget mode <BUDGET_MODE>: advisory → the
@@ -140,7 +145,8 @@ Cite in review.md the item ids that changed what you checked, or write `memory u
    dead/duplicated code or architecture breaks. gate:<pct> → overrun > pct is a finding (owner
    code). tsc/lint output read, not assumed. Read <EVIDENCE_DIR>/static-check.txt (the producer's
    check-slice run; rerun it if missing or older than the last code change): each FAIL line is a
-   finding (owner code), and so is each WARN scope line integration-notes.md does not declare.
+   finding (owner code), and so is each WARN scope line integration-notes.md does not declare and each
+   WARN assumptions line (a "tune on the preview" note left in code; minor, major if it positions art).
    Visible hierarchy built with `new Node()` + `addComponent` that final-report.md does not list
    under `## code-built nodes` is a finding (owner code; files of a kit the slice installs count
    as declared); new UI nodes off `{Kind} - {label}`

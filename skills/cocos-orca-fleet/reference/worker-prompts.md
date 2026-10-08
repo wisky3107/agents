@@ -384,7 +384,8 @@ Static (commit-guard gates 1–4, read-only):
 - STATIC: tsc + lint clean (read the tool output, do not assume). Run check-slice yourself
   (`node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice <plan_source> --out evidence/static-check.txt`):
   each FAIL line is a finding (owner code; `evidence` lines owner scene), and so is each WARN
-  scope line integration-notes.md does not declare. Redo one `## negative controls` line: a check
+  scope line integration-notes.md does not declare and each WARN assumptions line (a "tune on the
+  preview" note left in code; minor, major if it positions art). Redo one `## negative controls` line: a check
   that stays green on the broken state is a finding (owner code). A `## gaps` disposition that
   leaves an acceptance row broken is a finding (owner code).
 
@@ -406,6 +407,13 @@ Runtime:
    easing and distance are measured targets: time the preview's tween against them. A missing tween, particle, shake, or transition that the PLAN
    or EXPECT_GAMEPLAY_VISUAL.md lists is a finding (major by default), even when the mechanic
    itself works. "Plays dry vs reference" is a valid, reportable finding.
+   Composed art fit: for every sprite layered onto base art that has cut-outs or outlines (wheels
+   in arches, faces/eyes in windows, items in slots, hood on body), crop that spot at 2x. The
+   base outline must not cross the part and the part must sit inside its cut-out; a position
+   inside the mock's px tolerance is not evidence (finding, major, owner scene or asset).
+   State vs visual: for each entity whose look depends on data (ticket, level, fault, unlocked),
+   capture at least one case where the data says "no" and check the visual agrees (a flat tyre
+   only when the ticket has a tyre job). A smoke run that only feeds the "yes" case proves nothing.
 4. evidence/runtime-state.json with real reads (smoke JSON + eval reads). Screenshots: one
    evidence/preview.png at the end, plus at most one per blocker/major finding — never per step,
    never per acceptance row. Batch state reads into one eval returning one object.
