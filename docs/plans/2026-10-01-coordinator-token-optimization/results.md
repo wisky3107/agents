@@ -1097,3 +1097,22 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 6. **Memory:** "memory used: none". Pack có `lt-s01-glow-padded-sprite-native-size` nhưng writer cho là không áp dụng: bán kính bánh 58 đã có sẵn trong bảng arch của slice.
 7. **Finding nhỏ (F8):** `notes_commit` bỏ qua bookkeeping ("AGENT_NOTES.md has staged changes: bookkeeping left uncommitted") vì session Step 3 của director còn stage AGENT_NOTES. Dòng `S09: merged` và dòng ship chỉ nằm trong working tree. Runner làm đúng khi không commit đè lên phần người khác đã stage; việc này chờ director commit.
 8. **Hiệu quả của F7 (lần đầu áp dụng):** reviewer S09 được spawn sau `9a3740c`, có crop 2× và có trường hợp "không có việc thay lốp". So với S01–S08, đây là lần đầu có bằng chứng cho đúng loại lỗi đó.
+
+### Pilot 12 — việc còn lại sau S09 (director: "giúp tôi làm các việc còn lịa"), 2026-10-08
+
+1. **Smoke-test sync** (FOLLOWUPS #8): bản của dự án đúng bằng template `b845e6b`, không có sửa đổi local, nên copy được bản template HEAD → `7550989`. Test run-smoke 77/77; smoke trên main `--channel auto`: 45/45 (Orca không lên → tự chuyển sang Chrome).
+2. **Commit các file Step 3 còn stage** (retro, ship notes, manual-deferred signed_off) cùng bookkeeping S09 → `f448039`.
+3. **v1.0.1:**
+   - Preflight: scene không dirty, Funplay `run_script_diagnostics` 0 lỗi.
+   - `build.sh --clean` 14 MB.
+   - Smoke trên **bản release build** (serve local, `--channel chrome --expect-title "Bé Sửa Xe"`): 45/45.
+   - `deploy.sh` preview: https://web-mobile-jiwtzm70j-wikzs-projects-cb94e42c.vercel.app (build-info khớp qua `vercel curl`).
+   - Notes `37e1f83`, tag annotated `v1.0.1`.
+4. **GitHub:** tạo `wisky3107/cc-car-service-kids` (private), push main cùng tag v1.0.0, v1.0.1 (director chọn "Tạo repo private và push").
+5. **Sự cố F9 (do tôi):** dùng lệnh kill theo pattern với flag `-n` đứng sau pattern, để tắt một static server tạm. Lặp lại đúng lỗi BSD đã ghi trong memory.
+   - Bị tắt: 3 Cocos Creator (`--nologin`) và wrapper terminal Orca (`--noprofile`), trong đó có session Step 3 car-service (đã xong việc).
+   - Không có runner nào đang chạy nên không có slice nào bị đứt. Director console, OmniRoute và agy-rotate sống.
+   - Gỡ: mở lại cả 3 Creator bằng `open -n -a … --args --project … --nologin` (ppid 1, tách khỏi terminal), theo lựa chọn của director.
+   - Ngay sau đó đã có một PreToolUse hook chặn mọi lệnh Bash chứa tên lệnh đó (chặn cả khi chữ đó chỉ nằm trong văn bản của heredoc). Guard thật đã có.
+6. **v1.1** (director chọn: dọn kỹ thuật, chế độ không thua, các tính năng lớn): `GAMEPLAY_NOTES.md` GP-01..GP-10. Chạy luồng amendment của game-brief: prepare (warning `existing_contracts`), memory pack 6 item, prompt có thêm khối AMENDMENT (chỉ thêm S10+, release slice vẫn đứng cuối, quyết định mở nằm trong slice risks, có rule visual-fit). Brief author `claude --model opus --effort high` chạy từ khoảng 03:20Z (term_b64b5f79).
+   - Bài học nhỏ: heredoc không quote trong zsh đã chạy các từ trong backtick như lệnh. Prompt đã được viết lại bằng `<<'EOF'`.
