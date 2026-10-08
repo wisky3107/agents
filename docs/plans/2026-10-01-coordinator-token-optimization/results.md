@@ -1269,3 +1269,12 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 5. **Token:** fleet-orch 1 / 93 / 15.8M; fleet-worker 10 / 421 / 102.3M + codex 2.6M; producer 0.1M; verifier 0.7M. Tổng khoảng 122M, nhiều nhất từ đầu pilot.
 6. **Memory:** có trích lesson: `cc-block-out` lesson-L46 r3 (khai `budget_bump` thay vì cắt code), `s13-mock-port-outside-real-outline`, `s13-int-advance-skips-realtime-tweens`. Lesson của S13 được dùng ở S15. Có vẻ F14 (worker không đọc được pack) không xảy ra ở slice này, cần kiểm tra thêm.
 7. **Tiếp theo:** S16 english-pack (fleet) từ 17:36Z.
+
+### Pilot 15 — S12 kết quả (S12 merge 2026-10-08 18:42Z, fleet)
+
+- Merged: f5e1ec1 (merge c7964e7, bookkeeping ccf3caf). Wall 2 h 47 m (15:57→18:45Z), incl. ~7 min blocked on q40 before the focus fix. Review 3 rounds, 2 fix rounds, integrate ×3; smoke 41/41, unit 186/186.
+- Tokens: fleet-orch 17.2M (89 turns), workers claude 111.5M (7 sessions) + codex 0.8M, slice-agent 1.4M → ~131M.
+- Questions: q40 runner_error (Orca focused create timeout) → fixed in ~/.agents 91814bb (agent-session retries without --focus); every later spawn (verifier, S13 coordinator) worked first try.
+- Delegated decision (16:55Z): rope node `Canvas/World/HoseRope` → `Canvas/HUD/HoseRope` (writer option a, no TS change), sibling after `Sprite - Street` and the hydrant body; acceptance rows unchanged.
+- Finding: the coordinator could not open a gate or `ask` while a worker Dispatch was live, so it wrote "DECISION NEEDED (director)" into HANDOFF.detail — the runner never surfaced it (status stayed `working`); only the pilot watch saw it. Open: runner should raise a question when HANDOFF.detail starts with "DECISION NEEDED", or fleet should allow gate-create during a live Dispatch.
+- Memory (assist): same-project lesson `T-S01/t-s01-step-systems-not-director-tick` cited by integrator + reviewer; cross-project `cc-car-service-kids/T-S13` item cited.
