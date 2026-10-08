@@ -1317,3 +1317,14 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Merged: b7f9c5c (merge 664b042, bookkeeping c95654a). Wall 1 h 18 m (20:06→21:25Z). Review APPROVED after 1 fix round (3 bugs in the new smoke checks, not game code); smoke 46/46 (chrome). manual_deferred to S18: mid-flight rotation, two-jet fps on the S08 phone.
 - Delegated decision q42 (20:29Z): A1+B1 — timer ring moved (660,830)→(660,866) because the mock put it 41×31 px over window cell w13 (GP-01 probe kept strict, declared mock deviation); helper truck targets the highest fire among windows whose 48 px jet path crosses no waiting person (child safety over "highest fire"), idles if none, unit + smoke S14-02 assert zero crossings. Judge deferred (A1 departs from the mock, A2 relaxes the probe).
 - Finding: fourth brief geometry miss (mock coordinate over a window cell). Again the writer could not open a gate during its live Dispatch; the coordinator routed it through HANDOFF + a gate on integrate, which the runner did surface (q42) — better than S12.
+
+### Pilot 12 — S19 kết quả (S19 merge 2026-10-08 21:54Z, fleet, polish đầu tiên)
+
+1. **Merge:** `7325a3b`, bookkeeping `2be0ea2`. Thời gian 20:51 → 21:56Z = **1 h 05**, slice fleet nhanh nhất pilot. 0 câu hỏi.
+2. **Shader (GP-12 "nếu được"):** `shader-feasibility.md` F1–F4 đều PASS, nên S19 đi đường SHADER: `surfaceShader = true`, `Sprite - Surface FX` với `car-surface.effect`. Các tham số `noiseTex`, `uvRect`, grime, soap, wet và shine đều được mask theo alpha của thân xe.
+   - Recipe playbook `atlas-safe-procedural-sprite-shaders` r1 PASS (lấy uvRect từ `SpriteFrame.uv`).
+   - Safari / iOS là manual_required.
+3. **Review:** 1 vòng APPROVED, 0 fix round. Worktree tự xoá (20 ảnh). Verify trên main pass. manual_deferred (3): shader trên Safari/iOS; chạm và fps trên máy thật; tab Orca không dùng được.
+4. **Token:** fleet-orch 1 / 57 / 10.2M; fleet-worker 4 / 205 / 39.8M + codex 0.6M; verifier 0.8M. Tổng khoảng 51M, ít nhất trong các slice fleet.
+5. **Memory:** reviewer trích `T-S13/s13-mock-port-outside-real-outline` (lấy điểm probe từ alpha thật của frame, không từ sơ đồ) và `T-S12 cabin-anchors`. Lesson S04 về Mask được ghi là "đã encode" (path shader không bật Mask).
+6. **Tiếp theo:** S20 soap-and-hose. q31 (key `step.spray` đang thuộc job sơn): tôi chọn A theo quyền delegated, ghi thành S20-D5 (`7d12e35`).
