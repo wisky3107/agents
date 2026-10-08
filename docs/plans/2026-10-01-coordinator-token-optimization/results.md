@@ -1278,3 +1278,13 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Delegated decision (16:55Z): rope node `Canvas/World/HoseRope` → `Canvas/HUD/HoseRope` (writer option a, no TS change), sibling after `Sprite - Street` and the hydrant body; acceptance rows unchanged.
 - Finding: the coordinator could not open a gate or `ask` while a worker Dispatch was live, so it wrote "DECISION NEEDED (director)" into HANDOFF.detail — the runner never surfaced it (status stayed `working`); only the pilot watch saw it. Open: runner should raise a question when HANDOFF.detail starts with "DECISION NEEDED", or fleet should allow gate-create during a live Dispatch.
 - Memory (assist): same-project lesson `T-S01/t-s01-step-systems-not-director-tick` cited by integrator + reviewer; cross-project `cc-car-service-kids/T-S13` item cited.
+
+### Pilot 12 — S16 kết quả (S16 merge 2026-10-08 19:12Z, fleet)
+
+1. **Merge:** `c8a6cff` (slice `283d567`), bookkeeping `027e096`. Thời gian 17:36 → 19:15Z = 1 h 39. Đây là slice fleet nhanh nhất chuỗi v1.1.
+2. **Câu hỏi:** q28 (thêm 1 ref trong `game.scene`) và q29 (cho phép sửa 2 check cũ để mỗi check bắt đầu bằng `gc.setLanguage('vi')`) do judge tự trả lời, có trích contract.
+3. **Review:** 2 vòng, 1 fix round (F1, F2). Vượt ngân sách (advisory): files 26→29; lines 1039/1300. manual_deferred (2): cảm giác khi đổi ngôn ngữ trên điện thoại; chạm thật vào 2 nửa nút ngôn ngữ 120×104.
+4. **Worktree được `worktree_rm` tự xoá**, 36 ảnh vào `captures/`. Verify trên main pass.
+5. **Token:** fleet-orch 1 / 78 / 13.0M; fleet-worker 6 / 292 / 58.9M + codex 1.3M; verifier khoảng 1M. Tổng khoảng 74M.
+6. **Memory:** writer và reviewer trích `s11-relax-settings-row-layout-from-row-count` (layout Settings là một hàm thuần theo số hàng, spec cố định các con số). Lesson của S11 giúp thêm hàng Ngôn ngữ mà không phải sửa layout bằng tay.
+7. **Tiếp theo:** S17 mascot-voice (fleet, Run `run_0292a29953dc`). q30, thiếu 4 path: tôi approve theo quyền delegated và ghi thành S17-D4 (`76ab514`).
