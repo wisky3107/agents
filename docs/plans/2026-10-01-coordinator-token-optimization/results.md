@@ -1150,3 +1150,19 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 3. **Token:** slice-agent 2 sess / 129 turns / 24.1M.
 4. **Memory:** writer và reviewer đều ghi "none". Reviewer lại nói lesson "assert the outermost player-visible layer" khiến nó lái pointer/touch thật thay vì gọi API, tức là có dùng nhưng không ghi id. Cần sửa cách ghi nhận.
 5. **Tiếp theo:** S12 interior-vacuum (L, fleet, Run `run_42166a37d929`). Đến 05:11Z, art-2d fail một lần, nhánh `art-2d-fix-map` đã PASS ở vòng 3, audio PASS; implement đang chạy, integrate-r2 / review-r2 chờ.
+
+### Pilot 12 — S12 kết quả (S12 merge 2026-10-08 06:52Z, fleet)
+
+1. **Merge:** `6ccd962` (slice `ff1e29d`), bookkeeping `2718f91`. Thời gian 04:50 → 06:52Z = 2 h 02. 0 câu hỏi.
+2. **Art:** art-2d fail một lần; nhánh `art-2d-fix-map` PASS ở vòng 3. Audio PASS.
+3. **Review:** 3 vòng.
+   - r1 CHANGES_REQUESTED: pager của sổ tay khoá sau lần lật đầu; 3 smoke fail.
+   - r2 CHANGES_REQUESTED: F6 major, đóng sổ tay giữa lượt chơi thì hỏng.
+   - r3 APPROVED. Coordinator dùng hết 2 fix round. Smoke 70/70.
+   - Vượt ngân sách (advisory): files 34→52, lines 1665 (< 1750).
+   - manual_deferred (3): nghe `sfx_door`, `sfx_vacuum_loop`, `sfx_page`; cảm giác chạm; duyệt lời văn.
+4. **Lần đầu fleet verify pass trên main sau khi sync smoke-test** (`7550989`): "verify done", funplay parity, 0 MissingScript. F6 không lặp lại.
+   - `worktree_rm` tự xoá worktree, 27 ảnh vào `captures/`. Không phải dọn tay.
+5. **Token:** fleet-orch 1 / 92 / 17.1M; fleet-worker 10 / 431 / 84.9M + codex 6.2M; verifier 0.8M. Tổng khoảng 109M, nhiều nhất từ đầu pilot, do 3 vòng review.
+6. **Memory:** writer và integrator trích `T-S03/t-s03-bare-finger-step-and-step-mode` (pseudo-tool `hand` cho bước mở cửa, không phải một lỗi) và `t-s03-int-editor-authored-ui-bulk-recipe-results`. Lesson của chính dự án được dùng lại nhiều lần trong cùng chuỗi.
+7. **Tiếp theo:** S13 ev-charging (fleet, Run `run_c232f1ae9141`) từ 06:52Z.
