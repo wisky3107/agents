@@ -1166,3 +1166,11 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 5. **Token:** fleet-orch 1 / 92 / 17.1M; fleet-worker 10 / 431 / 84.9M + codex 6.2M; verifier 0.8M. Tổng khoảng 109M, nhiều nhất từ đầu pilot, do 3 vòng review.
 6. **Memory:** writer và integrator trích `T-S03/t-s03-bare-finger-step-and-step-mode` (pseudo-tool `hand` cho bước mở cửa, không phải một lỗi) và `t-s03-int-editor-authored-ui-bulk-recipe-results`. Lesson của chính dự án được dùng lại nhiều lần trong cùng chuỗi.
 7. **Tiếp theo:** S13 ev-charging (fleet, Run `run_c232f1ae9141`) từ 06:52Z.
+
+### Pilot 15 — cc-firefighter-kids v1.1 S09 readable-rescue-scene (fleet), từ 2026-10-08T07:34Z
+
+- Purpose: general workflow — first v1.1 slice after a director visual/feature amendment (GAMEPLAY_NOTES GP-01..18 → S09–S18, contracts 9d6d676).
+- Authority: auto-answer. Director 2026-10-08 "duyệt" to the S09–S18 table and D-01..D-15 recommended options (policy line S09–S18 GIVEN).
+- Config: runner pid 65804 (term_5413fb93), coordinator claude sonnet term_ec50ce6d; writer opus high, reviewer sonnet high, judge opus, autopilot unattended; runtime review channel Chrome headless (GIVEN 2026-10-07); memory assist, plan pack 1761 tokens.
+- Preflight: template sync 879e728 (run-smoke --channel auto, rules 00 Processes + 60); smoke baseline main 30/30 PASS (chrome, 390×844 — note: without --viewport the chrome channel opens 1280×720 and 22/30 checks fail on a portrait game).
+- Brief: Fable 5.1 session timed out on every request after reading too much (0 files in 1 h 08 m) → opus high wrote the amendment in 37 min; OmniRoute showed intermittent opus 502s on the single claude account.
