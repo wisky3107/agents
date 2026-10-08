@@ -39,6 +39,9 @@
  *               gate, or `none`) — a gap the writer noted and shipped anyway (S08 F4);
  *               `## negative controls` names every new or changed smoke check and spec with the
  *               broken state it went red on — vacuous checks passed (S04 F3, S11 F-04).
+ *   assumptions a changed .ts/.js/.mjs/.json file still holds a "tune on the preview" note: numbers authored as a
+ *               guess and never tuned shipped wheels 8-26 px off their arches (cc-car-service-kids S02-S09).
+ *               WARN: measure the value, or file a followup.
  *
  * Prints one line per check and the detail under it, then `RESULT PASS|WARN|FAIL (...)`.
  * Exit 1 on any FAIL, else 0. SKIP (no tsconfig, no tests, no slice) is not a failure.
@@ -48,7 +51,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-const CHECKS = ['tsc', 'es5', 'specs', 'scope', 'smoke-lint', 'evidence', 'notes'];
+const CHECKS = ['tsc', 'es5', 'specs', 'scope', 'smoke-lint', 'evidence', 'notes', 'assumptions'];
 // always inside a slice: tests, evidence, producer state, docs
 const ALWAYS = ['tests/**', 'scripts/smoke/checks/**', '.cursor/evidence/**', '.cursor/producer*', 'docs/**', 'slices/**',
   '*.md', 'producer-state.json', 'producer-log.md'];
@@ -393,6 +396,19 @@ function checkSmokeLint(root, changed, all) {
     : { status: 'PASS', note: `${files.length} check file(s)` };
 }
 
+/** Lines that still say a value is a guess to tune later. */
+export function assumptionNotes(src) {
+  return src.split('\n').flatMap((l, i) => (/tune (on|in|against) (the )?preview/i.test(l) ? [{ line: i + 1, text: l.trim().slice(0, 160) }] : []));
+}
+
+function checkAssumptions(root, changed) {
+  const files = changed.filter((f) => /\.(ts|js|mjs|json)$/.test(f) && !/^(tests|docs|\.cursor|slices|scripts\/smoke)\/|^producer-state\.json$/.test(f) && fs.existsSync(path.join(root, f)));
+  const lines = files.flatMap((f) => assumptionNotes(fs.readFileSync(path.join(root, f), 'utf8')).map((h) => `${f}:${h.line}: ${h.text}`));
+  return lines.length
+    ? { status: 'WARN', note: `${lines.length} value(s) still marked "tune on the preview" — measure it against the art (crop at 2x) or file a followup`, lines }
+    : { status: 'PASS', note: `${files.length} changed file(s)` };
+}
+
 export function main(argv) {
   const o = parseArgs(argv);
   const root = path.resolve(o.root || git(process.cwd(), 'rev-parse', '--show-toplevel').trim() || process.cwd());
@@ -406,6 +422,7 @@ export function main(argv) {
     'smoke-lint': () => checkSmokeLint(root, changed, o.allChecks),
     evidence: () => checkEvidence(root, o, changed),
     notes: () => checkNotes(root, o, changed),
+    assumptions: () => checkAssumptions(root, changed),
   };
   const out = [`check-slice ${path.basename(root)} slice=${o.slice || '-'} base=${base || '-'} at ${new Date().toISOString()}`];
   const worst = { FAIL: [], WARN: [] };

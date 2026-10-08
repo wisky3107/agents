@@ -195,6 +195,11 @@ For S01 specifically, acceptance and playtest must compare the running game agai
 expected mock screen using the visual contract below. Include the mock screen's required UI
 art/fonts in S01 `assets`; later slices cannot be prerequisites for a visually presentable S01.
 
+Every slice that layers a sprite onto base art (wheels in arches, eyes in windows, items in slots)
+or makes a look depend on data (ticket, level, fault, unlock) adds a `playtest` step that crops
+the part at 2x and one case where the data says "no", and says what each must show (inspected
+in the page, not extra screenshots).
+
 ### Worked example — a later slice (not S01)
 
 A later slice builds on a presentable S01. It names only the files it adds or edits, owns its own
