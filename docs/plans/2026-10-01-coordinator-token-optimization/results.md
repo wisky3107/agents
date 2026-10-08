@@ -1078,3 +1078,22 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
    - workflow-pilot bước 2 có thêm bullet "visual fit". Thêm failure signature F7.
    - `check-slice` có check mới `assumptions`: WARN khi file đã sửa còn câu "tune on the preview".
    - Các prompt dùng chung đang có WIP của session khác nên phải merge bằng merge-tree.
+
+### Pilot 12 — S09 kết quả (S09 merge 2026-10-08 02:37Z, single lane)
+
+1. **Merge:** slice `555f391` trên main. Thời gian 02:20 → 02:37Z = **17 phút**. 0 câu hỏi.
+2. **Review:** 1 vòng, APPROVED, 0 fix round. Reviewer chạy ở kênh Chrome vì runner của dự án không có fallback (FOLLOWUPS #8), lưu crop từng bánh xe ở `review-crops/`. manual_deferred (1): cảm giác chạm trên máy thật.
+3. **Thay đổi:**
+   - `CAR_TYPES` wheels/lift và `HUB_FROM_WHEEL` (0,0).
+   - `CarActor.setup(spec, tyreJob)` → `resetTyre(tyreJob)`; `GameController.beginCar` truyền `ticket` có `'tyre'`.
+   - Bánh của xe ở màn title.
+   - `tests/car-geometry.spec.ts`, smoke `s09-wheels-in-arch` và `s09-flat-matches-ticket` (chạy qua `beginCar` như một lần xe tới thật).
+   - Evidence: V1–V5 + `wheel-crops/`.
+4. **Kiểm chứng sau merge (tôi tự chạy, Chrome, main):**
+   - 15 ảnh xe: bánh nằm trong vòm ở cả 3 loại, nét vòm không cắt lốp. Title car đúng.
+   - Luồng `startDay(3)` với ticket fuel · engine · paint cho flatFront=false, nuts=0; ticket có tyre thì xẹp lốp + 4 ốc.
+   - Lưu ý: gọi thẳng `car.setup(spec)` thì `tyreJob` mặc định là true (giữ tương thích với check cũ), nên chỉ đường `beginCar` là đúng theo ticket.
+5. **Token:** slice-agent 2 sess / 97 turns / 12.2M.
+6. **Memory:** "memory used: none". Pack có `lt-s01-glow-padded-sprite-native-size` nhưng writer cho là không áp dụng: bán kính bánh 58 đã có sẵn trong bảng arch của slice.
+7. **Finding nhỏ (F8):** `notes_commit` bỏ qua bookkeeping ("AGENT_NOTES.md has staged changes: bookkeeping left uncommitted") vì session Step 3 của director còn stage AGENT_NOTES. Dòng `S09: merged` và dòng ship chỉ nằm trong working tree. Runner làm đúng khi không commit đè lên phần người khác đã stage; việc này chờ director commit.
+8. **Hiệu quả của F7 (lần đầu áp dụng):** reviewer S09 được spawn sau `9a3740c`, có crop 2× và có trường hợp "không có việc thay lốp". So với S01–S08, đây là lần đầu có bằng chứng cho đúng loại lỗi đó.
