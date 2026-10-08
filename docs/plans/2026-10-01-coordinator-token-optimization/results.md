@@ -1191,3 +1191,11 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 6. **Finding nhỏ F11:** `assets/.meta` bị Creator tạo lại với UUID mới ở **mỗi lần import trên main** (lần thứ ba: `05ad1433…`). Vì vậy quyết định S10-D1 "giữ UUID đã track" không giữ được. Đây có lẽ là file thừa của template, nên xoá hẳn và gitignore. Đề xuất gộp vào S18 hoặc một việc dọn dẹp riêng; cần director đồng ý.
 7. **Token:** fleet-orch 1 / 83 / 13.7M; fleet-worker 7 / 306 / 70.6M + codex 1.6M; producer 0.1M; verifier 0.8M. Tổng khoảng 87M.
 8. **Memory:** các role ghi "none" hoặc "none acted on" (pack chỉ có pattern của S02/S03). Recipe `editor-authored-ui-bulk` r1 có kiểm sha.
+
+- 13:40Z **F10 lặp lại, nặng hơn (S14): OmniRoute xuống cấp khoảng 4 tiếng.**
+  - Worker implement (term_4982666f) "working" từ 09:51Z, chỉ viết được `tests/tow.spec.ts` và `GameTypes.ts`, rồi kết thúc lượt bằng `Request timed out` lúc 12:47Z (lượt kéo dài 3 h 29).
+  - Coordinator (term_e993912c) chết ở `503 Provider claude circuit breaker is open` lúc 12:55Z. Hai lần runner nhắc (11:54Z stall nudge; 13:17Z q20 fleet_stall, director trả lời "nudged again, continue") cũng rơi vào đúng lỗi này.
+  - Cron watch của tôi không chạy trong khoảng đó: các tick dồn lại và chỉ được xử lý lúc 13:37Z.
+  - 13:38Z: test gọi OmniRoute OK, tôi nhắc cả hai agent, cả hai làm việc lại.
+  - Mất khoảng 4 h của S14. Signature F10 mở rộng cho 503 và timeout.
+  - Đề xuất: (a) runner nhắc lại khi màn hình có `API Error`; (b) stall detection nên đọc màn hình worker, không chỉ HANDOFF của coordinator; (c) cảnh báo sức khoẻ OmniRoute (director console).
