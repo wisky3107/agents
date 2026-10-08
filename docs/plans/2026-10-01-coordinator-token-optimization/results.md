@@ -1128,3 +1128,17 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
    - Art S04 qua pipeline.
 4. **Token:** slice-agent 2 sess / 146 turns / 27.5M.
 5. **Memory:** writer trích `cc-love-train/T-S06/s06-smoke-two-phase-and-visibility` r1 (đặt tên check đọc lại sao cho nó chạy sau check tạo dữ liệu, ví dụ `s10-reject-cue` → `s10-reject-cue_back`). Đây là lesson từ dự án khác, khớp đúng finding #10 về check phụ thuộc thứ tự chạy. Reviewer: none.
+
+### S13 sfx-pack — merged + staging deploy (2026-10-08)
+
+- **Merge:** slice `2b7e255`, bookkeeping `b2a361a`; runner launched 03:58Z, merged 04:31Z (33 min, 0 câu hỏi). Contract `1065bbc`, gate `54a8d95` ("duyệt cả 7"). Runner (single lane) không push.
+- **Review:** 1 vòng, APPROVED. Finding F1 (minor): acceptance row bar-full thiếu smoke check trên flow thật; ghi FOLLOWUPS #48. HANDOFF `committed` sau commit-guard, budget 420 → 432 (advisory).
+- **Follow-up mới:** #46 BGM seam (mẫu biên 0, nhưng decoder Chrome thêm ~26 ms padding); #47 voice budget dưới tap nhanh; #48 check bar-full; #49 ARCHITECTURE thiếu dòng AudioSystem.
+- **Loudness:** 15/15 file trong target (SFX mean −22 ±2, peak ≤ −3.5 dBFS; BGM mean −20 ±2). Chi tiết `docs/evidence/S13/loudness.md`.
+- **Size:** build staging 18.01 → 18.86 MB; non-BGM +0.32 MB (cap 1.2), BGM +0.52 MB (cap 0.6). Build `20261008_114403`.
+- **Build:** `build.sh --env staging --clean`, exit 0, 0 lỗi. 23/23 file trong `sounds/lt/` có mặt trong bản build (md5).
+- **Deploy staging:** Vercel production của `love-train-preview`, deployment `chbxyy2pu` (inspect `Ajex3LG7iFeH8cK7TPVR8sHEg5z7`), alias `https://love-train-preview-delta.vercel.app`. Giữ quy trình temp-dir + `/api-proxy` + noindex; xoá `.env.local`/`.gitignore` do `vercel link` tạo.
+- **Verify ẩn danh:** `/` 200, build-info env staging, `/.env.local` `/.git/config` `/.vercel/project.json` `/vercel.json` 404, `x-robots-tag: noindex, nofollow`, `POST /api-proxy/bond/state` với ticket test → success (ticket không được in).
+- **Probe thật trên link deploy:** tap chuột vào "Cho ăn" → `sfx-care-feed`, rồi giọng pet (Kỳ Lân) `sfx-unicorn`; 0 lỗi console.
+- **Bài học:** `ls --time-style` không có trên macOS (dùng `stat -f`). Build đặt tên file theo hash nên đối chiếu audio phải dùng md5, không dùng tên.
+- Chưa push. Tag `v1.0.0` vẫn chưa push.
