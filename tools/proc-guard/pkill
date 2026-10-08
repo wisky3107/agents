@@ -1,0 +1,30 @@
+#!/bin/bash
+# Guard for BSD pkill/pgrep (macOS). BSD getopt stops at the first operand, so in
+# `pkill -f "http.server 7781" -n` the `-n` becomes a second PATTERN that matches every
+# process whose argv contains "-n" (Orca terminals via --noprofile, Cocos via --nologin).
+# That killed the whole fleet on 2026-10-07 and 2026-10-08. This wrapper refuses any
+# flag after the first pattern, then runs the real tool. Installed as both pkill and pgrep.
+name=$(basename "$0")
+real=/usr/bin/$name
+
+seen_pattern=0
+skip=0
+for a in "$@"; do
+  if [ "$skip" = 1 ]; then skip=0; continue; fi
+  if [ "$seen_pattern" = 0 ]; then
+    case "$a" in
+      --) seen_pattern=2 ;;  # explicit end of options: everything after is a pattern
+      -F|-G|-g|-P|-s|-t|-U|-u|-M|-N|-J) skip=1 ;;  # options that take a value
+      -?*) ;;
+      *) seen_pattern=1 ;;
+    esac
+  elif [ "$seen_pattern" = 1 ]; then
+    case "$a" in
+      -?*)
+        echo "$name (guard): refused — flag '$a' comes after the pattern. On macOS it would be read as another pattern and match unrelated processes (this killed every Orca terminal and Cocos editor)." >&2
+        echo "  Put every flag before the pattern, or better: kill an exact pid (\$!, a pidfile, or \`lsof -nP -iTCP:<port> -sTCP:LISTEN -t\`)." >&2
+        exit 2 ;;
+    esac
+  fi
+done
+exec "$real" "$@"

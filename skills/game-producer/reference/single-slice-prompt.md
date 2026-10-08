@@ -21,6 +21,8 @@ EXPECT_GAMEPLAY_VISUAL.md feel table rows named in feel_rows. AGENTS.md and .cur
 already loaded; do not open .cursor/skills/** unless a step below names the file.
 Task size is <S|M>. Touch only paths.code / paths.art / paths.scene_objects. Every acceptance
 row and feel_row is a verifiable observation you must meet.
+Never stop a process by pattern (pkill / killall / kill $(pgrep …)): on macOS `pkill -f X -n`
+kills every Orca terminal and Cocos editor. Kill only a pid you started (`$!`) or one you checked.
 Popups (prefab/ui/Popup* in the slice): docs/flows/03-popup-system.md; when the slice lists
 assets/scripts/common/uiManager.ts and the file is missing, run
 `node ~/.agents/skills/cocos-playbook/kits/kit.mjs install ui-popup .` first, then refresh the
@@ -111,6 +113,8 @@ Step 0 (first 60 s): read <EVIDENCE_DIR>/preview-startup.json, then
 apart. No 200 → write <EVIDENCE_DIR>/review.md with the curl output and the single last line
 INFRA_BLOCKED, HANDOFF.json {"role":"reviewer","status":"infra_blocked",...}, and stop. Do not
 start the preview, do not ask the human, do not continue static review.
+Never stop a process by pattern (pkill / killall / kill $(pgrep …)): on macOS `pkill -f X -n`
+kills every Orca terminal and Cocos editor. Kill only a pid you started (`$!`) or one you checked.
 
 Then read <SLICE_FILE>, the feel_rows of EXPECT_GAMEPLAY_VISUAL.md, and the evidence in
 <EVIDENCE_DIR>, plus only the recipe files pinned in slice recipe_refs (missing = []).

@@ -21,6 +21,8 @@ Nobody answers prompts in this terminal: never open an interactive question menu
 (Claude: AskUserQuestion, EnterPlanMode) — questions go through `orca orchestration ask`. Never
 spawn subagents, workflows or worktrees (Claude: Agent, Workflow, EnterWorktree) and never write
 agent auto-memory; reusable findings belong in your evidence files.
+Never stop a process by pattern (pkill / killall / kill $(pgrep …)): on macOS `pkill -f X -n`
+kills every Orca terminal and Cocos editor. Kill only a pid you started (`$!`) or one you checked.
 Before your first `orca` call read ~/.agents/skills/cocos-orca-fleet/reference/orca/cheatsheet-worker.md
 (Orca browser: cheatsheet-browser.md next to it) instead of running `orca … --help`.
 Context discipline (this spec is your role card and is complete): read ONLY the PLAN, its slice
