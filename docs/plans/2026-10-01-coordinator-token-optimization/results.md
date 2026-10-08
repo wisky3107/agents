@@ -1247,3 +1247,9 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Questions 4 (q32–q35), all answered via the director dialog before the watch tick: q32 art-2d cap fail on jet_ribbon/p_water_mist → A image-derived finishing; q33 nozzle clamp (+55°) vs ±4° aim on w11 (64.8°) → keep clamp, w11 asserted as ray-hits-cell; q34/q35 runner_error "Timed out waiting for terminal handle after creation" right after the merge-step Creator reopen → fixed, retry (2nd retry spawned the verifier at 15:29Z).
 - Findings: (1) brief author again left a geometry contradiction (clamp range vs aim tolerance) — same class as S09 F2; (2) orca terminal create times out while a just-reopened Creator is booting — the runner could wait-and-retry once by itself before asking.
 - Memory (assist): `shared-particle-render-layers` recipe cited by integrator + reviewer.
+
+### Pilot 15 — S11 kết quả (S11 merge 2026-10-08 15:57Z, single lane)
+
+- Merged: 4fb827a. Wall 27 min (15:31→15:57Z). Writer opus: 7 code files / 424 lines, 3 PNG, smoke 38/38, unit 164/164, check-slice WARN (declared scope). 1 review round.
+- Questions 4 (q36–q39), all runner_error "Timed out waiting for terminal handle after creation" on agent-session spawns, retried by the director in the dialog until one went through.
+- Memory: S09's essential-rect-registry lesson (same project) cited by the writer for the tank rect — first same-project lesson reuse in this pilot.
