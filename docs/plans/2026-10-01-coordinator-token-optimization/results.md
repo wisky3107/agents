@@ -1116,3 +1116,15 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
    - Ngay sau đó đã có một PreToolUse hook chặn mọi lệnh Bash chứa tên lệnh đó (chặn cả khi chữ đó chỉ nằm trong văn bản của heredoc). Guard thật đã có.
 6. **v1.1** (director chọn: dọn kỹ thuật, chế độ không thua, các tính năng lớn): `GAMEPLAY_NOTES.md` GP-01..GP-10. Chạy luồng amendment của game-brief: prepare (warning `existing_contracts`), memory pack 6 item, prompt có thêm khối AMENDMENT (chỉ thêm S10+, release slice vẫn đứng cuối, quyết định mở nằm trong slice risks, có rule visual-fit). Brief author `claude --model opus --effort high` chạy từ khoảng 03:20Z (term_b64b5f79).
    - Bài học nhỏ: heredoc không quote trong zsh đã chạy các từ trong backtick như lệnh. Prompt đã được viết lại bằng `<<'EOF'`.
+
+### Pilot 12 — S10 kết quả (S10 merge 2026-10-08 04:20Z, single lane, v1.1 slice đầu)
+
+1. **Merge:** slice `54ff1f5` trên main, bookkeeping `c7b9b92`. Thời gian 03:46 → 04:20Z = 34 phút. 0 câu hỏi.
+2. **Review:** 1 vòng, APPROVED, 0 fix round. manual_deferred (2): thoát và mở lại Creator 2 lần (GP-02); nghe mức tiếng boop và bước nửa cung của tiếng tick trên loa thật.
+3. **Nội dung:**
+   - Thêm `sfx_reject` và `sfx_star_tick`.
+   - Xoá 10 folder `.meta` thừa của template; giữ `assets/.meta` với UUID đã track (S10-D1).
+   - Sửa check flaky; `S05-01-gesture-gate` chỉ sửa 4 dòng.
+   - Art S04 qua pipeline.
+4. **Token:** slice-agent 2 sess / 146 turns / 27.5M.
+5. **Memory:** writer trích `cc-love-train/T-S06/s06-smoke-two-phase-and-visibility` r1 (đặt tên check đọc lại sao cho nó chạy sau check tạo dữ liệu, ví dụ `s10-reject-cue` → `s10-reject-cue_back`). Đây là lesson từ dự án khác, khớp đúng finding #10 về check phụ thuộc thứ tự chạy. Reviewer: none.
