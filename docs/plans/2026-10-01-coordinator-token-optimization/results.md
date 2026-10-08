@@ -1288,3 +1288,11 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 5. **Token:** fleet-orch 1 / 78 / 13.0M; fleet-worker 6 / 292 / 58.9M + codex 1.3M; verifier khoảng 1M. Tổng khoảng 74M.
 6. **Memory:** writer và reviewer trích `s11-relax-settings-row-layout-from-row-count` (layout Settings là một hàm thuần theo số hàng, spec cố định các con số). Lesson của S11 giúp thêm hàng Ngôn ngữ mà không phải sửa layout bằng tay.
 7. **Tiếp theo:** S17 mascot-voice (fleet, Run `run_0292a29953dc`). q30, thiếu 4 path: tôi approve theo quyền delegated và ghi thành S17-D4 (`76ab514`).
+
+### Pilot 15 — S13 kết quả (S13 merge 2026-10-08 20:04Z, fleet)
+
+- Merged: 700c424 (merge 50b3278, bookkeeping 6d55e32). Wall 1 h 21 m (18:45→20:06Z). Review 2 rounds, 1 fix round (F1 flat skyline side bands → art fix took 8 codex rounds before the seam passed); smoke 43/43 at 720×1280, unit 202/202.
+- Tokens: fleet-orch 17.2M, workers claude 50.7M + codex 5.7M, slice-agent 1.7M → ~75M.
+- Delegated decision q41 (19:14Z): allow both — new `Canvas/HUD/Panel - Street Props` right after `Sprite - Street` (under hydrant/rope) for the crosswalk; essential-rect pair-rule gains a `decor` kind that only adds rects (S13-02 = 0 intersections V1–V4), never relaxes essential pairs. Judge deferred it (outside scene_objects/paths.code).
+- Finding: third slice in a row where the brief's node layout ignored that the HUD street sprite covers World (S12 rope, S13 crosswalk) — the brief author should read real sibling order before naming node paths.
+- Memory: S09 essential-rect-registry lesson cited again.
