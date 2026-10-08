@@ -1071,3 +1071,10 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 4. **Contract** (`3e96122`): `slices/S09-visual-fix.md` (M, gồm bảng arch đo được và 4 quyết định director), MILESTONES (`slices: […, S07, S09, S08]` vì validator bắt release-polish đứng cuối; `dag S09: [S08]`), HOW_TO H-35, EXPECT, RC-31. Validator ok (9 slice), coverage ok.
    - Commit chỉ các path của S09: session Step 3 của director còn stage `docs/retro.md`, AGENT_NOTES, `manual-deferred.json` (chưa commit). Slice có risk dặn writer commit với path cụ thể.
 5. **Config:** runner pid 26366 (term_a4aec5d3), writer term_e8f654f1 (`claude sonnet high`), memory assist (6 item, 1935 token; có `lt-s01-glow-padded-sprite-native-size`). v1.0.0 đã tag local trên `133db8b`, nên S09 sẽ nằm sau tag.
+6. **F7 fix đã merge** `9a3740c` (`79a58af` + vòng review `4d90895`, review APPROVED lần 2; check-slice 12/12, fleet 26/26, game-producer 160/160):
+   - Prompt reviewer (fleet `worker-prompts.md` + `single-slice-prompt.md`) thêm hai mục: "composed art fit" (crop 2×, nét viền nền không cắt qua sprite ghép) và "state vs visual" (ít nhất một trường hợp dữ liệu nói "không").
+   - Writer phải đo các giá trị ASSUMPTION từ art, hoặc ghi chúng vào `## gaps`.
+   - `slice-schema.md`: slice ghép sprite lên art nền, hoặc có hình phụ thuộc dữ liệu, phải có crop 2× và một trường hợp dữ liệu nói "không" trong `playtest`.
+   - workflow-pilot bước 2 có thêm bullet "visual fit". Thêm failure signature F7.
+   - `check-slice` có check mới `assumptions`: WARN khi file đã sửa còn câu "tune on the preview".
+   - Các prompt dùng chung đang có WIP của session khác nên phải merge bằng merge-tree.
