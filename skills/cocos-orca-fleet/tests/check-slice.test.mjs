@@ -199,7 +199,10 @@ test('assumptions: a "tune on the preview" note in a changed source file is a WA
   const { d } = repo();
   fs.mkdirSync(path.join(d, 'src'));
   fs.writeFileSync(path.join(d, 'src/ServiceConfig.ts'), 'export const WHEEL_Y = -40; // ASSUMPTION, tune on the preview\n');
-  fs.writeFileSync(path.join(d, 'docs.md'), 'tune on the preview\n');
+  for (const f of ['tests/x.json', '.cursor/x.json', 'slices/x.json', 'producer-state.json']) {
+    fs.mkdirSync(path.dirname(path.join(d, f)), { recursive: true });
+    fs.writeFileSync(path.join(d, f), '{"q": "tune on the preview"}\n');
+  }
   const r = exec(d, '--only', 'assumptions');
   assert.equal(r.status, 0, r.stdout);
   assert.match(r.stdout, /WARN assumptions: 1 value\(s\)[^\n]*\n  src\/ServiceConfig\.ts:1:/);

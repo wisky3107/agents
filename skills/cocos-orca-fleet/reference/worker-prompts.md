@@ -223,8 +223,8 @@ Do:
    (~/.agents/skills/cocos-orca-fleet/reference/orca/frozen-tab.md); never infra_blocked for it.
 6. `tsc` clean; no console.log left behind. Before worker_done, `node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice <PLAN's plan_source slice file> --skip evidence --out evidence/static-check.txt`
    must not end RESULT FAIL (tsc, the ES5 web build, EVERY spec in tests/, scope, smoke-guard
-   lint, the integration-notes sections); declare each WARN scope line in integration-notes.md.
-   docs/evidence/ is the integrator's. Budget: run
+   lint, the integration-notes sections); declare each WARN scope line in integration-notes.md; measure each WARN assumptions value
+   from the art or list it under `## gaps`. docs/evidence/ is the integrator's. Budget: run
    `bash .cursor/skills/setup-pre-commit/check-change-budget.sh --report` (stage, report, unstage)
    and paste the line into integration-notes.md — that number is the only one anyone quotes.
    Over budget → add `budget_bump: <from>→<to>` + one-line reason. PLAN `budget_mode: advisory`
@@ -408,11 +408,11 @@ Runtime:
    or EXPECT_GAMEPLAY_VISUAL.md lists is a finding (major by default), even when the mechanic
    itself works. "Plays dry vs reference" is a valid, reportable finding.
    Composed art fit: for every sprite layered onto base art that has cut-outs or outlines (wheels
-   in arches, faces/eyes in windows, items in slots, hood on body), crop that spot at 2x. The
-   base outline must not cross the part and the part must sit inside its cut-out; a position
+   in arches, faces/eyes in windows, items in slots, hood on body), crop that spot at 2x (read it in the page, not saved as an extra
+   PNG; the screenshot limit below holds). The base outline must not cross the part and the part must sit inside its cut-out; a position
    inside the mock's px tolerance is not evidence (finding, major, owner scene or asset).
    State vs visual: for each entity whose look depends on data (ticket, level, fault, unlocked),
-   capture at least one case where the data says "no" and check the visual agrees (a flat tyre
+   inspect at least one case where the data says "no" and check the visual agrees (a flat tyre
    only when the ticket has a tyre job). A smoke run that only feeds the "yes" case proves nothing.
 4. evidence/runtime-state.json with real reads (smoke JSON + eval reads). Screenshots: one
    evidence/preview.png at the end, plus at most one per blocker/major finding — never per step,

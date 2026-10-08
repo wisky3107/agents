@@ -74,7 +74,8 @@ Build:
    Then `node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice <SLICE_FILE> --out <EVIDENCE_DIR>/static-check.txt` must
    not end RESULT FAIL: it runs tsc, the ES5 web build, EVERY spec in tests/ (old ones too), slice
    scope, the smoke-guard lint, the docs/evidence/ paths the slice names and the integration-notes
-   sections below. Declare each WARN scope line in integration-notes.md. The producer reruns it
+   sections below. Declare each WARN scope line in integration-notes.md; measure each WARN assumptions value from
+   the art or list it under `## gaps`. The producer reruns it
    before the reviewer and sends a FAIL back to you.
 6. Budget: stage, `bash .cursor/skills/setup-pre-commit/check-change-budget.sh --report`, unstage;
    paste the line into <EVIDENCE_DIR>/integration-notes.md. Budget mode <BUDGET_MODE>:
@@ -134,9 +135,9 @@ Cite in review.md the item ids that changed what you checked, or write `memory u
    eval-first, one object per eval; flags in ~/.agents/skills/cocos-orca-fleet/reference/orca/cheatsheet-browser.md,
    not `--help`). Missing tween/particle/transition = major, "plays dry" counts.
    Composed art fit: crop every sprite layered onto base art with cut-outs or outlines (wheels in
-   arches, eyes in windows, items in slots) at 2x; the base outline must not cross the part and
+   arches, eyes in windows, items in slots) at 2x, read in the page, not saved as extra PNGs; the base outline must not cross the part and
    the part sits inside its cut-out (px tolerance vs the mock is not evidence). State vs visual:
-   for each entity whose look depends on data (ticket, level, fault, unlocked) capture one case
+   for each entity whose look depends on data (ticket, level, fault, unlocked) inspect one case
    where the data says "no" and check the visual agrees. Either miss = major.
 3. Static: changed paths ⊆ slice paths; quote the writer's `check-change-budget.sh --report` line
    (code_only — scene/prefab/index/meta/plan never count). Over budget → write a

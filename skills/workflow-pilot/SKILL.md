@@ -83,7 +83,7 @@ memory trial pick content that touches topics with many archived lessons
   before launch (pilot 13 ran without `--channel auto`, FOLLOWUPS #39).
 - visual fit: a slice that layers a sprite onto base art (wheels in arches, eyes in windows) or
   shows data-dependent looks (flat tyre per ticket) names a 2x crop of the part and a
-  data-says-"no" capture in its playtest, and measures the geometry from the art, never
+  data-says-"no" case in its playtest (inspected, not extra screenshots), and measures the geometry from the art, never
   "tune on the preview" (pilot 12: wheels 8-26 px off the arches through 10 review rounds);
 - fixtures: every `?mock_scenario=` / fixture id in the playtest exists in the mock's
   scenario list (pilots 13–14 wrote `new_account`; the fixture is `new_user_free`); keep
