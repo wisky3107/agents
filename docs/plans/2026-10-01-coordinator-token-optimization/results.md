@@ -1328,3 +1328,10 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 4. **Token:** fleet-orch 1 / 57 / 10.2M; fleet-worker 4 / 205 / 39.8M + codex 0.6M; verifier 0.8M. Tổng khoảng 51M, ít nhất trong các slice fleet.
 5. **Memory:** reviewer trích `T-S13/s13-mock-port-outside-real-outline` (lấy điểm probe từ alpha thật của frame, không từ sơ đồ) và `T-S12 cabin-anchors`. Lesson S04 về Mask được ghi là "đã encode" (path shader không bật Mask).
 6. **Tiếp theo:** S20 soap-and-hose. q31 (key `step.spray` đang thuộc job sơn): tôi chọn A theo quyền delegated, ghi thành S20-D5 (`7d12e35`).
+
+### Pilot 15 — S15 kết quả (S15 merge 2026-10-08 22:49Z, fleet)
+
+- Merged: f501395 (merge fddcbaa, bookkeeping af3af7d). Wall 1 h 27 m (21:25→22:52Z). Review 2 rounds, 1 fix round; smoke 49/49 (chrome 720×1280), unit 236/236.
+- Tokens: fleet-orch 15.2M, workers claude 72.5M + codex 2.0M, slice-agent 1.1M → ~91M.
+- Question q43 answered by the **judge** (first judge answer since delegation): review r1 F1 — S01-06 and S03-03 solvers now enter the S15 room on M3/M6/M9/M12 (D-10) and never reach result → allow editing exactly those two checks to finish the room, EXPECT values unchanged; F2 to FOLLOWUPS. Consistent with the watch rules (no acceptance row relaxed).
+- Finding: a slice that inserts a phase into the core loop breaks older smoke solvers outside its paths every time (S09/S12/S13/S15). The brief author should list the older checks a new phase touches in the slice paths (pre-check "existing checks" in workflow-pilot step 2 — not applied at authoring time).
