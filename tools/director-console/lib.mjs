@@ -5,6 +5,7 @@
 // and the console can do nothing the CLIs would refuse. Every action is logged to
 // <logs>/director-console.jsonl.
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -20,6 +21,7 @@ export const CFG = {
   logs: env.CONSOLE_LOG_DIR ?? path.join(HOME, '.agents/logs'),
   resGuardHome: env.CONSOLE_RES_GUARD_HOME ?? path.join(HOME, '.agents'), // tools/res-guard's run/ and logs/
   resGuardCli: env.CONSOLE_RES_GUARD_CLI ?? path.join(HOME, '.agents/tools/res-guard/res-guard.mjs'),
+  workspaces: env.CONSOLE_WORKSPACES ?? path.join(HOME, 'orca/workspaces'), // Orca worktrees: <workspaces>/<project>/<name>
 };
 
 const om = {
@@ -387,6 +389,94 @@ export function recipeText(rel) {
   const file = fs.realpathSync(path.resolve(root, rel));
   if (!file.startsWith(root + path.sep) || !file.endsWith('.md')) throw new Error('outside the playbook');
   return fs.readFileSync(file, 'utf8');
+}
+
+// ------------------------------------------------------------------ previews
+
+const EDITOR_CMD = /\/CocosCreator\.app\/Contents\/MacOS\/CocosCreator(?:\s|$)/;
+const previewPorts = new Map(); // editor pid → its preview port, found once with lsof + a probe
+
+/** Running Cocos Creator 3.x editors: pid, checkout, minutes up. `--project <path>` runs to the next ` --flag`. */
+export function editorsFromPs(text) {
+  return text.split('\n').flatMap((line) => {
+    const m = /^\s*(\d+)\s+(\S+)\s+(.*)$/.exec(line);
+    if (!m || !EDITOR_CMD.test(m[3])) return [];
+    const dir = /--project[= ]+(.+?)(?=\s+--|$)/.exec(m[3])?.[1].trim();
+    return dir ? [{ pid: Number(m[1]), path: dir, up_min: Math.round(etimeSec(m[2]) / 60) }] : [];
+  });
+}
+const etimeSec = (t) => {
+  const [d, rest] = t.includes('-') ? t.split('-') : [0, t];
+  return Number(d) * 86400 + rest.split(':').map(Number).reduce((a, x) => a * 60 + x, 0);
+};
+
+/** The orientation a project is built for: AGENT_NOTES `orientation:`, else the design resolution. */
+export function orientationOf(dir) {
+  const notes = safe(() => fs.readFileSync(path.join(dir, 'AGENT_NOTES.md'), 'utf8')) ?? '';
+  const m = /^\s*orientation:\s*(portrait|landscape)\b/m.exec(notes);
+  if (m) return { value: m[1], source: 'AGENT_NOTES.md' };
+  const d = readJson(path.join(dir, 'settings', 'v2', 'packages', 'project.json'))?.general?.designResolution;
+  if (d?.width && d?.height) return { value: d.width > d.height ? 'landscape' : 'portrait', source: `designResolution ${d.width}x${d.height}` };
+  return { value: 'portrait', source: 'default' };
+}
+
+/** Which console project a checkout belongs to: its main path, or an Orca worktree <workspaces>/<project>/<name>. */
+export function checkoutOf(dir, ps) {
+  const r = real(dir);
+  const main = ps.find((p) => real(p.path) === r);
+  if (main) return { project: main.id, checkout: 'main' };
+  const rel = path.relative(real(CFG.workspaces), r).split(path.sep);
+  if (rel.length === 2 && !rel[0].startsWith('..')) return { project: ps.find((p) => p.id === rel[0] || path.basename(p.path) === rel[0])?.id ?? rel[0], checkout: rel[1] };
+  return { project: path.basename(r), checkout: 'main' };
+}
+
+/**
+ * GET / of a port: the Creator preview page answers 200 with "<title>Cocos Creator - …". No keep-alive:
+ * an open connection into the editor would read as a client to res-guard.
+ */
+function probePreview(port) {
+  return new Promise((resolve) => {
+    const req = http.get({ host: '127.0.0.1', port, path: '/', agent: false, headers: { connection: 'close' }, timeout: 1500 }, (res) => {
+      let t = '';
+      res.setEncoding('utf8');
+      res.on('data', (c) => { if (t.length < 4096) t += c; });
+      res.on('end', () => resolve(res.statusCode === 200 && /<title>Cocos Creator\b/.test(t)));
+    });
+    req.on('timeout', () => req.destroy());
+    req.on('error', () => resolve(false));
+  });
+}
+
+function listenPorts(pid) {
+  // launchd's PATH has no /usr/sbin
+  const r = spawnSync(fs.existsSync('/usr/sbin/lsof') ? '/usr/sbin/lsof' : 'lsof', ['-nP', '-a', '-p', String(pid), '-iTCP', '-sTCP:LISTEN', '-Fn'], { encoding: 'utf8', timeout: 5000 });
+  return [...new Set((r.stdout || '').split('\n').filter((l) => l.startsWith('n')).map((l) => Number(l.split(':').pop())))].filter(Boolean);
+}
+
+/**
+ * Every open Creator editor with its preview: live only when the editor runs and its preview page
+ * answers now. The page frames http://127.0.0.1:<port>/ at the project's orientation.
+ */
+export async function previews() {
+  const ps = projects();
+  const r = spawnSync('ps', ['-axo', 'pid=,etime=,command='], { encoding: 'utf8', timeout: 5000, maxBuffer: 16 * 1024 * 1024 });
+  const eds = editorsFromPs(r.stdout || '');
+  for (const pid of previewPorts.keys()) if (!eds.some((e) => e.pid === pid)) previewPorts.delete(pid);
+  return Promise.all(eds.map(async (e) => {
+    let port = previewPorts.get(e.pid) ?? null;
+    let alive = port ? await probePreview(port) : false;
+    if (!alive) {
+      port = null;
+      for (const p of listenPorts(e.pid)) if (await probePreview(p)) { port = p; alive = true; break; }
+      if (port) previewPorts.set(e.pid, port);
+    }
+    const p = ps.find((x) => x.id === checkoutOf(e.path, ps).project);
+    const branch = safe(() => spawnSync('git', ['-C', e.path, 'branch', '--show-current'], { encoding: 'utf8', timeout: 3000 }).stdout.trim()) || null;
+    return {
+      ...e, ...checkoutOf(e.path, ps), branch, port, alive, url: port ? `http://127.0.0.1:${port}/` : null,
+      orientation: orientationOf(e.path), runner: p?.runner ? { slice: p.runner.slice, step: p.runner.step, alive: p.runner.alive } : null,
+    };
+  }));
 }
 
 // ------------------------------------------------------------------ actions

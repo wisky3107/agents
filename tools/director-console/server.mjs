@@ -34,7 +34,7 @@ const SCORECARD = path.join(lib.CFG.logs, 'scorecard-dashboard.html');
 const ASSETS = new Set(['app.css', 'app.js', 'graph.js']);
 const CSP = [
   "default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "font-src https://fonts.gstatic.com", "img-src 'self' data:", "frame-src 'self'", "connect-src 'self'",
+  "font-src https://fonts.gstatic.com", "img-src 'self' data:", "frame-src 'self' http://127.0.0.1:* http://localhost:*", "connect-src 'self'",
   "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'",
 ].join('; ');
 const TAILNET_HOST = (process.env.CONSOLE_TAILNET_HOST ?? '').toLowerCase().replace(/\.$/, '');
@@ -92,6 +92,7 @@ const GET = {
   '/api/recipe': (q) => ({ path: q.get('path'), text: lib.recipeText(q.get('path')) }),
   '/api/actions': () => ({ actions: lib.ACTION_NAMES, log: lib.actionLog() }),
   '/api/resources': () => lib.resources(),
+  '/api/previews': () => lib.previews(),
 };
 
 const server = http.createServer(async (req, res) => {
@@ -112,7 +113,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (!url.pathname.startsWith('/api/')) return send(res, 404, { error: 'not found' });
     if (req.headers['x-console-token'] !== TOKEN) return send(res, 401, { error: 'token' });
-    if (req.method === 'GET' && GET[url.pathname]) return send(res, 200, GET[url.pathname](url.searchParams));
+    if (req.method === 'GET' && GET[url.pathname]) return send(res, 200, await GET[url.pathname](url.searchParams));
     const m = url.pathname.match(/^\/api\/action\/([a-z.]+)$/);
     if (req.method === 'POST' && m) {
       if (!(req.headers['content-type'] ?? '').startsWith('application/json')) return send(res, 415, { error: 'json only' });

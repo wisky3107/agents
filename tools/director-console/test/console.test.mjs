@@ -69,7 +69,7 @@ before(async () => {
   // res-guard: no watcher state until the resources test writes one; a fake CLI records its argv
   fs.writeFileSync(path.join(root, 'res-guard.mjs'), `import fs from 'node:fs';\nfs.appendFileSync(${JSON.stringify(path.join(root, 'rg-argv.jsonl'))}, JSON.stringify(process.argv.slice(2)) + '\\n');\nconsole.log('closed');\n`);
   port = 17000 + Math.floor(Math.random() * 2000);
-  srv = spawn(process.execPath, [SERVER], { env: { ...process.env, ORCA_MEMORY_HOME: home, CONSOLE_PORT: String(port), CONSOLE_TOKEN: TOKEN, CONSOLE_GAMES_ROOT: games, CONSOLE_RUNNER_DIR: runnerDir, CONSOLE_ORCA_BIN: orca, CONSOLE_PLAYBOOK: playbook, CONSOLE_LOG_DIR: logs, CONSOLE_RES_GUARD_HOME: path.join(root, 'rg'), CONSOLE_RES_GUARD_CLI: path.join(root, 'res-guard.mjs'), PRODUCER_RUNNER_TRANSLATE_CMD: translator, CC_SPAWN_REGISTRY: path.join(root, 'spawns.jsonl'), CONSOLE_TAILNET_HOST: 'mac.tail0.ts.net', CONSOLE_TAILNET_USERS: 'me@example.com' }, stdio: ['ignore', 'pipe', 'inherit'] });
+  srv = spawn(process.execPath, [SERVER], { env: { ...process.env, ORCA_MEMORY_HOME: home, CONSOLE_PORT: String(port), CONSOLE_TOKEN: TOKEN, CONSOLE_GAMES_ROOT: games, CONSOLE_RUNNER_DIR: runnerDir, CONSOLE_ORCA_BIN: orca, CONSOLE_PLAYBOOK: playbook, CONSOLE_LOG_DIR: logs, CONSOLE_RES_GUARD_HOME: path.join(root, 'rg'), CONSOLE_RES_GUARD_CLI: path.join(root, 'res-guard.mjs'), PRODUCER_RUNNER_TRANSLATE_CMD: translator, CC_SPAWN_REGISTRY: path.join(root, 'spawns.jsonl'), CONSOLE_TAILNET_HOST: 'mac.tail0.ts.net', CONSOLE_TAILNET_USERS: 'me@example.com', CONSOLE_WORKSPACES: path.join(root, 'ws') }, stdio: ['ignore', 'pipe', 'inherit'] });
   await new Promise((resolve) => srv.stdout.once('data', resolve));
 });
 
@@ -233,4 +233,60 @@ test('resources: res-guard state becomes the resources payload and live attentio
   assert.equal((await call('POST', '/api/action/editor.close', { body: { project: '/g/cc-a' } })).json.ok, true);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root, 'rg-argv.jsonl'), 'utf8').trim()), ['close-editor', '--project', '/g/cc-a', '--reason', 'director console']);
   fs.rmSync(path.join(rg, 'run'), { recursive: true });
+});
+
+test('previews: an open editor whose preview answers is live, at the orientation its checkout sets; a worktree maps to its project', async () => {
+  // a stand-in Creator: same command shape (…/CocosCreator.app/Contents/MacOS/CocosCreator --project <dir> --nologin),
+  // an MCP-like port that is not a preview, and (with PREVIEW=1) a port that serves the preview page
+  const bin = path.join(root, 'fake', 'CocosCreator.app', 'Contents', 'MacOS', 'CocosCreator');
+  fs.mkdirSync(path.dirname(bin), { recursive: true });
+  fs.writeFileSync(bin, `import http from 'node:http';
+http.createServer((q, r) => { r.writeHead(404); r.end(); }).listen(0, '127.0.0.1');
+if (process.env.PREVIEW === '1') http.createServer((q, r) => { r.end('<html><head><title>Cocos Creator - x</title></head></html>'); }).listen(0, '0.0.0.0', () => console.log('up'));
+else console.log('up');
+`);
+  const wt = path.join(root, 'ws', 'cc-a', 's02-shop');
+  fs.mkdirSync(wt, { recursive: true });
+  fs.writeFileSync(path.join(wt, 'AGENT_NOTES.md'), '```yaml\nrelease:\n  orientation: landscape 1280x720   # landscape 1280x720 | portrait 720x1280\n```\n');
+  fs.mkdirSync(path.join(repo, 'settings', 'v2', 'packages'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'settings', 'v2', 'packages', 'project.json'), JSON.stringify({ general: { designResolution: { width: 720, height: 1280 } } }));
+  const start = (dir, preview) => new Promise((resolve) => {
+    const c = spawn(process.execPath, [bin, '--project', dir, '--nologin'], { env: { ...process.env, PREVIEW: preview ? '1' : '0' }, stdio: ['ignore', 'pipe', 'inherit'] });
+    c.stdout.once('data', () => resolve(c));
+  });
+  const eds = [await start(wt, true), await start(repo, false)];
+  try {
+    const r = await call('GET', '/api/previews');
+    assert.equal(r.status, 200);
+    const mine = r.json.filter((e) => e.path.startsWith(root));
+    const w = mine.find((e) => e.path === wt);
+    assert.deepEqual([w.project, w.checkout, w.alive, w.orientation.value, w.orientation.source], ['cc-a', 's02-shop', true, 'landscape', 'AGENT_NOTES.md']);
+    assert.match(w.url, /^http:\/\/127\.0\.0\.1:\d+\/$/);
+    const m = mine.find((e) => e.path === repo);
+    assert.deepEqual([m.project, m.checkout, m.alive, m.url, m.orientation.value, m.orientation.source], ['cc-a', 'main', false, null, 'portrait', 'designResolution 720x1280']);
+    assert.deepEqual(m.runner, { slice: 'S01', step: 'lane', alive: false });
+  } finally {
+    eds.forEach((c) => c.kill());
+  }
+  // the page may frame the editors' local previews and nothing else
+  const csp = await new Promise((resolve) => http.get({ host: '127.0.0.1', port, path: '/', headers: { host: `127.0.0.1:${port}` } }, (res) => { res.resume(); resolve(res.headers['content-security-policy']); }));
+  assert.match(csp, /frame-src 'self' http:\/\/127\.0\.0\.1:\* http:\/\/localhost:\*;/);
+});
+
+test('previews: editors from ps lines, orientation fallbacks', async () => {
+  const { editorsFromPs, orientationOf } = await import('../lib.mjs');
+  const ps = [
+    '74754   04:27:10 /Applications/Cocos/Creator/3.8.8/CocosCreator.app/Contents/MacOS/CocosCreator --project /g/cc-love train --nologin',
+    '74788 1-02:00:00 /Applications/Cocos/Creator/3.8.8/CocosCreator.app/Contents/Frameworks/CocosCreator Helper (GPU).app/Contents/MacOS/CocosCreator Helper (GPU) --type=gpu-process',
+    '80949      33:05 /Applications/Cocos/Creator/3.8.8/CocosCreator.app/Contents/MacOS/CocosCreator --project /ws/cc-a/s13',
+  ].join('\n');
+  assert.deepEqual(editorsFromPs(ps), [{ pid: 74754, path: '/g/cc-love train', up_min: 267 }, { pid: 80949, path: '/ws/cc-a/s13', up_min: 33 }]);
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'dc-or-'));
+  assert.deepEqual(orientationOf(d), { value: 'portrait', source: 'default' });
+  fs.mkdirSync(path.join(d, 'settings', 'v2', 'packages'), { recursive: true });
+  fs.writeFileSync(path.join(d, 'settings', 'v2', 'packages', 'project.json'), JSON.stringify({ general: { designResolution: { width: 1280, height: 720 } } }));
+  assert.deepEqual(orientationOf(d), { value: 'landscape', source: 'designResolution 1280x720' });
+  fs.writeFileSync(path.join(d, 'AGENT_NOTES.md'), '  orientation: portrait 720x1280\n');
+  assert.equal(orientationOf(d).value, 'portrait', 'AGENT_NOTES wins over the design resolution');
+  fs.rmSync(d, { recursive: true, force: true });
 });

@@ -152,7 +152,7 @@
     notes: {}, // runner answer notes being typed, kept across the 20 s re-render
   };
   const ROUTES = [
-    ['map', 'Bản đồ', 'map'], ['quests', 'Nhiệm vụ', 'flag'], ['worlds', 'Dự án', 'globe'], ['memory', 'Memory', 'chip'],
+    ['map', 'Bản đồ', 'map'], ['quests', 'Nhiệm vụ', 'flag'], ['worlds', 'Dự án', 'globe'], ['preview', 'Preview', 'phone'], ['memory', 'Memory', 'chip'],
     ['pilot', 'Pilot', 'flask'], ['playbook', 'Playbook', 'book'], ['scorecard', 'Scorecard', 'chart'], ['resources', 'Tài nguyên', 'bolt'], ['log', 'Nhật ký', 'list'],
   ];
   let route = { view: 'map', arg: null };
@@ -397,7 +397,7 @@
     return { runner: p.questions.length, draft: p.drafts.length, triage: p.triage.length, system, manual: p.manual_deferred.reduce((n, d) => n + d.items.length, 0) };
   }
 
-  const CRUMB = { map: 'TỔNG QUAN', quests: 'VIỆC CẦN QUYẾT', worlds: 'DỰ ÁN', memory: 'ORCA-MEMORY', pilot: 'PILOT M08', playbook: 'COCOS-PLAYBOOK', scorecard: 'WORKFLOW', resources: 'RES-GUARD', log: 'THAO TÁC' };
+  const CRUMB = { map: 'TỔNG QUAN', quests: 'VIỆC CẦN QUYẾT', worlds: 'DỰ ÁN', preview: 'EDITOR PREVIEW', memory: 'ORCA-MEMORY', pilot: 'PILOT M08', playbook: 'COCOS-PLAYBOOK', scorecard: 'WORKFLOW', resources: 'RES-GUARD', log: 'THAO TÁC' };
   function updateChrome() {
     const ov = store.ov;
     const r = ROUTES.find(([id]) => id === route.view);
@@ -770,7 +770,7 @@
       icon: 'globe', right: h('div', { class: 'row' }, d.mode ? chip(`memory ${d.mode}`, modeTone(d.mode)) : chip('chưa đăng ký memory', 'bad'),
         r ? (r.alive ? h('span', { class: 'chip accent' }, h('span', { class: 'pip live' }), `runner chạy · ${r.slice} ${r.step}`) : chip(`runner dừng · ${r.slice ?? '—'} ${r.step ?? ''}`, 'outline')) : chip('không runner', 'outline')),
     },
-    h('div', { class: 'mono small muted' }, d.path),
+    h('div', { class: 'row' }, h('span', { class: 'mono small muted grow' }, d.path), btn('Preview', () => go(`preview/${d.id}`), { cls: 'sm', ic: 'phone', title: 'Xem preview đang chạy của dự án (cần editor đang mở)' })),
     d.release ? h('div', { class: 'small ink2', style: { marginTop: '2px' } }, `release.goal ${d.release.goal ?? '—'} · current_slice ${d.release.current_slice || '—'}`) : null,
     r ? controlDeck(d) : null);
 
@@ -1055,6 +1055,111 @@
     }
     return out;
   }
+
+  // ======== preview: each open Creator editor's live preview in a phone frame
+  // The frame loads http://127.0.0.1:<port>/ from this browser, so it works on the Mac that runs the
+  // editors. One way only: a preview lives while its editor runs and never keeps one open (res-guard
+  // counts a browser as a viewer, not a client). Once the editor closes (its worktree is done, the
+  // director or res-guard closed it) the next poll drops the frame. A hidden tab unloads it too.
+  const PHONE = { w: 390, h: 844 }; // CSS px of a 6.1" phone
+  const BEZEL = 12;
+  const POLL_MS = 5000;
+  const pv = { sel: null, orient: {}, paused: null, gone: null, list: [], poll: null };
+  const onMac = ['127.0.0.1', 'localhost'].includes(location.hostname);
+  const pvKey = (e) => e.path;
+
+  VIEWS.preview = async (arg) => {
+    pv.list = await api('/api/previews');
+    const live = pv.list.filter((e) => e.alive);
+    // #preview/<project> picks that project's editor (main first); otherwise keep the pick, else the first live one
+    const want = arg ? live.filter((e) => e.project === arg).sort((a, b) => (a.checkout === 'main' ? -1 : 0) - (b.checkout === 'main' ? -1 : 0))[0] : null;
+    if (want) pv.sel = pvKey(want);
+    if (!live.some((e) => pvKey(e) === pv.sel)) pv.sel = live[0] ? pvKey(live[0]) : null;
+    pv.paused = null;
+    pv.gone = null;
+    const listEl = h('div', { class: 'world-list' });
+    const stage = h('div');
+    const drawList = () => listEl.replaceChildren(...(pv.list.length ? pv.list.map(previewCard) : [empty('Không có Cocos editor nào đang mở.', 'phone', 'Preview chỉ có khi editor của dự án đang mở và preview server trả lời.')]));
+    function previewCard(e) {
+      const on = pvKey(e) === pv.sel;
+      return h('button', { class: `world ${on ? 'on' : ''}`, type: 'button', disabled: !e.alive, style: e.alive ? null : { opacity: 0.6, cursor: 'default' },
+        onclick: () => { if (!e.alive || on) return; pv.sel = pvKey(e); pv.paused = null; pv.gone = null; drawList(); drawStage(); } },
+        h('div', { class: 'world-h' }, h('b', { class: 'grow' }, e.project), e.alive ? h('span', { class: 'chip good' }, h('span', { class: 'pip live' }), 'sống') : chip('preview không trả lời', 'bad')),
+        h('div', { class: 'row small ink2' }, chip(e.checkout === 'main' ? 'main' : `worktree ${e.checkout}`, 'outline'), e.port ? h('span', { class: 'mono' }, `:${e.port}`) : null, h('span', { class: 'grow' }), chip(e.orientation.value === 'landscape' ? 'ngang' : 'dọc', 'outline', e.orientation.value === 'landscape' ? 'phoneh' : 'phone')),
+        h('div', { class: 'small muted' }, [e.branch && e.branch !== e.checkout ? `nhánh ${e.branch}` : null, e.runner ? `runner ${e.runner.alive ? 'chạy' : 'nghỉ'} · ${e.runner.slice ?? '—'} ${e.runner.step ?? ''}` : null, `editor mở ${e.up_min} phút`].filter(Boolean).join(' · ')));
+    }
+    function drawStage() {
+      const e = pv.list.find((x) => pvKey(x) === pv.sel && x.alive);
+      if (!e && pv.gone) return stage.replaceChildren(panel(`${pv.gone.project} · ${pv.gone.checkout}`, { icon: 'phone' },
+        empty(pv.gone.closed ? 'Editor đã đóng: preview đã gỡ.' : 'Preview ngừng trả lời: đã gỡ.', 'stop',
+          pv.gone.closed ? 'Worktree xong, director hoặc res-guard đã đóng editor. Preview chỉ sống cùng editor; mở lại editor để xem tiếp.' : 'Editor vẫn chạy nhưng preview server không trả lời (đang build lại hoặc lỗi).')));
+      if (!e) return stage.replaceChildren(panel('Preview', { icon: 'phone' }, empty('Chưa có preview nào sống.', 'phone', 'Mở editor của dự án (hoặc để runner mở), rồi bấm làm mới.')));
+      const orient = pv.orient[pvKey(e)] ?? e.orientation.value;
+      const [fw, fh] = orient === 'landscape' ? [PHONE.h, PHONE.w] : [PHONE.w, PHONE.h];
+      const seg = h('div', { class: 'seg' }, [['portrait', 'Dọc', 'phone'], ['landscape', 'Ngang', 'phoneh']].map(([v, label, ic]) =>
+        h('button', { type: 'button', class: orient === v ? 'on' : '', title: v === e.orientation.value ? `Mặc định của dự án (${e.orientation.source})` : null,
+          onclick: () => { pv.orient[pvKey(e)] = v; drawStage(); } }, icon(ic, 15), label, v === e.orientation.value ? h('span', { class: 'small', style: { opacity: 0.7 } }, '(mặc định)') : null)));
+      const screen = h('div', { class: 'phone-screen', style: { width: `${fw}px`, height: `${fh}px` } });
+      const phone = h('div', { class: `phone ${orient}`, style: { width: `${fw + BEZEL * 2}px`, height: `${fh + BEZEL * 2}px` } }, screen);
+      const sizer = h('div', { class: 'phone-sizer' }, phone);
+      const load = () => {
+        screen.replaceChildren(h('iframe', { src: e.url, title: `Preview ${e.project}`, referrerpolicy: 'no-referrer', allow: 'autoplay; fullscreen', style: { width: `${fw}px`, height: `${fh}px` } }));
+      };
+      const pauseNote = (why) => screen.replaceChildren(h('div', { class: 'phone-note' }, icon('pause', 28), h('b', {}, why),
+        h('div', { class: 'small' }, 'Preview đã gỡ khỏi trang trong lúc tab ẩn.'), btn('Tiếp tục', () => { pv.paused = null; load(); }, { cls: 'primary sm', ic: 'play' })));
+      if (!onMac) screen.replaceChildren(h('div', { class: 'phone-note' }, icon('lock', 28), h('b', {}, 'Chỉ xem được trên máy Mac chạy editor'),
+        h('div', { class: 'small' }, `Preview ở ${e.url} trên máy đó; mở console bằng http://127.0.0.1:7792 để xem.`)));
+      else if (pv.paused) pauseNote(pv.paused);
+      else load();
+      const fit = () => {
+        const aw = Math.max(200, sizer.clientWidth);
+        const ah = Math.max(360, window.innerHeight - sizer.getBoundingClientRect().top - 28);
+        const k = Math.min(1, aw / (fw + BEZEL * 2), ah / (fh + BEZEL * 2));
+        phone.style.transform = `scale(${k})`;
+        sizer.style.height = `${Math.ceil((fh + BEZEL * 2) * k)}px`;
+      };
+      new ResizeObserver(fit).observe(sizer);
+      const right = h('div', { class: 'row', style: { flexWrap: 'wrap' } }, seg,
+        btn('Tải lại', () => { pv.paused = null; if (onMac) load(); }, { cls: 'sm', ic: 'refresh' }),
+        h('a', { class: 'btn sm', href: e.url, target: '_blank', rel: 'noopener noreferrer', title: 'Mở preview đầy đủ (có thanh công cụ Cocos) trong tab mới' }, icon('external', 15), 'Tab mới'));
+      stage.replaceChildren(panel(`${e.project} · ${e.checkout}`, { icon: 'phone', sub: `Khung ${fw}×${fh} (điện thoại 6.1"). Orientation mặc định: ${e.orientation.value === 'landscape' ? 'ngang' : 'dọc'} theo ${e.orientation.source}. Preview chạy scene đang mở trong editor.` },
+        h('div', { style: { marginBottom: '14px' } }, right), sizer));
+      requestAnimationFrame(fit);
+    }
+    // keep the list fresh while this tab is open; a preview whose editor closed or that stops answering is unloaded
+    clearInterval(pv.poll);
+    pv.poll = setInterval(async () => {
+      if (route.view !== 'preview') { clearInterval(pv.poll); return; }
+      if (document.hidden) return;
+      const fresh = await api('/api/previews').catch(() => null);
+      if (!fresh) return;
+      const was = pv.list.find((x) => pvKey(x) === pv.sel && x.alive);
+      pv.list = fresh;
+      const now = fresh.find((x) => pvKey(x) === pv.sel);
+      drawList();
+      if (was && !now?.alive) {
+        // the editor went away (or its preview stopped): drop the frame and say why; never pick another by itself
+        pv.gone = { project: was.project, checkout: was.checkout, closed: !now };
+        drawStage();
+      } else if (pv.gone && now?.alive) {
+        pv.gone = null; // the same checkout's editor is back
+        drawStage();
+      } else if (!pv.sel && fresh.some((x) => x.alive)) {
+        pv.sel = pvKey(fresh.find((x) => x.alive));
+        drawStage();
+      }
+    }, POLL_MS);
+    drawList();
+    drawStage();
+    return h('div', { class: 'layout-worlds' }, h('div', { style: { display: 'grid', gap: '12px', alignContent: 'start' } },
+      h('div', { class: 'row' }, h('b', { class: 'grow' }, `${pv.list.filter((e) => e.alive).length}/${pv.list.length} preview sống`), btn('', () => render(), { cls: 'ghost sm', ic: 'refresh', title: 'Dò lại editor' })), listEl), stage);
+  };
+  // a hidden tab drops the frame (no editor client in the background); coming back reloads it
+  document.addEventListener('visibilitychange', () => {
+    if (route.view !== 'preview' || !pv.sel) return;
+    if (document.hidden && !pv.paused) { pv.paused = 'Tab đã ẩn'; document.querySelector('.phone-screen')?.replaceChildren(); }
+    else if (!document.hidden && pv.paused === 'Tab đã ẩn') { pv.paused = null; render(); }
+  });
 
   // ======== scorecard + log
   VIEWS.scorecard = async () => [panel('Workflow scorecard', { icon: 'chart', sub: 'Dashboard mới nhất do job scorecard 09:17 tạo.' },

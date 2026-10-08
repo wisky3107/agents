@@ -35,6 +35,20 @@ so the page CSP can forbid it.
   - The Vietnamese comes from the runner's `q.lang` when it was made from this exact question. Otherwise the server starts the runner's own `translate.mjs` in the background: one `claude -p` sonnet call, for every project, not only those with `release.question_lang: vi`. The call is cached on the question the same way the dialog caches it, so neither one asks twice. `CONSOLE_TRANSLATE=off` turns this off.
 - **Dự án**: a project's level map (pick a slice to see its merge-journal timeline, memory and
   deferred checks), the runner control deck and live Orca terminals.
+- **Preview**: every open Cocos Creator 3.x editor (main or an Orca worktree) and its live preview
+  in a 390×844 phone frame, with Dọc / Ngang. It is live only while the editor runs and
+  `http://127.0.0.1:<port>/` answers with the Creator preview page. The port is found once per
+  editor pid (`lsof` listen ports, then a probe), and the list refreshes every 15 s.
+  - The starting orientation is the checkout's AGENT_NOTES `orientation:`, else the
+    `designResolution` in `settings/v2/packages/project.json`, else portrait.
+  - The frame loads the preview from this browser, so it shows only on the Mac that runs the
+    editors. Through the tailnet the frame says so.
+  - One way only: a preview lives while its editor runs and never keeps it open. res-guard counts
+    a browser (and this server's no-keep-alive probe) as a viewer, not a client. While the frame
+    is shown the list is polled every 5 s. When the editor closes (its worktree is done, the director
+    or res-guard closed it), the frame is dropped with the reason. It comes back if that checkout's
+    editor reopens. A hidden tab unloads the frame too.
+  - Not covered yet: cc4 projects (the COCOS CLI preview is a different process).
 - **Memory / Pilot / Playbook / Scorecard / Nhật ký**: modes as segmented controls, archive
   bars, a record explorer and drawer (promote/retract), stacked verdict columns with a table view,
   and recipe cards with filters plus a rendered recipe drawer.
@@ -111,5 +125,6 @@ token or the API.
 ## Paths (env)
 
 `CONSOLE_PORT` (7792), `CONSOLE_TOKEN`, `CONSOLE_GAMES_ROOT`, `CONSOLE_RUNNER_DIR`,
-`CONSOLE_ORCA_MEMORY_SRC`, `CONSOLE_PLAYBOOK`, `CONSOLE_ORCA_BIN`, `CONSOLE_LOG_DIR`, and
+`CONSOLE_ORCA_MEMORY_SRC`, `CONSOLE_PLAYBOOK`, `CONSOLE_ORCA_BIN`, `CONSOLE_LOG_DIR`, `CONSOLE_WORKSPACES`
+(Orca worktrees, `~/orca/workspaces`), and
 `ORCA_MEMORY_HOME` (read by orca-memory itself).
