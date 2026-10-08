@@ -1217,3 +1217,17 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
     - S17-D1: chỉ dùng TTS offline có licence cho phép thương mại và phân phối lại; ngôn ngữ nào không có voice như vậy thì để không lồng tiếng và ghi một dòng FOLLOWUPS; không dùng TTS trả phí hay cloud.
     - S18-D3: bỏ track `assets/.meta` và đưa vào gitignore, sau khi grep UUID cũ và mở lại Creator sạch (thay thế S10-D1).
   - Cron mới `20d23ef3` có thêm kiểm tra OmniRoute bị lỗi (F10). Vẫn không deploy, tag, push hay chi tiền.
+
+### Pilot 12 — S14 kết quả (S14 merge 2026-10-08 14:55Z, fleet)
+
+1. **Merge:** slice `8ae4cb4`, bookkeeping `4e176b2`. Thời gian 09:01 → 14:58Z = 5 h 57, trong đó khoảng 4 h mất vì OmniRoute xuống cấp (F10).
+2. **Câu hỏi:**
+   - q19 (fleet_gate, F12 quote bị cắt ở chỗ xuống dòng): director trả lời "ratify".
+   - q20–q23 (fleet_stall), director trả lời "nudged again": coordinator đứng yên sau đợt 503/timeout, sau đó kết thúc lượt mà không quay lại orca-wait cho đến khi được nhắc.
+3. **Review:** 1 vòng APPROVED, 0 fix round. Integrate smoke 74/74. Integrate nêu "minibus đè thùng xe khoảng 70 px", reviewer đã xem và approve.
+   - Vượt ngân sách (advisory): files 25→37, lines 1150→1331, nodes 12→15.
+   - manual_deferred (3): nghe `sfx_winch_loop` và 5 tiếng khác; chạm trên điện thoại; khói và nhịp nhấp nháy.
+4. **F3 đã hết:** coordinator đóng terminal integrate nhưng Creator :7459 của worktree vẫn sống, vì đã chạy trong terminal Editor riêng. Verify trên main pass (408 node, 0 MissingScript).
+5. **Worktree bị giữ ("dirty"):** gồm `assets/.meta` và `Modules.meta` bị Creator xoá (F11) và một mô tả `sfx_winch_loop` chi tiết hơn trong ASSET_MANIFEST mà chưa ai commit. Đã lưu diff vào `T-S14/uncommitted-asset-manifest.patch`, copy 51 PNG vào `captures/`, rồi xoá worktree.
+6. **Token:** fleet-orch 1 / 73 / 12.1M; fleet-worker 4 / 269 / 71.2M + codex 1.9M; verifier 0.7M. Tổng khoảng 86M.
+7. **Memory (F14 mới):** writer ghi "the planner pack path is outside this checkout; not consumed". Pack plan nằm trong `.cursor` của main, còn writer fleet chạy trong worktree. Từ S13 đến S14, các role fleet đều không dùng pack. Cần kiểm tra lại việc copy pack vào worktree, hoặc cấp đường dẫn tuyệt đối với quyền đọc cho worker.
