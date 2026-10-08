@@ -1037,3 +1037,21 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
    - `laterRound` chấp nhận "rN", loại trừ các cách viết "fix r2", "r2.5", path và id.
    - Thêm signature F3.
    - Lúc merge không có runner nào đang chạy, nên không cần restart.
+
+### Pilot 11 — lỗi chạm sau ship (director: "chạm ở màn hình chữa cháy … không thể nào chạm đúng chỗ cửa sổ")
+
+- **Tái hiện** (Chrome headless, chuột và touch thật, đi đúng flow Home → Map → gear-up → mission):
+  - 390×844: chạm vào cửa sổ đang vẽ thì trúng cửa sổ **hàng dưới** (w11→w21…), hàng trên cùng → null.
+  - 768×1024: lệch **1 cột** sang phải.
+  - 720×1280: đúng.
+- **Nguyên nhân:** `HoseInputSystem` dùng `getUILocation()` rồi coi nó là điểm world. Canvas và camera nằm ở (360, 640) do tác giả đặt, còn vùng nhìn thấy thì lớn hơn (FIXED_WIDTH/HEIGHT), nên lệch 139/120 design px. Nút bấm vẫn đúng vì engine hit-test qua camera.
+- **Sửa:** `5b38b00`.
+  - `LayoutSystem.pointerToDesign`: `getLocation` → `camera.screenToWorld` → World local → design.
+  - Thêm hook `fireCrew.pointer` và smoke `S01-07-pointer-hits`.
+  - Kết quả: 9/9 ở 4 viewport (chuột và touch); smoke 30/30 ở V1/V2/V3; tests 109/109.
+- **Finding workflow (vì sao 8 slice + 13 vòng review không bắt được):**
+  - Mọi smoke check bấm thẳng toạ độ design (`pressWindow`/`press`), nên không kiểm đường đi touch → design.
+  - Review "real input V3" ở S01 r5 so sánh click → aim, nhưng **không so aim với vị trí đang vẽ**.
+  - Đề xuất cho recipe `scene-2d-portrait` / smoke-test SKILL: game có input tự map toạ độ thì cần một check "drawn centre → pointer path → đúng target" chạy ở viewport khác 9:16.
+- **Phụ:** S08 xoá `assets/prefabs.meta`/`thirds.meta` nhưng thư mục rỗng vẫn còn, Creator tạo lại meta mỗi lần mở → nên xoá luôn thư mục rỗng.
+- Producer Step 3 (`term_698717e5…`) vẫn đang chờ director. Fix nằm trên main nên build sau sẽ có.
