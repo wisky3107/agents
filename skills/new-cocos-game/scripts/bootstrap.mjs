@@ -1639,17 +1639,14 @@ async function createAgentSession({ projectPath, agent, model, effort, title, pr
 
   console.log(`→ orca terminal create --worktree ${worktree} --command ${agentCmd}`);
   const spawnedAt = new Date().toISOString();
-  const created = orcaJson(orcaBin, [
-    'terminal',
-    'create',
-    '--worktree',
-    worktree,
-    '--title',
-    tabTitle,
-    '--command',
-    agentCmd,
-    '--focus',
-  ]);
+  const createArgs = ['terminal', 'create', '--worktree', worktree, '--title', tabTitle, '--command', agentCmd];
+  let created = orcaJson(orcaBin, [...createArgs, '--focus']);
+  // Orca can fail to adopt a focused tab ("Timed out waiting for terminal handle after
+  // creation") and creates nothing; an unfocused create still works (pilot 15, 2026-10-08).
+  if (/Timed out waiting for terminal handle/.test(`${created.stdout} ${created.stderr} ${JSON.stringify(created.parsed)}`)) {
+    console.log('→ focused create timed out; retrying without --focus');
+    created = orcaJson(orcaBin, createArgs);
+  }
   if (created.status !== 0 || created.parsed?.ok === false) {
     die(
       `orca terminal create failed: ${created.stderr || created.stdout || JSON.stringify(created.parsed)}`,

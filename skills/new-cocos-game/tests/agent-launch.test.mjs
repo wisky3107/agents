@@ -245,3 +245,20 @@ test('guarded roles install the checkout guard hook for their CLI, idempotently,
   fs.rmSync(dir, { recursive: true });
   fs.rmSync(hooks, { recursive: true });
 });
+
+test('agent-session retries the create without --focus when Orca times out adopting the focused tab', async () => {
+  const { context, calls } = harness();
+  context.orcaJson = (_bin, args) => {
+    calls.push(args);
+    if (args[0] === 'terminal' && args[1] === 'create' && args.includes('--focus')) {
+      return { status: 1, stdout: '', stderr: '', parsed: { ok: false, error: { code: 'runtime_error', message: 'Timed out waiting for terminal handle after creation' } } };
+    }
+    return { status: 0, parsed: { ok: true, result: { terminal: { handle: 'term_unfocused' } } } };
+  };
+  const res = await context.createAgentSession({ projectPath: '/project', agent: 'codex', prompt: 'task', role: 'worker', slice: 'S12' });
+  const creates = calls.filter(a => a[0] === 'terminal' && a[1] === 'create');
+  assert.equal(creates.length, 2);
+  assert.ok(creates[0].includes('--focus'));
+  assert.ok(!creates[1].includes('--focus'));
+  assert.equal(JSON.stringify(res).includes('term_unfocused'), true);
+});
