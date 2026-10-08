@@ -1239,3 +1239,11 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
   - Thứ tự: S17 → S19..S23 → S18. Validator ok (23 slice). Đã xem 8 mock.
   - 17 quyết định ghi GIVEN theo quyền delegated, đều là phương án đề xuất; GP-12 có gate khả thi cho shader và fallback overlay.
   - Merge vào main `6bf51b0`; policy line và `release.slices` đã cập nhật; worktree đã xoá. Runner vẫn đang chạy S15.
+
+### Pilot 15 — S10 kết quả (S10 merge 2026-10-08 15:27Z, fleet)
+
+- Merged: 57ce5a9 (merge 7fd0ea0, bookkeeping cecd276). Wall 1 h 48 m (13:43→15:31Z). Review 2 rounds (r1 major F1 hard-edged smoke_puff → asset fix), 1 fix round + 1 pre-review code fix; APPROVED; budget 1514/1650 lines, no bump. Kit candidate: kit-particle-config.
+- Tokens: fleet-orch 18.1M (94 turns, ~72 % script-replaceable), workers claude 81.6M + codex 2.4M, slice-agent 1.5M, producer 60k → ~104M.
+- Questions 4 (q32–q35), all answered via the director dialog before the watch tick: q32 art-2d cap fail on jet_ribbon/p_water_mist → A image-derived finishing; q33 nozzle clamp (+55°) vs ±4° aim on w11 (64.8°) → keep clamp, w11 asserted as ray-hits-cell; q34/q35 runner_error "Timed out waiting for terminal handle after creation" right after the merge-step Creator reopen → fixed, retry (2nd retry spawned the verifier at 15:29Z).
+- Findings: (1) brief author again left a geometry contradiction (clamp range vs aim tolerance) — same class as S09 F2; (2) orca terminal create times out while a just-reopened Creator is booting — the runner could wait-and-retry once by itself before asking.
+- Memory (assist): `shared-particle-render-layers` recipe cited by integrator + reviewer.
