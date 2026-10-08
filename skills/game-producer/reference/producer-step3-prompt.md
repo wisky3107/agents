@@ -15,8 +15,9 @@ worktree stay <PROJECT>.
    `node <RUNNER> status --project <PROJECT>` and read `manual_deferred` (per slice; each slice's
    .cursor/evidence/tasks/T-<Sxx>/evidence/manual-deferred.json). If any are listed, show them to the
    director and get their sign-off (done / waived) before any build or deploy; record it in the ship
-   line and add `"signed_off": {"at": "<ISO>", "by": "director", "note": "<done|waived: …>"}` to each
-   manual-deferred.json.
+   line and run `node <RUNNER> sign-off <Sxx> --note "<done|waived: …>" --project <PROJECT>` for each
+   slice (it writes `signed_off` into that manual-deferred.json). A slice the director already signed
+   off in the director console is no longer listed.
 3. Follow .cursor/skills/game-producer/SKILL.md "Step 3 — release / playable completion and retro"
    exactly for the locked goal and deploy: build, deploy and smoke only where the policy says so,
    the ONE ship line, then the retro (reference/retro.md) — the retro runs at a playable or

@@ -565,6 +565,28 @@ test('manual_required: defer — APPROVED with only manual checks left merges, l
   assert.deepEqual(manualItems({ round1: { manual_required: ['old'] } }, { manual_required: ['h1'] }), ['h1']);
 });
 
+test('sign-off: the director signs off deferred manual checks; status drops them, a second sign-off is refused', () => {
+  const p = project({ notes: NOTES(POLICY, '{}', '  manual_required: defer\n'), slices: { S01: { needs: false } } });
+  const f = fakes();
+  const file = ev(p.root, 'S01', 'evidence', 'manual-deferred.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ v: 2, slice: 'S01', items: ['fps on device', 'real notch'] }));
+  assert.deepEqual(runner(p.root, f, 'status').out[0].manual_deferred, { S01: ['fps on device', 'real notch'] });
+  // the note says done or waived; a bare note, a missing slice file or a bad id write nothing
+  assert.match(runner(p.root, f, 'sign-off', 'S01', '--note', 'looks fine').out[0].error, /needs --note "done: …" or "waived: …"/);
+  assert.match(runner(p.root, f, 'sign-off', 'S02', '--note', 'done: x').out[0].error, /S02 has no deferred manual checks/);
+  assert.match(runner(p.root, f, 'sign-off', 'S1', '--note', 'done: x').out[0].error, /slice id/);
+  const r = runner(p.root, f, 'sign-off', 'S01', '--note', 'waived: no device this release');
+  assert.equal(r.status, 0);
+  assert.deepEqual([r.out[0].signed_off, r.out[0].items, r.out[0].by], ['S01', 2, 'director']);
+  const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.deepEqual(saved.items, ['fps on device', 'real notch']);
+  assert.equal(saved.signed_off.note, 'waived: no device this release');
+  assert.equal(runner(p.root, f, 'status').out[0].manual_deferred, undefined); // status omits an empty list
+  assert.match(log(p.root), /manual checks signed off \(2\): waived: no device this release/);
+  assert.match(runner(p.root, f, 'sign-off', 'S01', '--note', 'done: again').out[0].error, /was signed off at/);
+});
+
 test('fleet: the newest review file is the verdict; defer never covers a review that is not APPROVED; the commit line names the runner', () => {
   const p = project({ notes: NOTES(POLICY, '{}', '  manual_required: defer\n'), slices: { S01: { needs: false, size: 'L' } } });
   const f = fakes();

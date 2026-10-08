@@ -7,6 +7,7 @@
  *   producer-runner.mjs start|resume [--project <path>] [--dry-run] [--once]
  *   producer-runner.mjs status [--project <path>]
  *   producer-runner.mjs pause | stop | stop-after <Sxx> | clear   [--project <path>]
+ *   producer-runner.mjs sign-off <Sxx> --note "done: …" | "waived: …" [--project <path>]  (deferred manual checks)
  *   producer-runner.mjs answer --id <qN> --choice <option> [--text "…"] [--project <path>]
  *   producer-runner.mjs answer [--id <qN>] [--project <path>]   (in a terminal: a numbered menu)
  *   producer-runner.mjs launch [--project <path>]      (a visible Orca terminal running `start`)
@@ -182,6 +183,24 @@ function deferredManual(root) {
     out[d.replace(/^T-/, '')] = again.length ? again : f.items;
   }
   return out;
+}
+
+/**
+ * The director's sign-off on a slice's deferred manual checks (Step 3, or the director console):
+ * `signed_off` in manual-deferred.json, after which `status` no longer lists them. The note says
+ * whether the checks were done or waived.
+ */
+function signOff(root, id, note) {
+  if (!/^S\d{2}[a-z]?$/.test(id || '')) throw new Error('sign-off needs a slice id (S<nn>)');
+  if (!/^(done|waived):\s*\S/.test(note || '')) throw new Error('sign-off needs --note "done: …" or "waived: …"');
+  const file = path.join(root, '.cursor', 'evidence', 'tasks', `T-${id}`, 'evidence', 'manual-deferred.json');
+  const f = st.readJson(file);
+  if (!f?.items?.length) throw new Error(`${id} has no deferred manual checks`);
+  if (f.signed_off) throw new Error(`${id} was signed off at ${f.signed_off.at}: ${f.signed_off.note}`);
+  const signed_off = { at: st.now(), by: 'director', note };
+  st.writeJson(file, { ...f, signed_off });
+  st.log(root, id, `manual checks signed off (${f.items.length}): ${note}`);
+  return { signed_off: id, items: f.items.length, ...signed_off };
 }
 
 /**
@@ -722,6 +741,7 @@ async function main() {
     return st.writeControl(root, `stop-after ${v._[0]}`);
   }
   if (cmd === 'clear') return st.writeControl(root, null);
+  if (cmd === 'sign-off') return say(signOff(root, v._[0], v.note));
   if (cmd === 'handoff-reset') return say({ forgot: Object.keys(st.readRunner(root).llm || {}), llm: st.writeRunner(root, { llm: {} }).llm });
   if (cmd === 'launch') {
     const holder = st.lockHolder(root);
@@ -744,7 +764,7 @@ async function main() {
     if (!typing()) throw new Error('answer needs --id and --choice (or run it in a terminal for a numbered menu)');
     return say(await answerMenu(root, v.id));
   }
-  throw new Error('usage: producer-runner.mjs start|resume|status|pause|stop|stop-after <Sxx>|clear|answer|launch|handoff-reset [--project <path>]');
+  throw new Error('usage: producer-runner.mjs start|resume|status|pause|stop|stop-after <Sxx>|clear|sign-off|answer|launch|handoff-reset [--project <path>]');
 }
 
 main().catch((err) => {
