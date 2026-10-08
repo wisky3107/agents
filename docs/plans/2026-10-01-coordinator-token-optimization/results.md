@@ -1211,3 +1211,9 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
   2. Contract-geometry gaps the brief author missed (bubble vs the upper cell at 180 px row pitch; static vs moving ladder; face hidden by popup) became 3 director gates. The brief gate should run a geometry pass on a mock against row pitch / popup rects before handoff.
   3. Runner bookkeeping commit stages the whole AGENT_NOTES.md, so the director's uncommitted Step-3 ship line and the brief/policy edits went into d685f67 (content correct, but not the runner's to commit).
 - Memory (assist): cited `design-space-touch-target-floor r4` (playbook recipe) and `cc-monopoly-go/T-S06/lesson-L4` (measure the drawn layer, not the logical rect) in integration notes and review; L4 visibly shaped the overlap probe.
+
+- 13:45Z **Director giao toàn quyền:** "pilot giờ toàn quyền tự chọn hết thay director cho tới khi xog hết slice". Authority chuyển sang **delegated** cho S14–S18.
+  - Quyết ngay hai việc đang treo (`b6def26`):
+    - S17-D1: chỉ dùng TTS offline có licence cho phép thương mại và phân phối lại; ngôn ngữ nào không có voice như vậy thì để không lồng tiếng và ghi một dòng FOLLOWUPS; không dùng TTS trả phí hay cloud.
+    - S18-D3: bỏ track `assets/.meta` và đưa vào gitignore, sau khi grep UUID cũ và mở lại Creator sạch (thay thế S10-D1).
+  - Cron mới `20d23ef3` có thêm kiểm tra OmniRoute bị lỗi (F10). Vẫn không deploy, tag, push hay chi tiền.
