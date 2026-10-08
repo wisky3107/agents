@@ -1231,3 +1231,11 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 5. **Worktree bị giữ ("dirty"):** gồm `assets/.meta` và `Modules.meta` bị Creator xoá (F11) và một mô tả `sfx_winch_loop` chi tiết hơn trong ASSET_MANIFEST mà chưa ai commit. Đã lưu diff vào `T-S14/uncommitted-asset-manifest.patch`, copy 51 PNG vào `captures/`, rồi xoá worktree.
 6. **Token:** fleet-orch 1 / 73 / 12.1M; fleet-worker 4 / 269 / 71.2M + codex 1.9M; verifier 0.7M. Tổng khoảng 86M.
 7. **Memory (F14 mới):** writer ghi "the planner pack path is outside this checkout; not consumed". Pack plan nằm trong `.cursor` của main, còn writer fleet chạy trong worktree. Từ S13 đến S14, các role fleet đều không dùng pack. Cần kiểm tra lại việc copy pack vào worktree, hoặc cấp đường dẫn tuyệt đối với quyền đọc cho worker.
+
+- 15:40Z **Polish amendment** (director: "thêm slice để cải thiện game: …" 9 mục → GP-11..GP-19):
+  - Brief author opus high chạy trong worktree Orca `v12-contracts`, song song với S15 (15:10 → 15:33Z).
+  - Lỗi phụ: `git worktree add` thô không mở được terminal Orca ("Timed out waiting for terminal handle"); phải tạo lại bằng `orca worktree create`.
+  - Kết quả: 5 slice L. S19 car-surface (spots trên viền, shader film, shine chỉ trên thân xe), S20 soap-and-hose (bước xịt xà bông, ống nước dạng dây), S21 spray-particles, S22 pump-and-fuel-lines, S23 mood-bubble (bỏ mắt và miệng).
+  - Thứ tự: S17 → S19..S23 → S18. Validator ok (23 slice). Đã xem 8 mock.
+  - 17 quyết định ghi GIVEN theo quyền delegated, đều là phương án đề xuất; GP-12 có gate khả thi cho shader và fallback overlay.
+  - Merge vào main `6bf51b0`; policy line và `release.slices` đã cập nhật; worktree đã xoá. Runner vẫn đang chạy S15.
