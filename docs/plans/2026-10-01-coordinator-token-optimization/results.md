@@ -1180,3 +1180,14 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
   - Hậu quả: gate `gate_449d5aec59ca` (judge đã trả lời "ratify extra files" lúc 07:37Z) không ai resolve, runner hỏi `gate_unresolved` q15, q16; director trả lời "continue waiting".
   - Lúc 08:15Z, test gọi trực tiếp OmniRoute với sonnet và opus đều OK. Tôi nhắc từng agent một dòng, cả hai làm việc lại.
   - Đã thêm failure signature. Hướng sửa: runner đọc màn hình coordinator, thấy `API Error: 4xx/5xx` thì tự nhắc một lần.
+
+### Pilot 12 — S13 kết quả (S13 merge 2026-10-08 08:59Z, fleet)
+
+1. **Merge:** `9f70ff8` (slice `6e71e2c`), bookkeeping `bf53820`. Thời gian 06:52 → 09:01Z = 2 h 09. Trong đó khoảng 30 phút mất vì F10 (OmniRoute 401).
+2. **Câu hỏi:** q14 và q18 (fleet_gate) do judge tự trả lời, trích contract "existing specs pass" và "SCOPE smoke checks durable editable": duyệt các spec/check cũ phải sửa vì Day 7, 11 fact và 7 điểm dừng. q15 và q16 (gate_unresolved, hậu quả của F10) director trả lời "continue waiting".
+3. **Review:** 2 vòng. r1 CHANGES_REQUESTED (F1, F2: 2 smoke check cũ chưa cập nhật số đếm), 1 fix round, r2 APPROVED. manual_deferred (3): nghe `sfx_charge_loop` / `sfx_charge_done`; cảm giác chạm; chuyển động tia điện và glow (mới có frame tĩnh).
+4. **Verify trên main pass** (funplay parity, 0 MissingScript, TS 0).
+5. **Worktree bị giữ ("dirty"):** thay đổi duy nhất là Creator xoá `assets/art/animations/Modules.meta`, meta của một folder rỗng mà S10 bỏ sót. Đã copy 31 PNG vào `T-S13/captures/` rồi xoá worktree.
+6. **Finding nhỏ F11:** `assets/.meta` bị Creator tạo lại với UUID mới ở **mỗi lần import trên main** (lần thứ ba: `05ad1433…`). Vì vậy quyết định S10-D1 "giữ UUID đã track" không giữ được. Đây có lẽ là file thừa của template, nên xoá hẳn và gitignore. Đề xuất gộp vào S18 hoặc một việc dọn dẹp riêng; cần director đồng ý.
+7. **Token:** fleet-orch 1 / 83 / 13.7M; fleet-worker 7 / 306 / 70.6M + codex 1.6M; producer 0.1M; verifier 0.8M. Tổng khoảng 87M.
+8. **Memory:** các role ghi "none" hoặc "none acted on" (pack chỉ có pattern của S02/S03). Recipe `editor-authored-ui-bulk` r1 có kiểm sha.
