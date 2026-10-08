@@ -1142,3 +1142,11 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - **Probe thật trên link deploy:** tap chuột vào "Cho ăn" → `sfx-care-feed`, rồi giọng pet (Kỳ Lân) `sfx-unicorn`; 0 lỗi console.
 - **Bài học:** `ls --time-style` không có trên macOS (dùng `stat -f`). Build đặt tên file theo hash nên đối chiếu audio phải dùng md5, không dùng tên.
 - Chưa push. Tag `v1.0.0` vẫn chưa push.
+
+### Pilot 12 — S11 kết quả (S11 merge 2026-10-08 04:50Z, single lane)
+
+1. **Merge:** slice `1d91243` trên main, bookkeeping `fefb8ef`. Thời gian 04:20 → 04:50Z = 30 phút. 0 câu hỏi.
+2. **Review:** 1 vòng, APPROVED, 0 fix round. manual_deferred (2): touch và notch trên máy thật; wrong-tool wiggle khi kéo bằng ngón tay thật.
+3. **Token:** slice-agent 2 sess / 129 turns / 24.1M.
+4. **Memory:** writer và reviewer đều ghi "none". Reviewer lại nói lesson "assert the outermost player-visible layer" khiến nó lái pointer/touch thật thay vì gọi API, tức là có dùng nhưng không ghi id. Cần sửa cách ghi nhận.
+5. **Tiếp theo:** S12 interior-vacuum (L, fleet, Run `run_42166a37d929`). Đến 05:11Z, art-2d fail một lần, nhánh `art-2d-fix-map` đã PASS ở vòng 3, audio PASS; implement đang chạy, integrate-r2 / review-r2 chờ.
