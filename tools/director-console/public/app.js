@@ -729,7 +729,21 @@
   function manualCard(d) {
     return h('div', { class: 'quest q-manual' },
       h('div', { class: 'quest-h' }, qtag('hand', 'Kiểm tra tay'), chip(d.project, 'outline'), chip(d.slice, 'accent'), h('span', { class: 'grow' }), h('span', { class: 'small muted' }, `${d.items.length} việc`)),
-      h('ul', { style: { margin: '8px 0 0', paddingLeft: '18px' } }, d.items.map((i) => h('li', { class: 'small', style: { margin: '3px 0' } }, i))));
+      h('ul', { style: { margin: '8px 0 0', paddingLeft: '18px' } }, d.items.map((i) => h('li', { class: 'small', style: { margin: '3px 0' } }, i))),
+      h('div', { class: 'quest-actions' },
+        btn('Đã kiểm', () => signOff(d, 'done'), { cls: 'primary sm', ic: 'check', title: 'Bạn đã tự kiểm các việc này' }),
+        btn('Bỏ qua', () => signOff(d, 'waived'), { cls: 'sm', title: 'Không kiểm, chấp nhận rủi ro cho lần ship này' })));
+  }
+
+  /** Sign off one slice's deferred manual checks through the runner (`sign-off`); the card then goes away. */
+  function signOff(d, how) {
+    const done = how === 'done';
+    return act('manual.signoff', { project: d.project, slice: d.slice, how }, {
+      title: `${done ? 'Đã kiểm' : 'Bỏ qua'} ${d.items.length} việc · ${d.project} ${d.slice}`,
+      body: `Runner ghi signed_off vào manual-deferred.json của ${d.slice} (note "${how}: …"); status và Step 3 không hỏi lại slice này. Không gỡ được qua console.`,
+      fields: [{ name: 'note', label: done ? 'Kiểm thế nào (máy, kết quả)' : 'Vì sao bỏ qua', required: true, placeholder: done ? 'iPhone 13, chạm và tai thỏ ổn' : 'không có máy thật cho bản này' }],
+      ok: done ? 'Ghi đã kiểm' : 'Ghi bỏ qua',
+    });
   }
 
   // ======== worlds

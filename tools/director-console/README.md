@@ -81,6 +81,7 @@ their own panel.
 | `memory.mode` | `orca-memory mode --project … <mode> --note …` |
 | `memory.promote` / `memory.retract` | `orca-memory promote <id> --to … --note …` / `retract <id> --note …` |
 | `memory.refresh` | `orca-memory refresh` |
+| `manual.signoff` | `producer-runner.mjs sign-off <Sxx> --note "done\|waived: …" --project …` (deferred manual checks; signed-off files leave the quest list) |
 | `triage.dismiss` | `orca-memory dismiss <source> --note …` |
 | `draft.apply` | writes the director's verdict and confirmed edits into the judge draft, then `orca-memory pilot apply-draft --file …` |
 

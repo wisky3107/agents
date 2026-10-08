@@ -43,6 +43,9 @@ before(async () => {
     { id: 'q0', kind: 'verify_manual', slice: 'S01', text: 'done', options: ['ok'], answer: { choice: 'ok' } },
   ] }));
   fs.writeFileSync(path.join(repo, '.cursor', 'evidence', 'tasks', 'T-S01', 'evidence', 'manual-deferred.json'), JSON.stringify({ items: ['real device rotation'], policy: 'defer' }));
+  // signed off already (Step 3 or the console): not a quest any more
+  fs.mkdirSync(path.join(repo, '.cursor', 'evidence', 'tasks', 'T-S02', 'evidence'), { recursive: true });
+  fs.writeFileSync(path.join(repo, '.cursor', 'evidence', 'tasks', 'T-S02', 'evidence', 'manual-deferred.json'), JSON.stringify({ v: 2, items: ['fps on device'], signed_off: { at: '2026-10-07T00:00:00Z', by: 'director', note: 'waived: no device' } }));
   fs.mkdirSync(path.join(home, 'config'), { recursive: true });
   fs.writeFileSync(path.join(home, 'config', 'projects.json'), JSON.stringify({ projects: [{
     project_id: 'cc-a', paths: [repo], domain: 'cocos', stack: { engine_version: '3.8.8', mode: '2d', target: 'web-mobile' },
@@ -168,8 +171,13 @@ test('actions: only allowlisted, JSON only; runner.answer runs the runner CLI wi
   await call('POST', '/api/action/runner.control', { body: { project: 'cc-a', cmd: 'stop-after', slice: 'S02' } });
   assert.deepEqual(fs.readFileSync(path.join(root, 'runner-argv.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).at(-1), ['stop-after', 'S02', '--project', repo]);
   assert.equal((await call('POST', '/api/action/runner.control', { body: { project: 'cc-a', cmd: 'rm -rf' } })).status, 400);
+  // a manual sign-off goes through the runner's sign-off; the note must say done or waived
+  assert.equal((await call('POST', '/api/action/manual.signoff', { body: { project: 'cc-a', slice: 'S01', how: 'maybe', note: 'x' } })).status, 400);
+  assert.equal((await call('POST', '/api/action/manual.signoff', { body: { project: 'cc-a', slice: 'S01', how: 'done' } })).status, 400, 'a note is required');
+  await call('POST', '/api/action/manual.signoff', { body: { project: 'cc-a', slice: 'S01', how: 'done', note: 'iPhone 13 ok' } });
+  assert.deepEqual(fs.readFileSync(path.join(root, 'runner-argv.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).at(-1), ['sign-off', 'S01', '--note', 'done: iPhone 13 ok', '--project', repo]);
   const log = fs.readFileSync(path.join(logs, 'director-console.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-  assert.deepEqual(log.map((l) => l.action), ['runner.answer', 'runner.control']);
+  assert.deepEqual(log.map((l) => l.action), ['runner.answer', 'runner.control', 'manual.signoff']);
 });
 
 test('memory.mode goes through the orca-memory CLI: a missing note is refused, a real switch is audited', async () => {
@@ -194,6 +202,7 @@ test('agent-written files: deferred checks and round counts in every shape becom
   assert.deepEqual(deferredItems({ items: ['a', ' ', 'b'] }), ['a', 'b']);
   assert.deepEqual(deferredItems({ items: [{ item: 'V5 landscape', reason: 'emulated' }, { row: 'feel rows' }, { other: 1 }] }), ['V5 landscape (emulated)', 'feel rows', '{"other":1}']);
   assert.deepEqual(deferredItems({ items: { status: 'manual', items: ['real device'] } }), ['real device']);
+  assert.deepEqual(deferredItems({ v: 2, items: ['{"row":"fps on device","reason":"no device"}', '{not json'] }), ['fps on device (no device)', '{not json']);
   assert.deepEqual(deferredItems(null), []);
   assert.deepEqual([rounds(2), rounds([{ round: 1 }, { round: 2 }]), rounds({ count: 3 }), rounds('x'), rounds(null)], [2, 2, 3, null, null]);
 });

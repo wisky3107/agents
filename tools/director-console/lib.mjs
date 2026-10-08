@@ -121,7 +121,7 @@ export function projectDetail(id) {
       fix_rounds: rounds(stats?.fix_rounds) ?? pilot?.fix_rounds ?? null,
       review_rounds: rounds(stats?.review_rounds) ?? pilot?.review_rounds ?? null,
       merge: journal ? Object.fromEntries(Object.entries(journal.steps ?? {}).map(([k, v]) => [k, v?.note ?? 'done'])) : null,
-      manual_deferred: deferredItems(readJson(path.join(ev, 'manual-deferred.json'))),
+      manual_deferred: openDeferred(path.join(ev, 'manual-deferred.json')),
       memory: pilot ? { phase: pilot.phase, packs: pilot.memory.packs, injected_tokens: pilot.memory.injected_tokens, cited: pilot.cited_ids, verdicts: pilot.verdicts, unjudged: pilot.unjudged_items } : null,
     };
   });
@@ -208,7 +208,7 @@ export function pending(ps = projects()) {
     const tasks = path.join(p.path, '.cursor', 'evidence', 'tasks');
     if (!fs.existsSync(tasks)) return [];
     return fs.readdirSync(tasks).filter((t) => /^T-S\d+/.test(t)).sort((a, b) => sliceOrder(a.slice(2), b.slice(2))).flatMap((t) => {
-      const items = deferredItems(readJson(path.join(tasks, t, 'evidence', 'manual-deferred.json')));
+      const items = openDeferred(path.join(tasks, t, 'evidence', 'manual-deferred.json'));
       return items.length ? [{ project: p.id, slice: t.slice(2), items }] : [];
     });
   });
@@ -314,14 +314,23 @@ export function resources() {
   };
 }
 
+/** The checks of one manual-deferred.json still waiting: none once the director signed them off. */
+const openDeferred = (file) => {
+  const d = readJson(file);
+  return d?.signed_off ? [] : deferredItems(d);
+};
+
 /**
  * manual-deferred.json is written by agents in several shapes ({items:[string]},
- * {items:[{item|row|check, reason}]}, {status, reason, items:[...]}): one readable line per item.
+ * {items:[{item|row|check, reason}]}, the same objects as JSON strings, {status, reason, items:[...]}):
+ * one readable line per item.
  */
 export function deferredItems(d) {
   if (!d || typeof d !== 'object') return [];
   const raw = Array.isArray(d) ? d : Array.isArray(d.items) ? d.items : Array.isArray(d.items?.items) ? d.items.items : [];
   return raw.flatMap((x) => {
+    // an item some agents wrote as a JSON string ('{"row":"…","reason":"…"}') reads like an object
+    if (typeof x === 'string' && /^\s*\{/.test(x)) x = safe(() => JSON.parse(x)) ?? x;
     if (typeof x === 'string') return x.trim() ? [x.trim()] : [];
     if (!x || typeof x !== 'object') return [];
     const what = x.item ?? x.row ?? x.check ?? x.text ?? x.name ?? null;
@@ -405,6 +414,12 @@ const ACTIONS = {
   'memory.promote': (b) => [OM_CLI(), 'promote', need(b.record, 'record'), '--to', need(b.to, 'to'), '--note', need(b.note, 'note')],
   'memory.retract': (b) => [OM_CLI(), 'retract', need(b.record, 'record'), '--note', need(b.note, 'note')],
   'memory.refresh': () => [OM_CLI(), 'refresh'],
+  // the runner writes `signed_off` into the slice's manual-deferred.json (done or waived)
+  'manual.signoff': (b) => {
+    const p = findProject(b.project);
+    if (!['done', 'waived'].includes(b.how)) throw new Error('how must be done|waived');
+    return [RUNNER(), 'sign-off', need(b.slice, 'slice'), '--note', `${b.how}: ${need(b.note, 'note')}`, '--project', p.path];
+  },
   'triage.dismiss': (b) => [OM_CLI(), 'dismiss', need(b.source, 'source'), '--note', need(b.note, 'note')],
   // res-guard closes only a Creator running on exactly that checkout (close-editor.sh, then SIGTERM)
   'editor.close': (b) => {
