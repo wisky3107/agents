@@ -6,7 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { parseClock, parseMem, parseSwap, projectArg, label, parseSnapshot } from '../probe.mjs';
 import { DEFAULTS, mergeConfig, gate, alerts, dueAlerts, omnirouteAction, reapPlan } from '../policy.mjs';
-import { lifecyclePlan, runnerInfo, primaryOf } from '../lifecycle.mjs';
+import { lifecyclePlan, runnerInfo, primaryOf, classifyClients } from '../lifecycle.mjs';
 
 const CLI = new URL('../res-guard.mjs', import.meta.url).pathname;
 const tmp = (p) => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), p)));
@@ -153,7 +153,7 @@ test('lifecyclePlan: the rule order — runner use, lane agents, grace, primary 
   assert.match(by[6], /^keep: in use: worker S07 \(pid 50\)/);
   assert.match(by[7], /^keep: opened 2 min ago \(grace 10 min\)/); // grace beats "primary waits"
   assert.match(by[8], /^close: primary waits: worker S01 \(pid 52\) works in s01-x/); // primary rule beats clients
-  assert.match(by[9], /^keep: 1 client connection/);
+  assert.match(by[9], /^keep: 1 agent client connection/);
   assert.match(by[10], /^close: idle 60 min/);
   assert.match(by[11], /^keep: idle 5 min \(closes at 20\); 1 session\(s\) sit in the checkout/);
   assert.match(by[12], /^keep: runner S02 merge step manages main's editor/);
@@ -244,4 +244,33 @@ test('CLI on the live machine: editors shows a fake agent-owned Creator; close-e
   assert.equal(fs.readFileSync(path.join(proj, 'editor.log'), 'utf8').trim(), `close ${proj}`);
   assert.ok(!up());
   assert.match(fs.readFileSync(path.join(home, 'logs', 'res-guard.jsonl'), 'utf8'), /"kind":"editor_close".*"why":"test"/);
+});
+
+test('classifyClients: agents keep an editor, preview viewers never do', () => {
+  const P = (pid, ppid, command) => ({ pid, ppid, command });
+  const procs = [
+    P(10, 1, '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'),
+    P(11, 10, '/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/1/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper --type=utility --utility-sub-type=network.mojom.NetworkService'),
+    // run-smoke --channel chrome: the same Chrome binary, under a Playwright root
+    P(20, 1, '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --remote-debugging-pipe --headless'),
+    P(21, 20, '/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/1/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper --type=utility'),
+    P(30, 1, 'claude'),
+    P(31, 30, 'node /Users/x/.npm/_npx/funplay-mcp/index.js'),
+    P(40, 1, '/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking'),
+    P(50, 1, '/Library/SystemExtensions/X/io.tailscale.ipn.macsys.network-extension.systemextension/Contents/MacOS/io.tailscale.ipn.macsys.network-extension'),
+    P(60, 1, '/usr/local/bin/node /Users/x/.agents/tools/director-console/server.mjs'),
+  ];
+  const c = (port, host = '127.0.0.1') => ({ host, port: String(port) });
+  const owner = new Map([['5011', 11], ['5021', 21], ['5031', 31], ['5040', 40], ['5050', 50], ['5060', 60]]);
+  assert.deepEqual(classifyClients([c(5011)], owner, procs), { agents: 0, viewers: 1 }, "the director's Chrome");
+  assert.deepEqual(classifyClients([c(5021)], owner, procs), { agents: 1, viewers: 0 }, 'a Playwright smoke in real Chrome');
+  assert.deepEqual(classifyClients([c(5031)], owner, procs), { agents: 1, viewers: 0 }, 'an MCP client under claude');
+  assert.deepEqual(classifyClients([c(5040), c(5050), c(5060)], owner, procs), { agents: 0, viewers: 3 }, 'Safari, tailscale serve, the console probe');
+  assert.deepEqual(classifyClients([c(5099), c(7458, '192.168.1.20'), c(7458, '100.64.0.9')], owner, procs), { agents: 0, viewers: 3 }, 'a root-owned peer, LAN and tailnet peers');
+  // only viewers left: the editor idles out as if nobody were there
+  const t = Date.parse('2026-10-08T10:00:00Z');
+  const s = { editors: [{ pid: 1, project: '/p', etimeSec: 3600, agentOwned: true, footMB: 2000 }] };
+  const { verdicts } = lifecyclePlan(s, DEFAULTS, new Map([[1, { clients: 0, viewers: 2 }]]), { now: t });
+  assert.match(verdicts[0].why, /^idle 60 min: no lane agent, no agent client; 2 preview viewer\(s\) do not keep it/);
+  assert.equal(verdicts[0].verdict, 'close');
 });

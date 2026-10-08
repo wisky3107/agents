@@ -49,7 +49,10 @@ node res-guard.mjs install-launchd        # com.agents.res-guard, `tick` every 6
      - opened less than 10 min ago.
    - Close: **main while a slice runs in one of its worktrees**.
    - Keep: main while a live runner of older code runs (it would not reopen it).
-   - Keep: a client connected to its MCP or preview port.
+   - Keep: an agent client connected to its MCP or preview port (an MCP client, a Playwright smoke).
+     A preview viewer never keeps an editor (director, 2026-10-08): a desktop browser with no
+     Playwright root, Safari's network service, Tailscale, the director console's probe, a peer on
+     another machine, or a local port no user process owns. The verdict names the viewers it ignored.
    - Otherwise close after **20 min idle**.
 
    Closing goes through the checkout's `scripts/close-editor.sh`, then SIGTERM.

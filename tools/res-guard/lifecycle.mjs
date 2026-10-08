@@ -23,6 +23,8 @@ const FLEET_ACTIVE = new Set(['fleet', 'accept', 'commit', 'committing']);
 const norm = (p) => (p ? path.resolve(p) : p);
 const within = (p, dir) => !!p && !!dir && (p === dir || p.startsWith(`${dir}/`));
 const readJson = (file) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } };
+// launchd's PATH has no /usr/sbin
+const LSOF = fs.existsSync('/usr/sbin/lsof') ? '/usr/sbin/lsof' : 'lsof';
 const isAlive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
 export function isAgent(p) {
@@ -91,7 +93,7 @@ function agentEnv(pids) {
 function cwds(pids) {
   const out = new Map();
   if (!pids.length) return out;
-  const r = spawnSync('lsof', ['-a', '-d', 'cwd', '-Fpn', '-p', pids.join(',')], { encoding: 'utf8', timeout: 10000 });
+  const r = spawnSync(LSOF, ['-a', '-d', 'cwd', '-Fpn', '-p', pids.join(',')], { encoding: 'utf8', timeout: 10000 });
   let pid = null;
   for (const line of (r.stdout || '').split('\n')) {
     if (line.startsWith('p')) pid = Number(line.slice(1));
@@ -100,15 +102,72 @@ function cwds(pids) {
   return out;
 }
 
+// Someone watching a preview, not an agent's tool: a desktop browser whose process tree has no
+// Playwright root, Safari's network service, Tailscale (a `tailscale serve` of the preview port), or
+// the director console probing whether a preview answers.
+const VIEWER = /\/(Google Chrome|Safari|Firefox|Microsoft Edge|Arc|Brave Browser)\.app\/|com\.apple\.WebKit\.Networking|tailscale|director-console\/server\.mjs/i;
+const PLAYWRIGHT_ROOT = /--remote-debugging-pipe|playwright_chromiumdev_profile|\/ms-playwright\//;
+const LOOPBACK = /^(127\.|\[::1\]$|::1$|localhost$)/;
+
+/**
+ * Split the inbound connections of an editor's ports by who holds the other end. Agents keep the
+ * editor (an MCP client, a Playwright smoke); a viewer does not (director's rule 2026-10-08: a
+ * preview only lives as long as its editor, it never keeps one open). A viewer is a peer on another
+ * machine, a local peer in a desktop browser tree with no Playwright root, Tailscale, or a local
+ * port no visible process owns (a root process: agents run as the user, lsof sees theirs).
+ *   conns  [{ host, port }] remote ends of the inbound connections
+ *   owner  Map remote port → pid of the local process holding it
+ */
+export function classifyClients(conns, owner, procs) {
+  const byPid = new Map(procs.map((p) => [p.pid, p]));
+  const chain = (pid) => {
+    const out = [];
+    for (let p = byPid.get(pid); p && out.length < 30; p = byPid.get(p.ppid)) out.push(p.command);
+    return out;
+  };
+  let agents = 0, viewers = 0;
+  for (const c of conns) {
+    if (!LOOPBACK.test(c.host)) { viewers++; continue; }
+    const pid = owner.get(c.port);
+    const cmds = pid ? chain(pid) : [];
+    const viewer = !pid || (cmds.some((x) => VIEWER.test(x)) && !cmds.some((x) => PLAYWRIGHT_ROOT.test(x)));
+    if (viewer) viewers++;
+    else agents++;
+  }
+  return { agents, viewers };
+}
+
 /** Established connections from outside the tree into the ports an editor listens on (Funplay MCP, preview). */
-function editorClients(treePids) {
-  const r = spawnSync('lsof', ['-nP', '-a', '-p', treePids.join(','), '-iTCP', '-Fn'], { encoding: 'utf8', timeout: 10000 });
+function editorClients(treePids, procs) {
+  const r = spawnSync(LSOF, ['-nP', '-a', '-p', treePids.join(','), '-iTCP', '-Fn'], { encoding: 'utf8', timeout: 10000 });
   const names = (r.stdout || '').split('\n').filter((l) => l.startsWith('n')).map((l) => l.slice(1));
   const listen = new Set(names.filter((n) => !n.includes('->')).map((n) => n.split(':').pop()));
   const conns = names.filter((n) => n.includes('->'));
   const ownLocal = new Set(conns.map((n) => n.split('->')[0].split(':').pop()));
   // inbound = local side is a listening port; a remote port the tree also owns is a helper talking to main
-  return new Set(conns.filter((n) => listen.has(n.split('->')[0].split(':').pop())).map((n) => n.split('->')[1].split(':').pop()).filter((p) => !ownLocal.has(p))).size;
+  const seen = new Map();
+  for (const n of conns) {
+    const [local, remote] = n.split('->');
+    const port = remote.split(':').pop();
+    if (!listen.has(local.split(':').pop()) || ownLocal.has(port)) continue;
+    seen.set(port, { host: remote.slice(0, remote.lastIndexOf(':')), port });
+  }
+  const inbound = [...seen.values()];
+  // the process that holds each local peer's end
+  const owner = new Map();
+  const local = inbound.filter((c) => LOOPBACK.test(c.host));
+  if (local.length) {
+    const o = spawnSync(LSOF, ['-nP', ...local.map((c) => `-iTCP:${c.port}`), '-Fpn'], { encoding: 'utf8', timeout: 10000 });
+    let pid = null;
+    for (const line of (o.stdout || '').split('\n')) {
+      if (line.startsWith('p')) pid = Number(line.slice(1));
+      else if (line.startsWith('n') && pid && !treePids.includes(pid)) {
+        const lp = line.slice(1).split('->')[0].split(':').pop();
+        if (seen.has(lp)) owner.set(lp, pid);
+      }
+    }
+  }
+  return classifyClients(inbound, owner, procs);
 }
 
 /**
@@ -144,7 +203,8 @@ export function editorFacts(s) {
       && primaryOf(l.project).isWorktree && primaryOf(l.project).primary === primary);
     facts.set(ed.pid, {
       exists, primary, isWorktree, laneUsers, cwdUsers, worktreeLanes,
-      clients: exists ? editorClients(tree(ed.pid)) : 0, runner: runners.get(primary) || { live: false },
+      ...(exists ? (({ agents, viewers }) => ({ clients: agents, viewers }))(editorClients(tree(ed.pid), s.procs)) : { clients: 0, viewers: 0 }),
+      runner: runners.get(primary) || { live: false },
     });
   }
   return facts;
@@ -180,11 +240,12 @@ export function lifecyclePlan(s, cfg, facts, { seen = {}, now = Date.now() } = {
     else if (!f.isWorktree && fleetWt) v('close', `primary waits: runner ${R.slice} fleet works in ${path.basename(fleetWt)}`);
     else if (!f.isWorktree && f.worktreeLanes.length) v('close', `primary waits: ${f.worktreeLanes.map((l) => `${who(l)} works in ${path.basename(l.project)}`).join(', ')}`);
     else if (!f.isWorktree && R.live && !R.reopens) used('the live runner (older code) uses main next and does not reopen it; restart the runner to let idle close apply');
-    else if (f.clients > 0) used(`${f.clients} client connection(s) into its MCP/preview ports`);
+    else if (f.clients > 0) used(`${f.clients} agent client connection(s) into its MCP/preview ports`);
     else {
       const idleMin = Math.round((now - lastUsed) / 60000);
-      if (idleMin >= cfg.editors.idleMin) v('close', `idle ${idleMin} min: no lane agent, no client`);
-      else v('keep', `idle ${idleMin} min (closes at ${cfg.editors.idleMin})${f.cwdUsers.length ? `; ${f.cwdUsers.length} session(s) sit in the checkout` : ''}`);
+      const watched = f.viewers ? `; ${f.viewers} preview viewer(s) do not keep it` : '';
+      if (idleMin >= cfg.editors.idleMin) v('close', `idle ${idleMin} min: no lane agent, no agent client${watched}`);
+      else v('keep', `idle ${idleMin} min (closes at ${cfg.editors.idleMin})${f.cwdUsers.length ? `; ${f.cwdUsers.length} session(s) sit in the checkout` : ''}${watched}`);
     }
     next[ed.pid] = new Date(lastUsed).toISOString();
   }
