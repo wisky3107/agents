@@ -1174,3 +1174,9 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Config: runner pid 65804 (term_5413fb93), coordinator claude sonnet term_ec50ce6d; writer opus high, reviewer sonnet high, judge opus, autopilot unattended; runtime review channel Chrome headless (GIVEN 2026-10-07); memory assist, plan pack 1761 tokens.
 - Preflight: template sync 879e728 (run-smoke --channel auto, rules 00 Processes + 60); smoke baseline main 30/30 PASS (chrome, 390×844 — note: without --viewport the chrome channel opens 1280×720 and 22/30 checks fail on a portrait game).
 - Brief: Fable 5.1 session timed out on every request after reading too much (0 files in 1 h 08 m) → opus high wrote the amendment in 37 min; OmniRoute showed intermittent opus 502s on the single claude account.
+
+- 08:15Z **F10, S13: OmniRoute 401 tạm thời.**
+  - Khoảng 07:47Z mọi call claude trả `401 No active credentials for provider: claude`. Coordinator (term_f9d0e400) và worker integrate (term_e531388b) đều kết thúc lượt ở lỗi này và đứng ở prompt.
+  - Hậu quả: gate `gate_449d5aec59ca` (judge đã trả lời "ratify extra files" lúc 07:37Z) không ai resolve, runner hỏi `gate_unresolved` q15, q16; director trả lời "continue waiting".
+  - Lúc 08:15Z, test gọi trực tiếp OmniRoute với sonnet và opus đều OK. Tôi nhắc từng agent một dòng, cả hai làm việc lại.
+  - Đã thêm failure signature. Hướng sửa: runner đọc màn hình coordinator, thấy `API Error: 4xx/5xx` thì tự nhắc một lần.
