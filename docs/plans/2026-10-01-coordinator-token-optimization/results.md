@@ -1253,3 +1253,19 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Merged: 4fb827a. Wall 27 min (15:31→15:57Z). Writer opus: 7 code files / 424 lines, 3 PNG, smoke 38/38, unit 164/164, check-slice WARN (declared scope). 1 review round.
 - Questions 4 (q36–q39), all runner_error "Timed out waiting for terminal handle after creation" on agent-session spawns, retried by the director in the dialog until one went through.
 - Memory: S09's essential-rect-registry lesson (same project) cited by the writer for the tank rect — first same-project lesson reuse in this pilot.
+
+### Pilot 12 — S15 kết quả (S15 merge 2026-10-08 17:34Z, fleet)
+
+1. **Merge:** `a6f01cb` (slice `10a66ba`), bookkeeping `f02e7c8`. Thời gian 14:58 → 17:36Z = 2 h 38.
+2. **Câu hỏi:**
+   - q24 (4 chỗ slice chưa quy định) và q26 (sửa 2 smoke check cũ có số đếm không còn đúng) do director approve.
+   - q25 (preview trắng): tôi trả lời "answered in the lane" vì lane đã tự hồi phục. Câu hỏi treo khoảng 9 phút sau khi đã hồi phục.
+   - q27 (phân việc sửa sau r2: F9 cho integrator dựng lại preview và chụp lại ảnh, F8 cho writer bổ sung notes): tôi approve theo quyền delegated.
+3. **Review:** 3 vòng, 2 fix round. Vòng r2 cho thấy preview chạy chunk cũ dù source đã đúng. Bài học: reviewer và integrator phải kiểm tra preview đang chạy đúng build mới nhất trước khi chụp.
+   - Vượt ngân sách (advisory): files 28→36, nodes 18→khoảng 30.
+   - manual_deferred (4): nghe tiếng thang nâng và barrier; giữ 1.5 s trên điện thoại thật; copy review; …
+4. **Verify trên main pass.** Worktree bị giữ: lần thứ hai có bản sửa ASSET_MANIFEST chưa commit (F15: hàng audio được viết sau commit của coordinator). Đã lưu patch, copy 51 PNG, xoá worktree.
+   - `Modules.meta` tiếp tục bị xoá ở mọi worktree mới. Tôi đã thêm việc này vào S18-D3 (`a8c4653`, delegated).
+5. **Token:** fleet-orch 1 / 93 / 15.8M; fleet-worker 10 / 421 / 102.3M + codex 2.6M; producer 0.1M; verifier 0.7M. Tổng khoảng 122M, nhiều nhất từ đầu pilot.
+6. **Memory:** có trích lesson: `cc-block-out` lesson-L46 r3 (khai `budget_bump` thay vì cắt code), `s13-mock-port-outside-real-outline`, `s13-int-advance-skips-realtime-tweens`. Lesson của S13 được dùng ở S15. Có vẻ F14 (worker không đọc được pack) không xảy ra ở slice này, cần kiểm tra thêm.
+7. **Tiếp theo:** S16 english-pack (fleet) từ 17:36Z.
