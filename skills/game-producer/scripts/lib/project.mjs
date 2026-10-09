@@ -409,7 +409,8 @@ function uncommittedContracts(project, id) {
     if (!line) continue;
     const code = line.slice(0, 2);
     const rel = line.slice(3).replace(/^"|"$/g, '');
-    if (code === '??' || code[0] === 'A' && code[1] !== ' ' ? true : rel === sliceRel) bad.push(rel);
+    // untracked or staged-but-uncommitted files are absent from HEAD; the selected slice must match HEAD exactly
+    if (code === '??' || code[0] === 'A' || rel === sliceRel) bad.push(rel);
   }
   return bad;
 }

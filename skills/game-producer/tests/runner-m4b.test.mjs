@@ -452,6 +452,7 @@ test('contracts_uncommitted: untracked slices/contracts or a dirty slice file bl
   assert.deepEqual(dry.blockers.map((b) => b.code), ['contracts_uncommitted']);
   assert.match(dry.blockers[0].detail, /HOW_TO\.md.*Commit the contract set/);
   g('add', 'HOW_TO.md');
+  assert.deepEqual(codes(), ['contracts_uncommitted']); // staged is still absent from HEAD
   g('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'docs: contracts');
   assert.deepEqual(codes(), []);
 });
