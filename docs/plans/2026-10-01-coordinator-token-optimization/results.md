@@ -1470,3 +1470,12 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - manual_deferred (2): wall-clock timing/fps (stepped-clock evidence only), V2 visual crop.
 - Pilot check of docs/evidence/S20 2× crops: rider stands inside the basket behind the front rail with one gun; victim visible from the waist up behind the sill; closed window uses the burning window's sash frame. Matches the director's three images.
 - Note: assets/.meta deleted again in main after the merge/reopen — restored (third time); cause still open.
+
+### Pilot 12 — S25 kết quả (S25 merge 2026-10-09 08:51Z, fleet)
+
+1. **Merge:** `e96637b`, bookkeeping `8c892d4`. Thời gian 07:03 → 08:54Z = 1 h 51.
+2. **Câu hỏi:** q38 (thêm path, có `docs/flows/**`): judge tự approve, trích SCOPE "durable area". Đây là lần đầu một gate paths gap được judge tự trả lời; trước đó các gate kiểu này đều bị defer vì là "plan sign-off".
+3. **Review:** 2 vòng, 1 fix round. r1 F1 major: yên kích của compact nằm sâu 43 px trong thân xe. Có thêm re-verify của integrator trước và sau fix. manual_deferred (2): nghe 6 clip giọng đọc; cảm giác chạm trên máy thật. Vượt ngân sách (advisory): lines 650→828. Worktree tự xoá. Verify trên main pass.
+4. **Token:** fleet-orch 1 / 92 / 19.0M; fleet-worker 7 / 408 / 74.9M + codex 2.2M; verifier 1.0M. Tổng khoảng 97M.
+5. **Memory:** cả 3 role ghi "none", dù reviewer có đọc `s13-mock-port-outside-real-outline` (bài học "mock dạng sơ đồ không phải outline thật"). Đây đúng là loại lỗi F1 (yên kích lệch khỏi thân xe). Lesson có liên quan nhưng không được ghi là dùng.
+6. **Tiếp theo:** S26 step-ui-handoff (fleet) từ 08:54Z.
