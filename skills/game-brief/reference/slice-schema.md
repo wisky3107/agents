@@ -392,4 +392,4 @@ build (no numeric size cap), localStorage schema check.
 threshold, and no slice other than release-polish carries a size invariant, acceptance row,
 runtime check or `build_checks` entry. Mid-release slices never trim art or levels to save bytes;
 the final build is optimized once, here.
-Only `ship` rows may be closed by exactly `producer Step 3` (RC-20, RC-21) are in no slice's `release_items`; the producer closes them after the release slice merges. The slice never deploys, tags or pushes: write "ship handed to producer Step 3". After APPROVED the producer runs the `ship` skill per `release.deploy`.
+Only `ship` rows may be closed by exactly `producer Step 3` (RC-20, RC-21); they are in no slice's `release_items`, and the producer closes them after the release slice merges. The slice never deploys, tags or pushes: write "ship handed to producer Step 3". After APPROVED the producer runs the `ship` skill per `release.deploy`.
