@@ -1447,3 +1447,8 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Tokens: fleet-orch 15.8M, workers claude 102.0M + codex 5.2M, slice-agent 1.6M → ~125M.
 - Questions 2: q46 art cap → round 3 for splash_burst only (answered in the dialog before the watch tick); q47 fleet_stall during an OmniRoute 429 → nudged; the pilot re-nudged coordinator twice (429 at 05:09Z, then "No active credentials" cool-down until ~05:34Z). Signature 623937d.
 - Pilot-15 lessons applied at authoring time paid off: 0 geometry gates, 0 "old smoke solver broke" questions (13 old checks pre-declared in paths), no deploy inside the slice — vs 1–2 such gates per slice in S12–S16.
+
+### Pilot 17 — cc-firefighter-kids S20 visual-fix-rider-victim-window (single lane), từ 2026-10-09T06:40Z
+
+- Purpose: director visual fixes from three production screenshots (GP-24 rider pasted over the basket, GP-25 victims waist-up, GP-26 sash-style closed window). Contracts 3aced8f (opus high author 18 min, diagnosed GP-24 as `Sprite - Rider` drawn after the basket parent sprite → new `Sprite - Basket Front` sibling between Rider and Nozzle). D-21..D-23 (a) decided by the delegated pilot.
+- Config: runner pid 43938, single lane, writer opus high term_6f003564, reviewer sonnet high; cron 4da01d65.
