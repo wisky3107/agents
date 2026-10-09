@@ -1485,3 +1485,10 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
   - Coordinator HANDOFF vẫn "implement running", runner không báo stall (HANDOFF của coordinator vẫn được cập nhật nhờ gate q39). Dấu hiệu duy nhất là màn hình worker.
   - Gỡ: bảo coordinator dispatch lại cho worker mới (term_f066cd60, ctx_8ce0b5675a53, "retry-of … never started: API errors"). Worker mới chạy bình thường.
   - Bài học: stall check nên đọc cả màn hình worker (`API error · Retrying`) và mtime của HANDOFF worker / git diff của worktree, không chỉ HANDOFF của coordinator. Đề xuất thêm vào orca-wait stall rule.
+
+### Pilot 18 — cc-monster-truck-show S01–S08 (end_to_end, runner), từ 2026-10-09T12:08Z
+- Mục đích: general workflow trên một dự án mới boot (idea → contracts codex gpt-6.1-sol-xhigh → runner). Lần đầu memory **assist** từ S01.
+- Authority: **delegated** — director (2026-10-09): "tạo pilot cho dự án cc-monster-truck-show tự động làm tất cả"; policy line đã có `director gate: S01…S08 GIVEN`.
+- Config: runner pid 29109 (term_d3aa5bd5), coordinator term_853a2dbb (claude sonnet, fleet lane, S01 size L). planner=opus high, writer=opus high, reviewer=sonnet high, art=antigravity, autopilot=retry_once, auto_merge, deploy=preview. Plan pack S01: 1766 tokens (local-bm25).
+- 12:09Z **F1: runner launch khi bộ contract chưa commit trên main.** Worktree S01 cắt từ d243228 (bootstrap) nên thiếu slices/, GAME_BRIEF… Coordinator bắt đầu copy tay. Gỡ: commit contract set 60bba0a trên main, ff worktree (bản copy tay trùng commit), báo coordinator. Bài học: dry-run/launch phải chặn khi `slices/` hoặc contract tracked-missing/dirty trên base branch.
+- Hạ tầng lúc launch: 3D Gen Studio chạy nhưng Tripo credits = 0 → mesh generate phải fallback.
