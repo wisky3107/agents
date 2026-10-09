@@ -1591,3 +1591,10 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Tokens: fleet-orch 18.5M (95 turns), fleet-worker 7 sess 144.3M (480 turns — gấp 3 S02 do 2 fix rounds), slice-agent 1.2M.
 - Memory (assist 1931 tk / 5 items): writer/integrator/reviewer cite `cc-monopoly-go/T-S06/lesson-L4` (smoke assert lớp player-visible: font render + số dòng) 4 lần — áp dụng thật; `cc-lego-stack/T-S11/emulate-viewport…` considered, not used; 7 × none.
 - Kit slice-check: 6 feature, 0 kept. S04 bắt đầu 20:27Z (fleet, coordinator term_20a3bb7c), pack 1956 tk / 7 items, đã mark assist.
+
+### Pilot 18 — S04 kết quả (S04 merge 2026-10-09 22:18Z, fleet)
+- Merged eba9d7d (merge 1b295f8, bookkeeping 55ab2c6). e2e 20:27 → 22:20Z ≈ 1 h 53. fix_rounds 1, review_rounds 2. Budget 28/29 files, 1648/1650 dòng (sát trần), nodes 186/120 (vượt, advisory → không gate). manual_deferred 3. 0 runner question, 0 incident admin ghi lại.
+- Tokens: fleet-orch 19.9M (99 turns), fleet-worker 11 sess 94.8M, slice-agent 1.3M.
+- Memory (assist 1956 tk / 7 items): `cc-monopoly-go/T-S06/lesson-L4` cite 3 lần (assert lớp render: text width vs box, RT alpha) — slice thứ 2 liên tiếp; reviewer none (chỉ định hướng check).
+- Kit slice-check: 4 feature, 0 kept. S05 bắt đầu 22:20Z (fleet, coordinator term_d049ef5e), pack 1994 tk / 7 items, đã mark assist.
+- Ghi chú: nodes budget 120 bị vượt 55 % mà không ai hỏi — budget node của slice-schema có vẻ ước quá thấp cho slice UI garage (5 xe × card); đáng xem lại khi author slice.
