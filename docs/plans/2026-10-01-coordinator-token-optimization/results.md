@@ -1440,3 +1440,10 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
   - Lane đã tự gỡ: dòng index vào README.md, implement xong.
   - Sửa rule (trỏ tới README.md; index thiếu thì không bao giờ được chặn task) ở template `cc-game-template` `21f9ea0` và ở dự án `7df3d11`, mỗi nơi chỉ commit đúng file đó. Template đang có WIP của session khác ở các rule khác, không đụng. Các template khác (cc4, playable) cần kiểm tra cùng lỗi.
   - Đã sửa thêm ở cc4-game-template `c195359`, cc-playable-template `690f88b`, cc-project-template `dca65c3`, và nguồn sync `agent-skills/cocos-creator` `b7ccf76` (chưa push).
+
+### Pilot 16 — S19 kết quả (S19 merge 2026-10-09 05:36Z, fleet)
+
+- Merged: 2b74b56 (merge 80415d0, bookkeeping a939add). Wall 1 h 51 m (03:48→05:39Z). Review 1 round APPROVED, 0 fix rounds (1 pre-review fix for 2 timing bugs in the new S19 checks); smoke 60/60 (chrome), budget 2135/2550 lines, 46/63 files, no bump. Art: 10 rows in 2 rounds, splash_burst needed round 3 (q46). manual_deferred (2, with text this time): real-phone tap feel + wobble/ring, iOS soft-tap audio.
+- Tokens: fleet-orch 15.8M, workers claude 102.0M + codex 5.2M, slice-agent 1.6M → ~125M.
+- Questions 2: q46 art cap → round 3 for splash_burst only (answered in the dialog before the watch tick); q47 fleet_stall during an OmniRoute 429 → nudged; the pilot re-nudged coordinator twice (429 at 05:09Z, then "No active credentials" cool-down until ~05:34Z). Signature 623937d.
+- Pilot-15 lessons applied at authoring time paid off: 0 geometry gates, 0 "old smoke solver broke" questions (13 old checks pre-declared in paths), no deploy inside the slice — vs 1–2 such gates per slice in S12–S16.
