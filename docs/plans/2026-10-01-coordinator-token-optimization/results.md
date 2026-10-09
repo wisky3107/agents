@@ -1397,3 +1397,9 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 4. **Token:** fleet-orch 1 / 118 / 24.7M (coordinator nhiều nhất chuỗi v1.1); fleet-worker 9 / 406 / 74.5M + codex 0.9M; verifier 0.7M. Tổng khoảng 101M.
 5. **Memory:** reviewer dùng `s13-int-advance-skips-realtime-tweens` (chờ thời gian thật cho bay pan rồi mới step, để chụp crop tĩnh).
 6. **Tiếp theo:** S23 mood-bubble. q35 (3 khoảng trống: G1 trùng tên `gc.bubble` với bubble của mascot S17 nên đổi thành `gc.moodBubble`; G2 xe ở màn title cũng có mắt và miệng; G3 …) do director approve lúc 02:59Z.
+
+### Pilot 16 — cc-firefighter-kids S19 polish-gearup-jet-soot (fleet), từ 2026-10-09T03:48Z
+
+- Purpose: general workflow on a polish slice after v1.1.0 shipped; checks whether the pilot-15 lessons fed into authoring (sibling order, pre-declared old checks, no deploy in slice) prevent the recurring gates.
+- Contracts 98cd08c (GP-19..23, GP-17 superseded; opus high author 17 min; D-16..D-20 GIVEN "duệt"); budget L 2550 lines / 63 files (largest slice so far, kept whole).
+- Authority: delegated. Runner pid 95179, coordinator term_82faa5bf (sonnet), writer opus high, reviewer sonnet high, Chrome headless review. Smoke baseline main 56/56 (390×844).
