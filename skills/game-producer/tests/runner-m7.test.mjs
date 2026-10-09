@@ -1043,3 +1043,20 @@ test('U1: after a confirmed keys answer (no panel left), an unreadable screen le
   run(q.root, g, 'start', '--once');
   assert.equal(sliceState(q.root, 'S01').cq_panel_seen, true);
 });
+
+const DECISION_NEEDED = 'DECISION NEEDED (director): S17 mock rect and real scene disagree on the row pitch; keep the mock (a) or the scene (b)?';
+
+test('director_pending: a HANDOFF detail that starts with "DECISION NEEDED (director)" is a question to relay (live Dispatch, no gate)', () => {
+  assert.ok(waitsOnDirector(DECISION_NEEDED));
+  assert.equal(waitsOnDirector('The earlier DECISION NEEDED was answered by the director.'), null);
+  const p = fleet();
+  const f = fakes();
+  f.queue([start(null, DECISION_NEEDED), tick(2, DECISION_NEEDED)]);
+  const a = run(p.root, f, 'start', '--once').out.at(-1);
+  assert.deepEqual([a.waiting, a.kind, a.options], ['q1', 'director_pending', ['send this answer to the lane', 'answered in the lane, continue', 'stop']]);
+  assert.match(runnerFile(p.root).questions[0].text, /DECISION NEEDED \(director\)/);
+  run(p.root, f, 'answer', '--id', 'q1', '--choice', 'send this answer to the lane', '--text', 'keep the scene (b)');
+  f.queue([tick(3, DECISION_NEEDED), tick(4, DECISION_NEEDED), tick(5, DECISION_NEEDED)]);
+  assert.equal(run(p.root, f, 'start', '--once').out.some((o) => o.blocked || o.waiting), false); // once per distinct detail
+  assert.equal(f.sends().length, 1);
+});

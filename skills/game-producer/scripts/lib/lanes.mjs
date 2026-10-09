@@ -1530,6 +1530,9 @@ const DIRECTOR_WAIT = new RegExp([
   String.raw`\bdirector(?:['’]s)?\s+(?:must|needs?\s+to|has\s+to|to)\s+(?:decide|rule|approve|choose|pick|confirm|answer)\b`,
   String.raw`\b(?:needs?|requires?|blocked\s+(?:on|by|pending))\s+${WHO}\s+${DECISION}\b`,
   String.raw`\bdirector(?:['’]s)?\s+${DECISION}\s+(?:is\s+)?(?:needed|required|pending)\b`,
+  // the coordinator cannot open a gate while a worker Dispatch is live and parks the question as the detail's
+  // first words: "DECISION NEEDED (director): …" (pilot 15 S17, pilot 16 S19)
+  String.raw`^\s*decision\s+(?:needed|required)\b`,
 ].join('|'), 'gi');
 const NEGATED = /\b(?:no|not|none|nothing|without|never|neither|nor|was|were|previously|formerly|had\s+been)\s+(?:\w+\s+)?$|n['’]t\s+(?:\w+\s+)?$/i; // at most one word between: "no gate opened pending…" still waits
 // a negation after the phrase cancels it too: "pending director review is not required", "… not needed"
