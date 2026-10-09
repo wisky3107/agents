@@ -1060,3 +1060,32 @@ test('director_pending: a HANDOFF detail that starts with "DECISION NEEDED (dire
   assert.equal(run(p.root, f, 'start', '--once').out.some((o) => o.blocked || o.waiting), false); // once per distinct detail
   assert.equal(f.sends().length, 1);
 });
+
+const ERR429 = ['• Working on the slice', '', '  ⎿  API Error: 429 rate limit exceeded for claude-sonnet-5-5 (reset after 20m)', '', '› '];
+const errScreen = (lines) => ({ term_1: { at: 'a', frames: { a: { lines } } } });
+
+test('provider blip: a coordinator turn ending on API Error 429/401/503 is waited on with back-off and resent once — no fleet_stall, each retry logged', () => {
+  const p = fleet();
+  const f = fakes();
+  f.queue([start(errScreen(ERR429), 'implementing'), { name: 'idle 1', result: 'idle' }, { name: 'idle 2', result: 'idle' }, { name: 'idle 3', result: 'idle' }, { name: 'idle 4', result: 'idle' }, { name: 'idle 5', result: 'idle' }]);
+  const out = run(p.root, f, 'start', '--once').out;
+  assert.equal(out.some((o) => o.waiting || o.blocked), false); // never asked
+  assert.equal(f.sends().length, 1); // one resume nudge; the 20 m hint holds the next one back
+  assert.match(f.sends()[0].text, /^resume the cocos-orca-fleet Coordinator loop/);
+  assert.match(log(p.root), /ended its turn on a provider error \(.*429.*\)/);
+  assert.match(log(p.root), /retry 1 — resending stall, next look in 1230 s/);
+
+  // the same error past the bound is a question after all
+  const q = fleet();
+  const g = fakes();
+  g.queue([start(errScreen(['  ⎿  API Error: 503 Provider claude circuit breaker is open', '› ']), 'implementing'), { name: 'i1', result: 'idle' }, { name: 'i2', result: 'idle' }, { name: 'i3', result: 'idle' }, { name: 'i4', result: 'idle' }]);
+  const o2 = runner(q.root, g, 'start', '--once', { env: { PRODUCER_RUNNER_KEY_MS: '0', PRODUCER_RUNNER_BLIP_MAX_MS: '0' } }).out;
+  assert.equal(o2.at(-1).kind, 'fleet_stall');
+  assert.match(log(q.root), /still ends on a provider error/);
+
+  // a screen without the error: the old stall rules (one nudge, then ask)
+  const r = fleet();
+  const h = fakes();
+  h.queue([start(errScreen(['• fine', '› ']), 'implementing'), { name: 'i1', result: 'idle' }, { name: 'i2', result: 'idle' }, { name: 'i3', result: 'idle' }, { name: 'i4', result: 'idle' }]);
+  assert.equal(run(r.root, h, 'start', '--once').out.at(-1).kind, 'fleet_stall');
+});

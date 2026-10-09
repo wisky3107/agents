@@ -1084,6 +1084,7 @@ function committing(ctx, s, w, h, held = false) {
       setPhase(root, ctx.id, 'merge', { commit_sha: c.sha, commit_found: true });
       return null;
     }
+    if (w.event === 'idle' && serviceBlip(ctx, s, ctx.lane === 'fleet' ? w.handle || s.coordinator : s.writer, commitText(ctx), 'commit')) return PAUSE;
     if (w.event === 'terminal-missing' || idles >= 3) {
       const found = commitsSince(ctx, s);
       // each send of the commit request is a new situation: a stall after "resend commit" is asked again
@@ -1178,6 +1179,7 @@ function fleetStep(ctx, s, phase) {
     st.writeSliceState(root, id, { gate_waits: waits });
     if (waits < GATE_PATIENCE) return PAUSE;
     const ids = w.pending_gates.map((g) => g.id).join(',');
+    if (serviceBlip(ctx, s, coordinator, `A provider error (429/401/503) ended your last turn. It is transient: resolve your pending gate ${ids} with the Director decision already sent, then continue the slice.`, 'gate')) return PAUSE;
     return ask(s, 'gate_unresolved', `gate ${ids} still pending after the decision was sent`, ['continue waiting', 'stop'], { obs: `gate_unresolved@${ids}:${s.gate_unresolved_waits || 0}` });
   }
   if (s.gate_waits || s.gate_settle) st.writeSliceState(root, id, { gate_waits: 0, gate_settle: false });
@@ -1251,6 +1253,7 @@ function fleetStep(ctx, s, phase) {
   if (parked) return parked;
   if (panel?.hold) return PAUSE; // a panel the director has in the terminal: only wait (no nudge, no stall question)
   if (w.event === 'idle') {
+    if (serviceBlip(ctx, s, coordinator, STALL_NUDGE, 'stall')) return PAUSE; // a provider error, not a stall: back off and resend
     // idle with any other status: stalled (S08 lost ~3 h) → one nudge, then the human
     if (!s.nudged_stall) {
       sendOnce(ctx, `stall:${coordinator}:${h.mtime || 0}`, COORDINATOR, STALL_NUDGE, { nudged_stall: true });
@@ -1503,6 +1506,63 @@ function holdPanel(ctx, s, count) {
   }
   st.writeSliceState(root, ctx.id, { cq_held: n, ...(count != null && s.cq_quiet !== count ? { cq_quiet: count } : {}) });
   return { hold: true };
+}
+
+// OmniRoute auth / rate-limit blips (pilots 15–17): a turn that ends on one of these errors leaves the agent idle at its
+// prompt, and a nudge sent inside the cool-down dies the same way. The runner backs off and resends by itself.
+const BLIP_ERROR = /API Error:?\s*(?:429|401|503)\b[^\n]*|No active credentials for provider|circuit breaker is open/i;
+const BLIP_MAX_MS = () => Number(process.env.PRODUCER_RUNNER_BLIP_MAX_MS || 25 * 60 * 1000); // give up (ask the director) after this long
+const BLIP_BASE_MS = () => Number(process.env.PRODUCER_RUNNER_BLIP_BASE_MS || 30 * 1000); // first back-off, doubled per retry up to 5 min
+
+/** The error the agent's last turn ended on (the screen's last non-blank lines), or null. */
+function blipOnScreen(handle) {
+  let screen = null;
+  try {
+    screen = io.readScreen(handle);
+  } catch {
+    return null;
+  }
+  const tail = (screen?.lines || []).map((l) => String(l).trim()).filter(Boolean).slice(-12);
+  for (let i = tail.length - 1; i >= 0; i--) {
+    const m = BLIP_ERROR.exec(tail[i]);
+    if (m) return oneLine(tail[i]).slice(0, 200);
+  }
+  return null;
+}
+
+/**
+ * The agent's screen ends on an OmniRoute 429 / 401 / 503 error → wait with back-off (a "reset after Nm" hint
+ * sets the first wait), then resend `text` (its last message, or a resume nudge); each retry is logged. true = the
+ * lane is being waited on, so no stall question; false = no error on screen, or it outlasted BLIP_MAX_MS: ask.
+ */
+function serviceBlip(ctx, s, handle, text, key) {
+  const { root } = ctx.project;
+  if (!handle) return false;
+  const err = blipOnScreen(handle);
+  if (!err) {
+    if (s.blip) {
+      st.writeSliceState(root, ctx.id, { blip: null });
+      st.log(root, ctx.id, `provider error cleared on ${handle} after ${s.blip.n || 0} retr${s.blip.n === 1 ? 'y' : 'ies'}`);
+    }
+    return false;
+  }
+  const now = Date.now();
+  const b = s.blip || { since: now, n: 0, next_at: now };
+  if (!s.blip) st.log(root, ctx.id, `${handle} ended its turn on a provider error (${err}): waiting with back-off, then resending (up to ${Math.round(BLIP_MAX_MS() / 60000)} min)`);
+  if (now - b.since >= BLIP_MAX_MS()) {
+    st.log(root, ctx.id, `${handle} still ends on a provider error after ${Math.round((now - b.since) / 60000)} min and ${b.n} retr${b.n === 1 ? 'y' : 'ies'}: asking the director`);
+    return false;
+  }
+  if (now < b.next_at) {
+    if (!s.blip) st.writeSliceState(root, ctx.id, { blip: b });
+    return true;
+  }
+  const n = b.n + 1;
+  const hint = /reset after\s+(\d+)\s*m/i.exec(err);
+  const wait = Math.min(hint ? Number(hint[1]) * 60000 + 30000 : BLIP_BASE_MS() * 2 ** (n - 1), hint ? BLIP_MAX_MS() : 5 * 60 * 1000);
+  st.log(root, ctx.id, `provider error on ${handle} (${err}): retry ${n} — resending ${key}, next look in ${Math.round(wait / 1000)} s`);
+  sendOnce(ctx, `blip:${key}:${n}`, handle, text, { blip: { since: b.since, n, next_at: now + wait } });
+  return true;
 }
 
 /** What goes to a TUI as typed text: one line, no control bytes (an escape sequence would be a key). */
