@@ -106,13 +106,25 @@ smoke-check edit the slice needs is pre-declared.
    (signature table).
 4. Memory: the plan pack exists under `T-Sxx/evidence/memory/plan/` when the mode is
    shadow/assist; note item count and tokens.
-5. Append `### Pilot N — <slice> (lane), từ <UTC>` to results.md (purpose, config: runner
+5. Register the pilot on the runner: `producer-runner.mjs pilot --set --n <N> --project <p>`.
+   From then on every way the director answers (runner terminal, macOS dialog, `answer` menu,
+   director console) offers **resolve by pilot agent**; see "Handed questions" below.
+6. Append `### Pilot N — <slice> (lane), từ <UTC>` to results.md (purpose, config: runner
    pid + terminal, coordinator, agents, judge/autopilot, memory mode and pack); commit
    only that file.
 
-Done when: the coordinator is working on the slice and the pilot entry is committed.
+Done when: the coordinator is working on the slice, the pilot is registered and the pilot
+entry is committed.
 
 ## 4. Watch
+
+At every authority level, arm the handoff watch with the Monitor tool (`timeout_ms` 1800000,
+description `pilot <N> handed questions`):
+`node ~/.agents/skills/game-producer/scripts/producer-runner.mjs pilot-wait --project <p>`.
+It prints one JSON line per question the director handed to the pilot and exits after 29 min
+with a `{"pilot_wait":"timeout"}` line: re-arm it at once on that line or the Monitor's expiry
+notice; the cron tick re-arms it when that was missed (at `ask` authority, schedule the cron for
+that alone). `pilot --clear` hands any still-handed question back to the director.
 
 Below `ask` authority, schedule the watch with CronCreate (off-minute, about every 30 min)
 from [watch-cron-prompt.md](reference/watch-cron-prompt.md), filled in for the slice and
@@ -126,6 +138,13 @@ never accept or "treat as approved/offer_commit" a review whose newest file does
 APPROVED; merge-step options only after their precondition holds; "check again" only when
 evidence files changed; never update an agent CLI mid-run; nothing outward (push, deploy,
 tag) without the user's request.
+
+**Handed questions.** A question the director handed ("resolve by pilot agent") is theirs
+delegated to you for that one question, whatever the authority level. Check the facts as for any
+question, read the director's note (`pilot_handoff.text`), then answer with
+`producer-runner.mjs answer --project <p> --id qN --choice "<exact option>" [--text "…"] --by pilot`.
+The answer rules above still hold; when no option is safe, leave it open and send a
+PushNotification with your recommendation. The director can still answer first; then do nothing.
 
 Done when: the slice is merged (`release.slices.Sxx: merged`) or the user stops the pilot.
 
@@ -150,10 +169,13 @@ is written down for the results entry and the memory note.
    `memory used` and record ids in `integration-notes.md`, `review*.md`, `final-report.md`;
    which pack items were cited; did a lesson visibly prevent a known failure.
 4. Append `### Pilot N — kết quả` using [results-template.md](reference/results-template.md);
-   commit only results.md; delete the cron; update the memory notes; tell the user in a few
+   commit only results.md; delete the cron and stop the `pilot-wait` monitor;
+   `producer-runner.mjs pilot --clear --project <p>` (when no other slice of this pilot follows);
+   update the memory notes; tell the user in a few
    lines what merged, the numbers, the findings and what is still open.
 
-Done when: results are committed, the cron is gone, and the user has the summary.
+Done when: results are committed, the cron and monitor are gone, the pilot is cleared, and the
+user has the summary.
 
 Shipping what the pilot merged (build, deploy, prod smoke, tag) happens only on the user's
 explicit request: [release.md](reference/release.md).

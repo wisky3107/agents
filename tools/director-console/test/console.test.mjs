@@ -11,7 +11,8 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SERVER = path.join(HERE, '..', 'server.mjs');
-const REAL_RUNNER_LIB = path.join(os.homedir(), '.agents/skills/game-producer/scripts/lib');
+// the runner lib of this checkout (a worktree tests its own change)
+const REAL_RUNNER_LIB = fileURLToPath(new URL('../../../skills/game-producer/scripts/lib', import.meta.url));
 const TOKEN = 'test-token-123';
 let root, home, repo, srv, port, logs;
 
@@ -140,6 +141,26 @@ test('runner question: everything the dialog shows, and a Vietnamese translation
   const stored = JSON.parse(fs.readFileSync(path.join(repo, '.cursor', 'producer-runner.json'), 'utf8')).questions.find((x) => x.id === 'q1');
   assert.equal(stored.lang.summary, 'Cổng: chọn một hướng');
   assert.equal((await call('GET', '/api/attention')).json.items.find((x) => x.kind === 'runner').body, 'Cổng: chọn một hướng');
+});
+
+test('runner question under a workflow pilot: one more row hands it to the pilot agent; a handed question shows it and loses the row', async () => {
+  const file = path.join(repo, '.cursor', 'producer-runner.json');
+  const before = fs.readFileSync(file, 'utf8');
+  try {
+    fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(before), pilot: { n: 18, since: '2026-10-09T12:00:00Z' } }));
+    let q = (await call('GET', '/api/pending')).json.questions[0];
+    assert.deepEqual(q.options.map((o) => [o.choice, o.pilot ?? false]).at(-1), ['resolve by pilot agent', true]);
+    assert.equal(q.options.at(-1).vi_label, 'Giao cho pilot agent (pilot 18) xử lý');
+    assert.equal(q.pilot_handoff, null);
+    const r = JSON.parse(fs.readFileSync(file, 'utf8'));
+    r.questions[0].pilot_handoff = { at: '2026-10-09T12:05:00Z', pilot: 18 };
+    fs.writeFileSync(file, JSON.stringify(r));
+    q = (await call('GET', '/api/pending')).json.questions[0];
+    assert.equal(q.pilot_handoff.at, '2026-10-09T12:05:00Z');
+    assert.ok(!q.options.some((o) => o.pilot), 'handed already: no second handoff row');
+  } finally {
+    fs.writeFileSync(file, before);
+  }
 });
 
 test('attention: one keyed row per thing that needs the director; a stopped runner is not "down"', async () => {

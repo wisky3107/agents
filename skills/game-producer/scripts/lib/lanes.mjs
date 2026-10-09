@@ -1390,7 +1390,7 @@ export function applyAnswer(ctx, q) {
       if (!q.answer.text) throw new Error('give the answer with --text');
       ack();
       // one line (a newline could submit early); a judge answer says so and names its contract line
-      const who = q.answer.by === 'judge' ? `Answer from the producer's judge (per the contract line "${oneLine(q.answer.quote)}")` : "Director's answer to your question";
+      const who = q.answer.by === 'judge' ? `Answer from the producer's judge (per the contract line "${oneLine(q.answer.quote)}")` : q.answer.by === 'pilot' ? "Answer to your question (the pilot agent, delegated by the director)" : "Director's answer to your question";
       return sendOnce(ctx, `answer:${q.id}`, laneHandle, `${who}: ${oneLine(q.answer.text)} — continue the slice; update HANDOFF.json when your status changes.`);
     }
     case 'gate_unresolved:continue waiting':
@@ -1426,7 +1426,7 @@ export function applyAnswer(ctx, q) {
       if (q.kind === 'fleet_gate') {
         const decision = oneLine(choice === 'answer with --text' ? q.answer.text : `${choice}${note}`);
         if (!decision) throw new Error('this gate needs --text with the decision');
-        const who = q.answer.by === 'judge' ? `Decision for gate ${q.ref} (producer judge, per the contract line "${oneLine(q.answer.quote)}")` : `Director decision for gate ${q.ref}`;
+        const who = q.answer.by === 'judge' ? `Decision for gate ${q.ref} (producer judge, per the contract line "${oneLine(q.answer.quote)}")` : q.answer.by === 'pilot' ? `Decision for gate ${q.ref} (the pilot agent, delegated by the director)` : `Director decision for gate ${q.ref}`;
         // the director saw the other pending gates in the question; a judge answer rests on one contract
         // line for one gate, so it is never carried over
         const also = q.also?.length && q.answer.by !== 'judge'

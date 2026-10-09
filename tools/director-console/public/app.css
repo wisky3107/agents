@@ -228,6 +228,7 @@ details > summary { cursor: pointer; font-weight: 600; }
 .opt-row:hover { background: var(--yellow); color: #111; border-color: #111; }
 .opt-row:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--hard); }
 .opt-row.danger:hover { background: var(--coral); }
+.opt-row.pilot { border-style: dashed; }
 .opt-num { flex: none; width: 26px; height: 26px; display: grid; place-items: center; border: 2px solid currentColor; border-radius: 6px; font: 700 12px/1 var(--font-mono); }
 .opt-txt { display: grid; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
 .opt-txt b { font-size: 14.5px; }

@@ -12,6 +12,9 @@
  *   producer-runner.mjs answer [--id <qN>] [--project <path>]   (in a terminal: a numbered menu)
  *   producer-runner.mjs launch [--project <path>]      (a visible Orca terminal running `start`)
  *   producer-runner.mjs handoff-reset [--project <path>] (forget the Step 0–1 / Step 3 LLM handoffs)
+ *   producer-runner.mjs pilot [--set --n <N> [--note "…"] | --clear] [--project <path>]  (a workflow pilot runs here)
+ *   producer-runner.mjs pilot-wait [--timeout-ms <ms>] [--project <path>]  (a JSON line per question handed to the pilot)
+ *   producer-runner.mjs answer --id <qN> --choice <option> --by pilot …  (the pilot agent's answer)
  *
  * One runner per project (.cursor/producer.lock; an LLM producer must not loop while it is held). Git is the truth
  * for merged slices; the AGENT_NOTES release: yaml is a cache the runner rewrites value by value.
@@ -28,7 +31,7 @@ import readline from 'node:readline';
 import { spawn, spawnSync } from 'node:child_process';
 import { loadProject, sliceStatuses, nextSlice, preflight, writeRelease, writePolicyDecision } from './lib/project.mjs';
 import * as st from './lib/state.mjs';
-import { submit, menu, parseReply, textNeed, answerProblem, openQuestions, givenChoice, isGivenChoice } from './lib/answer.mjs';
+import { submit, menu, parseReply, textNeed, answerProblem, openQuestions, givenChoice, isGivenChoice, extraChoices, PILOT_CHOICE } from './lib/answer.mjs';
 import { questionContext } from './lib/context.mjs';
 import { laneFor, runSlice, applyAnswer, cursorUndecided, cursorState, resetCursorProbe, agentOrAsk, cursorArtBlocked, CursorUndecided, CURSOR_FALLBACK, manualItems, reviewVerdict, MAX_FIX_ROUNDS } from './lib/lanes.mjs';
 import { currentBranch, appendLessons, lessonRows, readJournal } from './lib/merge.mjs';
@@ -44,6 +47,8 @@ const msEnv = (k, d) => Number(process.env[k]) || d;
 const WAIT_MS = msEnv('PRODUCER_RUNNER_WAIT_MS', 540000); // one orca-wait call (its own cap is 570000)
 const IDLE_MS = msEnv('PRODUCER_RUNNER_IDLE_MS', 60000); // pause before re-checking an idle lane
 const POLL_MS = msEnv('PRODUCER_RUNNER_POLL_MS', 5000); // answer polling
+const PILOT_POLL_MS = msEnv('PRODUCER_RUNNER_PILOT_POLL_MS', 2000); // pilot-wait polling
+const PILOT_WAIT_MS = 1740000; // pilot-wait's default life: under a Claude Code Monitor's 30-minute cap
 const TYPE_AHEAD_MS = 500; // a line that arrives this soon after a menu was typed before it
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 // the director types answers here: a real terminal, or PRODUCER_RUNNER_TTY=1 (tests pipe stdin)
@@ -56,6 +61,7 @@ function parseArgs(argv) {
     const a = rest[i];
     if (a === '--dry-run') v.dryRun = true;
     else if (a === '--once') v.once = true;
+    else if (a === '--set' || a === '--clear') v[a.slice(2)] = true;
     else if (a.startsWith('--')) {
       if (rest[i + 1] === undefined || rest[i + 1].startsWith('--')) throw new Error(`${a} needs a value`);
       v[a.slice(2)] = rest[++i];
@@ -463,7 +469,8 @@ function openDialog(root, q) {
  */
 function terminalPrompt(root, q) {
   if (!typing()) return () => {};
-  process.stderr.write(`\n${menu(q, questionContext(root, q))}\n> `);
+  const extras = extraChoices(root, q);
+  process.stderr.write(`\n${menu(q, questionContext(root, q), extras)}\n> `);
   const shown = Date.now();
   process.stdin.ref?.();
   const rl = readline.createInterface({ input: process.stdin, terminal: false });
@@ -471,7 +478,8 @@ function terminalPrompt(root, q) {
   const record = (choice, text) => {
     try {
       submit(root, q.id, choice, text, 'terminal');
-      process.stderr.write(`recorded ${q.id}: ${choice}${text ? ` — ${text}` : ''}\n`);
+      if (choice === PILOT_CHOICE) process.stderr.write(`handed ${q.id} to the pilot agent${text ? ` — ${text}` : ''}; a number typed here still answers it\n> `);
+      else process.stderr.write(`recorded ${q.id}: ${choice}${text ? ` — ${text}` : ''}\n`);
     } catch (err) {
       process.stderr.write(`${err.message}\n> `);
     }
@@ -484,7 +492,7 @@ function terminalPrompt(root, q) {
       if (!line.trim()) return process.stderr.write(`no note: "${choice}" not recorded\n> `);
       return record(choice, line.trim());
     }
-    const r = parseReply(q, line);
+    const r = parseReply(q, line, extras);
     if (r.error) return process.stderr.write(`${r.error}\n> `);
     if (!r.text && textNeed(q, r.choice) === 'required') {
       pending = r.choice;
@@ -508,12 +516,18 @@ async function waitForAnswer(root, q) {
   const close = terminalPrompt(root, q);
   // a number typed here takes effect at once, not at the next poll of the file
   const poll = typing() ? Math.min(POLL_MS, 250) : POLL_MS;
+  let handed = Boolean(q.pilot_handoff);
   try {
     for (;;) {
       const c = st.readControl(root);
       if (c?.cmd === 'stop' || c?.cmd === 'pause') return false;
       const now = st.readRunner(root).questions.find((x) => x.id === q.id);
       if (!now || now.answer) return true;
+      if (now.pilot_handoff && !handed) {
+        handed = true;
+        say({ handed_to_pilot: q.id, at: now.pilot_handoff.at, via: now.pilot_handoff.via || null });
+        if (q.slice) st.log(root, q.slice, `${q.id} handed to the pilot agent${now.pilot_handoff.text ? ` — ${now.pilot_handoff.text}` : ''}`);
+      }
       // a timer, not Atomics.wait: the terminal prompt's stdin events run in between
       await new Promise((r) => setTimeout(r, poll));
     }
@@ -547,9 +561,10 @@ async function answerMenu(root, id) {
         process.stderr.write(`type a number from 1 to ${open.length}\n`);
       }
     }
-    process.stderr.write(`${menu(q, questionContext(root, q))}\n`);
+    const extras = extraChoices(root, q);
+    process.stderr.write(`${menu(q, questionContext(root, q), extras)}\n`);
     for (;;) {
-      const r = parseReply(q, await ask('> '));
+      const r = parseReply(q, await ask('> '), extras);
       if (r.error) {
         process.stderr.write(`${r.error}\n`);
         continue;
@@ -566,6 +581,58 @@ async function answerMenu(root, id) {
     }
   } finally {
     rl.close();
+  }
+}
+
+/**
+ * `pilot`: the workflow-pilot skill registers its pilot at launch (`--set --n 18`) and clears it at
+ * close. While one is registered every way to answer offers "resolve by pilot agent" (lib/answer.mjs).
+ */
+function pilotCmd(root, v) {
+  if (v.set && v.clear) throw new Error('pilot takes --set or --clear, not both');
+  if (v.clear) {
+    // a question still handed goes back to the director: the dialog may open again, the row comes back
+    return st.editQuestions(root, (r) => {
+      const was = r.pilot || null;
+      const returned = [];
+      for (const q of r.questions.filter((x) => x.pilot_handoff && !x.answer)) {
+        delete q.pilot_handoff;
+        if (q.dialog_done === 'pilot') delete q.dialog_done;
+        returned.push(q.id);
+      }
+      r.pilot = null;
+      return { pilot: null, cleared: was, returned_to_director: returned };
+    });
+  }
+  if (v.set) {
+    if (!/^[1-9]\d*$/.test(String(v.n || ''))) throw new Error('pilot --set needs --n <pilot number>');
+    const pilot = { n: Number(v.n), since: st.now(), ...(v.note ? { note: v.note } : {}) };
+    st.writeRunner(root, { pilot });
+    return { pilot };
+  }
+  const r = st.readRunner(root);
+  return { pilot: r.pilot || null, handed: r.questions.filter((q) => q.pilot_handoff && !q.answer).map((q) => q.id) };
+}
+
+/**
+ * `pilot-wait`: the pilot agent's wake-up (a Claude Code Monitor runs it). One JSON line per question
+ * handed to the pilot and not answered yet — those waiting at start too, so a re-armed watch sees them
+ * again — then it polls the runner file (no model) until --timeout-ms.
+ */
+async function pilotWait(root, timeoutMs) {
+  const told = new Set();
+  const end = Date.now() + timeoutMs;
+  for (;;) {
+    for (const q of st.readRunner(root).questions.filter((x) => x.pilot_handoff && !x.answer && !told.has(x.id))) {
+      told.add(q.id);
+      say({
+        handed: q.id, kind: q.kind, slice: q.slice, at: q.pilot_handoff.at, note: q.pilot_handoff.text || null,
+        text: String(q.text).replace(/\s+/g, ' ').slice(0, 400), options: q.options,
+        answer: `producer-runner.mjs answer --project ${root} --id ${q.id} --choice "<option>" --by pilot`,
+      });
+    }
+    if (Date.now() >= end) return say({ pilot_wait: 'timeout', next: 're-arm pilot-wait now' });
+    await new Promise((r) => setTimeout(r, PILOT_POLL_MS));
   }
 }
 
@@ -757,14 +824,17 @@ async function main() {
     return say({ launched: handle, command: `producer-runner.mjs start --project ${root}` });
   }
   if (cmd === 'answer') {
+    if (v.by && !['human', 'pilot'].includes(v.by)) throw new Error('--by is human or pilot');
     if (v.choice) {
       if (!v.id) throw new Error('answer needs --id with --choice');
-      return say(submit(root, v.id, v.choice, v.text || ''));
+      return say(submit(root, v.id, v.choice, v.text || '', null, v.by || 'human'));
     }
     if (!typing()) throw new Error('answer needs --id and --choice (or run it in a terminal for a numbered menu)');
     return say(await answerMenu(root, v.id));
   }
-  throw new Error('usage: producer-runner.mjs start|resume|status|pause|stop|stop-after <Sxx>|clear|sign-off|answer|launch|handoff-reset [--project <path>]');
+  if (cmd === 'pilot') return say(pilotCmd(root, v));
+  if (cmd === 'pilot-wait') return pilotWait(root, Number(v['timeout-ms']) || PILOT_WAIT_MS);
+  throw new Error('usage: producer-runner.mjs start|resume|status|pause|stop|stop-after <Sxx>|clear|sign-off|answer|launch|handoff-reset|pilot|pilot-wait [--project <path>]');
 }
 
 main().catch((err) => {

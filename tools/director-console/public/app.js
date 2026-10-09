@@ -618,12 +618,14 @@
       if (o.note === 'required' && !note.value.trim()) { toast('Lựa chọn này cần ghi chú.', true); note.focus(); return; }
       const label = o.vi_label ? `${i + 1}. ${o.vi_label}` : `${i + 1}. ${o.choice}`;
       act('runner.answer', { project: q.project, id: q.id, choice: o.choice, text: note.value }, {
-        title: `Trả lời ${q.project} ${q.id}`, ok: 'Gửi cho runner', danger: /^stop/i.test(o.choice),
-        body: `Lựa chọn: ${label}\nRunner nhận nguyên văn: "${o.choice}"${note.value.trim() ? `\nGhi chú: ${note.value.trim()}` : ''}`,
+        title: o.pilot ? `Giao ${q.project} ${q.id} cho pilot agent` : `Trả lời ${q.project} ${q.id}`, ok: o.pilot ? 'Giao cho pilot' : 'Gửi cho runner', danger: /^stop/i.test(o.choice),
+        body: o.pilot
+          ? `Lựa chọn: ${label}\nCâu hỏi vẫn mở; pilot agent được đánh thức và trả lời thay bạn. Bạn vẫn có thể tự trả lời trước.${note.value.trim() ? `\nGhi chú cho pilot: ${note.value.trim()}` : ''}`
+          : `Lựa chọn: ${label}\nRunner nhận nguyên văn: "${o.choice}"${note.value.trim() ? `\nGhi chú: ${note.value.trim()}` : ''}`,
       }).then((r) => { if (r?.ok) delete ui.notes[noteKey]; });
     };
     const opts = h('div', { class: 'opt-list' }, q.options.map((o, i) => h('button', {
-      class: `opt-row ${/^stop/i.test(o.choice) ? 'danger' : ''}`, type: 'button', onclick: () => answer(o, i), title: `Runner nhận: ${o.choice}`,
+      class: `opt-row ${/^stop/i.test(o.choice) ? 'danger' : ''} ${o.pilot ? 'pilot' : ''}`, type: 'button', onclick: () => answer(o, i), title: o.pilot ? 'Giao câu hỏi cho pilot agent' : `Runner nhận: ${o.choice}`,
     },
     h('span', { class: 'opt-num' }, i + 1),
     h('span', { class: 'opt-txt' },
@@ -655,7 +657,8 @@
 
     return h('div', { class: 'quest q-runner' },
       h('div', { class: 'quest-h' }, qtag('alert', 'Runner hỏi'), chip(q.project, 'outline'), q.slice ? chip(q.slice, 'accent') : null,
-        chip(KIND_VI[q.kind] ? `${KIND_VI[q.kind]} · ${q.kind}` : q.kind, 'warn'), h('span', { class: 'grow' }),
+        chip(KIND_VI[q.kind] ? `${KIND_VI[q.kind]} · ${q.kind}` : q.kind, 'warn'),
+        q.pilot_handoff ? chip(`đã giao pilot agent · ${ago(q.pilot_handoff.at)}`, 'accent', 'clock') : null, h('span', { class: 'grow' }),
         h('span', { class: 'small muted' }, `${q.id} · ${when(q.asked_at)} · ${ago(q.asked_at)}`)),
       q.context?.length ? h('div', { class: 'q-context' }, q.context.map((l) => h('div', {}, l))) : null,
       section(vi ? 'Câu hỏi' : 'Câu hỏi (nguyên văn tiếng Anh)', trState, h('div', { class: 'quest-body' }, vi?.summary ?? q.text)),

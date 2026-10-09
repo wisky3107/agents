@@ -202,12 +202,19 @@ function viTranslation(root, q) {
   return { vi: null, state: 'translating' };
 }
 
+const pilotN = (root) => safe(() => runnerAnswer.pilotOf?.(root)?.n) ?? null;
+
 /** An open runner question with all the runner's dialog shows, plus its Vietnamese translation. */
 function questionView(p, q) {
   const tr = viTranslation(p.path, q);
   return {
     project: p.id, id: q.id, kind: q.kind, slice: q.slice ?? null, asked_at: q.asked_at, text: q.text, detail: q.detail ?? null,
-    options: (q.options ?? []).map((o, i) => ({ choice: o, note: runnerAnswer.textNeed(q, o), vi_label: tr.vi?.labels?.[i] ?? null, vi_text: tr.vi?.options?.[i] ?? null })),
+    options: [
+      ...(q.options ?? []).map((o, i) => ({ choice: o, note: runnerAnswer.textNeed(q, o), vi_label: tr.vi?.labels?.[i] ?? null, vi_text: tr.vi?.options?.[i] ?? null })),
+      // a workflow pilot runs here: hand the question to the pilot agent (it stays open until answered)
+      ...(runnerAnswer.extraChoices?.(p.path, q) ?? []).map((o) => ({ choice: o, note: runnerAnswer.textNeed(q, o), pilot: true, vi_label: `Giao cho pilot agent${pilotN(p.path) ? ` (pilot ${pilotN(p.path)})` : ''} xử lý`, vi_text: 'Câu hỏi vẫn mở; pilot agent trả lời thay bạn' })),
+    ],
+    pilot_handoff: q.pilot_handoff ?? null,
     judge: q.judge ? { at: q.judge.at ?? null, defer: q.judge.defer ?? null, choice: q.judge.choice ?? null, reason: q.judge.reason ?? null } : null,
     context: safe(() => runnerContext.questionContext(p.path, q)) ?? [],
     ref: q.ref ?? null, obs: q.obs ?? null, key: q.key ?? null, also: q.also ?? [], notified: q.notified ?? null,

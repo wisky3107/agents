@@ -13,13 +13,14 @@ Authority. On <date> the director said "<exact words>". That allows <auto-answer
 - Coordinator: <handle>.
 
 Each run:
+0. Handoff watch. If no `pilot <N> handed questions` Monitor is running, arm one (timeout_ms 1800000) with `node ~/.agents/skills/game-producer/scripts/producer-runner.mjs pilot-wait --project <project>`. Each line it prints is a question the director handed to me ("resolve by pilot agent"): answer it as in step 2 with `--by pilot`, whatever the authority above, using the director's note in it. On its `pilot_wait: timeout` line or the Monitor's expiry, re-arm it at once.
 1. Status. Run `node ~/.agents/skills/game-producer/scripts/producer-runner.mjs status --project <project>`.
    - Summarize it with node, never by dumping the JSON: lock alive, control, slice, step, unanswered questions.
    - Also check AGENT_NOTES release.slices.<Sxx>, the tail of .cursor/evidence/tasks/T-<Sxx>/producer-log.md, and HANDOFF.json in the worktree (`git worktree list`).
    - If the HANDOFF says offer_commit or committed but producer-log has been silent for 15+ minutes, check that the runner sees the worktree.
 2. Questions. For an unanswered question, check the facts first: HANDOFF.json, the newest review file (it can be review-rN.md), git, and `orca terminal read` of the coordinator.
    - Match the symptom against ~/.agents/skills/workflow-pilot/reference/failure-signatures.md.
-   - Answer with `producer-runner.mjs answer --project <project> --id qN --choice "<exact option>" [--text "..."]`. Choose the option that keeps <Sxx> going with its evidence intact.
+   - Answer with `producer-runner.mjs answer --project <project> --id qN --choice "<exact option>" [--text "..."] --by pilot`. Choose the option that keeps <Sxx> going with its evidence intact.
    - Decide from slices/<slice file>, its mock and EXPECT rows, and decisions <Sxx-D1..Dn, one line each>.
    - <delegated only: When a gate needs a contract change the slice did not foresee, decide it as the delegated director. Prefer the option that keeps every acceptance row measurable, and record the decision.>
    - Never choose stop, mark blocked or skip.
@@ -37,7 +38,7 @@ Each run:
    - Read stats.json, producer-log.md and the questions.
    - Run the memory-trial greps.
    - Append "Pilot <N> — kết quả" to results.md and commit only that file, without pushing.
-   - Delete this cron.
+   - Delete this cron, stop the pilot-wait Monitor, and run `producer-runner.mjs pilot --clear --project <project>`.
    - Tell the director in a few Vietnamese lines.
 Only report when something changed: a question answered, a phase change, a merge, or a problem. Otherwise end quietly.
 ```

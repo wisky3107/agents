@@ -11,6 +11,8 @@
  * every option are shown translated, each option in full in the prompt and as a short numbered row in
  * the list (list rows cut long text); the pick maps back to the exact English option. The last row
  * opens the whole question (translation and English) in a text editor, then the list comes back.
+ * While a workflow pilot runs on the project, a row before it hands the question to the pilot agent
+ * (lib/answer.mjs PILOT_CHOICE): the question stays open and this dialog does not come back for it.
  *
  *   answer-dialog.mjs --project <path> --id <qN>
  *
@@ -21,7 +23,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import * as st from './lib/state.mjs';
-import { submit, textNeed } from './lib/answer.mjs';
+import { submit, textNeed, extraChoices, pilotOf, PILOT_CHOICE } from './lib/answer.mjs';
 import { questionContext } from './lib/context.mjs';
 import { loadProject } from './lib/project.mjs';
 import { translated, questionKey } from './lib/translate.mjs';
@@ -123,12 +125,19 @@ const FULL = tr ? 'Xem toàn văn (tiếng Việt + tiếng Anh)' : 'Show the wh
 const ui = tr
   ? { ok: 'Trả lời', later: 'Để sau', send: 'Gửi', cancel: 'Huỷ', skip: 'Bỏ qua' }
   : { ok: 'Answer', later: 'Later', send: 'Send', cancel: 'Cancel', skip: 'Skip' };
+const extras = extraChoices(root, q);
+const pilotN = pilotOf(root)?.n;
+const pilotRow = (lang) => (lang ? `Giao cho pilot agent${pilotN ? ` (pilot ${pilotN})` : ''} xử lý` : `Resolve by pilot agent${pilotN ? ` (pilot ${pilotN})` : ''}`);
 let prompt;
 let rows;
 if (tr) {
   // numbers, not letters: options often start with their own "A:", "B:"
   rows = tr.labels.map((l, i) => cut(`${i + 1}. ${l}`, LABEL_CHARS));
   const full = tr.options.map((o, i) => `${i + 1}. ${o}`);
+  if (extras.length) {
+    rows.push(`${rows.length + 1}. ${pilotRow(true)}`);
+    full.push(`${full.length + 1}. ${pilotRow(true)} — câu hỏi vẫn mở, pilot agent trả lời thay bạn`);
+  }
   const long = full.join('\n').length > PROMPT_CHARS_LANG - 1000;
   const opts = `\n\nCác lựa chọn:\n${(long ? full.map((o) => cut(o, OPTION_CHARS)) : full).join('\n')}`;
   const why = tr.why ? `\n\nVì sao judge để bạn quyết: ${tr.why}` : '';
@@ -136,7 +145,7 @@ if (tr) {
   const summary = tr.summary.length > room ? `${tr.summary.slice(0, Math.max(200, room))}… (xem toàn văn ở dòng cuối danh sách)` : tr.summary;
   prompt = `${head}${summary}${why}${opts}`;
 } else {
-  rows = [...q.options];
+  rows = [...q.options, ...(extras.length ? [pilotRow(false)] : [])];
   // where the run stands first, then the whole question, then why the judge left it to the director
   const shown = body.length > PROMPT_CHARS ? `${body.slice(0, PROMPT_CHARS)}… (the whole question: the last row, the runner terminal, or \`answer\` in a terminal)` : body;
   prompt = `${head}${shown}${whyEn ? `\n\n${whyEn}` : ''}`;
@@ -176,14 +185,16 @@ if (picked.code === 0 && picked.out === CANCEL && open()) st.setQuestion(root, i
 const at = rows.indexOf(picked.out);
 if (picked.code === 0 && picked.out !== CANCEL && at < 0) process.stderr.write(`answer-dialog: the pick "${picked.out}" matches no row; nothing recorded\n`);
 if (picked.code !== 0 || picked.out === CANCEL || at < 0 || !open()) process.exit(0);
-const choice = q.options[at];
+const choice = at < q.options.length ? q.options[at] : PILOT_CHOICE;
+const toPilot = choice === PILOT_CHOICE;
 let text = '';
 const need = textNeed(q, choice);
 if (need) {
-  const label = tr ? rows[at] : choice;
+  const label = tr || toPilot ? rows[at] : choice;
+  const where = toPilot ? (tr ? 'gửi cho pilot agent' : 'passed to the pilot agent') : q.kind === 'director_gate' ? (tr ? 'ghi nguyên văn lên policy line' : 'written on the policy line') : tr ? 'gửi nguyên văn kèm quyết định' : 'sent with the decision';
   const ask = tr
-    ? `Ghi chú cho "${label}" (${need === 'required' ? 'bắt buộc' : 'không bắt buộc, để trống nếu không có'}; ${q.kind === 'director_gate' ? 'ghi nguyên văn lên policy line' : 'gửi nguyên văn kèm quyết định'}):`
-    : `Note for "${label}" (${need === 'required' ? 'required' : 'optional'}, ${q.kind === 'director_gate' ? 'written on the policy line' : 'sent with the decision'} word for word${need === 'required' ? '' : '; leave empty for none'}):`;
+    ? `Ghi chú cho "${label}" (${need === 'required' ? 'bắt buộc' : 'không bắt buộc, để trống nếu không có'}; ${where}):`
+    : `Note for "${label}" (${need === 'required' ? 'required' : 'optional'}, ${where} word for word${need === 'required' ? '' : '; leave empty for none'}):`;
   const note = await osa(NOTE, [title, ask, need === 'required' ? ui.cancel : ui.skip, ui.send]);
   if (note.code === 0) text = note.out.trim();
   else if (need === 'required') process.exit(0); // cancelled: no answer
