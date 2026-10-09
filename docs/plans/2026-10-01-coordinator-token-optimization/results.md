@@ -1582,3 +1582,12 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Memory (assist, 1784 tk / 5 items): reviewer/integrator cite `cc-monopoly-go/T-S07/lesson-L5` (đi thẳng Chrome channel thay vì đợi tab Orca frozen) — hữu ích; còn lại none.
 - Kit slice-check: 4 feature, 0 kept. S03 bắt đầu 18:22Z (fleet, coordinator term_d61edbda), pack 1931 tk / 5 items, đã mark assist.
 - 19:32Z (S03) q4 handed (auto): lane_blocked từ HANDOFF integrator `status: blocked` "S03-04 realPicture false (19/15 colours < 24) → F-I3 writer fix". Coordinator đã tự route F-I3 (khung ảnh sau khi F-I2 dời driver tới x=8.5, giữ ngưỡng 24 màu). Pilot trả lời "answered in the lane, continue". **F4 (noise):** integrator dùng `blocked` cho một hand-off thường lệ → runner hỏi; judge không nhận ra coordinator đã route. Ứng viên: integrator hand-off nên là `ready_for_fix`/`changes_needed`, không phải `blocked`, hoặc judge đọc màn hình coordinator.
+
+### Pilot 18 — S03 kết quả (S03 merge 2026-10-09 20:24Z, fleet)
+- Merged f226fe2 (merge 47675b0, bookkeeping 2883872). e2e 18:21 → 20:27Z ≈ 2 h 06. fix_rounds 2, review_rounds 2 (review-r2/r3 bị thay trước khi chạy vì integrator tìm thêm lỗi). Smoke 31/31 V1/V3/V4, V2 30/31 (S01-02 giới hạn 4:3 có sẵn, reviewer xếp minor). Budget 29 files / 1688 dòng (slice 31 / 1850). manual_deferred 4.
+- Câu hỏi: q4 (F4 noise) — pilot trả lời. 0 trả lại director.
+- F3 lặp lại ở integrate trên terminal reuse, nhưng coordinator tự gửi Enter theo rule mới ("known protocol floor") → rule e71f3cb có tác dụng; không mất thời gian.
+- Incidents khác: agy art-concept readiness timeout → retry ok (lần 2 trong pilot, S02 cũng vậy); coordinator tạo probe task art-manifest thừa khi chẩn đoán lỗi task-create.
+- Tokens: fleet-orch 18.5M (95 turns), fleet-worker 7 sess 144.3M (480 turns — gấp 3 S02 do 2 fix rounds), slice-agent 1.2M.
+- Memory (assist 1931 tk / 5 items): writer/integrator/reviewer cite `cc-monopoly-go/T-S06/lesson-L4` (smoke assert lớp player-visible: font render + số dòng) 4 lần — áp dụng thật; `cc-lego-stack/T-S11/emulate-viewport…` considered, not used; 7 × none.
+- Kit slice-check: 6 feature, 0 kept. S04 bắt đầu 20:27Z (fleet, coordinator term_20a3bb7c), pack 1956 tk / 7 items, đã mark assist.
