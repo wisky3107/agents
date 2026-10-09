@@ -1358,3 +1358,12 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Tokens: fleet-orch 18.1M, workers claude 59.8M + codex 2.5M, slice-agent 1.1M → ~82M.
 - Delegated decisions: q44 (23:08Z) approve 1+2+3 — move only `Button - Facts` (old rect overlapped the new M1 hitbox by 5 775 px²) with a disjoint-set unit test incl. Facts/Home/PLAY/title/star chip/station/12 nodes; minimal edits to S01-06/S02-01/S04-01/S12-01 to step past the 3 s drive, EXPECT unchanged; drive hangs off GO! only. q45 (23:29Z) one narrow art round 3 for city_map_bg + drive_road_strip, H-40 street geometry kept (option "move street y in code" rejected) → r3 PASS.
 - Findings: fifth brief geometry miss (kept rect vs new node hitbox); fourth "new phase breaks old smoke solvers" (drive). Art-2d 2-round cap hit on a guide-dependent map background — a guide image as reference from round 1 would have avoided it.
+
+### Pilot 12 — S21 kết quả (S21 merge 2026-10-09 01:00Z, fleet)
+
+1. **Merge:** `ff5023d`, bookkeeping `05abb9d`. Thời gian 23:54 → 01:02Z = 1 h 08. 0 câu hỏi.
+2. **Review:** 2 vòng, 1 fix round. r1 fail check `s21-emitters` (`fxLayerEmpty`), fix xong thì r2 APPROVED. Worktree tự xoá. Verify trên main pass.
+   - manual_deferred (4): fps ≥ 55 trong 3 phút chơi Day 6 trên máy thật (đã đo 30 s trên Chrome headless có GPU); …
+3. **Token:** fleet-orch 1 / 73 / 13.1M; fleet-worker 6 / 250 / 37.5M + codex 0.7M; verifier 0.8M. Tổng khoảng 52M.
+4. **Memory:** writer đọc pack qua đường dẫn tuyệt đối trên main (F14 không xảy ra ở slice này). Nó tìm thấy `cc-firefighter-kids/T-S10/t-s10-particle2d-total-cap-needs-headroom` (`totalParticles` chỉ chặn hạt mới, không diệt hạt đang sống) và đối chiếu với engine, nhưng ghi "memory used: none". Lesson được dùng mà không được tính. Cùng mẫu với S11: ghi nhận memory chưa đúng.
+5. **Tiếp theo:** S22 pump-and-fuel-lines (fleet) từ 01:02Z.
