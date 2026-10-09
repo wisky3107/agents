@@ -1335,3 +1335,19 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Tokens: fleet-orch 15.2M, workers claude 72.5M + codex 2.0M, slice-agent 1.1M → ~91M.
 - Question q43 answered by the **judge** (first judge answer since delegation): review r1 F1 — S01-06 and S03-03 solvers now enter the S15 room on M3/M6/M9/M12 (D-10) and never reach result → allow editing exactly those two checks to finish the room, EXPECT values unchanged; F2 to FOLLOWUPS. Consistent with the watch rules (no acceptance row relaxed).
 - Finding: a slice that inserts a phase into the core loop breaks older smoke solvers outside its paths every time (S09/S12/S13/S15). The brief author should list the older checks a new phase touches in the slice paths (pre-check "existing checks" in workflow-pilot step 2 — not applied at authoring time).
+
+### Pilot 12 — S20 kết quả (S20 merge 2026-10-08 23:52Z, fleet)
+
+1. **Merge:** `acfc1ae`, bookkeeping `0c6c945`. Thời gian 21:56 → 23:54Z = 1 h 58.
+2. **Câu hỏi: 3 gate, tôi quyết cả 3 theo quyền delegated.**
+   - q31 → S20-D5: key `step.spray` đã thuộc job sơn, nên câu xà bông dùng key và stem mới `step_spray_soap`.
+   - q32 → S20-D6: 6 spec/check cũ hỏng theo thiết kế, chỉ sửa số đếm, thứ tự và stem.
+   - q33 → S20-D7: `s17-voice-line.check` đỏ do chính quyết định S20-D5.
+   - Judge defer cả 3 vì là quyết định về scope.
+3. **Finding F16:** một quyết định đổi key ở gate kéo theo thêm một gate sau review, vì danh sách D6 bỏ sót file dùng key cũ.
+   - Đề xuất cho fleet worker-prompts: khi gate đổi key, stem hoặc step id, coordinator phải grep toàn bộ spec và check có dùng key cũ rồi gom vào một gate. Scan cũng nên grep `StepId` / `Strings` key mà slice đụng tới.
+   - Tương tự ở các slice polish: S17 q30, S20 q32, S20 q33 đều là "file chưa khai báo trước nhưng sẽ hỏng".
+4. **Review:** 2 vòng, 1 fix round. Worktree tự xoá (14 ảnh). Verify trên main pass. manual_deferred (3): nghe 2 clip xà bông; cảm giác khay 4 ô và kéo ống trên máy thật; …
+5. **Token:** fleet-orch 1 / 86 / 16.9M; fleet-worker 8 / 362 / 75.1M + codex 1.0M; verifier 0.9M. Tổng khoảng 95M.
+6. **Memory:** trích `T-S03/t-s03-bare-finger-step-and-step-mode` (bọt biển trong bước xịt là wrong tool) và `T-S15/s15-per-step-tray-tools` (`StepDef.tools` override khay theo từng bước). Lesson của S15 được dùng ngay ở S20.
+7. **Tiếp theo:** S21 spray-particles (fleet, Run `run_e9befbc49c9d`). Art PASS, đang implement.
