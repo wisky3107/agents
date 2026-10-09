@@ -1412,3 +1412,20 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 4. **Token:** fleet-orch 1 / 78 / 14.2M; fleet-worker 4 / 238 / 48.3M + codex 0.6M; verifier 0.8M. Tổng khoảng 64M.
 5. **Memory:** cả 3 role ghi "none". Pack có lesson liên quan (`T-S14 localToParent / poseNode`, `T-S02 editor-authored-ui-bulk`) và có đọc, nhưng các role ghi là "không acted on".
 6. **Tiếp theo:** S18 v11-release-pass (M, single lane, slice cuối của chuỗi). Writer spawn 04:09Z.
+
+### Pilot 12 — S18 kết quả (S18 merge 2026-10-09 04:51Z, single lane) + polish round 2 contracts
+
+1. **Merge:** slice `affb02a` trên main, bookkeeping `c32f994`. Thời gian 04:09 → 04:51Z = 42 phút. 0 câu hỏi.
+2. **Nội dung:**
+   - Version 1.1. Hai check mới: `s18-no-third-party` và `s18-v11-regression`.
+   - 98/98 pass ×3 trên release build được serve; 60 fps; 0 request ra bên thứ ba.
+   - Copy sheet `docs/copy-review-v1.1.md`. Chạy lại các mục RC.
+   - **S18-D3:** bỏ track và gitignore `assets/.meta`, xoá `Modules.meta`. Kết thúc chuyện các worktree bị giữ lại vì "dirty" (F11).
+3. **Review:** 2 vòng (reviewer r1, rồi reviewer mới), APPROVED. manual_deferred (4): chạy lại shader trên Safari; audio unlock, fps và safe area trên máy thật (#13); nghe clip; …
+4. **Token:** slice-agent 3 sess / 139 turns / 21.2M.
+5. **Polish round 2** (director 04:25Z, GP-20..GP-25):
+   - Brief opus high trong worktree Orca `v13-contracts` (04:30 → 04:58Z) → S24 car-hood-and-bay, S25 tyre-lift, S26 step-ui-handoff, S27 ui-align-pass (đều L), S28 v11-final-pass (M).
+   - Validator ok (28 slice). Đã xem 6 mock. 20 quyết định ghi GIVEN theo quyền delegated.
+   - Merge sau khi S18 xong: `592f728`. Có conflict ở FOLLOWUPS: cả S18 và brief cùng thêm dòng #18; tôi đổi dòng của brief thành #21 và sửa các chỗ tham chiếu.
+   - Policy và slices `992d57f`. Runner relaunch lúc 05:00Z, đang chạy S24 (fleet).
+   - Bằng chứng cho brief: 9 ảnh chụp hiện trạng (capô xe bán tải xoay lệch ra ngoài; bubble S23 đè pegboard và nút sổ tay; trạm lốp minibus có khi nền đen).
