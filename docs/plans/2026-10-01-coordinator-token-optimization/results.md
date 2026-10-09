@@ -1542,3 +1542,12 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
    - **Nghi retrieval miss:** `cc-firefighter-kids/T-S18/s18-overlap-probe-settled-vs-transient` (probe phân biệt transient với settled) không có trong pack planner lẫn reviewer, trong khi F7 đúng là loại lỗi đó. Bằng chứng: `.c‍ursor/evidence/tasks/T-S27/evidence/memory/{plan,review}/memory-context.md`.
    - Harvest được 3 record `T-S27`: fade completion phải kiểm tra bay hiện tại (bay đen); pulse phần con chứ không pulse slot; resave scene sẽ serialize lại cả file.
 6. **Tiếp theo:** S28 v11-final-pass (M, single lane), runner pid 31219. Pilot 12 được bàn giao sang session mới theo handover.md "Old session", không `pilot --clear`.
+
+### Pilot 18 — S01 kết quả (S01 merge 2026-10-09 15:29Z, fleet)
+- Merged 3b447be (merge c6d0744, bookkeeping c880a89). e2e 12:08 → 15:32Z ≈ 3 h 24 (gồm restart runner để nạp code pilot --auto). fix_rounds 2, review_rounds 3, smoke 15/15, budget 56 files / 4283 dòng (limit 4700), Tripo 0 credit (mesh = Blender block-out). manual_deferred 4. Verifier opus sau merge: done.
+- Câu hỏi: q1 engine.json (người khác trả lời "cho phép"), q2 kit race (pilot, delegated → F2 ui-popup 1.0.2), q3 crowd-sway tween stall (judge tự trả lời, fix round 3). 0 câu trả lại director.
+- Tokens: fleet-orch 1 sess 26.7M ctx (129 turns, ~69 % replaceable theo heuristic), fleet-worker 19 sess 159.7M, producer 263.5k, slice-agent 1.2M.
+- Memory (assist, plan pack 1766 tk): writer/integrator cite `cc-car-service-kids/T-S12/t-s12-popup-reset-tweens-on-show-and-hide`; các role khác `memory used: none`. Harvest: archived + refresh (602 records), 7 lessons rows.
+- Kit slice-check: `FeelSystem.ts` kit-possible (1 game).
+- Mở cho director: mục tiêu 3,000 điểm chỉ đạt khi chạy gần hoàn hảo (bot 2,502–3,327) — quyết định tuning, chưa có trong FOLLOWUPS.
+- S02 bắt đầu 15:32Z (fleet, coordinator term_4d486be0), plan pack 1784 tk / 5 items, đã mark assist.
