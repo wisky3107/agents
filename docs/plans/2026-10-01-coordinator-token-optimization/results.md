@@ -1403,3 +1403,12 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Purpose: general workflow on a polish slice after v1.1.0 shipped; checks whether the pilot-15 lessons fed into authoring (sibling order, pre-declared old checks, no deploy in slice) prevent the recurring gates.
 - Contracts 98cd08c (GP-19..23, GP-17 superseded; opus high author 17 min; D-16..D-20 GIVEN "duệt"); budget L 2550 lines / 63 files (largest slice so far, kept whole).
 - Authority: delegated. Runner pid 95179, coordinator term_82faa5bf (sonnet), writer opus high, reviewer sonnet high, Chrome headless review. Smoke baseline main 56/56 (390×844).
+
+### Pilot 12 — S23 kết quả (S23 merge 2026-10-09 04:07Z, fleet, polish cuối)
+
+1. **Merge:** `43a5440` (slice `123c790`). Thời gian 02:47 → 04:09Z = 1 h 22.
+2. **Câu hỏi:** q35 (3 khoảng trống: `gc.moodBubble` thay vì `gc.bubble` vì trùng tên với bubble mascot S17; mắt và miệng của xe ở màn title; …) do director approve.
+3. **Review:** 1 vòng APPROVED, 0 fix round. Worktree tự xoá. Verify trên main pass. manual_deferred (3): cảm giác chạm vào bubble trên điện thoại thật; lift ở Day 9 chơi tay; …
+4. **Token:** fleet-orch 1 / 78 / 14.2M; fleet-worker 4 / 238 / 48.3M + codex 0.6M; verifier 0.8M. Tổng khoảng 64M.
+5. **Memory:** cả 3 role ghi "none". Pack có lesson liên quan (`T-S14 localToParent / poseNode`, `T-S02 editor-authored-ui-bulk`) và có đọc, nhưng các role ghi là "không acted on".
+6. **Tiếp theo:** S18 v11-release-pass (M, single lane, slice cuối của chuỗi). Writer spawn 04:09Z.
