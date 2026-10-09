@@ -122,15 +122,19 @@ entry is committed.
 
 ## 4. Watch
 
-At every authority level, arm the handoff watch with the Monitor tool (`timeout_ms` 1800000,
-description `pilot <N> handed questions`):
-`node ~/.agents/skills/game-producer/scripts/producer-runner.mjs pilot-wait --project <p>`.
-It prints one JSON line per question the director handed to the pilot and exits after 29 min
-with a `{"pilot_wait":"timeout"}` line: re-arm it at once on that line or the Monitor's expiry
-notice; the cron tick re-arms it when that was missed (at `ask` authority, schedule the cron for
-that alone). `pilot --clear` hands any still-handed question back to the director.
+**Wake on events, not on the clock.** Waiting costs tokens only when the session wakes, and
+every wake re-reads the whole context (pilot 12: ~920k a call, 82 quiet ticks = 190M). So at
+every authority level the pilot waits with a background shell (Bash `run_in_background`, not a
+Monitor — a Monitor expires every 30 min and each expiry is a wake):
+`node ~/.agents/skills/game-producer/scripts/producer-runner.mjs pilot-wait --once --project <p>`.
+It has no time limit and exits, waking you once, on the first of: a handed question (its JSON
+line with the `answer` / `give_back` commands), `slice_changed` (the slice merged: Close it),
+`runner_gone` (done or crashed), `runner_halting` (stop/pause). Act on it, then start it again.
+Never start a second one: `producer-runner.mjs pilot --project <p>` shows `waiter_alive`.
+`pilot --clear` hands any still-handed question back to the director. Keep one pilot session
+per slice or batch: a session that grows past a few hundred k makes every wake expensive.
 
-Below `ask` authority, schedule the watch with CronCreate (off-minute, about every 30 min)
+Below `ask` authority, schedule the safety-net watch with CronCreate (off-minute, every 2 hours)
 from [watch-cron-prompt.md](reference/watch-cron-prompt.md), filled in for the slice and
 authority. Between ticks, react to the user's messages. On every tick and on every question:
 check facts first (HANDOFF in the worktree, the newest review file, git, the coordinator
@@ -177,7 +181,7 @@ is written down for the results entry and the memory note.
    `memory used` and record ids in `integration-notes.md`, `review*.md`, `final-report.md`;
    which pack items were cited; did a lesson visibly prevent a known failure.
 4. Append `### Pilot N — kết quả` using [results-template.md](reference/results-template.md);
-   commit only results.md; delete the cron and stop the `pilot-wait` monitor;
+   commit only results.md; delete the cron and stop the background `pilot-wait`;
    `producer-runner.mjs pilot --clear --project <p>` (when no other slice of this pilot follows);
    update the memory notes; tell the user in a few
    lines what merged, the numbers, the findings and what is still open.

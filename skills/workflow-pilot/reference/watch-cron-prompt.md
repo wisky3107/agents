@@ -1,6 +1,8 @@
 # Watch cron prompt (template)
 
-Fill the `<…>` fields and pass the result to CronCreate with `7,37 * * * *` (recurring).
+Fill the `<…>` fields and pass the result to CronCreate with `7 */2 * * *` (recurring). It is the
+safety net: `pilot-wait --once` (a background shell) wakes the session on every event, so the
+tick only catches what that missed.
 Delete the cron when the slice merges. Keep the authority sentence verbatim from the
 director.
 
@@ -13,7 +15,7 @@ Authority. On <date> the director said "<exact words>". That allows <auto-answer
 - Coordinator: <handle>.
 
 Each run:
-0. Handoff watch. If no `pilot <N> handed questions` Monitor is running, arm one (timeout_ms 1800000) with `node ~/.agents/skills/game-producer/scripts/producer-runner.mjs pilot-wait --project <project>`. Each line it prints is a question the director handed to me ("resolve by pilot agent"): answer it as in step 2 with `--by pilot`, whatever the authority above, using the director's note in it. On its `pilot_wait: timeout` line or the Monitor's expiry, re-arm it at once.
+0. Event watch. If `producer-runner.mjs pilot --project <project>` says `waiter_alive: false`, start `node ~/.agents/skills/game-producer/scripts/producer-runner.mjs pilot-wait --once --project <project>` with Bash run_in_background (never a Monitor; never two). When it exits: a `handed` line is a question given to me (by the director or `pilot --auto`): answer it as in step 2 with `--by pilot`, whatever the authority above, using the note in it; `slice_changed` → step 5; `runner_gone` / `runner_halting` → step 3. Then start it again.
 1. Status. Run `node ~/.agents/skills/game-producer/scripts/producer-runner.mjs status --project <project>`.
    - Summarize it with node, never by dumping the JSON: lock alive, control, slice, step, unanswered questions.
    - Also check AGENT_NOTES release.slices.<Sxx>, the tail of .cursor/evidence/tasks/T-<Sxx>/producer-log.md, and HANDOFF.json in the worktree (`git worktree list`).
@@ -38,7 +40,7 @@ Each run:
    - Read stats.json, producer-log.md and the questions.
    - Run the memory-trial greps.
    - Append "Pilot <N> — kết quả" to results.md and commit only that file, without pushing.
-   - Delete this cron, stop the pilot-wait Monitor, and run `producer-runner.mjs pilot --clear --project <project>`.
+   - Delete this cron, stop the background pilot-wait, and run `producer-runner.mjs pilot --clear --project <project>`.
    - Tell the director in a few Vietnamese lines.
 Only report when something changed: a question answered, a phase change, a merge, or a problem. Otherwise end quietly.
 ```

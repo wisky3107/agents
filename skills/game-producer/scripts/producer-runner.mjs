@@ -16,6 +16,7 @@
  *                      --auto: every question the judge and autopilot leave goes to it, not to the director)
  *   producer-runner.mjs pilot --return <qN> --note "why" [--project <path>]  (the pilot gives a question back)
  *   producer-runner.mjs pilot-wait [--timeout-ms <ms>] [--project <path>]  (a JSON line per question handed to the pilot)
+ *   producer-runner.mjs pilot-wait --once [--project <path>]  (no time limit: exits on the first thing the pilot must act on)
  *   producer-runner.mjs answer --id <qN> --choice <option> --by pilot …  (the pilot agent's answer)
  *
  * One runner per project (.cursor/producer.lock; an LLM producer must not loop while it is held). Git is the truth
@@ -626,19 +627,34 @@ function pilotCmd(root, v) {
     return { pilot };
   }
   const r = st.readRunner(root);
-  return { pilot: r.pilot || null, handed: r.questions.filter((q) => q.pilot_handoff && !q.answer).map((q) => q.id) };
+  const waiter = st.readJson(waiterFile(root));
+  return {
+    pilot: r.pilot || null, handed: r.questions.filter((q) => q.pilot_handoff && !q.answer).map((q) => q.id),
+    waiter_alive: Boolean(waiter?.pid && pidAlive(waiter.pid)),
+  };
 }
 
 /**
- * `pilot-wait`: the pilot agent's wake-up (a Claude Code Monitor runs it). One JSON line per question
- * handed to the pilot and not answered yet — those waiting at start too, so a re-armed watch sees them
- * again — then it polls the runner file (no model) until --timeout-ms.
+ * `pilot-wait`: the pilot agent's wake-up. One JSON line per question handed to the pilot and not
+ * answered yet — those waiting at start too, so a re-armed watch sees them again — then it polls the
+ * runner file (no model) until --timeout-ms (a Claude Code Monitor's stream).
+ *
+ * `--once` (a background shell, the pilot's default): no time limit, so a quiet slice costs the pilot no
+ * wake-ups at all. It prints one event and exits on the first of: a handed question, the runner moving
+ * to another slice (the last one merged), the runner gone (done, crashed, stopped) or the control file
+ * saying stop/pause. The pilot acts on it, then starts it again.
  */
-async function pilotWait(root, timeoutMs) {
+const waiterFile = (root) => path.join(root, '.cursor', 'producer-pilot-wait.json');
+
+async function pilotWait(root, timeoutMs, once = false) {
   const told = new Set();
-  const end = Date.now() + timeoutMs;
+  const end = once && !timeoutMs ? Infinity : Date.now() + (timeoutMs || PILOT_WAIT_MS);
+  const startSlice = st.readRunner(root).slice;
+  // `pilot` shows whether a waiter is alive: the pilot's safety-net tick restarts one only when not
+  if (once) st.writeJson(waiterFile(root), { pid: process.pid, since: st.now() });
   for (;;) {
-    for (const q of st.readRunner(root).questions.filter((x) => x.pilot_handoff && !x.answer && !told.has(x.id))) {
+    const r = st.readRunner(root);
+    for (const q of r.questions.filter((x) => x.pilot_handoff && !x.answer && !told.has(x.id))) {
       told.add(q.id);
       say({
         handed: q.id, kind: q.kind, slice: q.slice, at: q.pilot_handoff.at, auto: q.pilot_handoff.via === 'auto', note: q.pilot_handoff.text || null,
@@ -647,7 +663,14 @@ async function pilotWait(root, timeoutMs) {
         give_back: `producer-runner.mjs pilot --project ${root} --return ${q.id} --note "<why the director decides>"`,
       });
     }
-    if (Date.now() >= end) return say({ pilot_wait: 'timeout', next: 're-arm pilot-wait now' });
+    if (once) {
+      if (told.size) return;
+      const control = st.readControl(root)?.cmd;
+      if (control === 'stop' || control === 'pause') return say({ event: 'runner_halting', control });
+      if (!st.lockHolder(root)?.alive) return say({ event: 'runner_gone', slice: r.slice, step: r.step });
+      if (r.slice !== startSlice) return say({ event: 'slice_changed', from: startSlice, to: r.slice });
+    }
+    if (Date.now() >= end) return say(once ? { event: 'timeout' } : { pilot_wait: 'timeout', next: 're-arm pilot-wait now' });
     await new Promise((r) => setTimeout(r, PILOT_POLL_MS));
   }
 }
@@ -860,7 +883,7 @@ async function main() {
     return say(await answerMenu(root, v.id));
   }
   if (cmd === 'pilot') return say(pilotCmd(root, v));
-  if (cmd === 'pilot-wait') return pilotWait(root, Number(v['timeout-ms']) || PILOT_WAIT_MS);
+  if (cmd === 'pilot-wait') return pilotWait(root, Number(v['timeout-ms']) || 0, Boolean(v.once));
   throw new Error('usage: producer-runner.mjs start|resume|status|pause|stop|stop-after <Sxx>|clear|sign-off|answer|launch|handoff-reset|pilot|pilot-wait [--project <path>]');
 }
 

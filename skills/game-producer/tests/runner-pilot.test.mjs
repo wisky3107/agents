@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { menu, parseReply, submit, extraChoices, PILOT_CHOICE } from '../scripts/lib/answer.mjs';
@@ -130,4 +131,49 @@ test('pilot --auto: the runner hands the question itself, calls nobody; a return
   } finally {
     child.kill('SIGKILL');
   }
+});
+
+// "làm A" (2026-10-09, the director): a pilot that mostly waits should cost no wake-ups. pilot-wait
+// --once has no time limit and exits on the first thing the pilot must act on.
+test('pilot-wait --once: exits on a handed question, a slice change, a halt or a gone runner — and not before', async () => {
+  const p = withQuestions([GATE], { pilot: { n: 18, auto: true } });
+  const f = fakes();
+  const waitOnce = () => spawn(process.execPath, [RUNNER, 'pilot-wait', '--once', '--project', p.root], { env: { ...env(p.root, f), PRODUCER_RUNNER_PILOT_POLL_MS: '30' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const result = (child) => new Promise((resolve) => {
+    let out = '';
+    child.stdout.on('data', (d) => (out += d));
+    child.on('exit', () => resolve(lines(out)));
+  });
+  const lockFile = path.join(p.root, '.cursor', 'producer.lock');
+  // no runner holds the lock
+  assert.deepEqual((await result(waitOnce()))[0].event, 'runner_gone');
+
+  // a live runner (this test process holds the lock): waits; then the runner moves to S02
+  fs.writeFileSync(lockFile, JSON.stringify({ pid: process.pid, host: os.hostname(), mode: 'runner' }));
+  let child = waitOnce();
+  let done = result(child);
+  await pause(400);
+  assert.equal(child.exitCode, null, 'nothing to act on: it keeps waiting');
+  assert.equal(lines(cli(p.root, f, 'pilot').stdout)[0].waiter_alive, true);
+  const r = runnerFile(p.root);
+  fs.writeFileSync(path.join(p.root, '.cursor', 'producer-runner.json'), JSON.stringify({ ...r, slice: 'S02' }));
+  assert.deepEqual((await done)[0], { event: 'slice_changed', from: 'S01', to: 'S02' });
+
+  // a handed question: its line, then exit
+  child = waitOnce();
+  done = result(child);
+  await pause(200);
+  submit(p.root, 'q1', PILOT_CHOICE, 'take it');
+  const handed = await done;
+  assert.deepEqual([handed.length, handed[0].handed, handed[0].note], [1, 'q1', 'take it']);
+  // still handed (not answered yet): a restarted wait shows it again at once
+  assert.equal((await result(waitOnce()))[0].handed, 'q1');
+  submit(p.root, 'q1', 'approve', '', null, 'pilot');
+
+  // the director pauses the runner
+  child = waitOnce();
+  done = result(child);
+  await pause(200);
+  fs.writeFileSync(path.join(p.root, '.cursor', 'producer.control'), 'pause\n');
+  assert.deepEqual((await done)[0], { event: 'runner_halting', control: 'pause' });
 });
