@@ -1511,3 +1511,34 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - 13:35Z q1 (lane_blocked, judge defer): lane xin sửa `settings/engine.json` (ENABLE_TRANSPARENT_CANVAS=false) ngoài paths S01 → đã được trả lời "cho phép" bởi một người khác (không phải pilot), 13:36Z.
 - 13:56Z q2 (lane_blocked, judge defer): **F2 — race trong kit ui-popup 1.0.1** (`uiManager.showDialog`: đóng popup khi load đầu đang bay rồi show lại → 2 lần load, PopupPause mồ côi trên màn hình), lộ ra sau khi check S01-10 được sửa để thấy popup tách rời. Coordinator đã tự duyệt option A trong lane. Pilot trả lời (delegated) 14:02Z: giữ patch tối thiểu `_dictPendingShow` trong uiManager.ts như một ngoại lệ có ghi lại cho "installed kit output excluded" (tính vào budget, giữ check S01-12/13, ghi chú local kit modification, FOLLOWUPS: upstream lên ui-popup 1.0.2 rồi `kit upgrade`). Lỗ hổng workflow: chưa có đường đi cho "slice phát hiện bug trong kit đã cài" — judge phải hỏi director. Việc tiếp theo: fix kit 1.0.2 trong cocos-playbook (task riêng).
 - 14:2xZ F2 fix: **ui-popup kit 1.0.2** (cocos-playbook 050e0ff, merge 0e9a7e1) = đúng patch `_dictPendingShow` của lane (byte-identical) + README changelog + registry. `kit verify` ok, kit.test 11/11, strict tsc PASS trong worktree S01. `kit upgrade --dry-run` trên worktree: uiManager.ts unchanged → coordinator được nhắn chạy upgrade để `.kits.json` = 1.0.2. car-service-kids, love-train, firefighter-kids còn 1.0.1 (chưa upgrade).
+
+### Pilot 12 — S27 kết quả (S27 merge 2026-10-09 15:24Z, fleet)
+
+1. **Merge:** `9e7e361` (feat `8f6d649`), bookkeeping `d022e6c`. Thời gian 12:59 → 15:24Z = **2 h 25**. Lần này không có stall API (F18 không lặp lại).
+2. **Câu hỏi:** 3 câu, đều là fleet gate.
+   - q41 (13:55Z, gate_502a084d90e0): ở V5, background cover scale 1.58 nên cây bơm xăng đè lên cuốn sách 61 px. Pilot (delegated) chọn A: chấp nhận như deviation khai báo.
+   - q42 (14:07Z, gate_4b21fa45b34d): bubble ở bay park cách lift 2 px. Pilot chọn A **có điều kiện**: chỉ chấp nhận khi đo alpha thấy khe nhìn được ≥ 8 px (S27-D6 `106fc9d`).
+   - q43 (14:17Z, gate_5b73cc6f302d): writer đo alpha ra 2 px, điều kiện hỏng, nên quay lại hỏi. Judge chọn E sau 17 s: bubble park ngắn đi 6 px, khe 8.0 ở 9 case × V1–V5 (S27-D7 `97a8486`, thay D6).
+   - Workflow: câu trả lời có điều kiện đo được chạy đúng. Worker đo thay vì giả định, và mở gate mới thay vì tự dùng deviation. q41/q42 ghi `by: human` vì được trả lời trước khi bật `pilot --auto` (15:05Z); thực ra là pilot delegated.
+3. **Review:** 3 vòng, 2 fix round. Runtime channel là Chrome headless (tab Orca không lên, `--channel auto` tự chuyển; F6 đã biết).
+   - r1 CHANGES_REQUESTED:
+     - F1: bubble mini-bus đè R4 thật (R4 cao 122).
+     - F2: thẻ cảm ơn đè pegboard.
+     - F3: pegboard ở V5.
+     - F4: check viết chưa sạch.
+   - r2 CHANGES_REQUESTED:
+     - F7: `s27-ui-rects` chỉ đỏ khi chạy full suite. Lúc voice clip đang phát, badge loa của mascot pulse làm AABB của R4 rộng thêm 4–6 px; đây là false positive phụ thuộc thứ tự check. Writer chỉ chạy check theo nhóm nhỏ nên không thấy.
+     - F8: tách pair đã khai báo ở V5.
+   - r3 APPROVED: full V1 106/106 khi voice đang phát; V1–V5 PASS.
+   - Verify trên main: funplay parity, 0 MissingScript, smoke 106/106. Worktree đã tự xoá.
+4. **Token:** tổng khoảng 81M.
+   - fleet-orch: 1 / 91 / 15.4M.
+   - fleet-worker: 6 / 405 / 64.6M.
+   - verifier: 0.7M.
+   - Turn split của fleet-orch: wait 33 % và mechanical 39 % context, tức khoảng 74 % có thể thay bằng script.
+5. **Memory:**
+   - `s23-bubble-follows-posed-body-box` r1: writer và reviewer cite ở mọi vòng. Đây đúng là rule đứng sau cách đặt bubble.
+   - `s13-mock-port-outside-real-outline` r1: writer đo alpha PNG của thân xe dưới nắp xăng (`tests/ui-rects.spec.ts`) và phát hiện nắp xăng của compact chỉ nằm trên thân 3 %.
+   - **Nghi retrieval miss:** `cc-firefighter-kids/T-S18/s18-overlap-probe-settled-vs-transient` (probe phân biệt transient với settled) không có trong pack planner lẫn reviewer, trong khi F7 đúng là loại lỗi đó. Bằng chứng: `.c‍ursor/evidence/tasks/T-S27/evidence/memory/{plan,review}/memory-context.md`.
+   - Harvest được 3 record `T-S27`: fade completion phải kiểm tra bay hiện tại (bay đen); pulse phần con chứ không pulse slot; resave scene sẽ serialize lại cả file.
+6. **Tiếp theo:** S28 v11-final-pass (M, single lane), runner pid 31219. Pilot 12 được bàn giao sang session mới theo handover.md "Old session", không `pilot --clear`.
