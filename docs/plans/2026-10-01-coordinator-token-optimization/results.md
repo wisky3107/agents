@@ -1493,3 +1493,18 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - 12:09Z **F1: runner launch khi bộ contract chưa commit trên main.** Worktree S01 cắt từ d243228 (bootstrap) nên thiếu slices/, GAME_BRIEF… Coordinator bắt đầu copy tay. Gỡ: commit contract set 60bba0a trên main, ff worktree (bản copy tay trùng commit), báo coordinator. Bài học: dry-run/launch phải chặn khi `slices/` hoặc contract tracked-missing/dirty trên base branch.
 - Hạ tầng lúc launch: 3D Gen Studio chạy nhưng Tripo credits = 0 → mesh generate phải fallback.
   - Fix F1 merged ~/.agents 2ec0fba (39d386d + review fix): preflight blocker `contracts_uncommitted` cho file untracked/staged trong slices/ + contract gốc, hoặc slice đang chọn bị sửa; AGENT_NOTES không tính. Test mới trong runner-m4b; game-producer 168/168. Runner đang chạy không cần restart (check trước launch).
+
+### Pilot 12 — S26 kết quả (S26 merge 2026-10-09 12:57Z, fleet)
+
+1. **Merge:** `698a4c5`, bookkeeping `a76f366`. Thời gian 08:54 → 12:59Z = **4 h 05**. Khoảng 2,5 h mất vì F18 (worker 1 kẹt trong vòng retry API từ lúc dispatch; worker 2 timeout khoảng 50 phút rồi tự hồi phục).
+2. **Câu hỏi:**
+   - q39: mock S26 mâu thuẫn với `scope.out` "new step UI elements". Director chọn A: chỉ sắp thứ tự hiển thị của UI hiện có, mock chỉ để minh hoạ.
+   - q40: implement bị kẹt API. Director chọn A: chờ worker 2, và worker 2 đã tự hồi phục. Tôi cũng đã định chia nhỏ task nếu không hồi phục.
+3. **Integrate tìm ra bug thật F-INT-1** ở `ToolTrayView`: cờ `swapping` không reset sau `stopAllByTarget`, nên glow và raise vẫn còn sau HIDE. Có task fix riêng rồi re-integrate: 103/103 ×3, fps OK. F-INT-2 (minor) đã ghi.
+4. **Review:** 1 vòng APPROVED (fix round nằm ở integrate). Worktree tự xoá. Verify trên main pass.
+5. **Token:** fleet-orch 1 / 106 / 18.0M; fleet-worker 3 / 249 / 63.4M; verifier 0.7M. Tổng khoảng 82M.
+6. **Memory:** lần đầu các role cite lesson cùng dự án nhiều lần và đúng chỗ:
+   - `s16-lang-getter-bubble` r1: dòng thoại của bước vẫn là getter cộng một đường `say`/`announce`, nên khi SHOW swap vẫn giữ được việc đổi ngôn ngữ.
+   - `s18-overlap-probe-settled-vs-transient` r1: probe lấy mẫu mọi frame.
+   - `s22-stepsfor-drops-step-mode` (được ghi "not needed").
+7. **Tiếp theo:** S27 ui-align-pass (fleet, Run `run_b2abe515fbe3`). Writer đang đọc code.
