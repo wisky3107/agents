@@ -10,11 +10,13 @@ import * as st from './state.mjs';
  * skill at launch) gets one more way to answer: hand the question to the pilot agent. It is not one of
  * the question's options and not an answer — the question stays open, marked `pilot_handoff`, until the
  * pilot agent (woken by `pilot-wait`) answers it with `answer --by pilot`, or the director does first.
+ * A pilot registered with `--auto` (the director delegated everything) gets every question the judge and
+ * autopilot leave without the director being asked; the pilot gives one back with `pilot --return`.
  */
 export const PILOT_CHOICE = 'resolve by pilot agent';
 export const pilotOf = (root) => st.readRunner(root).pilot || null;
 /** The extra rows after a question's options: the pilot handoff while a pilot runs and the question is not handed yet. */
-export const extraChoices = (root, q) => (q && !q.answer && !q.pilot_handoff && pilotOf(root) ? [PILOT_CHOICE] : []);
+export const extraChoices = (root, q) => (q && !q.answer && !q.pilot_handoff && !q.pilot_returned && pilotOf(root) ? [PILOT_CHOICE] : []);
 
 /** Does this choice need a note? 'required' | 'optional' (relayed to the lane) | null */
 export function textNeed(q, choice) {
@@ -66,9 +68,25 @@ export function handToPilot(root, id, text = '', via = null) {
     if (!r.pilot) throw new Error('no pilot is registered for this project (producer-runner.mjs pilot --set)');
     if (q.answer) throw new Error(`${id} is already answered (${q.answer.choice})`);
     if (q.pilot_handoff) throw new Error(`${id} is already handed to the pilot agent (${q.pilot_handoff.at})`);
+    if (q.pilot_returned) throw new Error(`the pilot agent gave ${id} back to the director: ${q.pilot_returned.note}`);
     q.pilot_handoff = { at: st.now(), pilot: r.pilot.n ?? null, ...(text.trim() ? { text: text.trim() } : {}), ...(via ? { via } : {}) };
     // handed from any way in: a restarted runner does not open the dialog again (`pilot --clear` undoes both)
     if (!q.dialog_done) q.dialog_done = 'pilot';
+    return q;
+  });
+}
+
+/** The pilot agent gives a handed question back: the director answers it (asked as usual). → the question */
+export function returnToDirector(root, id, note) {
+  if (!String(note || '').trim()) throw new Error('say why with --note: the director reads it with the question');
+  return st.editQuestions(root, (r) => {
+    const q = r.questions.find((x) => x.id === id);
+    if (!q) throw new Error(`no question ${id}`);
+    if (q.answer) throw new Error(`${id} is already answered (${q.answer.choice})`);
+    if (!q.pilot_handoff) throw new Error(`${id} is not handed to the pilot agent`);
+    delete q.pilot_handoff;
+    if (q.dialog_done === 'pilot') delete q.dialog_done;
+    q.pilot_returned = { at: st.now(), note: note.trim() };
     return q;
   });
 }
@@ -80,6 +98,7 @@ const printable = (t) => String(t || '').replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/
 export function menu(q, context = [], extras = []) {
   const lines = [...context.map(printable), ...(context.length ? [''] : []), `${q.id} · ${q.kind}${q.slice ? ` · ${q.slice}` : ''}`, printable(q.text).trim(), ''];
   if (q.pilot_handoff) lines.splice(lines.length - 1, 0, `(handed to the pilot agent ${q.pilot_handoff.at}; an answer here still wins)`);
+  if (q.pilot_returned) lines.splice(lines.length - 1, 0, `The pilot agent gave this back to you: ${printable(q.pilot_returned.note)}`);
   [...q.options, ...extras].forEach((o, i) => lines.push(`  ${i + 1}) ${printable(o)}${textNeed(q, o) === 'required' ? '  (needs a note)' : ''}`));
   lines.push('', 'Type the number and Enter. A note may follow the number ("2 <note>"); it is passed on word for word.');
   return lines.join('\n');

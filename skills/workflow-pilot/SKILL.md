@@ -106,9 +106,13 @@ smoke-check edit the slice needs is pre-declared.
    (signature table).
 4. Memory: the plan pack exists under `T-Sxx/evidence/memory/plan/` when the mode is
    shadow/assist; note item count and tokens.
-5. Register the pilot on the runner: `producer-runner.mjs pilot --set --n <N> --project <p>`.
-   From then on every way the director answers (runner terminal, macOS dialog, `answer` menu,
-   director console) offers **resolve by pilot agent**; see "Handed questions" below.
+5. Register the pilot on the runner: `producer-runner.mjs pilot --set --n <N> --project <p>`,
+   plus `--auto` at `delegated` authority. From then on every way the director answers (runner
+   terminal, macOS dialog, `answer` menu, director console) offers **resolve by pilot agent**;
+   with `--auto` the runner itself hands every question the judge and autopilot leave to the
+   pilot, and the director is not called (no bell, notification or dialog). See "Handed
+   questions" below. A runner started before the registration picks up `--auto` only after a
+   restart.
 6. Append `### Pilot N — <slice> (lane), từ <UTC>` to results.md (purpose, config: runner
    pid + terminal, coordinator, agents, judge/autopilot, memory mode and pack); commit
    only that file.
@@ -140,11 +144,15 @@ evidence files changed; never update an agent CLI mid-run; nothing outward (push
 tag) without the user's request.
 
 **Handed questions.** A question the director handed ("resolve by pilot agent") is theirs
-delegated to you for that one question, whatever the authority level. Check the facts as for any
+delegated to you for that one question, whatever the authority level; with `--auto` every
+question arrives this way (`"auto": true` in the pilot-wait line). Check the facts as for any
 question, read the director's note (`pilot_handoff.text`), then answer with
 `producer-runner.mjs answer --project <p> --id qN --choice "<exact option>" [--text "…"] --by pilot`.
-The answer rules above still hold; when no option is safe, leave it open and send a
-PushNotification with your recommendation. The director can still answer first; then do nothing.
+The answer rules above still hold; when no option is safe, or the choice is the director's
+alone (money, push/deploy, stop), give it back:
+`producer-runner.mjs pilot --project <p> --return qN --note "<why + your recommendation>"` —
+the runner then calls the director with your note. The director can still answer first; then
+do nothing.
 
 Done when: the slice is merged (`release.slices.Sxx: merged`) or the user stops the pilot.
 

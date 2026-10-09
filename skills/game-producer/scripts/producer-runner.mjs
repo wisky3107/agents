@@ -12,7 +12,9 @@
  *   producer-runner.mjs answer [--id <qN>] [--project <path>]   (in a terminal: a numbered menu)
  *   producer-runner.mjs launch [--project <path>]      (a visible Orca terminal running `start`)
  *   producer-runner.mjs handoff-reset [--project <path>] (forget the Step 0–1 / Step 3 LLM handoffs)
- *   producer-runner.mjs pilot [--set --n <N> [--note "…"] | --clear] [--project <path>]  (a workflow pilot runs here)
+ *   producer-runner.mjs pilot [--set --n <N> [--auto] [--note "…"] | --clear] [--project <path>]  (a workflow pilot runs here;
+ *                      --auto: every question the judge and autopilot leave goes to it, not to the director)
+ *   producer-runner.mjs pilot --return <qN> --note "why" [--project <path>]  (the pilot gives a question back)
  *   producer-runner.mjs pilot-wait [--timeout-ms <ms>] [--project <path>]  (a JSON line per question handed to the pilot)
  *   producer-runner.mjs answer --id <qN> --choice <option> --by pilot …  (the pilot agent's answer)
  *
@@ -31,7 +33,7 @@ import readline from 'node:readline';
 import { spawn, spawnSync } from 'node:child_process';
 import { loadProject, sliceStatuses, nextSlice, preflight, writeRelease, writePolicyDecision } from './lib/project.mjs';
 import * as st from './lib/state.mjs';
-import { submit, menu, parseReply, textNeed, answerProblem, openQuestions, givenChoice, isGivenChoice, extraChoices, PILOT_CHOICE } from './lib/answer.mjs';
+import { submit, menu, parseReply, textNeed, answerProblem, openQuestions, givenChoice, isGivenChoice, extraChoices, PILOT_CHOICE, pilotOf, handToPilot, returnToDirector } from './lib/answer.mjs';
 import { questionContext } from './lib/context.mjs';
 import { laneFor, runSlice, applyAnswer, cursorUndecided, cursorState, resetCursorProbe, agentOrAsk, cursorArtBlocked, CursorUndecided, CURSOR_FALLBACK, manualItems, reviewVerdict, MAX_FIX_ROUNDS } from './lib/lanes.mjs';
 import { currentBranch, appendLessons, lessonRows, readJournal } from './lib/merge.mjs';
@@ -61,7 +63,7 @@ function parseArgs(argv) {
     const a = rest[i];
     if (a === '--dry-run') v.dryRun = true;
     else if (a === '--once') v.once = true;
-    else if (a === '--set' || a === '--clear') v[a.slice(2)] = true;
+    else if (a === '--set' || a === '--clear' || a === '--auto') v[a.slice(2)] = true;
     else if (a.startsWith('--')) {
       if (rest[i + 1] === undefined || rest[i + 1].startsWith('--')) throw new Error(`${a} needs a value`);
       v[a.slice(2)] = rest[++i];
@@ -511,8 +513,12 @@ function terminalPrompt(root, q) {
 /** Wait for the human's answer: poll the runner file (no model, no tokens). false = stop/pause. */
 async function waitForAnswer(root, q) {
   say({ waiting: q.id, kind: q.kind, slice: q.slice, text: q.text, options: q.options, answer: `producer-runner answer --id ${q.id} --choice "<option>"` });
-  notify(root, q);
-  openDialog(root, q);
+  // handed to an --auto pilot: the director is not called (no bell, notification or dialog) unless it comes back
+  let quiet = q.pilot_handoff?.via === 'auto';
+  if (!quiet) {
+    notify(root, q);
+    openDialog(root, q);
+  }
   const close = terminalPrompt(root, q);
   // a number typed here takes effect at once, not at the next poll of the file
   const poll = typing() ? Math.min(POLL_MS, 250) : POLL_MS;
@@ -523,6 +529,14 @@ async function waitForAnswer(root, q) {
       if (c?.cmd === 'stop' || c?.cmd === 'pause') return false;
       const now = st.readRunner(root).questions.find((x) => x.id === q.id);
       if (!now || now.answer) return true;
+      if (quiet && !now.pilot_handoff) {
+        // given back (`pilot --return`) or the pilot was cleared: now the director is asked
+        quiet = false;
+        say({ returned_by_pilot: q.id, note: now.pilot_returned?.note || null });
+        if (q.slice) st.log(root, q.slice, `${q.id} back to the director${now.pilot_returned ? `: ${now.pilot_returned.note}` : ' (pilot cleared)'}`);
+        notify(root, now);
+        openDialog(root, now);
+      }
       if (now.pilot_handoff && !handed) {
         handed = true;
         say({ handed_to_pilot: q.id, at: now.pilot_handoff.at, via: now.pilot_handoff.via || null });
@@ -589,7 +603,8 @@ async function answerMenu(root, id) {
  * close. While one is registered every way to answer offers "resolve by pilot agent" (lib/answer.mjs).
  */
 function pilotCmd(root, v) {
-  if (v.set && v.clear) throw new Error('pilot takes --set or --clear, not both');
+  if ([v.set, v.clear, v.return].filter(Boolean).length > 1) throw new Error('pilot takes one of --set, --clear, --return');
+  if (v.return) return { returned: returnToDirector(root, v.return, v.note).id };
   if (v.clear) {
     // a question still handed goes back to the director: the dialog may open again, the row comes back
     return st.editQuestions(root, (r) => {
@@ -606,7 +621,7 @@ function pilotCmd(root, v) {
   }
   if (v.set) {
     if (!/^[1-9]\d*$/.test(String(v.n || ''))) throw new Error('pilot --set needs --n <pilot number>');
-    const pilot = { n: Number(v.n), since: st.now(), ...(v.note ? { note: v.note } : {}) };
+    const pilot = { n: Number(v.n), since: st.now(), auto: Boolean(v.auto), ...(v.note ? { note: v.note } : {}) };
     st.writeRunner(root, { pilot });
     return { pilot };
   }
@@ -626,9 +641,10 @@ async function pilotWait(root, timeoutMs) {
     for (const q of st.readRunner(root).questions.filter((x) => x.pilot_handoff && !x.answer && !told.has(x.id))) {
       told.add(q.id);
       say({
-        handed: q.id, kind: q.kind, slice: q.slice, at: q.pilot_handoff.at, note: q.pilot_handoff.text || null,
+        handed: q.id, kind: q.kind, slice: q.slice, at: q.pilot_handoff.at, auto: q.pilot_handoff.via === 'auto', note: q.pilot_handoff.text || null,
         text: String(q.text).replace(/\s+/g, ' ').slice(0, 400), options: q.options,
         answer: `producer-runner.mjs answer --project ${root} --id ${q.id} --choice "<option>" --by pilot`,
+        give_back: `producer-runner.mjs pilot --project ${root} --return ${q.id} --note "<why the director decides>"`,
       });
     }
     if (Date.now() >= end) return say({ pilot_wait: 'timeout', next: 're-arm pilot-wait now' });
@@ -696,6 +712,17 @@ async function start(root, { dryRun: dry, once }) {
         }
         continue;
       }
+    }
+    if (open && !open.answer && !open.pilot_handoff && !open.pilot_returned && pilotOf(root)?.auto) {
+      // the director delegated everything to the pilot: it gets the question before the director is called
+      try {
+        handToPilot(root, open.id, '', 'auto');
+        if (open.slice) st.log(root, open.slice, `${open.id} (${open.kind}) handed to the pilot agent (pilot --auto)`);
+        say({ handed_to_pilot: open.id, kind: open.kind, via: 'auto' });
+      } catch {
+        /* answered or handed meanwhile */
+      }
+      continue;
     }
     if (open) {
       if (once) return say({ waiting: open.id, kind: open.kind, slice: open.slice, options: open.options });

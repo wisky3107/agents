@@ -115,7 +115,7 @@ q = question();
 if (tr && tr.key !== questionKey(tr.lang, q)) tr = null;
 const head = `${context.join('\n')}\n\n${q.id} · ${q.kind}${q.slice ? ` · ${q.slice}` : ''}\n`;
 const body = String(q.text || '').trim();
-const whyEn = q.judge?.defer ? String(q.judge.defer).trim() : '';
+const whyEn = [q.judge?.defer ? String(q.judge.defer).trim() : '', q.pilot_returned ? `The pilot agent gave this back to you: ${q.pilot_returned.note}` : ''].filter(Boolean).join('\n\n');
 /** Cut to n characters (code points, never half an emoji), with "…" when cut. */
 function cut(text, n) {
   const chars = Array.from(text);
@@ -140,7 +140,7 @@ if (tr) {
   }
   const long = full.join('\n').length > PROMPT_CHARS_LANG - 1000;
   const opts = `\n\nCác lựa chọn:\n${(long ? full.map((o) => cut(o, OPTION_CHARS)) : full).join('\n')}`;
-  const why = tr.why ? `\n\nVì sao judge để bạn quyết: ${tr.why}` : '';
+  const why = `${tr.why ? `\n\nVì sao judge để bạn quyết: ${tr.why}` : ''}${q.pilot_returned ? `\n\nPilot agent trả lại cho bạn: ${q.pilot_returned.note}` : ''}`;
   const room = PROMPT_CHARS_LANG - head.length - why.length - opts.length;
   const summary = tr.summary.length > room ? `${tr.summary.slice(0, Math.max(200, room))}… (xem toàn văn ở dòng cuối danh sách)` : tr.summary;
   prompt = `${head}${summary}${why}${opts}`;

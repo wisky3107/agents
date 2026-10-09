@@ -30,7 +30,7 @@ Each run:
    - "check again" only when the evidence files changed; otherwise "back to the lane".
    - If codex shows its update menu, choose "Skip until next version".
    - Send a coordinator question's answer to the coordinator too, as a plain follow-up.
-   - If no option is safe, send a PushNotification with a recommendation and leave the question open.
+   - If no option is safe, give it back with `producer-runner.mjs pilot --project <project> --return qN --note "<why + recommendation>"` (the runner then calls the director); for a question nobody handed me, send a PushNotification with a recommendation and leave it open.
 3. Runner. Relaunch the runner only if its lock is dead after a crash. If the control file says stop or pause, do not relaunch; send a PushNotification.
 4. Never start Step 3, deploy, tag or push.
 5. On merge (release.slices.<Sxx>: merged), follow workflow-pilot step 6 (Close):

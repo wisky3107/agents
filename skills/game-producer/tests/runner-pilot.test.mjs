@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { menu, parseReply, submit, extraChoices, PILOT_CHOICE } from '../scripts/lib/answer.mjs';
 import { RUNNER, project, fakes, env } from './harness.mjs';
 
@@ -20,6 +20,7 @@ const withQuestions = (qs, extra = {}) => {
   return p;
 };
 const cli = (root, f, ...args) => spawnSync(process.execPath, [RUNNER, ...args, '--project', root], { encoding: 'utf8', timeout: 20000, env: env(root, f) });
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 const lines = (out) => out.trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
 
 test('answer lib: no pilot, no extra row; a pilot adds one numbered after the options, and handing leaves the question open', () => {
@@ -91,4 +92,42 @@ test('dialog: the pilot row sits before "Show the whole question"; picking it ha
   const q = question(p.root, 'q1');
   assert.equal(q.answer, null);
   assert.deepEqual([q.pilot_handoff.text, q.pilot_handoff.via, q.dialog_done], ['look at r2', 'dialog', 'pilot']);
+});
+
+// "nếu pilot ở mode tự động toàn bộ, thì tự động trả lời câu hỏi luôn" (2026-10-09, the director):
+// a pilot registered with --auto gets every question the judge and autopilot leave, before the
+// director is called; `pilot --return` gives one back, and only then is the director called.
+test('pilot --auto: the runner hands the question itself, calls nobody; a returned question calls the director with the reason', async () => {
+  const STUCK = { id: 'q1', key: '-:stuck', kind: 'stuck', slice: null, text: 'The runner cannot pick a slice. x', options: ['fixed, retry', 'stop'], answer: null };
+  const p = withQuestions([STUCK]);
+  const f = fakes();
+  assert.equal(lines(cli(p.root, f, 'pilot', '--set', '--n', '18', '--auto').stdout)[0].pilot.auto, true);
+  const child = spawn(process.execPath, [RUNNER, 'start', '--project', p.root], { env: env(p.root, f), stdio: ['ignore', 'pipe', 'pipe'] });
+  let out = '';
+  child.stdout.on('data', (d) => (out += d));
+  try {
+    for (let i = 0; i < 200 && !out.includes('"waiting":"q1"'); i++) await pause(25);
+    const q = question(p.root, 'q1');
+    assert.deepEqual([q.answer, q.pilot_handoff.via, q.dialog_done], [null, 'auto', 'pilot']);
+    assert.match(out, /"handed_to_pilot":"q1","kind":"stuck","via":"auto"/);
+    await pause(200);
+    assert.deepEqual(f.notices(), [], 'the director is not called for a question the pilot holds');
+    assert.deepEqual(extraChoices(p.root, q), [], 'no handoff row: it is handed');
+
+    const waited = spawnSync(process.execPath, [RUNNER, 'pilot-wait', '--timeout-ms', '100', '--project', p.root], { encoding: 'utf8', timeout: 20000, env: env(p.root, f) });
+    assert.equal(lines(waited.stdout)[0].auto, true);
+    assert.match(cli(p.root, f, 'pilot', '--return', 'q1').stdout, /say why/);
+    assert.match(cli(p.root, f, 'pilot', '--return', 'q1', '--note', ' ').stdout, /say why/);
+    assert.equal(lines(cli(p.root, f, 'pilot', '--return', 'q1', '--note', 'a budget call').stdout)[0].returned, 'q1');
+    for (let i = 0; i < 200 && !f.notices().length; i++) await pause(25);
+    assert.equal(f.notices().length, 1, 'given back: now the director is called');
+    assert.match(out, /"returned_by_pilot":"q1","note":"a budget call"/);
+    const back = question(p.root, 'q1');
+    assert.deepEqual([back.pilot_handoff, back.dialog_done, back.pilot_returned.note], [undefined, undefined, 'a budget call']);
+    assert.deepEqual(extraChoices(p.root, back), [], 'not handed again, not offered again');
+    assert.match(menu(back), /The pilot agent gave this back to you: a budget call/);
+    assert.throws(() => submit(p.root, 'q1', PILOT_CHOICE), /gave q1 back/);
+  } finally {
+    child.kill('SIGKILL');
+  }
 });
