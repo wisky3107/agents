@@ -1439,3 +1439,4 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
   - `.cursor/rules/50-docs.mdc` bảo agent đọc `docs/flows/docs-index.md`, nhưng template và dự án đều chỉ có `docs/flows/README.md`. Một worker S24 báo HANDOFF `blocked`. Judge defer; director hỏi "lý do là gì, hãy tự xử lý giúp mình".
   - Lane đã tự gỡ: dòng index vào README.md, implement xong.
   - Sửa rule (trỏ tới README.md; index thiếu thì không bao giờ được chặn task) ở template `cc-game-template` `21f9ea0` và ở dự án `7df3d11`, mỗi nơi chỉ commit đúng file đó. Template đang có WIP của session khác ở các rule khác, không đụng. Các template khác (cc4, playable) cần kiểm tra cùng lỗi.
+  - Đã sửa thêm ở cc4-game-template `c195359`, cc-playable-template `690f88b`, cc-project-template `dca65c3`, và nguồn sync `agent-skills/cocos-creator` `b7ccf76` (chưa push).
