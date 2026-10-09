@@ -1217,9 +1217,13 @@
 
   const QOPEN_KEY = 'console-quota-open';
   const qOpen = () => { try { return JSON.parse(localStorage.getItem(QOPEN_KEY) || '{}') || {}; } catch { return {}; } };
-  /** The account list of one provider: folded by default, the summary says what matters; open state kept per browser. */
+  /**
+   * The account list of one provider; the summary says what matters. Claude's list opens on every
+   * load; the others start folded and keep the open state per browser.
+   */
+  const Q_ALWAYS_OPEN = new Set(['claude']);
   function accList(key, summary, ...body) {
-    const d = h('details', { class: 'qacc', open: !!qOpen()[key] },
+    const d = h('details', { class: 'qacc', open: Q_ALWAYS_OPEN.has(key) || !!qOpen()[key] },
       h('summary', {}, h('span', { class: 'chev' }, icon('chev', 14)), ...summary), h('div', { class: 'qacc-body' }, ...body));
     d.addEventListener('toggle', () => { try { localStorage.setItem(QOPEN_KEY, JSON.stringify({ ...qOpen(), [key]: d.open })); } catch {} });
     return d;

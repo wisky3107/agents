@@ -69,8 +69,9 @@ so the page CSP can forbid it.
       window or agy-rotate marked it invalid.
   - The colours are dataviz slots 1–7, validated light and dark. An account keeps its colour.
   - Bars wear the slice progress look (`.xp`: ink border, striped fill, an ink edge per segment).
-  - Each account list is a fold (`<details>`) whose summary carries the lowest window. Its
-    open state is kept per browser (`console-quota-open`).
+  - Each account list is a fold (`<details>`) whose summary carries the lowest window.
+    - Claude's list opens on every load.
+    - Codex and agy start folded and keep their open state per browser (`console-quota-open`).
   - The machine token needs `ioreg` (/usr/sbin), so the launchd PATH has /usr/sbin:/sbin.
 - **Memory / Pilot / Playbook / Scorecard / Nhật ký**: modes as segmented controls, archive
   bars, a record explorer and drawer (promote/retract), stacked verdict columns with a table view,
