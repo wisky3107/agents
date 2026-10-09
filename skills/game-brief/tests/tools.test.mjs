@@ -221,8 +221,13 @@ test('a slice may not perform deploy, tag or push; hand-off to the producer pass
   const bad=x=>{put(p,f,t.replace('- clear','- '+x));return validate(p).errors.some(e=>e.code==='slice_performs_ship');};
   for(const x of ['preview deploy through the ship skill','create the v1.1.0 tag','git push origin main','run vercel --prod']) assert.ok(bad(x),x);
   for(const x of ['smoke suite tested on the deployed URL','no deploy in this slice (producer Step 3)']) assert.ok(!bad(x),x);
-  put(p,'RELEASE_CHECKLIST.md',fs.readFileSync(path.join(p,'RELEASE_CHECKLIST.md'),'utf8')+'| RC-20 | ship | deploy | producer Step 3 | ship skill |\n');
-  assert.ok(!validate(p).errors.some(e=>/release_item/.test(e.code)));
+  const rcf='RELEASE_CHECKLIST.md',rc0=fs.readFileSync(path.join(p,rcf),'utf8');
+  put(p,rcf,rc0+'| RC-20 | ship | deploy | producer Step 3 | ship skill |\n');
+  assert.ok(!validate(p).errors.some(e=>e.code==='uncovered_release_item'));
+  put(p,rcf,rc0+'| RC-20 | input | deploy | producer Step 3 | x |\n');
+  assert.ok(validate(p).errors.some(e=>e.code==='uncovered_release_item'));
+  put(p,rcf,rc0+'| RC-20 | ship | deploy | producer | x |\n');
+  assert.ok(validate(p).errors.some(e=>e.code==='uncovered_release_item'));
   put(p,f,t.replace('- clear','- Ship handed to producer Step 3 (deploy and tag are director-gated)'));
   assert.ok(!validate(p).errors.some(e=>e.code==='slice_performs_ship'));
 });

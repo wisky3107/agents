@@ -163,11 +163,11 @@ export function validate(p, options = {}) {
     }
   }
   const rc = tables(texts['RELEASE_CHECKLIST.md'] || '').flatMap(t => {
-    const col = t[0].findIndex(c => /closed.by/i.test(c)); return col >= 0 ? t.slice(2).filter(r => /^RC-\d+$/.test(r[0])).map(r => ({ id: r[0], owner: r[col] })) : [];
+    const col = t[0].findIndex(c => /closed.by/i.test(c)); return col >= 0 ? t.slice(2).filter(r => /^RC-\d+$/.test(r[0])).map(r => ({ id: r[0], owner: r[col], area: r[1] })) : [];
   });
   if (!rc.length) fail('missing_release_rows', 'RELEASE_CHECKLIST.md', 'Expected RC rows with closed_by column');
   if (new Set(rc.map(r=>r.id)).size !== rc.length) fail('duplicate_release_item', 'RELEASE_CHECKLIST.md', 'RC IDs must be unique');
-  for (const r of rc) if (!/^producer\b/i.test(r.owner) && !list(byId.get(r.owner)?.data.release_items).includes(r.id)) fail('uncovered_release_item', 'RELEASE_CHECKLIST.md', `${r.id} not owned by ${r.owner}`);
+  for (const r of rc) if (!(/^ship$/i.test(r.area) && /^producer Step 3$/i.test(r.owner.replace(/[`*]/g,'').trim())) && !list(byId.get(r.owner)?.data.release_items).includes(r.id)) fail('uncovered_release_item', 'RELEASE_CHECKLIST.md', `${r.id} not owned by ${r.owner}`);
   for (const s of slices) for (const id of list(s.data?.release_items)) if (!rc.some(r => r.id === id)) fail('unknown_release_item', s.file, `${id} absent from checklist`);
   const expect = expectText;
   const targets = [...expect.matchAll(/(?:\]\(|`)((?:reference|docs\/mockups)\/[^)`\n]+\.(?:png|jpe?g|svg|webp))(?:\)|`)/gi)].map(m => m[1]);
