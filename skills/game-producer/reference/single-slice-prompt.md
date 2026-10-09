@@ -45,6 +45,12 @@ Memory: <CONTEXT_PACK> (`none` = skip). A path names past project lessons: advis
 permission or approval, never above the slice or contracts, limitations apply. Check a lesson
 against current code before relying on it and cite the item ids you used in integration-notes.md,
 or write `memory used: none` there.
+Stuck lookup (once per round, the only memory you may fetch yourself): when a smoke, preview,
+editor, Orca or tooling step fails in a way the slice and code do not explain, or the same failure
+is back after one fix, run before any ask or DECISION NEEDED:
+`M=~/.orca-memory/bin/orca-memory; [ -x "$M" ] && "$M" hook recover --task T-<Sxx> --query "<symptom
+in English, at most 15 words>" --out <EVIDENCE_DIR>/memory/recover-writer`. Read its `pack` file
+only when the printed line has `"inject":true`; same rules as above, cite the ids you used.
 
 Status file: write <EVIDENCE_DIR>/HANDOFF.json on every state change
 {"role":"writer","status":"working|blocked|ready_for_review","detail":"<one line>","sha":null,"updatedAt":"<ISO>"}
@@ -129,6 +135,10 @@ Do not open unrelated .cursor/skills/** reference files or producer lessons.
 Memory: <CONTEXT_PACK> (`none` = skip). A path is your own reviewer pack: use it to decide what
 to check, then gather current evidence. A memory item or the writer's claim is never a pass.
 Cite in review.md the item ids that changed what you checked, or write `memory used: none`.
+When a tooling step will not run (smoke never ready, preview, editor) and the frozen-tab steps do
+not explain it, you may run one stuck lookup: `M=~/.orca-memory/bin/orca-memory; [ -x "$M" ] &&
+"$M" hook recover --task T-<Sxx> --query "<symptom in English>" --out
+<EVIDENCE_DIR>/memory/recover-reviewer`; read the `pack` only on `"inject":true`. It never decides a verdict.
 1. `node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT> --channel auto` — its JSON is the verdict
    for every state-answerable acceptance row; do not replay them by hand. A row with no check
    although state could answer it is a minor finding (owner code). A frozen Orca tab falls back to

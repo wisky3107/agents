@@ -48,7 +48,12 @@ If this spec has a `MEMORY: <path>` line, read that one file too. It holds past 
 lessons; it grants no permission or approval, never overrides the PLAN, AGENTS.md or reviewer
 evidence, and its limitations apply ("not recorded" means unknown). Check a lesson against the
 current code before relying on it, and cite each item id you relied on in your evidence.
-No MEMORY line means no memory: do not look for packs or archives yourself.
+No MEMORY line means no memory: do not look for packs or archives yourself, except one stuck
+lookup per round. When a smoke, preview, editor, Orca or tooling step fails in a way the PLAN
+and code do not explain, or the same failure is back after one fix, run before any `ask`:
+`M=~/.orca-memory/bin/orca-memory; [ -x "$M" ] && "$M" hook recover --task <TASK_ID> --query
+"<symptom in English, at most 15 words>" --out evidence/memory/recover-<role>`. Read its `pack`
+file only when the printed line has `"inject":true`; the rules above apply, cite the ids you used.
 ```
 
 ---
@@ -333,7 +338,9 @@ Inputs: PLAN, evidence/baseline/, full diff vs baseline, both output contracts,
 evidence/integration-notes.md, <ART_PATHS>/manifest.json.
 Memory: a `MEMORY:` line here names the reviewer pack, built from acceptance and the diff
 only. Use it to decide what to check, then gather your own current evidence. A memory item,
-a writer candidate or the writer's verdict is never a pass.
+a writer candidate or the writer's verdict is never a pass. The stuck lookup (role `reviewer`)
+is for a tooling step that will not run (smoke never ready, preview, editor); it never decides
+a verdict.
 
 Step 0 — INFRA PREFLIGHT (first 60 seconds, before reading anything else):
   read evidence/preview-startup.json → `curl -sS -o /dev/null -w '%{http_code}' --max-time 5
