@@ -664,6 +664,11 @@ after a valid `worker_done`; never release on idle/heartbeat.
 - After each accepted settlement do exactly one: reuse the proven terminal for the next Dispatch,
   `worker-retain` (only when the user asked), or `worker-release` (recipe A). An uncertain release
   follows its recovery receipt; never substitute `terminal close` for it.
+- Reusing a terminal: run `orca terminal wait --terminal <h> --for tui-idle --timeout-ms 90000` before
+  `worker-start --terminal <h>` (a worker sends `worker_done` before its turn ends; a prompt injected
+  in that window is swallowed — monster-truck S02 integrate sat `dispatched` 30 min). Within ~2 min
+  of the start, the screen shows a new turn or `dispatch-show` has `last_heartbeat_at`; otherwise
+  retry (`--retry-of <ctx>`) on a fresh terminal.
 - Do not end your turn until `orca orchestration worker-list --run <run_id> --terminal-state reclaimable --json`
   returns none.
 - Action gates → `orca skills get orchestration --reference references/<file>.md`:
