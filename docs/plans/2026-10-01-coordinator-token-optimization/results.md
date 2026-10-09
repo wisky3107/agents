@@ -1367,3 +1367,8 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 3. **Token:** fleet-orch 1 / 73 / 13.1M; fleet-worker 6 / 250 / 37.5M + codex 0.7M; verifier 0.8M. Tổng khoảng 52M.
 4. **Memory:** writer đọc pack qua đường dẫn tuyệt đối trên main (F14 không xảy ra ở slice này). Nó tìm thấy `cc-firefighter-kids/T-S10/t-s10-particle2d-total-cap-needs-headroom` (`totalParticles` chỉ chặn hạt mới, không diệt hạt đang sống) và đối chiếu với engine, nhưng ghi "memory used: none". Lesson được dùng mà không được tính. Cùng mẫu với S11: ghi nhận memory chưa đúng.
 5. **Tiếp theo:** S22 pump-and-fuel-lines (fleet) từ 01:02Z.
+
+### Pilot 15 — S17 kết quả (S17 merge 2026-10-09 ~00:59Z, single lane)
+
+- Merged: 1cd62d3 (bookkeeping 274bf6f). Wall ~48 min (00:13→01:01Z). Writer opus: 8 code files / 708 lines (budget 13/850), 10 nodes, assets 2→5 (shadow, clean body, dash sheet); review r1 → 1 fix round → accepted; smoke 54/54 at 390×844, unit 259/259 (new tests/drag-snap.test.ts, 11 cases); 5 smoke + 1 unit negative controls. Tokens ~39.7M (3 slice-agent sessions). 0 questions.
+- One manual_required item deferred with "(no details)" — the runner logged no description (small finding: a deferred manual check needs its text, or S18/ship sign-off cannot act on it).
