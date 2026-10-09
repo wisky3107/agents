@@ -1107,3 +1107,24 @@ test('bookkeeping commit: the director\'s uncommitted AGENT_NOTES.md edit is not
   assert.match(journal(root).steps.notes_commit.note, /own edits only/);
   assert.equal(sliceState(root, 'S01').phase, 'done');
 });
+
+test('manual_required: defer — a bare flag (no list) carries the review\'s manual line, or the files to read, never "(no details)" alone', () => {
+  const run1 = (evidence) => {
+    const p = project({ notes: NOTES(POLICY, '{}', '  manual_required: defer\n'), slices: { S01: { needs: false } } });
+    const f = fakes();
+    f.queue([
+      { name: 'ready', write: { ...W('ready_for_review'), ...preview(7461) } },
+      { name: 'approved, bare flag', write: { ...R('approved', 'APPROVED', { status: 'verified', manual_required: true }), ...evidence } },
+      commitStep('S01'),
+    ]);
+    runner(p.root, f, 'start', '--once');
+    return JSON.parse(fs.readFileSync(ev(p.root, 'S01', 'evidence', 'manual-deferred.json'), 'utf8')).items;
+  };
+  const review = '# Review\n\nF1 ok\n\nManual check: feel of the swipe on a real phone (needs a device)\n\nAPPROVED\n';
+  const withText = run1({ [evRel('S01', 'review.md')]: review });
+  assert.equal(withText.length, 1);
+  assert.match(withText[0], /feel of the swipe on a real phone/);
+  assert.match(withText[0], /review\.md/);
+  const bare = run1({});
+  assert.match(bare[0], /runtime-state\.json/); // names the file to read
+});

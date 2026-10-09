@@ -924,6 +924,27 @@ function infraBlocked(ctx, s) {
   return ask(s, 'infra_blocked', `preview ${port ? `127.0.0.1:${port} answers ${code || 'nothing'}` : 'has no recorded port'} after the writer restarted it once`, ['writer refreshed the preview, review again', 'mark blocked', 'stop']);
 }
 
+/** What a bare manual_required flag stands for: the review's lines that mention manual checks, the HANDOFF detail, else the files to read. */
+function manualContext(dir, handoff, marks) {
+  const rf = st.reviewFiles(dir);
+  const lines = [];
+  for (const f of [rf.verdict, rf.lastRound].filter(Boolean)) {
+    let text = '';
+    try {
+      text = fs.readFileSync(f, 'utf8');
+    } catch { /* unreadable: the next source */ }
+    for (const l of text.split('\n')) {
+      const m = l.replace(/^[\s>*\-#|`]+/, '').trim();
+      if (/manual/i.test(m) && !/^manual_required$/i.test(m) && m.length > 8) lines.push(`${m.slice(0, 240)} (${path.basename(f)})`);
+    }
+    if (lines.length) break;
+  }
+  const detail = [handoff?.detail, handoff?.summary].find((v) => typeof v === 'string' && v.trim());
+  if (!lines.length && detail) lines.push(`${oneLine(detail).slice(0, 240)} (HANDOFF.json detail)`);
+  const out = [...new Set(lines)].slice(0, 6);
+  return out.length ? out : [`${marks[0] || 'manual_required (no details)'}: no item text anywhere, read ${path.join(dir, 'runtime-state.json')} and the review in ${dir}`];
+}
+
 function accept(ctx, s, dir, required, manualOptions) {
   const problems = approvalProblems(dir, required, Boolean(s.verdict_accepted), s.relayed_gates || [], ctx.lane === 'fleet');
   // under defer a manual check is not a blocker: ask about the real one first
@@ -938,7 +959,10 @@ function accept(ctx, s, dir, required, manualOptions) {
     const handoff = readJsonFile(path.join(dir, 'HANDOFF.json'));
     const found = manualItems(p.runtime, { manual_required: handoff?.manual_required });
     // the trigger fired, so the list is never empty: a check nobody can read is still a check
-    const items = found.length ? found : ['manual_required (no details: see runtime-state.json)'];
+    // a bare flag (`manual_required: true`) lists nothing: the text then comes from the review's own manual lines
+    // or the HANDOFF detail (pilot 15 S18: "(no details)" left the sign-off nothing to act on), else the files to read
+    const bare = !found.length || found.every((x) => /\(no details\)$/.test(x));
+    const items = bare ? manualContext(dir, handoff, found) : found;
     // v: 2 — the list as deferred; `status` shows it as written (older files are read again from runtime-state)
     st.writeJson(path.join(dir, 'manual-deferred.json'), { v: 2, slice: ctx.id, at: st.now(), items, from: 'runtime-state.json + HANDOFF.json', policy: 'release.manual_required: defer' });
     st.log(ctx.project.root, ctx.id, `manual_required deferred (${items.length}): ${items.join(' | ').slice(0, 300)}`);
