@@ -1089,3 +1089,21 @@ test('worktree_rm: evidence plus any other change keeps the worktree (no --force
   assert.equal(fs.existsSync(wt), true);
   assert.equal(fs.existsSync(path.join(f.dir, 'rm.log')), false);
 });
+
+test('bookkeeping commit: the director\'s uncommitted AGENT_NOTES.md edit is not swept in — only the runner\'s own change is committed', () => {
+  const { f, root } = committedFleet();
+  fs.appendFileSync(path.join(root, 'AGENT_NOTES.md'), '\n- ship: S99 DIRECTOR STEP-3 LINE\n');
+  fs.appendFileSync(path.join(root, 'MILESTONES.md'), '\n<!-- director note -->\n');
+  f.queue([VERIFIED]);
+  runner(root, f, 'start', '--once');
+  const committed = g(root, 'show', 'HEAD:AGENT_NOTES.md').stdout;
+  assert.match(committed, /^- S01 fleet merged /m); // the runner's own Notes line
+  assert.match(committed, /S01: merged/);
+  assert.doesNotMatch(committed, /DIRECTOR STEP-3 LINE/);
+  assert.match(fs.readFileSync(path.join(root, 'AGENT_NOTES.md'), 'utf8'), /DIRECTOR STEP-3 LINE/); // still in the work tree
+  assert.match(g(root, 'status', '--porcelain').stdout, /^ M AGENT_NOTES\.md$/m); // unstaged, the director's
+  assert.match(g(root, 'status', '--porcelain').stdout, /^ M MILESTONES\.md$/m);
+  assert.deepEqual(g(root, 'show', '--name-only', '--format=', 'HEAD').stdout.trim().split('\n').sort(), ['.cursor/evidence/tasks/T-S01/evidence/HANDOFF.json', 'AGENT_NOTES.md']);
+  assert.match(journal(root).steps.notes_commit.note, /own edits only/);
+  assert.equal(sliceState(root, 'S01').phase, 'done');
+});
