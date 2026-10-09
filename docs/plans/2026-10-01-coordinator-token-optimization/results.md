@@ -1479,3 +1479,9 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 4. **Token:** fleet-orch 1 / 92 / 19.0M; fleet-worker 7 / 408 / 74.9M + codex 2.2M; verifier 1.0M. Tổng khoảng 97M.
 5. **Memory:** cả 3 role ghi "none", dù reviewer có đọc `s13-mock-port-outside-real-outline` (bài học "mock dạng sơ đồ không phải outline thật"). Đây đúng là loại lỗi F1 (yên kích lệch khỏi thân xe). Lesson có liên quan nhưng không được ghi là dùng.
 6. **Tiếp theo:** S26 step-ui-handoff (fleet) từ 08:54Z.
+
+- 10:45Z **F18 (S26): worker kẹt trong vòng retry API ngay từ lúc dispatch.**
+  - Worker implement (term_b4760fb9) hiện "API error · Retrying in 0s · attempt 1/9" khoảng 70 phút, chỉ viết được `docs/plans/S26-…md`, trong khi gọi OmniRoute bằng request nhỏ vẫn OK.
+  - Coordinator HANDOFF vẫn "implement running", runner không báo stall (HANDOFF của coordinator vẫn được cập nhật nhờ gate q39). Dấu hiệu duy nhất là màn hình worker.
+  - Gỡ: bảo coordinator dispatch lại cho worker mới (term_f066cd60, ctx_8ce0b5675a53, "retry-of … never started: API errors"). Worker mới chạy bình thường.
+  - Bài học: stall check nên đọc cả màn hình worker (`API error · Retrying`) và mtime của HANDOFF worker / git diff của worktree, không chỉ HANDOFF của coordinator. Đề xuất thêm vào orca-wait stall rule.
