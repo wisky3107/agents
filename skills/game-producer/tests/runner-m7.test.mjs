@@ -1089,3 +1089,24 @@ test('provider blip: a coordinator turn ending on API Error 429/401/503 is waite
   h.queue([start(errScreen(['• fine', '› ']), 'implementing'), { name: 'i1', result: 'idle' }, { name: 'i2', result: 'idle' }, { name: 'i3', result: 'idle' }, { name: 'i4', result: 'idle' }]);
   assert.equal(run(r.root, h, 'start', '--once').out.at(-1).kind, 'fleet_stall');
 });
+
+test('provider blip: two separate errors on one path in one slice are both resent (the key carries the blip start)', () => {
+  const p = fleet();
+  const f = fakes();
+  const idle = (n, extra = {}) => ({ name: `idle ${n}`, result: 'idle', ...extra });
+  f.queue([start(errScreen(ERR429), 'implementing'), idle(1), idle(2, { screens: errScreen(['• fine', '› ']), sleepMs: 20 }), idle(3, { screens: errScreen(ERR429) }), idle(4)]);
+  const out = run(p.root, f, 'start', '--once').out;
+  assert.equal(out.some((o) => o.waiting), false);
+  assert.equal(f.sends().length, 3); // blip resend, the ordinary stall nudge once cleared, the second blip's resend
+  assert.equal((log(p.root).match(/retry 1 — resending stall/g) || []).length, 2);
+  assert.equal(Object.keys(sliceState(p.root, 'S01').outbox).filter((k) => k.startsWith('blip:')).length, 2);
+});
+
+test('provider blip: an error that newer agent output followed (or one far above the prompt) is not a blip', () => {
+  const p = fleet();
+  const f = fakes();
+  f.queue([start(errScreen(['  ⎿  API Error: 429 rate limit (reset after 20m)', '• retried and worked', '• editing a.ts', '• editing b.ts', '• editing c.ts', '› ']), 'implementing'),
+    { name: 'i1', result: 'idle' }, { name: 'i2', result: 'idle' }, { name: 'i3', result: 'idle' }, { name: 'i4', result: 'idle' }]);
+  assert.equal(run(p.root, f, 'start', '--once').out.at(-1).kind, 'fleet_stall'); // the old rules
+  assert.doesNotMatch(log(p.root), /provider error/);
+});

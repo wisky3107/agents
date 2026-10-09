@@ -1522,10 +1522,14 @@ function blipOnScreen(handle) {
   } catch {
     return null;
   }
-  const tail = (screen?.lines || []).map((l) => String(l).trim()).filter(Boolean).slice(-12);
+  // the error must end the last turn: within the last few non-blank lines above the input prompt (a stale error
+  // or quoted text further up, or newer agent output after it, is not a blip)
+  const lines = (screen?.lines || []).map((l) => String(l).trim()).filter(Boolean);
+  let end = lines.length;
+  while (end > 0 && /^[›❯>]\s*$/.test(lines[end - 1])) end--; // empty prompt line(s)
+  const tail = lines.slice(Math.max(0, end - 4), end);
   for (let i = tail.length - 1; i >= 0; i--) {
-    const m = BLIP_ERROR.exec(tail[i]);
-    if (m) return oneLine(tail[i]).slice(0, 200);
+    if (BLIP_ERROR.test(tail[i])) return oneLine(tail[i]).slice(0, 200);
   }
   return null;
 }
@@ -1561,7 +1565,7 @@ function serviceBlip(ctx, s, handle, text, key) {
   const hint = /reset after\s+(\d+)\s*m/i.exec(err);
   const wait = Math.min(hint ? Number(hint[1]) * 60000 + 30000 : BLIP_BASE_MS() * 2 ** (n - 1), hint ? BLIP_MAX_MS() : 5 * 60 * 1000);
   st.log(root, ctx.id, `provider error on ${handle} (${err}): retry ${n} — resending ${key}, next look in ${Math.round(wait / 1000)} s`);
-  sendOnce(ctx, `blip:${key}:${n}`, handle, text, { blip: { since: b.since, n, next_at: now + wait } });
+  sendOnce(ctx, `blip:${key}:${b.since}:${n}`, handle, text, { blip: { since: b.since, n, next_at: now + wait } });
   return true;
 }
 

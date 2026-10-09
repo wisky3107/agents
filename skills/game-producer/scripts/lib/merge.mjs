@@ -737,16 +737,20 @@ function notesCommitOwn(root, id, j, files, branch, own, body) {
     st.log(root, id, `bookkeeping commit failed (left uncommitted for the director): ${why}`);
     return stepDone(root, id, 'notes_commit', { failed: true, files, note: `commit failed: ${String(why).slice(0, 200)}` });
   };
-  const blob = spawnSync('git', ['-C', root, 'hash-object', '-w', '--stdin'], { encoding: 'utf8', input: own });
-  if (blob.status !== 0) return fail(blob.stderr.trim());
-  const others = files.filter((f) => f !== 'AGENT_NOTES.md');
-  const steps = [['read-tree', 'HEAD'], ['update-index', '--add', '--cacheinfo', `100644,${blob.stdout.trim()},AGENT_NOTES.md`], ...(others.length ? [['add', '-u', '--', ...others]] : []),
-    ['commit', '-q', '-m', `chore(producer): record ${id} merge — notes, evidence`, '-m', `${body}\n\nAGENT_NOTES.md: only this slice's own edits; other uncommitted changes in it were left in the work tree.`]];
-  for (const a of steps) {
-    const r = run(a);
-    if (r.status !== 0) return fail(r.error ? `git ${a[0]} ${r.error.code === 'ETIMEDOUT' ? 'timed out' : r.error.message}` : (r.stderr || r.stdout).trim().split('\n').slice(-1)[0] || `exit ${r.status}`);
+  try {
+    const blob = spawnSync('git', ['-C', root, 'hash-object', '-w', '--stdin'], { encoding: 'utf8', input: own, timeout: COMMIT_TIMEOUT_MS, killSignal: 'SIGTERM' });
+    if (blob.status !== 0) return fail(blob.error ? blob.error.message : blob.stderr.trim());
+    const mode = /^(\d{6}) /.exec(git(root, ['ls-files', '-s', '--', 'AGENT_NOTES.md']).stdout)?.[1] || '100644';
+    const others = files.filter((f) => f !== 'AGENT_NOTES.md');
+    const steps = [['read-tree', 'HEAD'], ['update-index', '--add', '--cacheinfo', `${mode},${blob.stdout.trim()},AGENT_NOTES.md`], ...(others.length ? [['add', '-u', '--', ...others]] : []),
+      ['commit', '-q', '-m', `chore(producer): record ${id} merge — notes, evidence`, '-m', `${body}\n\nAGENT_NOTES.md: only this slice's own edits; other uncommitted changes in it were left in the work tree.`]];
+    for (const a of steps) {
+      const r = run(a);
+      if (r.status !== 0) return fail(r.error ? `git ${a[0]} ${r.error.code === 'ETIMEDOUT' ? 'timed out' : r.error.message}` : (r.stderr || r.stdout).trim().split('\n').slice(-1)[0] || `exit ${r.status}`);
+    }
+  } finally {
+    fs.rmSync(idx, { force: true });
   }
-  fs.rmSync(idx, { force: true });
   git(root, ['reset', '-q', '--', ...files]); // the real index follows the new HEAD; the work tree keeps the director's edits
   const sha = git(root, ['rev-parse', 'HEAD']).stdout.trim();
   st.log(root, id, `committed the bookkeeping on ${branch} as ${sha.slice(0, 7)}: ${files.join(', ')} (AGENT_NOTES.md: this slice's edits only; the rest stays uncommitted)`);
