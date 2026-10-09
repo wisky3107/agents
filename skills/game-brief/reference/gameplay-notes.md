@@ -89,6 +89,8 @@ proved the new behavior. Keep the milestone DAG and final release-polish checks 
 with follow-up work, including fresh final checks if the previous release is already complete.
 Producer owns release status; the brief author does not reset it.
 
+Amended slices get the same geometry pass, old-check pre-declaration and no-ship rule as new ones (brief-prompt Rules).
+
 Re-run the coverage and contract-consistency gates. Return changed GP IDs, changed files,
 affected slice IDs, and scenarios requiring fresh review to the caller/current coordinator.
 Before affected implementation/review resumes, that owner must confirm the revised files

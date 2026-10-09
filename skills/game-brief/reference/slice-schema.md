@@ -295,6 +295,9 @@ Self-check for any later slice before you save it:
 4. Every `feel_rows` ID appears in the first column of the EXPECT feel table.
 5. Count ASSUMPTION rows: ≥ 3 → `needs_director_ok: true` and each open choice is in `risks`.
 6. `release_items` are real `RC-nn` rows whose `closed_by` is this slice.
+7. Every coordinate, rect or node path (mocks included) was checked against the real scene/prefabs/layout config: sibling order, existing rects, hitbox floors, row pitch.
+8. A slice adding a core-loop phase lists the existing smoke checks / unit tests it changes or must keep passing in `paths.code`, with the reason.
+9. No deploy, tag or push step anywhere in the slice (`slice_performs_ship`).
 
 ## S01 visual target and review contract
 
@@ -365,8 +368,8 @@ the S01 rows as regression checks. Do not defer initial S01 compliance to releas
 | RC-17 | assets | S01 has no placeholder/debug UI or placeholder art/text; fonts with fallback; strings not hardcoded in scene | S01 | walkthrough and asset check |
 | RC-18 | assets | Every asset has its .meta pair; no orphan assets | S08 | integrator check |
 | RC-19 | ship | `build/build.sh --clean` release build serves without 404s | S08 | `--serve` |
-| RC-20 | ship | Preview deploy passes smoke test on the deployed URL; then prod if `release.deploy: prod` | S08 | ship skill |
-| RC-21 | ship | git tag `v1.0.0`; FOLLOWUPS.md trimmed to a v1.1 backlog | S08 | git tag |
+| RC-20 | ship | Preview deploy passes smoke test on the deployed URL; then prod if `release.deploy: prod` | producer Step 3 | ship skill, after the release slice merges |
+| RC-21 | ship | git tag `v1.0.0` proposed to the human; FOLLOWUPS.md trimmed to a v1.1 backlog | producer Step 3 | git tag |
 | RC-22 | visual | S01 matches its visual target and layout tolerances, with only documented accepted deviations | S01 | saved target comparison and PASS/FAIL per viewport |
 ```
 
@@ -389,4 +392,4 @@ build (no numeric size cap), localStorage schema check.
 threshold, and no slice other than release-polish carries a size invariant, acceptance row,
 runtime check or `build_checks` entry. Mid-release slices never trim art or levels to save bytes;
 the final build is optimized once, here.
-After APPROVED the producer runs the `ship` skill per `release.deploy`.
+Only `ship` rows may be closed by exactly `producer Step 3` (RC-20, RC-21); they are in no slice's `release_items`, and the producer closes them after the release slice merges. The slice never deploys, tags or pushes: write "ship handed to producer Step 3". After APPROVED the producer runs the `ship` skill per `release.deploy`.

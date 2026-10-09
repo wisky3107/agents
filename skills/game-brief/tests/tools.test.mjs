@@ -215,6 +215,22 @@ test('slices need player_outcome, real unlocks edges and known feel rows',()=>{
   codes=validate(p).errors.map(e=>e.code);
   assert.ok(codes.includes('unknown_feel_row')); assert.ok(codes.includes('unlocks_mismatch'));
 });
+test('a slice may not perform deploy, tag or push; hand-off to the producer passes',()=>{
+  const p=validProject(),f='slices/S02-slice.md',t=fs.readFileSync(path.join(p,f),'utf8');
+  assert.ok(!validate(p).errors.some(e=>e.code==='slice_performs_ship'));
+  const bad=x=>{put(p,f,t.replace('- clear','- '+x));return validate(p).errors.some(e=>e.code==='slice_performs_ship');};
+  for(const x of ['preview deploy through the ship skill','create the v1.1.0 tag','git push origin main','run vercel --prod']) assert.ok(bad(x),x);
+  for(const x of ['smoke suite tested on the deployed URL','no deploy in this slice (producer Step 3)']) assert.ok(!bad(x),x);
+  const rcf='RELEASE_CHECKLIST.md',rc0=fs.readFileSync(path.join(p,rcf),'utf8');
+  put(p,rcf,rc0+'| RC-20 | ship | deploy | producer Step 3 | ship skill |\n');
+  assert.ok(!validate(p).errors.some(e=>e.code==='uncovered_release_item'));
+  put(p,rcf,rc0+'| RC-20 | input | deploy | producer Step 3 | x |\n');
+  assert.ok(validate(p).errors.some(e=>e.code==='uncovered_release_item'));
+  put(p,rcf,rc0+'| RC-20 | ship | deploy | producer | x |\n');
+  assert.ok(validate(p).errors.some(e=>e.code==='uncovered_release_item'));
+  put(p,f,t.replace('- clear','- Ship handed to producer Step 3 (deploy and tag are director-gated)'));
+  assert.ok(!validate(p).errors.some(e=>e.code==='slice_performs_ship'));
+});
 test('a later slice adding a screen needs its own visual target',()=>{
   const p=validProject(),m={slices:['S01','S02','S03'],dag:{S02:['S01'],S03:['S01','S02']},parallel_ok:[],v1_slice:'S01',release_slice:'S03',stop_when:'RC pass'};
   put(p,'MILESTONES.md','```yaml\n'+stringify(m)+'```\n');
