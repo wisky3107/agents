@@ -1372,3 +1372,18 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 
 - Merged: 1cd62d3 (bookkeeping 274bf6f). Wall ~48 min (00:13→01:01Z). Writer opus: 8 code files / 708 lines (budget 13/850), 10 nodes, assets 2→5 (shadow, clean body, dash sheet); review r1 → 1 fix round → accepted; smoke 54/54 at 390×844, unit 259/259 (new tests/drag-snap.test.ts, 11 cases); 5 smoke + 1 unit negative controls. Tokens ~39.7M (3 slice-agent sessions). 0 questions.
 - One manual_required item deferred with "(no details)" — the runner logged no description (small finding: a deferred manual check needs its text, or S18/ship sign-off cannot act on it).
+
+### Pilot 15 — S18 kết quả (S18 merge 2026-10-09 02:38Z, fleet lite)
+
+- Merged: c379c2b (merge a5b2706, bookkeeping eab8f06). Wall 1 h 38 m (01:01→02:39Z). Review 1 round APPROVED, 0 fix rounds; channel Playwright + real Chrome headless GPU. Tokens fleet-orch 9.5M + workers 55.5M + slice-agent 1.4M → ~66M.
+- Release report: v1.1.0 candidate, tag proposed only; named mid-range phone / real iOS Safari, real-device touch, throttled cold load → manual_required; deployed-URL smoke deferred.
+- **Incident I2:** S18's slice scoped "preview deploy through the ship skill" and AGENT_NOTES has `release.deploy: preview`, so inside the lane the deploy looked authorized. The integrator asked, the coordinator answered "(a) deploy", and a preview went to the shared Vercel project `web-mobile` at 02:10Z (https://web-mobile-5f2rvm9ya-…vercel.app, sha 274bf6f, no --prod) — the pilot's no-deploy message sat queued behind the coordinator's 5-min wait and arrived minutes later. Coordinator then removed the link copies; nothing else ran. Fix needed: brief must never put a deploy inside a slice (deploy belongs to Step 3, director-gated), and/or the runner should block `vercel`/`deploy.sh` in lanes.
+
+### Pilot 15 — tổng kết (S09–S18, 2026-10-08 07:34Z → 2026-10-09 02:39Z)
+
+- 10/10 v1.1 slices merged in ~19 h wall: S09 6 h 09 m (3 h 50 m OmniRoute outage), S10 1 h 48 m, S11 27 m, S12 2 h 47 m, S13 1 h 21 m, S14 1 h 18 m, S15 1 h 27 m, S16 1 h 21 m, S17 48 m, S18 1 h 38 m.
+- Tokens: claude 785.6M + codex 17.1M context over the pilot window.
+- Questions: S09 10 (5 OmniRoute), S10 4, S11 4, S12 1, S13 1, S14 1, S15 1, S16 2, S17 0, S18 0 (+1 HANDOFF-only decision in S12). After the 13:55Z delegation the pilot answered q41, q42, q44, q45 and two out-of-band coordinator decisions; the judge answered q43; no stop/skip/blocked.
+- Workflow fixes merged: agent-session retries without --focus (91814bb); failure signatures 741b4f3 (OmniRoute 401), be9f739 (circuit breaker), ad93382 (focused create timeout); template sync 879e728 (project).
+- Recurring findings (open): (1) brief geometry misses in 5 slices (mock/rect vs real sibling order, row pitch, hitboxes) → brief gate needs a geometry pass against the real scene; (2) each new core-loop phase breaks old smoke solvers outside the slice paths (S09/S12/S13/S15/S16) → slice authoring must list them; (3) coordinator cannot open gates during a live worker Dispatch → questions hide in HANDOFF.detail; (4) runner bookkeeping commits the whole AGENT_NOTES.md (swept the director's Step-3 lines); (5) deploy scoped inside a release-regression slice (I2); (6) manual_deferred item with "(no details)".
+- Left for the director: accidental preview on web-mobile (keep or `vercel remove`), firefighter-only Vercel project before any v1.1 deploy, v1.1.0 tag, real-device checks, Step-3 leftovers (manual-deferred.json ×5, retro, S05/S06 PNGs), and a deleted `assets/.meta` in the main checkout (not touched).
