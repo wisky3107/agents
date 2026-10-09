@@ -160,6 +160,14 @@ do nothing.
 
 Done when: the slice is merged (`release.slices.Sxx: merged`) or the user stops the pilot.
 
+## Handover (a fresh session, the pilot goes on)
+
+When the pilot session has grown large (a few hundred k context and up), hand it over at the
+next merge rather than letting every wake pay for it:
+[handover.md](reference/handover.md). The pilot's state lives in files (runner file, results.md,
+memory note), so nothing is lost when the old session writes its handover note and keeps the
+registration. The old session starts the new one through Orca; the user does nothing.
+
 ## 5. Finding → workflow fix
 
 When a symptom is a workflow bug (not a slice defect), fix it while the pilot runs, through
@@ -182,7 +190,8 @@ is written down for the results entry and the memory note.
    which pack items were cited; did a lesson visibly prevent a known failure.
 4. Append `### Pilot N — kết quả` using [results-template.md](reference/results-template.md);
    commit only results.md; delete the cron and stop the background `pilot-wait`;
-   `producer-runner.mjs pilot --clear --project <p>` (when no other slice of this pilot follows);
+   `producer-runner.mjs pilot --clear --project <p>` (when no other slice of this pilot follows;
+   never at a handover);
    update the memory notes; tell the user in a few
    lines what merged, the numbers, the findings and what is still open.
 
