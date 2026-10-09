@@ -1434,3 +1434,8 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
   - Coordinator và worker art-manifest cùng chết ở lỗi này ngay khi vừa dispatch. Runner hỏi q36 fleet_stall, director trả lời "nudged again" (lần nhắc đó cũng rơi vào 429).
   - 05:14Z: test sonnet và opus OK (OmniRoute đã chuyển account hoặc limit đã hết). Nhắc 2 agent, cả hai chạy lại.
   - Nhịp watch 30 phút làm mỗi lần F10 mất 5–30 phút. Hướng sửa tự động đã ghi (runner đọc màn hình thấy `API Error` thì nhắc lại sau khi API trả lời) ngày càng đáng làm.
+
+- 05:45Z **F17 (S24 q37): rule template trỏ tới file không tồn tại.**
+  - `.cursor/rules/50-docs.mdc` bảo agent đọc `docs/flows/docs-index.md`, nhưng template và dự án đều chỉ có `docs/flows/README.md`. Một worker S24 báo HANDOFF `blocked`. Judge defer; director hỏi "lý do là gì, hãy tự xử lý giúp mình".
+  - Lane đã tự gỡ: dòng index vào README.md, implement xong.
+  - Sửa rule (trỏ tới README.md; index thiếu thì không bao giờ được chặn task) ở template `cc-game-template` `21f9ea0` và ở dự án `7df3d11`, mỗi nơi chỉ commit đúng file đó. Template đang có WIP của session khác ở các rule khác, không đụng. Các template khác (cc4, playable) cần kiểm tra cùng lỗi.
