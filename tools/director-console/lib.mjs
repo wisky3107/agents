@@ -66,7 +66,25 @@ export function projects() {
       if (!byPath.has(r)) byPath.set(r, { id: e.name, path: dir, mode: null, registered: false });
     }
   }
-  return [...byPath.values()].map((p) => ({ ...p, runner: runnerOf(p.path), levels: levelsOf(p.path) })).sort((a, b) => a.id.localeCompare(b.id));
+  return [...byPath.values()].map((p) => {
+    const runner = runnerOf(p.path);
+    return { ...p, runner, levels: levelsOf(p.path), active_at: activeAt(p.path, runner) };
+  }).sort(projectOrder);
+}
+
+/** Last sign of work: the runner's state write or the checkout's last HEAD move (commit, merge, checkout). */
+function activeAt(root, runner) {
+  const head = safe(() => fs.statSync(path.join(root, '.git', 'logs', 'HEAD')).mtimeMs) ?? 0;
+  const t = Math.max(head, Date.parse(runner?.updated ?? '') || 0);
+  return t ? new Date(t).toISOString() : null;
+}
+
+/** Console order: open runner questions first (most first), then a live runner, then the latest activity, then id. */
+export function projectOrder(a, b) {
+  return (b.runner?.open_questions ?? 0) - (a.runner?.open_questions ?? 0)
+    || Number(!!b.runner?.alive) - Number(!!a.runner?.alive)
+    || (Date.parse(b.active_at ?? '') || 0) - (Date.parse(a.active_at ?? '') || 0)
+    || a.id.localeCompare(b.id);
 }
 
 /** The project's slices in order with their release status: the level map on the console. */

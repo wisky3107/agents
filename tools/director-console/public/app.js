@@ -512,7 +512,7 @@
       h('div', { class: 'graph-wrap' }, flowGraph(nodes, edges, { width: 946, height: 316 })));
 
     // worlds: each project as a compact level strip
-    const worlds = panel('Dự án', { icon: 'globe', right: btn('Xem tất cả', () => go('worlds'), { cls: 'ghost sm', ic: 'chev' }) },
+    const worlds = panel('Dự án', { icon: 'globe', right: h('div', { class: 'row' }, h('span', { class: 'small muted', title: SORT_NOTE }, 'cần quyết → đang chạy → mới nhất'), btn('Xem tất cả', () => go('worlds'), { cls: 'ghost sm', ic: 'chev' })) },
       withLevels.length ? h('div', { class: 'grid cols-3' }, withLevels.map(worldCard)) : empty('Chưa có dự án nào dùng producer.'));
 
     const qs = allQuests().filter((q) => q.type !== 'manual').slice(0, 4);
@@ -521,6 +521,8 @@
     return [stats, h('div', { style: { height: '16px' } }), flow, h('div', { class: 'grid cols-2', style: { marginTop: '16px' } }, quests, worlds)];
   };
 
+  // the server's order (lib.mjs projectOrder)
+  const SORT_NOTE = 'Thứ tự: câu hỏi runner đang mở (nhiều trước) → runner đang chạy → hoạt động gần nhất (runner hoặc commit) → tên.';
   function worldCard(p) {
     const done = p.levels.filter((l) => levelState(l.status)[0] === 'good').length;
     const cur = p.levels.find((l) => levelState(l.status)[0] === 'live');
@@ -529,6 +531,7 @@
     return h('button', { class: `world ${route.arg === p.id ? 'on' : ''}`, type: 'button', onclick: () => go(`worlds/${p.id}`) },
       h('div', { class: 'world-h' }, h('b', { class: 'grow' }, p.id), p.mode ? chip(p.mode, modeTone(p.mode)) : chip('chưa đăng ký', 'bad'), p.runner?.open_questions ? h('span', { class: 'badge' }, p.runner.open_questions) : null),
       h('div', { class: 'row small ink2' }, status, h('span', { class: 'grow' }), `${done}/${p.levels.length} slice`, cur ? ` · đang ${cur.slice}` : ''),
+      h('div', { class: 'small muted', title: p.active_at ? when(p.active_at) : 'chưa thấy hoạt động' }, `hoạt động ${ago(p.active_at)}`),
       h('div', { class: 'xp', title: `${pct}% slice đã xong` }, h('i', { style: { width: `${pct}%` } })),
       h('div', { class: 'graph-wrap' }, levelMap(p.levels, { size: 's' })));
   }
@@ -752,7 +755,7 @@
   // ======== worlds
   VIEWS.worlds = async (id) => {
     const ov = store.ov;
-    const list = h('div', { class: 'world-list' }, ov.projects.map(worldCard));
+    const list = h('div', { class: 'world-list' }, h('div', { class: 'small muted' }, SORT_NOTE), ov.projects.map(worldCard));
     if (!id) {
       const pick = ov.projects.find((p) => p.runner?.alive) ?? ov.projects.find((p) => p.levels.length);
       return h('div', { class: 'layout-worlds' }, list, panel('Chọn một dự án', { icon: 'globe' }, empty('Chọn một dự án bên trái để xem bản đồ slice, điều khiển runner và terminal.', 'globe'),

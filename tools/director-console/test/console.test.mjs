@@ -356,3 +356,17 @@ test('quota: window shapes', async () => {
   assert.deepEqual(quotaView('agy', { quotas: { 'gemini-3.1-flash-image': { remainingPercentage: 31 }, gemini_weekly: { remainingPercentage: 90 } } }).image.remaining, 31);
   assert.equal(quotaView('agy', { quotas: { gemini_weekly: { remainingPercentage: 90 } } }).image, null, 'no image window → not valid');
 });
+
+test('projects: open questions first, then a live runner, then the latest activity, then id', async () => {
+  const { projectOrder } = await import('../lib.mjs');
+  const p = (id, o = {}) => ({ id, runner: o.runner ?? null, active_at: o.at ?? null });
+  const list = [
+    p('cc-a'),
+    p('cc-old', { at: '2026-10-01T00:00:00Z' }),
+    p('cc-new', { at: '2026-10-09T00:00:00Z' }),
+    p('cc-live', { runner: { alive: true, open_questions: 0 }, at: '2026-09-01T00:00:00Z' }),
+    p('cc-ask', { runner: { alive: false, open_questions: 2 } }),
+    p('cc-b'),
+  ];
+  assert.deepEqual(list.sort(projectOrder).map((x) => x.id), ['cc-ask', 'cc-live', 'cc-new', 'cc-old', 'cc-a', 'cc-b']);
+});
