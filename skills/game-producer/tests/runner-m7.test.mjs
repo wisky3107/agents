@@ -1043,3 +1043,70 @@ test('U1: after a confirmed keys answer (no panel left), an unreadable screen le
   run(q.root, g, 'start', '--once');
   assert.equal(sliceState(q.root, 'S01').cq_panel_seen, true);
 });
+
+const DECISION_NEEDED = 'DECISION NEEDED (director): S17 mock rect and real scene disagree on the row pitch; keep the mock (a) or the scene (b)?';
+
+test('director_pending: a HANDOFF detail that starts with "DECISION NEEDED (director)" is a question to relay (live Dispatch, no gate)', () => {
+  assert.ok(waitsOnDirector(DECISION_NEEDED));
+  assert.equal(waitsOnDirector('The earlier DECISION NEEDED was answered by the director.'), null);
+  const p = fleet();
+  const f = fakes();
+  f.queue([start(null, DECISION_NEEDED), tick(2, DECISION_NEEDED)]);
+  const a = run(p.root, f, 'start', '--once').out.at(-1);
+  assert.deepEqual([a.waiting, a.kind, a.options], ['q1', 'director_pending', ['send this answer to the lane', 'answered in the lane, continue', 'stop']]);
+  assert.match(runnerFile(p.root).questions[0].text, /DECISION NEEDED \(director\)/);
+  run(p.root, f, 'answer', '--id', 'q1', '--choice', 'send this answer to the lane', '--text', 'keep the scene (b)');
+  f.queue([tick(3, DECISION_NEEDED), tick(4, DECISION_NEEDED), tick(5, DECISION_NEEDED)]);
+  assert.equal(run(p.root, f, 'start', '--once').out.some((o) => o.blocked || o.waiting), false); // once per distinct detail
+  assert.equal(f.sends().length, 1);
+});
+
+const ERR429 = ['• Working on the slice', '', '  ⎿  API Error: 429 rate limit exceeded for claude-sonnet-5-5 (reset after 20m)', '', '› '];
+const errScreen = (lines) => ({ term_1: { at: 'a', frames: { a: { lines } } } });
+
+test('provider blip: a coordinator turn ending on API Error 429/401/503 is waited on with back-off and resent once — no fleet_stall, each retry logged', () => {
+  const p = fleet();
+  const f = fakes();
+  f.queue([start(errScreen(ERR429), 'implementing'), { name: 'idle 1', result: 'idle' }, { name: 'idle 2', result: 'idle' }, { name: 'idle 3', result: 'idle' }, { name: 'idle 4', result: 'idle' }, { name: 'idle 5', result: 'idle' }]);
+  const out = run(p.root, f, 'start', '--once').out;
+  assert.equal(out.some((o) => o.waiting || o.blocked), false); // never asked
+  assert.equal(f.sends().length, 1); // one resume nudge; the 20 m hint holds the next one back
+  assert.match(f.sends()[0].text, /^resume the cocos-orca-fleet Coordinator loop/);
+  assert.match(log(p.root), /ended its turn on a provider error \(.*429.*\)/);
+  assert.match(log(p.root), /retry 1 — resending stall, next look in 1230 s/);
+
+  // the same error past the bound is a question after all
+  const q = fleet();
+  const g = fakes();
+  g.queue([start(errScreen(['  ⎿  API Error: 503 Provider claude circuit breaker is open', '› ']), 'implementing'), { name: 'i1', result: 'idle' }, { name: 'i2', result: 'idle' }, { name: 'i3', result: 'idle' }, { name: 'i4', result: 'idle' }]);
+  const o2 = runner(q.root, g, 'start', '--once', { env: { PRODUCER_RUNNER_KEY_MS: '0', PRODUCER_RUNNER_BLIP_MAX_MS: '0' } }).out;
+  assert.equal(o2.at(-1).kind, 'fleet_stall');
+  assert.match(log(q.root), /still ends on a provider error/);
+
+  // a screen without the error: the old stall rules (one nudge, then ask)
+  const r = fleet();
+  const h = fakes();
+  h.queue([start(errScreen(['• fine', '› ']), 'implementing'), { name: 'i1', result: 'idle' }, { name: 'i2', result: 'idle' }, { name: 'i3', result: 'idle' }, { name: 'i4', result: 'idle' }]);
+  assert.equal(run(r.root, h, 'start', '--once').out.at(-1).kind, 'fleet_stall');
+});
+
+test('provider blip: two separate errors on one path in one slice are both resent (the key carries the blip start)', () => {
+  const p = fleet();
+  const f = fakes();
+  const idle = (n, extra = {}) => ({ name: `idle ${n}`, result: 'idle', ...extra });
+  f.queue([start(errScreen(ERR429), 'implementing'), idle(1), idle(2, { screens: errScreen(['• fine', '› ']), sleepMs: 20 }), idle(3, { screens: errScreen(ERR429) }), idle(4)]);
+  const out = run(p.root, f, 'start', '--once').out;
+  assert.equal(out.some((o) => o.waiting), false);
+  assert.equal(f.sends().length, 3); // blip resend, the ordinary stall nudge once cleared, the second blip's resend
+  assert.equal((log(p.root).match(/retry 1 — resending stall/g) || []).length, 2);
+  assert.equal(Object.keys(sliceState(p.root, 'S01').outbox).filter((k) => k.startsWith('blip:')).length, 2);
+});
+
+test('provider blip: an error that newer agent output followed (or one far above the prompt) is not a blip', () => {
+  const p = fleet();
+  const f = fakes();
+  f.queue([start(errScreen(['  ⎿  API Error: 429 rate limit (reset after 20m)', '• retried and worked', '• editing a.ts', '• editing b.ts', '• editing c.ts', '› ']), 'implementing'),
+    { name: 'i1', result: 'idle' }, { name: 'i2', result: 'idle' }, { name: 'i3', result: 'idle' }, { name: 'i4', result: 'idle' }]);
+  assert.equal(run(p.root, f, 'start', '--once').out.at(-1).kind, 'fleet_stall'); // the old rules
+  assert.doesNotMatch(log(p.root), /provider error/);
+});

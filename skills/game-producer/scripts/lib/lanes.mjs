@@ -924,6 +924,27 @@ function infraBlocked(ctx, s) {
   return ask(s, 'infra_blocked', `preview ${port ? `127.0.0.1:${port} answers ${code || 'nothing'}` : 'has no recorded port'} after the writer restarted it once`, ['writer refreshed the preview, review again', 'mark blocked', 'stop']);
 }
 
+/** What a bare manual_required flag stands for: the review's lines that mention manual checks, the HANDOFF detail, else the files to read. */
+function manualContext(dir, handoff, marks) {
+  const rf = st.reviewFiles(dir);
+  const lines = [];
+  for (const f of [rf.verdict, rf.lastRound].filter(Boolean)) {
+    let text = '';
+    try {
+      text = fs.readFileSync(f, 'utf8');
+    } catch { /* unreadable: the next source */ }
+    for (const l of text.split('\n')) {
+      const m = l.replace(/^[\s>*\-#|`]+/, '').trim();
+      if (/manual/i.test(m) && !/^manual_required$/i.test(m) && m.length > 8) lines.push(`${m.slice(0, 240)} (${path.basename(f)})`);
+    }
+    if (lines.length) break;
+  }
+  const detail = [handoff?.detail, handoff?.summary].find((v) => typeof v === 'string' && v.trim());
+  if (!lines.length && detail) lines.push(`${oneLine(detail).slice(0, 240)} (HANDOFF.json detail)`);
+  const out = [...new Set(lines)].slice(0, 6);
+  return out.length ? out : [`${marks[0] || 'manual_required (no details)'}: no item text anywhere, read ${path.join(dir, 'runtime-state.json')} and the review in ${dir}`];
+}
+
 function accept(ctx, s, dir, required, manualOptions) {
   const problems = approvalProblems(dir, required, Boolean(s.verdict_accepted), s.relayed_gates || [], ctx.lane === 'fleet');
   // under defer a manual check is not a blocker: ask about the real one first
@@ -938,7 +959,10 @@ function accept(ctx, s, dir, required, manualOptions) {
     const handoff = readJsonFile(path.join(dir, 'HANDOFF.json'));
     const found = manualItems(p.runtime, { manual_required: handoff?.manual_required });
     // the trigger fired, so the list is never empty: a check nobody can read is still a check
-    const items = found.length ? found : ['manual_required (no details: see runtime-state.json)'];
+    // a bare flag (`manual_required: true`) lists nothing: the text then comes from the review's own manual lines
+    // or the HANDOFF detail (pilot 15 S18: "(no details)" left the sign-off nothing to act on), else the files to read
+    const bare = !found.length || found.every((x) => /\(no details\)$/.test(x));
+    const items = bare ? manualContext(dir, handoff, found) : found;
     // v: 2 — the list as deferred; `status` shows it as written (older files are read again from runtime-state)
     st.writeJson(path.join(dir, 'manual-deferred.json'), { v: 2, slice: ctx.id, at: st.now(), items, from: 'runtime-state.json + HANDOFF.json', policy: 'release.manual_required: defer' });
     st.log(ctx.project.root, ctx.id, `manual_required deferred (${items.length}): ${items.join(' | ').slice(0, 300)}`);
@@ -1060,6 +1084,7 @@ function committing(ctx, s, w, h, held = false) {
       setPhase(root, ctx.id, 'merge', { commit_sha: c.sha, commit_found: true });
       return null;
     }
+    if (w.event === 'idle' && serviceBlip(ctx, s, ctx.lane === 'fleet' ? w.handle || s.coordinator : s.writer, commitText(ctx), 'commit')) return PAUSE;
     if (w.event === 'terminal-missing' || idles >= 3) {
       const found = commitsSince(ctx, s);
       // each send of the commit request is a new situation: a stall after "resend commit" is asked again
@@ -1154,6 +1179,7 @@ function fleetStep(ctx, s, phase) {
     st.writeSliceState(root, id, { gate_waits: waits });
     if (waits < GATE_PATIENCE) return PAUSE;
     const ids = w.pending_gates.map((g) => g.id).join(',');
+    if (serviceBlip(ctx, s, coordinator, `A provider error (429/401/503) ended your last turn. It is transient: resolve your pending gate ${ids} with the Director decision already sent, then continue the slice.`, 'gate')) return PAUSE;
     return ask(s, 'gate_unresolved', `gate ${ids} still pending after the decision was sent`, ['continue waiting', 'stop'], { obs: `gate_unresolved@${ids}:${s.gate_unresolved_waits || 0}` });
   }
   if (s.gate_waits || s.gate_settle) st.writeSliceState(root, id, { gate_waits: 0, gate_settle: false });
@@ -1227,6 +1253,7 @@ function fleetStep(ctx, s, phase) {
   if (parked) return parked;
   if (panel?.hold) return PAUSE; // a panel the director has in the terminal: only wait (no nudge, no stall question)
   if (w.event === 'idle') {
+    if (serviceBlip(ctx, s, coordinator, STALL_NUDGE, 'stall')) return PAUSE; // a provider error, not a stall: back off and resend
     // idle with any other status: stalled (S08 lost ~3 h) → one nudge, then the human
     if (!s.nudged_stall) {
       sendOnce(ctx, `stall:${coordinator}:${h.mtime || 0}`, COORDINATOR, STALL_NUDGE, { nudged_stall: true });
@@ -1481,6 +1508,67 @@ function holdPanel(ctx, s, count) {
   return { hold: true };
 }
 
+// OmniRoute auth / rate-limit blips (pilots 15–17): a turn that ends on one of these errors leaves the agent idle at its
+// prompt, and a nudge sent inside the cool-down dies the same way. The runner backs off and resends by itself.
+const BLIP_ERROR = /API Error:?\s*(?:429|401|503)\b[^\n]*|No active credentials for provider|circuit breaker is open/i;
+const BLIP_MAX_MS = () => Number(process.env.PRODUCER_RUNNER_BLIP_MAX_MS || 25 * 60 * 1000); // give up (ask the director) after this long
+const BLIP_BASE_MS = () => Number(process.env.PRODUCER_RUNNER_BLIP_BASE_MS || 30 * 1000); // first back-off, doubled per retry up to 5 min
+
+/** The error the agent's last turn ended on (the screen's last non-blank lines), or null. */
+function blipOnScreen(handle) {
+  let screen = null;
+  try {
+    screen = io.readScreen(handle);
+  } catch {
+    return null;
+  }
+  // the error must end the last turn: within the last few non-blank lines above the input prompt (a stale error
+  // or quoted text further up, or newer agent output after it, is not a blip)
+  const lines = (screen?.lines || []).map((l) => String(l).trim()).filter(Boolean);
+  let end = lines.length;
+  while (end > 0 && /^[›❯>]\s*$/.test(lines[end - 1])) end--; // empty prompt line(s)
+  const tail = lines.slice(Math.max(0, end - 4), end);
+  for (let i = tail.length - 1; i >= 0; i--) {
+    if (BLIP_ERROR.test(tail[i])) return oneLine(tail[i]).slice(0, 200);
+  }
+  return null;
+}
+
+/**
+ * The agent's screen ends on an OmniRoute 429 / 401 / 503 error → wait with back-off (a "reset after Nm" hint
+ * sets the first wait), then resend `text` (its last message, or a resume nudge); each retry is logged. true = the
+ * lane is being waited on, so no stall question; false = no error on screen, or it outlasted BLIP_MAX_MS: ask.
+ */
+function serviceBlip(ctx, s, handle, text, key) {
+  const { root } = ctx.project;
+  if (!handle) return false;
+  const err = blipOnScreen(handle);
+  if (!err) {
+    if (s.blip) {
+      st.writeSliceState(root, ctx.id, { blip: null });
+      st.log(root, ctx.id, `provider error cleared on ${handle} after ${s.blip.n || 0} retr${s.blip.n === 1 ? 'y' : 'ies'}`);
+    }
+    return false;
+  }
+  const now = Date.now();
+  const b = s.blip || { since: now, n: 0, next_at: now };
+  if (!s.blip) st.log(root, ctx.id, `${handle} ended its turn on a provider error (${err}): waiting with back-off, then resending (up to ${Math.round(BLIP_MAX_MS() / 60000)} min)`);
+  if (now - b.since >= BLIP_MAX_MS()) {
+    st.log(root, ctx.id, `${handle} still ends on a provider error after ${Math.round((now - b.since) / 60000)} min and ${b.n} retr${b.n === 1 ? 'y' : 'ies'}: asking the director`);
+    return false;
+  }
+  if (now < b.next_at) {
+    if (!s.blip) st.writeSliceState(root, ctx.id, { blip: b });
+    return true;
+  }
+  const n = b.n + 1;
+  const hint = /reset after\s+(\d+)\s*m/i.exec(err);
+  const wait = Math.min(hint ? Number(hint[1]) * 60000 + 30000 : BLIP_BASE_MS() * 2 ** (n - 1), hint ? BLIP_MAX_MS() : 5 * 60 * 1000);
+  st.log(root, ctx.id, `provider error on ${handle} (${err}): retry ${n} — resending ${key}, next look in ${Math.round(wait / 1000)} s`);
+  sendOnce(ctx, `blip:${key}:${b.since}:${n}`, handle, text, { blip: { since: b.since, n, next_at: now + wait } });
+  return true;
+}
+
 /** What goes to a TUI as typed text: one line, no control bytes (an escape sequence would be a key). */
 const typedText = (t) => oneLine(t).replace(/[\x00-\x1f\x7f-\x9f]/g, '');
 
@@ -1530,6 +1618,9 @@ const DIRECTOR_WAIT = new RegExp([
   String.raw`\bdirector(?:['’]s)?\s+(?:must|needs?\s+to|has\s+to|to)\s+(?:decide|rule|approve|choose|pick|confirm|answer)\b`,
   String.raw`\b(?:needs?|requires?|blocked\s+(?:on|by|pending))\s+${WHO}\s+${DECISION}\b`,
   String.raw`\bdirector(?:['’]s)?\s+${DECISION}\s+(?:is\s+)?(?:needed|required|pending)\b`,
+  // the coordinator cannot open a gate while a worker Dispatch is live and parks the question as the detail's
+  // first words: "DECISION NEEDED (director): …" (pilot 15 S17, pilot 16 S19)
+  String.raw`^\s*decision\s+(?:needed|required)\b`,
 ].join('|'), 'gi');
 const NEGATED = /\b(?:no|not|none|nothing|without|never|neither|nor|was|were|previously|formerly|had\s+been)\s+(?:\w+\s+)?$|n['’]t\s+(?:\w+\s+)?$/i; // at most one word between: "no gate opened pending…" still waits
 // a negation after the phrase cancels it too: "pending director review is not required", "… not needed"

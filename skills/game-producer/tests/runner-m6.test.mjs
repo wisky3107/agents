@@ -1089,3 +1089,42 @@ test('worktree_rm: evidence plus any other change keeps the worktree (no --force
   assert.equal(fs.existsSync(wt), true);
   assert.equal(fs.existsSync(path.join(f.dir, 'rm.log')), false);
 });
+
+test('bookkeeping commit: the director\'s uncommitted AGENT_NOTES.md edit is not swept in — only the runner\'s own change is committed', () => {
+  const { f, root } = committedFleet();
+  fs.appendFileSync(path.join(root, 'AGENT_NOTES.md'), '\n- ship: S99 DIRECTOR STEP-3 LINE\n');
+  fs.appendFileSync(path.join(root, 'MILESTONES.md'), '\n<!-- director note -->\n');
+  f.queue([VERIFIED]);
+  runner(root, f, 'start', '--once');
+  const committed = g(root, 'show', 'HEAD:AGENT_NOTES.md').stdout;
+  assert.match(committed, /^- S01 fleet merged /m); // the runner's own Notes line
+  assert.match(committed, /S01: merged/);
+  assert.doesNotMatch(committed, /DIRECTOR STEP-3 LINE/);
+  assert.match(fs.readFileSync(path.join(root, 'AGENT_NOTES.md'), 'utf8'), /DIRECTOR STEP-3 LINE/); // still in the work tree
+  assert.match(g(root, 'status', '--porcelain').stdout, /^ M AGENT_NOTES\.md$/m); // unstaged, the director's
+  assert.match(g(root, 'status', '--porcelain').stdout, /^ M MILESTONES\.md$/m);
+  assert.deepEqual(g(root, 'show', '--name-only', '--format=', 'HEAD').stdout.trim().split('\n').sort(), ['.cursor/evidence/tasks/T-S01/evidence/HANDOFF.json', 'AGENT_NOTES.md']);
+  assert.match(journal(root).steps.notes_commit.note, /own edits only/);
+  assert.equal(sliceState(root, 'S01').phase, 'done');
+});
+
+test('manual_required: defer — a bare flag (no list) carries the review\'s manual line, or the files to read, never "(no details)" alone', () => {
+  const run1 = (evidence) => {
+    const p = project({ notes: NOTES(POLICY, '{}', '  manual_required: defer\n'), slices: { S01: { needs: false } } });
+    const f = fakes();
+    f.queue([
+      { name: 'ready', write: { ...W('ready_for_review'), ...preview(7461) } },
+      { name: 'approved, bare flag', write: { ...R('approved', 'APPROVED', { status: 'verified', manual_required: true }), ...evidence } },
+      commitStep('S01'),
+    ]);
+    runner(p.root, f, 'start', '--once');
+    return JSON.parse(fs.readFileSync(ev(p.root, 'S01', 'evidence', 'manual-deferred.json'), 'utf8')).items;
+  };
+  const review = '# Review\n\nF1 ok\n\nManual check: feel of the swipe on a real phone (needs a device)\n\nAPPROVED\n';
+  const withText = run1({ [evRel('S01', 'review.md')]: review });
+  assert.equal(withText.length, 1);
+  assert.match(withText[0], /feel of the swipe on a real phone/);
+  assert.match(withText[0], /review\.md/);
+  const bare = run1({});
+  assert.match(bare[0], /runtime-state\.json/); // names the file to read
+});

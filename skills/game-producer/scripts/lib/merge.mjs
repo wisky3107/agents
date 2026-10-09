@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { withSystem } from './attribution.mjs';
-import { loadProject, writeRelease, writeSliceNote, isCc4 } from './project.mjs';
+import { loadProject, writeRelease, writeSliceNote, editRelease, editSliceNote, isCc4 } from './project.mjs';
 import * as st from './state.mjs';
 import * as io from './orca.mjs';
 
@@ -444,11 +444,12 @@ function record(ctx, s, j) {
     s.manual_deferred?.length ? `manual_deferred=${s.manual_deferred.length}` : null,
   ].filter(Boolean);
   const bump = j.bump ? `${j.bump.from}→${j.bump.to}` : 'none';
-  writeSliceNote(loadProject(root), id, `- ${id} ${ctx.lane} merged fix_rounds=${j.fix_rounds ?? '?'} bump=${bump} commit=${String(j.sha).slice(0, 7)} merged=y ${blockers.join('; ') || '-'}`);
+  const noteLine = `- ${id} ${ctx.lane} merged fix_rounds=${j.fix_rounds ?? '?'} bump=${bump} commit=${String(j.sha).slice(0, 7)} merged=y ${blockers.join('; ') || '-'}`;
+  writeSliceNote(loadProject(root), id, noteLine);
   const added = appendLessons(root, lessonRows(root, id, s, j));
   // Step 2d.5: release the lane terminal (reviewer and verifier were closed at their verdicts)
   io.closeTerminal(ctx.lane === 'fleet' ? s.coordinator : s.writer);
-  stepDone(root, id, 'record', { note: `${added} lessons row(s)` });
+  stepDone(root, id, 'record', { note: `${added} lessons row(s)`, note_line: noteLine });
 }
 
 // ------------------------------------------------------------------ the journal
@@ -666,9 +667,10 @@ export function mergeStep(ctx, s, kit) {
 /**
  * The runner commits its own bookkeeping on main (director 2026-10-02): AGENT_NOTES.md (release cache
  * and Notes line), the slice's tracked evidence the evidence step refreshed (the fleet rewrites
- * HANDOFF.json after its commit) and a tracked lessons.jsonl. By path: those files go in whole — a
- * director's unstaged edit inside AGENT_NOTES.md (the policy line) goes with them — while every other
- * file, untracked files (an Editor's new .meta) and runner state files stay out. Not under
+ * HANDOFF.json after its commit) and a tracked lessons.jsonl. By path: those files go in whole, except
+ * AGENT_NOTES.md: when it holds more than this slice's own two edits (a director's unstaged Step-3 line or
+ * policy edit; pilots 15–16) only HEAD + those edits is committed, from a scratch index, and the work
+ * tree keeps the rest uncommitted. Every other file, untracked files (an Editor's new .meta) and runner state files stay out. Not under
  * auto_commit=false / auto_merge=false (the director commits and finishes), not off the slice's base
  * branch, not when a listed file has staged changes (someone is composing a commit). Idempotent after
  * a kill (nothing changed → nothing to commit); a failed commit (a hook, no identity, a timeout) is
@@ -691,6 +693,8 @@ function notesCommit(ctx, s, j) {
   const staged = z(['diff', '--cached', '--name-only', '-z', '--no-renames', '--relative', '--', ...files]);
   if (staged.length) return skip(`${staged.join(', ')} has staged changes: bookkeeping left uncommitted`);
   const body = `Producer runner, after merging ${id} (commit ${String(j.sha || '').slice(0, 7)}): ${files.join(', ')}`;
+  const own = ownNotes(root, id, readJournal(root, id) || j);
+  if (own) return notesCommitOwn(root, id, j, files, branch, own, body);
   // a hook may hang (an interactive pre-commit): bounded, never --no-verify; SIGTERM so git removes its
   // index.lock (a SIGKILL leaves it and every later git write on main fails)
   const r = spawnSync('git', ['-C', root, 'commit', '-q', '-m', `chore(producer): record ${id} merge — notes, evidence`, '-m', body, '--', ...files],
@@ -703,6 +707,54 @@ function notesCommit(ctx, s, j) {
   const sha = git(root, ['rev-parse', 'HEAD']).stdout.trim();
   st.log(root, id, `committed the bookkeeping on ${branch} as ${sha.slice(0, 7)}: ${files.join(', ')}`);
   stepDone(root, id, 'notes_commit', { sha, files, note: `committed ${files.length} file(s)` });
+}
+
+/**
+ * The AGENT_NOTES.md text the runner alone would leave: HEAD + this slice's release cache edit + its Notes
+ * line. → null when the work tree already is exactly that (the plain by-path commit is right) or it cannot be built.
+ */
+function ownNotes(root, id, j) {
+  const line = j.steps?.record?.note_line;
+  if (!line || !fs.existsSync(path.join(root, 'AGENT_NOTES.md'))) return null;
+  const head = git(root, ['show', 'HEAD:AGENT_NOTES.md']);
+  if (head.status !== 0) return null;
+  try {
+    const text = editSliceNote(editRelease(head.stdout, { currentSlice: '', slices: { [id]: 'merged' } }), id, line).text;
+    return text === fs.readFileSync(path.join(root, 'AGENT_NOTES.md'), 'utf8') ? null : text;
+  } catch {
+    return null;
+  }
+}
+
+/** The bookkeeping commit with a scratch index: AGENT_NOTES.md as `own`, the other files from the work tree. Real index and work tree untouched but for the committed paths' index entries. */
+function notesCommitOwn(root, id, j, files, branch, own, body) {
+  const gitDir = git(root, ['rev-parse', '--git-dir']).stdout.trim();
+  const idx = path.join(path.resolve(root, gitDir), `producer-index-${process.pid}`);
+  const env = { ...process.env, GIT_INDEX_FILE: idx, LC_ALL: 'C', LANG: 'C' };
+  const run = (args, opts = {}) => spawnSync('git', ['-C', root, ...args], { encoding: 'utf8', env, timeout: COMMIT_TIMEOUT_MS, killSignal: 'SIGTERM', ...opts });
+  const fail = (why) => {
+    fs.rmSync(idx, { force: true });
+    st.log(root, id, `bookkeeping commit failed (left uncommitted for the director): ${why}`);
+    return stepDone(root, id, 'notes_commit', { failed: true, files, note: `commit failed: ${String(why).slice(0, 200)}` });
+  };
+  try {
+    const blob = spawnSync('git', ['-C', root, 'hash-object', '-w', '--stdin'], { encoding: 'utf8', input: own, timeout: COMMIT_TIMEOUT_MS, killSignal: 'SIGTERM' });
+    if (blob.status !== 0) return fail(blob.error ? blob.error.message : blob.stderr.trim());
+    const mode = /^(\d{6}) /.exec(git(root, ['ls-files', '-s', '--', 'AGENT_NOTES.md']).stdout)?.[1] || '100644';
+    const others = files.filter((f) => f !== 'AGENT_NOTES.md');
+    const steps = [['read-tree', 'HEAD'], ['update-index', '--add', '--cacheinfo', `${mode},${blob.stdout.trim()},AGENT_NOTES.md`], ...(others.length ? [['add', '-u', '--', ...others]] : []),
+      ['commit', '-q', '-m', `chore(producer): record ${id} merge — notes, evidence`, '-m', `${body}\n\nAGENT_NOTES.md: only this slice's own edits; other uncommitted changes in it were left in the work tree.`]];
+    for (const a of steps) {
+      const r = run(a);
+      if (r.status !== 0) return fail(r.error ? `git ${a[0]} ${r.error.code === 'ETIMEDOUT' ? 'timed out' : r.error.message}` : (r.stderr || r.stdout).trim().split('\n').slice(-1)[0] || `exit ${r.status}`);
+    }
+  } finally {
+    fs.rmSync(idx, { force: true });
+  }
+  git(root, ['reset', '-q', '--', ...files]); // the real index follows the new HEAD; the work tree keeps the director's edits
+  const sha = git(root, ['rev-parse', 'HEAD']).stdout.trim();
+  st.log(root, id, `committed the bookkeeping on ${branch} as ${sha.slice(0, 7)}: ${files.join(', ')} (AGENT_NOTES.md: this slice's edits only; the rest stays uncommitted)`);
+  stepDone(root, id, 'notes_commit', { sha, files, note: `committed ${files.length} file(s), AGENT_NOTES.md own edits only` });
 }
 
 /**
