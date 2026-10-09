@@ -1387,3 +1387,13 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Workflow fixes merged: agent-session retries without --focus (91814bb); failure signatures 741b4f3 (OmniRoute 401), be9f739 (circuit breaker), ad93382 (focused create timeout); template sync 879e728 (project).
 - Recurring findings (open): (1) brief geometry misses in 5 slices (mock/rect vs real sibling order, row pitch, hitboxes) → brief gate needs a geometry pass against the real scene; (2) each new core-loop phase breaks old smoke solvers outside the slice paths (S09/S12/S13/S15/S16) → slice authoring must list them; (3) coordinator cannot open gates during a live worker Dispatch → questions hide in HANDOFF.detail; (4) runner bookkeeping commits the whole AGENT_NOTES.md (swept the director's Step-3 lines); (5) deploy scoped inside a release-regression slice (I2); (6) manual_deferred item with "(no details)".
 - Left for the director: accidental preview on web-mobile (keep or `vercel remove`), firefighter-only Vercel project before any v1.1 deploy, v1.1.0 tag, real-device checks, Step-3 leftovers (manual-deferred.json ×5, retro, S05/S06 PNGs), and a deleted `assets/.meta` in the main checkout (not touched).
+
+### Pilot 12 — S22 kết quả (S22 merge 2026-10-09 02:45Z, fleet)
+
+1. **Merge:** `fe0575e`, bookkeeping `e303bb9`. Thời gian 01:02 → 02:47Z = 1 h 45.
+2. **Câu hỏi:** q34, gate "paths gap" lần thứ 4 (bước van làm hỏng GuideSystem và các test), director approve. Judge defer vì coi là "plan sign-off".
+3. **Review:** 3 vòng, 2 fix round (fix 2 chỉ sửa smoke check, F6). Vượt ngân sách (advisory): lines 850→918. Worktree tự xoá. Verify trên main pass.
+   - manual_deferred (4): nghe `step_valve` và `step_nozzle` VI+EN; cảm giác cắm van/súng và hit-stop 30 ms; …
+4. **Token:** fleet-orch 1 / 118 / 24.7M (coordinator nhiều nhất chuỗi v1.1); fleet-worker 9 / 406 / 74.5M + codex 0.9M; verifier 0.7M. Tổng khoảng 101M.
+5. **Memory:** reviewer dùng `s13-int-advance-skips-realtime-tweens` (chờ thời gian thật cho bay pan rồi mới step, để chụp crop tĩnh).
+6. **Tiếp theo:** S23 mood-bubble. q35 (3 khoảng trống: G1 trùng tên `gc.bubble` với bubble của mascot S17 nên đổi thành `gc.moodBubble`; G2 xe ở màn title cũng có mắt và miệng; G3 …) do director approve lúc 02:59Z.
