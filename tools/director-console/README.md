@@ -49,6 +49,29 @@ so the page CSP can forbid it.
     or res-guard closed it), the frame is dropped with the reason. It comes back if that checkout's
     editor reopens. A hidden tab unloads the frame too.
   - Not covered yet: cc4 projects (the COCOS CLI preview is a different process).
+- **Tài nguyên**: res-guard's last sample, editors, a 24 h trend and events, plus **Quota** for
+  the OmniRoute accounts.
+  - The accounts are the `claude`, `codex` and `agy` rows of `provider_connections`, read with
+    `sqlite3 -readonly`, never the token columns.
+    - An account switched off there is listed greyed with its last snapshot. It is never asked,
+      and it is left out of the totals.
+  - Each account's live windows come from `GET /api/usage/<id>` with OmniRoute's machine token
+    (`x-omniroute-cli-token`, from its own `cliToken.mjs`). The token stays in this server.
+  - Claude/Codex are cached 2 min and agy 10 min, because agy asks Google (~4 s per account).
+    **Làm mới** forces a refetch at most once a minute.
+  - When OmniRoute fails, the newest `quota_snapshots` row is shown, marked "số cũ".
+  - What each block shows:
+    - Claude: a 5 h and a 7 d meter per account.
+    - Codex: one share bar, where every account is 1/N filled by its weekly remainder, plus a thin
+      session bar.
+    - agy: one share bar of usable image quota for the valid accounts, where usable =
+      min(`gemini-3.1-flash-image`, `gemini_weekly`). An account is invalid when it reports no image
+      window or agy-rotate marked it invalid.
+  - The colours are dataviz slots 1–7, validated light and dark. An account keeps its colour.
+  - Bars wear the slice progress look (`.xp`: ink border, striped fill, an ink edge per segment).
+  - Each account list is a fold (`<details>`) whose summary carries the lowest window. Its
+    open state is kept per browser (`console-quota-open`).
+  - The machine token needs `ioreg` (/usr/sbin), so the launchd PATH has /usr/sbin:/sbin.
 - **Memory / Pilot / Playbook / Scorecard / Nhật ký**: modes as segmented controls, archive
   bars, a record explorer and drawer (promote/retract), stacked verdict columns with a table view,
   and recipe cards with filters plus a rendered recipe drawer.
@@ -126,5 +149,6 @@ token or the API.
 
 `CONSOLE_PORT` (7792), `CONSOLE_TOKEN`, `CONSOLE_GAMES_ROOT`, `CONSOLE_RUNNER_DIR`,
 `CONSOLE_ORCA_MEMORY_SRC`, `CONSOLE_PLAYBOOK`, `CONSOLE_ORCA_BIN`, `CONSOLE_LOG_DIR`, `CONSOLE_WORKSPACES`
-(Orca worktrees, `~/orca/workspaces`), and
+(Orca worktrees, `~/orca/workspaces`), `CONSOLE_OMNIROUTE_HOME` / `_URL` / `_CLI` / `_TOKEN`,
+`CONSOLE_AGY_ROTATE_STATE`, and
 `ORCA_MEMORY_HOME` (read by orca-memory itself).

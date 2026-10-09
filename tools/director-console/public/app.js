@@ -30,7 +30,10 @@
       if (v == null || v === false) continue;
       if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
       else if (k === 'class') el.className = v;
-      else if (k === 'style' && typeof v === 'object') Object.assign(el.style, v);
+      else if (k === 'style' && typeof v === 'object') {
+        // Object.assign drops custom properties (--c, --vc): those need setProperty
+        for (const [sk, sv] of Object.entries(v)) if (sk.startsWith('--')) el.style.setProperty(sk, sv); else el.style[sk] = sv;
+      }
       else el.setAttribute(k, v === true ? '' : v);
     }
     for (const c of kids.flat(Infinity)) if (c != null && c !== false) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
@@ -1195,10 +1198,122 @@
   }
   const VERDICT_TONE = { keep: 'good', close: 'warn', gone: 'bad' };
 
+  // ======== quota: the OmniRoute accounts. Claude per account; Codex (weekly) and agy image as one
+  // share bar each: every account is 1/N of the bar, filled by what it has left, the empty part is
+  // used. An account keeps its colour (--q-<order in OmniRoute>) whatever is left out.
+  const LOW_PCT = 15;
+  const shortWho = (who) => String(who ?? '?').split('@')[0];
+  const pctOf = (w) => (w ? `${Math.round(w.remaining)}%` : '—');
+  const resetIn = (iso) => {
+    const ms = Date.parse(iso) - Date.now();
+    if (!Number.isFinite(ms)) return '';
+    if (ms <= 0) return 'reset rồi';
+    const m = Math.round(ms / 60000), hh = Math.floor(m / 60), d = Math.floor(hh / 24);
+    return `reset sau ${d >= 1 ? `${d} ngày ${hh % 24} giờ` : hh >= 1 ? `${hh} giờ ${m % 60} phút` : `${m} phút`}`;
+  };
+  const qColor = (i) => `var(--q-${(i % 7) + 1})`;
+  const sourceChip = (a) => (a.source === 'live' ? null : a.source === 'snapshot'
+    ? chip(`số cũ · ${ago(a.as_of)}`, 'warn', 'clock') : chip('không lấy được', 'bad', 'alert'));
+
+  const QOPEN_KEY = 'console-quota-open';
+  const qOpen = () => { try { return JSON.parse(localStorage.getItem(QOPEN_KEY) || '{}') || {}; } catch { return {}; } };
+  /** The account list of one provider: folded by default, the summary says what matters; open state kept per browser. */
+  function accList(key, summary, ...body) {
+    const d = h('details', { class: 'qacc', open: !!qOpen()[key] },
+      h('summary', {}, h('span', { class: 'chev' }, icon('chev', 14)), ...summary), h('div', { class: 'qacc-body' }, ...body));
+    d.addEventListener('toggle', () => { try { localStorage.setItem(QOPEN_KEY, JSON.stringify({ ...qOpen(), [key]: d.open })); } catch {} });
+    return d;
+  }
+
+  /** One share bar: rows [{ i, who, w }] where w is the window; tip names the account and its numbers. */
+  function shareBar(rows, { thin = false, tip }) {
+    const n = rows.length || 1;
+    const bar = h('div', { class: `qbar ${thin ? 'thin' : ''}`, role: 'img' });
+    for (const r of rows) {
+      const left = r.w?.remaining ?? 0;
+      if (!left) continue;
+      const seg = h('i', { style: { width: `${left / n}%`, '--c': qColor(r.i) } });
+      tipOn(seg, () => tip(r));
+      bar.append(seg);
+    }
+    const total = rows.reduce((t, r) => t + (r.w?.remaining ?? 0), 0) / n;
+    bar.setAttribute('aria-label', `còn ${Math.round(total)}% tổng`);
+    return { bar, total };
+  }
+
+  function quotaPanel() {
+    const body = h('div', { class: 'qgrid' }, h('div', { class: 'small muted' }, 'Đang hỏi OmniRoute… (agy mất vài giây mỗi account)'));
+    const when = h('span', { class: 'small muted' });
+    const draw = async (force) => {
+      let q;
+      try { q = await api(`/api/quota${force ? '?force=1' : ''}`); } catch (e) { body.replaceChildren(empty(`Không lấy được quota: ${e.message}`, 'alert')); return; }
+      when.textContent = `cập nhật ${ago(q.at)}`;
+      if (q.error) { body.replaceChildren(empty(q.error, 'alert')); return; }
+      body.replaceChildren(claudeBlock(q.claude), codexBlock(q.codex), agyBlock(q.agy));
+    };
+    draw(false);
+    return panel('Quota', { icon: 'chart', right: h('div', { class: 'row' }, when, btn('Làm mới', () => draw(true), { cls: 'sm', ic: 'refresh', title: 'Hỏi lại OmniRoute ngay (tối đa một lần mỗi phút)' })),
+      sub: 'Account trong OmniRoute, số trực tiếp từ /api/usage (Claude/Codex cache 2 phút, agy 10 phút). Khi OmniRoute không trả lời: snapshot cuối của nó, ghi "số cũ".' }, body);
+  }
+
+  function claudeBlock(list) {
+    const meter = (label, w) => h('div', { class: 'qrow' }, h('span', { class: 'small ink2' }, label),
+      h('div', { class: 'qmeter' }, w?.remaining ? h('i', { style: { width: `${w.remaining}%` } }) : null),
+      h('b', { class: 'mono' }, pctOf(w)), h('span', { class: 'small muted reset' }, w?.resetAt ? resetIn(w.resetAt) : ''));
+    const on = list.filter((a) => a.active);
+    const windows = on.flatMap((a) => [['5 giờ', a.session, a], ['7 ngày', a.weekly, a]]).filter(([, w]) => w);
+    const lowest = windows.sort((x, y) => x[1].remaining - y[1].remaining)[0];
+    const lowCount = on.filter((a) => [a.session, a.weekly].some((w) => w && w.remaining < LOW_PCT)).length;
+    return h('div', {}, h('h3', { style: { margin: '0 0 8px' } }, `Claude · ${on.length}/${list.length} account đang bật`),
+      list.length ? accList('claude', [h('span', {}, `${list.length} account`), lowest ? h('span', { class: 'small muted' }, `· thấp nhất ${pctOf(lowest[1])} (${shortWho(lowest[2].who)}, ${lowest[0]})`) : null,
+        h('span', { class: 'grow' }), lowCount ? chip(`${lowCount} sắp cạn`, 'bad', 'alert') : null],
+      ...list.map((a) => {
+        const low = a.active && [a.session, a.weekly].some((w) => w && w.remaining < LOW_PCT);
+        return h('div', { style: a.active ? null : { opacity: 0.55 } },
+          h('div', { class: 'row', style: { marginBottom: '4px' } }, h('b', { title: a.who }, shortWho(a.who)), a.plan ? chip(a.plan.replace(/^default_/, ''), 'outline') : null,
+            a.active ? null : chip('tắt trong OmniRoute', 'outline'), low ? chip('sắp cạn', 'bad', 'alert') : null, sourceChip(a),
+            a.error && a.source !== 'live' ? h('span', { class: 'small muted' }, a.error) : null),
+          meter('5 giờ', a.session), meter('7 ngày', a.weekly));
+      })) : empty('Không có account Claude nào trong OmniRoute.', 'user'));
+  }
+
+  function legend(rows, cols) {
+    return h('div', { class: 'qlegend' }, rows.flatMap((r) => {
+      const cls = r.off ? 'off' : '';
+      return [h('span', { class: `sw ${cls}`, style: { background: qColor(r.i) } }), h('span', { class: cls, title: r.who }, shortWho(r.who), r.off ? h('span', { class: 'small muted' }, ` · ${r.off}`) : null),
+        h('b', { class: `mono ${cls}` }, cols.main(r)), h('span', { class: `small muted rest ${cls}` }, cols.rest(r))];
+    }));
+  }
+
+  function codexBlock(list) {
+    const rows = list.map((a, i) => ({ ...a, i, w: a.weekly, off: a.active ? null : 'tắt trong OmniRoute' }));
+    const on = rows.filter((r) => !r.off);
+    const tip = (r) => `${r.who}: tuần ${pctOf(r.weekly)} · 5 giờ ${pctOf(r.session)}${r.weekly?.resetAt ? ` · tuần ${resetIn(r.weekly.resetAt)}` : ''}`;
+    const weekly = shareBar(on, { tip });
+    const session = shareBar(on.map((r) => ({ ...r, w: r.session })), { thin: true, tip });
+    return h('div', {}, h('div', { class: 'row', style: { marginBottom: '6px' } }, h('h3', { style: { margin: 0 } }, `Codex · ${on.length}/${list.length} account đang bật`), h('span', { class: 'grow' }),
+      h('b', {}, `còn ${Math.round(weekly.total)}% tuần`), h('span', { class: 'small muted' }, `· 5 giờ ${Math.round(session.total)}%`)),
+      list.length ? [weekly.bar, h('div', { class: 'row small muted', style: { margin: '4px 0 2px' } }, '5 giờ'), session.bar,
+        accList('codex', [h('span', {}, `${list.length} account`), h('span', { class: 'small muted' }, `· thấp nhất ${pctOf([...on].sort((x, y) => (x.weekly?.remaining ?? 0) - (y.weekly?.remaining ?? 0))[0]?.weekly)} tuần`)], legend(rows, { main: (r) => pctOf(r.weekly), rest: (r) => [`5 giờ ${pctOf(r.session)}`, r.weekly?.resetAt ? `tuần ${resetIn(r.weekly.resetAt)}` : null, r.source !== 'live' ? (r.source === 'snapshot' ? `số cũ ${ago(r.as_of)}` : 'không lấy được') : null].filter(Boolean).join(' · ') }))]
+        : empty('Không có account Codex nào đang bật.', 'user'));
+  }
+
+  function agyBlock(list) {
+    const all = list.map((a, i) => ({ ...a, i, w: a.image, off: a.valid ? null : a.why }));
+    const valid = all.filter((r) => !r.off);
+    const tip = (r) => `${r.who}: ảnh dùng được ${pctOf(r.image)} (model ${pctOf(r.image?.model)} · Gemini tuần ${pctOf(r.image?.weekly)})${r.image?.resetAt ? ` · ${resetIn(r.image.resetAt)}` : ''}`;
+    const bar = shareBar(valid, { tip });
+    return h('div', {}, h('div', { class: 'row', style: { marginBottom: '6px' } }, h('h3', { style: { margin: 0 } }, `agy · gen ảnh · ${valid.length}/${list.length} account valid`), h('span', { class: 'grow' }),
+      h('b', {}, `còn ${Math.round(bar.total)}%`)),
+      valid.length ? bar.bar : empty('Không có account agy nào valid cho gen ảnh.', 'alert'),
+      h('div', { class: 'small muted', style: { margin: '4px 0 8px' } }, 'Mỗi account = min(quota model gemini-3.1-flash-image, quota tuần Gemini): OmniRoute từ chối khi một trong hai cạn.'),
+      accList('agy', [h('span', {}, `${list.length} account`), h('span', { class: 'small muted' }, `· ${valid.length} valid${all.length - valid.length ? `, ${all.length - valid.length} bị loại` : ''}`)], legend(all, { main: (r) => (r.off ? '—' : pctOf(r.image)), rest: (r) => [r.image ? `model ${pctOf(r.image.model)} · tuần ${pctOf(r.image.weekly)}` : null, r.image?.resetAt ? resetIn(r.image.resetAt) : null, r.source !== 'live' ? (r.source === 'snapshot' ? `số cũ ${ago(r.as_of)}` : 'không lấy được') : null].filter(Boolean).join(' · ') })));
+  }
+
   VIEWS.resources = async () => {
     const r = await api('/api/resources');
     const s = r.last;
-    if (!s) return [panel('Tài nguyên máy', { icon: 'bolt' }, empty('res-guard chưa đo lần nào.', 'alert', 'Cài watcher: node ~/.agents/tools/res-guard/res-guard.mjs install-launchd'))];
+    if (!s) return [panel('Tài nguyên máy', { icon: 'bolt' }, empty('res-guard chưa đo lần nào.', 'alert', 'Cài watcher: node ~/.agents/tools/res-guard/res-guard.mjs install-launchd')), quotaPanel()];
     const tile = (label, value, foot, tone, ic) => h('div', { class: `stat s-${tone}` },
       h('div', { class: 'label' }, icon(ic, 14), label), h('div', { class: 'value text' }, value), h('div', { class: 'foot' }, foot));
     const pressTone = s.pressure === 'critical' ? 'coral' : s.pressure === 'warn' ? 'yellow' : 'green';
@@ -1230,7 +1345,7 @@
       h('span', { class: `dot ${/reap|down|critical/.test(e.kind + (e.level ?? '')) ? 'bad' : ''}` }),
       h('div', {}, h('div', { class: 'row' }, h('b', { class: 'mono small' }, e.kind), h('span', { class: 'small muted' }, `${when(e.at)} · ${ago(e.at)}`)),
         h('div', { class: 'small ink2' }, [e.title, e.why, e.project, e.gate, (e.reasons ?? []).join('; '), e.result].filter(Boolean).join(' · ').slice(0, 260)))))) : empty('Chưa có sự kiện.', 'bell'));
-    return [panel('Tài nguyên máy', { icon: 'bolt', right: head }, stats), trend, editors, h('div', { class: 'grid cols-2' }, top, events)];
+    return [panel('Tài nguyên máy', { icon: 'bolt', right: head }, stats), quotaPanel(), trend, editors, h('div', { class: 'grid cols-2' }, top, events)];
   };
 
   VIEWS.log = async () => {

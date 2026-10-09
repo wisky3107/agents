@@ -11,7 +11,7 @@
   <key>EnvironmentVariables</key>
   <dict>
     <!-- orca (terminal list) and the CLIs the actions run -->
-    <key>PATH</key><string>/Users/wikz/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    <key>PATH</key><string>/Users/wikz/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     <!-- tailnet access via `tailscale serve --bg --https=443 http://127.0.0.1:7792` (never funnel) -->
     <key>CONSOLE_TAILNET_HOST</key><string>wikzs-macbook-pro.tail12c0c4.ts.net</string>
     <key>CONSOLE_TAILNET_USERS</key><string>wisky3107@gmail.com</string>

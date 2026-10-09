@@ -22,6 +22,10 @@ export const CFG = {
   resGuardHome: env.CONSOLE_RES_GUARD_HOME ?? path.join(HOME, '.agents'), // tools/res-guard's run/ and logs/
   resGuardCli: env.CONSOLE_RES_GUARD_CLI ?? path.join(HOME, '.agents/tools/res-guard/res-guard.mjs'),
   workspaces: env.CONSOLE_WORKSPACES ?? path.join(HOME, 'orca/workspaces'), // Orca worktrees: <workspaces>/<project>/<name>
+  omnirouteHome: env.CONSOLE_OMNIROUTE_HOME ?? path.join(HOME, '.omniroute'), // storage.sqlite: accounts + quota snapshots
+  omnirouteUrl: env.CONSOLE_OMNIROUTE_URL ?? 'http://127.0.0.1:20128',
+  omnirouteCli: env.CONSOLE_OMNIROUTE_CLI ?? path.join(HOME, '.local/lib/node_modules/omniroute'), // its machine-token module
+  agyRotateState: env.CONSOLE_AGY_ROTATE_STATE ?? path.join(HOME, '.agents/logs/agy-rotate-state.json'),
 };
 
 const om = {
@@ -477,6 +481,133 @@ export async function previews() {
       orientation: orientationOf(e.path), runner: p?.runner ? { slice: p.runner.slice, step: p.runner.step, alive: p.runner.alive } : null,
     };
   }));
+}
+
+// ------------------------------------------------------------------ quota (OmniRoute accounts)
+
+// OmniRoute holds the Claude, Codex and Antigravity accounts. `/api/usage/<connection>` answers each
+// account's live quota windows; it wants OmniRoute's machine token (`x-omniroute-cli-token`, derived
+// from a salt file only this user can read), which stays in this server. Its own snapshots in
+// storage.sqlite are the fallback when OmniRoute does not answer: it refreshes only accounts in use,
+// so an idle agy account's snapshot can be days old, and the page says how old.
+const QUOTA_PROVIDERS = ['claude', 'codex', 'agy'];
+const QUOTA_TTL_MS = { claude: 120000, codex: 120000, agy: 600000 }; // agy asks Google: ~4 s per account
+const QUOTA_FORCE_MS = 60000;
+const quotaCache = new Map(); // connection id → { at, live }
+let quotaForcedAt = 0;
+let omToken = null;
+
+const sqliteJson = (db, sql) => {
+  const r = spawnSync('sqlite3', ['-readonly', '-json', db, sql], { encoding: 'utf8', timeout: 15000, maxBuffer: 16 * 1024 * 1024 });
+  if (r.status !== 0) throw new Error(`sqlite3: ${(r.stderr || '').trim().slice(0, 200)}`);
+  return r.stdout.trim() ? JSON.parse(r.stdout) : [];
+};
+
+async function omnirouteToken() {
+  if (env.CONSOLE_OMNIROUTE_TOKEN) return env.CONSOLE_OMNIROUTE_TOKEN;
+  // node-machine-id runs `ioreg`, which lives in /usr/sbin: without it the token comes out empty
+  if (!process.env.PATH?.split(':').includes('/usr/sbin')) process.env.PATH = `${process.env.PATH ?? ''}:/usr/sbin:/sbin`;
+  if (!omToken) omToken = (await import(path.join(CFG.omnirouteCli, 'bin/cli/utils/cliToken.mjs'))).getCliToken();
+  const t = await omToken;
+  if (!t) { omToken = null; throw new Error('OmniRoute machine token unavailable'); }
+  return t;
+}
+
+async function liveUsage(id) {
+  const r = await fetch(`${CFG.omnirouteUrl}/api/usage/${encodeURIComponent(id)}`, {
+    headers: { 'x-omniroute-cli-token': await omnirouteToken() }, signal: AbortSignal.timeout(20000),
+  });
+  const j = await r.json().catch(() => null);
+  if (!r.ok || !j) throw new Error(j?.error?.message ?? j?.message ?? `OmniRoute ${r.status}`);
+  return j;
+}
+
+/** One window as { remaining %, resetAt }: Claude and agy report remainingPercentage, Codex remaining/total. */
+export function quotaWindow(q) {
+  if (!q) return null;
+  const pct = q.remainingPercentage ?? (q.total ? (q.remaining / q.total) * 100 : q.remaining);
+  return Number.isFinite(pct) ? { remaining: Math.max(0, Math.min(100, Math.round(pct * 10) / 10)), resetAt: q.resetAt ?? null } : null;
+}
+
+/**
+ * The windows the page shows. agy image: OmniRoute refuses an image request when either the model's
+ * window (gemini-3.1-flash-image) or the Gemini family's weekly window is spent, so the usable share
+ * is the smaller of the two.
+ */
+export function quotaView(provider, usage) {
+  const q = usage?.quotas ?? {};
+  if (provider === 'claude') return { session: quotaWindow(q['session (5h)']), weekly: quotaWindow(q['weekly (7d)']) };
+  if (provider === 'codex') return { session: quotaWindow(q.session), weekly: quotaWindow(q.weekly) };
+  const image = quotaWindow(q['gemini-3.1-flash-image']);
+  const weekly = quotaWindow(q.gemini_weekly);
+  const bind = image && weekly ? (weekly.remaining < image.remaining ? weekly : image) : image;
+  return { image: bind ? { ...bind, model: image, weekly } : null };
+}
+
+/** The latest OmniRoute snapshot per window of each account, shaped like /api/usage's `quotas`. */
+function snapshotUsage(db, ids) {
+  if (!ids.length) return new Map();
+  const list = ids.map((i) => `'${String(i).replace(/'/g, "''")}'`).join(',');
+  const rows = sqliteJson(db, `select connection_id, window_key, remaining_percentage, next_reset_at, created_at from (
+    select q.*, row_number() over (partition by connection_id, window_key order by created_at desc) rn from quota_snapshots q
+    where connection_id in (${list})) where rn = 1`);
+  const out = new Map();
+  for (const r of rows) {
+    const u = out.get(r.connection_id) ?? { quotas: {}, at: r.created_at };
+    u.quotas[r.window_key] = { remainingPercentage: r.remaining_percentage, resetAt: r.next_reset_at };
+    if (r.created_at > u.at) u.at = r.created_at;
+    out.set(r.connection_id, u);
+  }
+  return out;
+}
+
+/**
+ * Every Claude, Codex and agy account in OmniRoute with its quota: live when OmniRoute answers,
+ * else its last snapshot (`source: snapshot`, `as_of`). An account switched off there
+ * (`active: false`) is listed with its last snapshot and never asked. agy accounts are `valid` when they
+ * report the image window and agy-rotate has not marked them invalid. `force` skips the cache, at
+ * most once a minute.
+ */
+export async function quota({ force = false } = {}) {
+  const db = path.join(CFG.omnirouteHome, 'storage.sqlite');
+  if (!fs.existsSync(db)) return { at: new Date().toISOString(), error: `no OmniRoute database at ${db}`, claude: [], codex: [], agy: [] };
+  const accounts = sqliteJson(db, `select id, provider, coalesce(email, display_name, name) as who, priority, is_active from provider_connections
+    where provider in (${QUOTA_PROVIDERS.map((p) => `'${p}'`).join(',')}) order by provider, rowid`);
+  const now = Date.now();
+  if (force && now - quotaForcedAt >= QUOTA_FORCE_MS) quotaForcedAt = now;
+  else force = false;
+  const results = await Promise.all(accounts.map(async (a) => {
+    if (!a.is_active) return { a }; // switched off in OmniRoute: listed with its last snapshot, never asked
+    const c = quotaCache.get(a.id);
+    if (!force && c && now - c.at < QUOTA_TTL_MS[a.provider]) return { a, live: c.live, at: c.at };
+    try {
+      const live = await liveUsage(a.id);
+      quotaCache.set(a.id, { at: Date.now(), live });
+      return { a, live, at: Date.now() };
+    } catch (e) {
+      return { a, error: e.message };
+    }
+  }));
+  const missing = results.filter((r) => !r.live).map((r) => r.a.id);
+  const snaps = safe(() => snapshotUsage(db, missing)) ?? new Map();
+  const rotate = readJson(CFG.agyRotateState) ?? {};
+  const out = { at: new Date(now).toISOString(), claude: [], codex: [], agy: [] };
+  for (const r of results) {
+    const usage = r.live ?? snaps.get(r.a.id) ?? null;
+    const row = {
+      id: r.a.id, who: r.a.who, plan: r.live?.plan ?? null, active: !!r.a.is_active,
+      source: r.live ? 'live' : usage ? 'snapshot' : 'none', as_of: r.live ? new Date(r.at).toISOString() : usage?.at ?? null,
+      error: r.error ?? null, ...quotaView(r.a.provider, usage),
+    };
+    if (r.a.provider === 'agy') {
+      const until = rotate.invalid?.[r.a.who];
+      const invalid = until && Date.parse(until) > now;
+      row.valid = row.active && !!row.image && !invalid;
+      row.why = !row.active ? 'tắt trong OmniRoute' : invalid ? `agy-rotate: invalid tới ${until}` : row.image ? null : 'không báo quota ảnh';
+    }
+    out[r.a.provider].push(row);
+  }
+  return out;
 }
 
 // ------------------------------------------------------------------ actions

@@ -10,6 +10,8 @@
   --yellow: #FFD23F; --pink: #FF6BB5; --blue: #7CC4FF; --green: #7EE0A1; --lilac: #C9B6FF; --coral: #FFB199; --sticker-ink: #111111;
   --pos: #15803D; --neg: #B91C1C;
   --v-useful: #1D4ED8; --v-redundant: #DB2777; --v-irrelevant: #15803D; --v-misleading: #7C3AED; --v-stale: #C2410C;
+  /* quota accounts: dataviz categorical slots 1-7 (validated on #FFFFFF; contrast WARN → every segment has a % label in its legend row) */
+  --q-1: #2a78d6; --q-2: #eb6834; --q-3: #1baf7a; --q-4: #eda100; --q-5: #e87ba4; --q-6: #008300; --q-7: #4a3aa7;
   /* aliases the views use */
   --ink: var(--fg); --ink-2: var(--muted); --line: var(--grid); --line-2: var(--border); --panel: var(--surface); --panel-2: var(--surface-2);
   --accent: var(--fg); --good: var(--pos); --critical-ink: var(--neg); --good-ink: var(--pos);
@@ -23,6 +25,7 @@
     --bg: #141414; --surface: #1F1F1F; --surface-2: #2A2A2A; --fg: #FAFAFA; --muted: #C4C4C4; --border: #FAFAFA; --grid: #333333; --hard: #FFD23F;
     --pos: #4ADE80; --neg: #FCA5A5;
     --v-useful: #3B82F6; --v-redundant: #EC4899; --v-irrelevant: #16A34A; --v-misleading: #A855F7; --v-stale: #EA580C;
+    --q-1: #3987e5; --q-2: #d95926; --q-3: #199e70; --q-4: #c98500; --q-5: #d55181; --q-6: #008300; --q-7: #9085e9;
   }
 }
 :root[data-theme="dark"] {
@@ -30,6 +33,7 @@
   --bg: #141414; --surface: #1F1F1F; --surface-2: #2A2A2A; --fg: #FAFAFA; --muted: #C4C4C4; --border: #FAFAFA; --grid: #333333; --hard: #FFD23F;
   --pos: #4ADE80; --neg: #FCA5A5;
   --v-useful: #3B82F6; --v-redundant: #EC4899; --v-irrelevant: #16A34A; --v-misleading: #A855F7; --v-stale: #EA580C;
+  --q-1: #3987e5; --q-2: #d95926; --q-3: #199e70; --q-4: #c98500; --q-5: #d55181; --q-6: #008300; --q-7: #9085e9;
 }
 
 * { box-sizing: border-box; }
@@ -399,3 +403,30 @@ iframe.score { width: 100%; height: 78vh; border: 2px solid var(--border); borde
 .phone-screen iframe { display: block; border: 0; background: #000; }
 .phone-note { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px; padding: 24px; text-align: center; color: #fff; }
 .phone-note .small { color: #cfd3dc; max-width: 280px; }
+
+/* ---------------------------------------------------------------- quota */
+/* bars wear the slice progress look (.xp): ink border, striped fill, an ink edge per segment */
+.qgrid { display: grid; gap: 18px; }
+.qbar, .qmeter { display: flex; height: 16px; border: 2px solid var(--border); border-radius: 6px; background: var(--surface); overflow: hidden; }
+.qbar.thin { height: 10px; }
+.qmeter { flex: 1; min-width: 80px; }
+.qbar > i, .qmeter > i { --c: var(--green); display: block; height: 100%; flex: none; box-sizing: border-box; border-right: 2px solid var(--border);
+  background: repeating-linear-gradient(-45deg, var(--c) 0 8px, color-mix(in srgb, var(--c) 55%, var(--surface)) 8px 16px); }
+.qbar.thin > i { background: var(--c); }
+.qmeter > i { --c: var(--q-1); }
+.qlegend { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 4px 12px; align-items: center; font-size: 13px; }
+.qlegend .sw { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--border); }
+.qlegend .off { opacity: .55; }
+.qlegend span { overflow-wrap: anywhere; }
+.qrow { display: grid; grid-template-columns: 70px minmax(0, 1fr) 52px 170px; gap: 10px; align-items: center; font-size: 13px; }
+.qacc { margin-top: 10px; border: 2px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+.qacc > summary { list-style: none; display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 13.5px; }
+.qacc > summary::-webkit-details-marker { display: none; }
+.qacc > summary .chev { transition: transform .12s; display: inline-flex; }
+.qacc[open] > summary .chev { transform: rotate(90deg); }
+.qacc > .qacc-body { padding: 4px 12px 12px; display: grid; gap: 10px; }
+@media (prefers-reduced-motion: reduce) { .qacc > summary .chev { transition: none; } }
+@media (max-width: 760px) {
+  .qrow { grid-template-columns: 56px minmax(0, 1fr) 44px; } .qrow .reset { display: none; }
+  .qlegend { grid-template-columns: auto minmax(0, 1fr) auto; } .qlegend .rest { grid-column: 2 / -1; margin-bottom: 4px; }
+}

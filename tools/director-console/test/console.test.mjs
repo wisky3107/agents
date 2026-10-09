@@ -69,7 +69,7 @@ before(async () => {
   // res-guard: no watcher state until the resources test writes one; a fake CLI records its argv
   fs.writeFileSync(path.join(root, 'res-guard.mjs'), `import fs from 'node:fs';\nfs.appendFileSync(${JSON.stringify(path.join(root, 'rg-argv.jsonl'))}, JSON.stringify(process.argv.slice(2)) + '\\n');\nconsole.log('closed');\n`);
   port = 17000 + Math.floor(Math.random() * 2000);
-  srv = spawn(process.execPath, [SERVER], { env: { ...process.env, ORCA_MEMORY_HOME: home, CONSOLE_PORT: String(port), CONSOLE_TOKEN: TOKEN, CONSOLE_GAMES_ROOT: games, CONSOLE_RUNNER_DIR: runnerDir, CONSOLE_ORCA_BIN: orca, CONSOLE_PLAYBOOK: playbook, CONSOLE_LOG_DIR: logs, CONSOLE_RES_GUARD_HOME: path.join(root, 'rg'), CONSOLE_RES_GUARD_CLI: path.join(root, 'res-guard.mjs'), PRODUCER_RUNNER_TRANSLATE_CMD: translator, CC_SPAWN_REGISTRY: path.join(root, 'spawns.jsonl'), CONSOLE_TAILNET_HOST: 'mac.tail0.ts.net', CONSOLE_TAILNET_USERS: 'me@example.com', CONSOLE_WORKSPACES: path.join(root, 'ws') }, stdio: ['ignore', 'pipe', 'inherit'] });
+  srv = spawn(process.execPath, [SERVER], { env: { ...process.env, ORCA_MEMORY_HOME: home, CONSOLE_PORT: String(port), CONSOLE_TOKEN: TOKEN, CONSOLE_GAMES_ROOT: games, CONSOLE_RUNNER_DIR: runnerDir, CONSOLE_ORCA_BIN: orca, CONSOLE_PLAYBOOK: playbook, CONSOLE_LOG_DIR: logs, CONSOLE_RES_GUARD_HOME: path.join(root, 'rg'), CONSOLE_RES_GUARD_CLI: path.join(root, 'res-guard.mjs'), PRODUCER_RUNNER_TRANSLATE_CMD: translator, CC_SPAWN_REGISTRY: path.join(root, 'spawns.jsonl'), CONSOLE_TAILNET_HOST: 'mac.tail0.ts.net', CONSOLE_TAILNET_USERS: 'me@example.com', CONSOLE_WORKSPACES: path.join(root, 'ws'), CONSOLE_OMNIROUTE_HOME: path.join(root, 'omr'), CONSOLE_OMNIROUTE_URL: `http://127.0.0.1:${port + 1}`, CONSOLE_OMNIROUTE_TOKEN: 'tok-1', CONSOLE_AGY_ROTATE_STATE: path.join(root, 'agy-rotate-state.json') }, stdio: ['ignore', 'pipe', 'inherit'] });
   await new Promise((resolve) => srv.stdout.once('data', resolve));
 });
 
@@ -289,4 +289,70 @@ test('previews: editors from ps lines, orientation fallbacks', async () => {
   fs.writeFileSync(path.join(d, 'AGENT_NOTES.md'), '  orientation: portrait 720x1280\n');
   assert.equal(orientationOf(d).value, 'portrait', 'AGENT_NOTES wins over the design resolution');
   fs.rmSync(d, { recursive: true, force: true });
+});
+
+test('quota: live per account through the machine token, the last snapshot when OmniRoute fails, agy image = min(model, Gemini weekly)', async () => {
+  const omr = path.join(root, 'omr');
+  fs.mkdirSync(omr, { recursive: true });
+  execFileSync('sqlite3', [path.join(omr, 'storage.sqlite'), `
+    create table provider_connections (id text primary key, provider text, email text, name text, display_name text, is_active integer, priority integer, access_token text);
+    create table quota_snapshots (id integer primary key autoincrement, provider text, connection_id text, window_key text, remaining_percentage real, is_exhausted integer, next_reset_at text, window_duration_ms integer, raw_data text, created_at text);
+    insert into provider_connections values ('c1','claude','a@x.com',null,null,1,0,'SECRET-ACCESS'), ('c9','claude','off@x.com',null,null,0,0,null),
+      ('x1','codex','b@x.com',null,null,1,0,null), ('x2','codex','c@x.com',null,null,1,1,null),
+      ('g1','agy','d@x.com',null,null,1,0,null), ('g2','agy','e@x.com',null,null,1,1,null), ('g3','agy','f@x.com',null,null,1,2,null), ('d1','deepseek',null,'main',null,1,0,null);
+    insert into quota_snapshots (provider, connection_id, window_key, remaining_percentage, next_reset_at, created_at) values
+      ('agy','g2','gemini-3.1-flash-image',40,'2026-10-09T09:00:00Z','2026-10-07T10:00:00Z'), ('agy','g2','gemini-3.1-flash-image',55,'2026-10-09T09:00:00Z','2026-10-08T10:00:00Z');`]);
+  fs.writeFileSync(path.join(root, 'agy-rotate-state.json'), JSON.stringify({ invalid: { 'f@x.com': '2999-01-01T00:00:00Z' } }));
+  const seen = [];
+  const live = {
+    c1: { plan: 'max', quotas: { 'session (5h)': { remainingPercentage: 90, resetAt: 'r1' }, 'weekly (7d)': { remainingPercentage: 12 } } },
+    x1: { plan: 'plus', quotas: { session: { used: 0, total: 100, remaining: 100 }, weekly: { used: 8, total: 100, remaining: 92, resetAt: 'r2' } } },
+    x2: { plan: 'plus', quotas: { session: { remaining: 68, total: 100 }, weekly: { remaining: 64, total: 100 } } },
+    g1: { plan: 'Pro', quotas: { 'gemini-3.1-flash-image': { remainingPercentage: 100, resetAt: 'r3' }, gemini_weekly: { remainingPercentage: 87.5, resetAt: 'r4' } } },
+    g3: { plan: 'Pro', quotas: { 'gemini-3.1-flash-image': { remainingPercentage: 100 } } },
+  };
+  const om = http.createServer((q, r) => {
+    seen.push([q.url, q.headers['x-omniroute-cli-token']]);
+    const id = q.url.split('/').pop();
+    if (q.headers['x-omniroute-cli-token'] !== 'tok-1') { r.writeHead(401); return r.end('{}'); }
+    if (!live[id]) { r.writeHead(500, { 'content-type': 'application/json' }); return r.end(JSON.stringify({ error: { message: 'upstream down' } })); }
+    r.writeHead(200, { 'content-type': 'application/json' }); r.end(JSON.stringify(live[id]));
+  }).listen(port + 1, '127.0.0.1');
+  try {
+    const r = await call('GET', '/api/quota');
+    assert.equal(r.status, 200);
+    assert.ok(!r.text.includes('tok-1') && !r.text.includes('SECRET-ACCESS'), 'no token in the payload');
+    assert.ok(seen.every(([, t]) => t === 'tok-1'));
+    assert.deepEqual(r.json.claude.map((a) => [a.who, a.active, a.plan, a.session?.remaining, a.weekly?.remaining, a.source]),
+      [['a@x.com', true, 'max', 90, 12, 'live'], ['off@x.com', false, null, undefined, undefined, 'none']], 'an account switched off is listed, never asked');
+    assert.ok(!seen.some(([u]) => u.endsWith('/c9')));
+    assert.deepEqual(r.json.codex.map((a) => [a.who, a.weekly.remaining, a.session.remaining]), [['b@x.com', 92, 100], ['c@x.com', 64, 68]]);
+    const [g1, g2, g3] = r.json.agy;
+    assert.deepEqual([g1.valid, g1.image.remaining, g1.image.resetAt, g1.image.model.remaining], [true, 87.5, 'r4', 100], 'the weekly window binds');
+    assert.deepEqual([g2.source, g2.valid, g2.image.remaining, g2.as_of, g2.error], ['snapshot', true, 55, '2026-10-08T10:00:00Z', 'upstream down'], 'the newest snapshot');
+    assert.deepEqual([g3.valid, g3.why], [false, 'agy-rotate: invalid tới 2999-01-01T00:00:00Z']);
+    assert.ok(!r.json.deepseek);
+    // cached: a second read asks OmniRoute again only for the account that failed
+    const before = seen.length;
+    await call('GET', '/api/quota');
+    assert.deepEqual(seen.slice(before).map(([u]) => u), ['/api/usage/g2']);
+    // force=1 refetches everything, at most once a minute
+    const b2 = seen.length;
+    await call('GET', '/api/quota?force=1');
+    assert.equal(seen.length - b2, 6);
+    const b3 = seen.length;
+    await call('GET', '/api/quota?force=1');
+    assert.equal(seen.length - b3, 1, 'a second force within a minute reads the cache');
+  } finally {
+    om.close();
+  }
+});
+
+test('quota: window shapes', async () => {
+  const { quotaWindow, quotaView } = await import('../lib.mjs');
+  assert.deepEqual(quotaWindow({ used: 8, total: 100, remaining: 92, resetAt: 'r' }), { remaining: 92, resetAt: 'r' });
+  assert.deepEqual(quotaWindow({ remainingPercentage: 87.523127 }), { remaining: 87.5, resetAt: null });
+  assert.equal(quotaWindow(null), null);
+  assert.deepEqual(quotaView('agy', { quotas: { 'gemini-3.1-flash-image': { remainingPercentage: 31 }, gemini_weekly: { remainingPercentage: 90 } } }).image.remaining, 31);
+  assert.equal(quotaView('agy', { quotas: { gemini_weekly: { remainingPercentage: 90 } } }).image, null, 'no image window → not valid');
 });

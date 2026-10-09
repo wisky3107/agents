@@ -93,6 +93,7 @@ const GET = {
   '/api/actions': () => ({ actions: lib.ACTION_NAMES, log: lib.actionLog() }),
   '/api/resources': () => lib.resources(),
   '/api/previews': () => lib.previews(),
+  '/api/quota': (q) => lib.quota({ force: q.get('force') === '1' }),
 };
 
 const server = http.createServer(async (req, res) => {
