@@ -295,6 +295,9 @@ Self-check for any later slice before you save it:
 4. Every `feel_rows` ID appears in the first column of the EXPECT feel table.
 5. Count ASSUMPTION rows: ≥ 3 → `needs_director_ok: true` and each open choice is in `risks`.
 6. `release_items` are real `RC-nn` rows whose `closed_by` is this slice.
+7. Every coordinate, rect or node path (mocks included) was checked against the real scene/prefabs/layout config: sibling order, existing rects, hitbox floors, row pitch.
+8. A slice adding a core-loop phase lists the existing smoke checks / unit tests it changes or must keep passing in `paths.code`, with the reason.
+9. No deploy, tag or push step anywhere in the slice (`slice_performs_ship`).
 
 ## S01 visual target and review contract
 
@@ -389,4 +392,4 @@ build (no numeric size cap), localStorage schema check.
 threshold, and no slice other than release-polish carries a size invariant, acceptance row,
 runtime check or `build_checks` entry. Mid-release slices never trim art or levels to save bytes;
 the final build is optimized once, here.
-After APPROVED the producer runs the `ship` skill per `release.deploy`.
+The slice never deploys, tags or pushes: write "ship handed to producer Step 3". After APPROVED the producer runs the `ship` skill per `release.deploy`.

@@ -13,6 +13,9 @@ export function overlap(a, b) {
   const x = prefix(a), y = prefix(b);
   return (x !== a || y !== b) && (x.startsWith(y) || y.startsWith(x));
 }
+// Deploy/tag/push are producer Step 3, director-gated; a slice may only hand them off.
+const SHIP = /\bdeploy(?!ed)\w*|\bvercel\b|deploy\.sh|\bgit\s+(?:tag|push)\b|\b(?:create|cut|push)\s+(?:a\s+|the\s+)?(?:git\s+)?tag\b/i;
+const SHIP_HANDOFF = /\bproducer\b/i;
 const list = x => Array.isArray(x) ? x : [];
 const IMAGE = /(?:reference|docs\/mockups)\/[^\s)`'"|<>,]+\.(?:png|jpe?g|svg|webp)/gi;
 const SCREEN = /(?:Panel|Screen|Menu|Popup|Dialog|Overlay|Modal)s?(?:\/|$)|(?:^|\/)Popup\w*(?:\.prefab)?$/i;
@@ -142,6 +145,11 @@ export function validate(p, options = {}) {
     if (fullSlices.includes(id)) {
       for (const k of ['acceptance','runtime_checks','playtest']) if (!list(x[k]).length) fail('empty_full_slice', s.file, `${k} cannot be empty`);
       for (const group of Object.values(x.assets || {})) for (const asset of list(group)) if (!asset?.stem || !manifest.includes(asset.stem)) fail('missing_manifest_asset', s.file, `Asset ${asset?.stem} missing from ASSET_MANIFEST`);
+    }
+    if (!done(n, id)) {
+      const rows = [...list(x.scope?.in), ...list(x.acceptance).map(r => r?.text), ...list(x.runtime_checks), ...list(x.playtest)].filter(t => typeof t === 'string');
+      const bad = rows.find(t => SHIP.test(t) && !SHIP_HANDOFF.test(t));
+      if (bad) fail('slice_performs_ship', s.file, `deploy/tag/push is producer Step 3 (director-gated), not slice work; hand it off ("ship handed to producer Step 3"): ${bad.slice(0, 100)}`);
     }
     if (x.name === 'release-polish' && id !== m.release_slice) fail('release_polish_pointer', s.file, 'release-polish must be release_slice');
   }

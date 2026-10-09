@@ -100,6 +100,10 @@ J. RELEASE_CHECKLIST.md — product-level "done" rows RC-nn per docs/slice-schem
 - Do not implement gameplay, do not open Creator, do not commit, do not push.
 - Slice files are contracts: no status fields, no TODOs; anything undecided goes to `risks` and flips `needs_director_ok: true`.
 - Progress commands only record work; running one without writing a file is not progress.
+- Geometry pass: every coordinate, rect or node path a slice (or mock) prescribes is checked against the real scene, prefabs and layout config: sibling order (what draws over what), existing rects and hitbox floors, row pitch, clamps vs aim tolerance. No node path from memory; no mock overlay on a cell it hides.
+- Old checks: a slice that changes the core loop (new phase, new step before win) lists in `paths.code` every existing smoke check, solver and unit test it breaks or that must still pass, with the reason, even outside its own area.
+- No deploy, `vercel`, `deploy.sh`, git tag or push in any slice (scope, acceptance, runtime_checks, playtest). Release slices write "ship handed to producer Step 3"; `validate-contracts` rejects `slice_performs_ship`.
+- Context budget: read code with line ranges, write one file per tool call; a huge context times the author out.
 
 ## Work order (do the steps in order; each command must print "ok": true)
 1. Evidence: open the shortlist and director source. After opening each image/frame/level file run `<PROGRESS> --evidence <path>`. Then `<PROGRESS> --phase evidence_ready`.
