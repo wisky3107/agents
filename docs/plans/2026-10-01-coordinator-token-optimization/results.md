@@ -1452,3 +1452,13 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 
 - Purpose: director visual fixes from three production screenshots (GP-24 rider pasted over the basket, GP-25 victims waist-up, GP-26 sash-style closed window). Contracts 3aced8f (opus high author 18 min, diagnosed GP-24 as `Sprite - Rider` drawn after the basket parent sprite → new `Sprite - Basket Front` sibling between Rider and Nozzle). D-21..D-23 (a) decided by the delegated pilot.
 - Config: runner pid 43938, single lane, writer opus high term_6f003564, reviewer sonnet high; cron 4da01d65.
+
+### Pilot 12 — S24 kết quả (S24 merge 2026-10-09 07:00Z, fleet, polish 2 đầu tiên)
+
+1. **Merge:** `2861ba5`, bookkeeping `dc3a9c4`. Thời gian 05:00 → 07:03Z = 2 h 03, trong đó khoảng 6 phút mất vì F10 (429) và khoảng 20 phút vì F17 (docs-index).
+2. **Câu hỏi:** q36 (fleet_stall do 429) và q37 (lane_blocked do docs-index): director trả lời. q37 kèm yêu cầu "hãy tự xử lý", tôi đã sửa rule tận gốc (F17).
+3. **Art:** art-2d qua 3 vòng (round 3 PASS: cặp ảnh capô đóng/mở cho từng thân xe và khoang máy cắt thành từng bộ phận). Coordinator ghi "compartment redraw still crude", để reviewer đánh giá.
+4. **Review:** 2 vòng, 1 fix round (F1: khoang máy xe bán tải). Vượt ngân sách (advisory): lines 850→1046. Worktree tự xoá (34 ảnh). Verify trên main pass.
+5. **Token:** fleet-orch 1 / 83 / 15.1M; fleet-worker 6 / 342 / 61.9M + **codex 7.9M** (gen ảnh nhiều vòng); verifier 1.2M. Tổng khoảng 86M.
+6. **Memory:** reviewer ghi "none", nhưng `s09-wheels-from-arch-table` (lesson S09) nhắc nó đo trên frame đã render. Integrator dùng `s03-editor-authored-ui-bulk-recipe-results`. Writer: "the injected memory file was not at the spec path in this worktree; the one found in the main checkout was read", tức F14 lại xảy ra (đường dẫn pack trong spec không trỏ được trong worktree).
+7. **Tiếp theo:** S25 tyre-lift (fleet, Run `run_2e1d984ca7f6`) từ 07:03Z.
