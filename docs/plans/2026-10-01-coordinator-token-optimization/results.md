@@ -1551,3 +1551,23 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Kit slice-check: `FeelSystem.ts` kit-possible (1 game).
 - Mở cho director: mục tiêu 3,000 điểm chỉ đạt khi chạy gần hoàn hảo (bot 2,502–3,327) — quyết định tuning, chưa có trong FOLLOWUPS.
 - S02 bắt đầu 15:32Z (fleet, coordinator term_4d486be0), plan pack 1784 tk / 5 items, đã mark assist.
+
+### Pilot 12 — S28 kết quả (S28 merge 2026-10-09 16:42Z, single lane, slice cuối v1.1)
+
+1. **Merge:** slice `c80e9a6` trên main, bookkeeping `f8a8bff`. Thời gian 15:27 → 16:42Z = **1 h 15**. 0 câu hỏi. Pilot được bàn giao sang session mới lúc 15:36Z (handover.md) mà không mất sự kiện nào: waiter mới nhận `runner_gone` ngay khi merge xong.
+2. **Kết quả:** Settings hiện "Version 1.1.1" (S28-D1). Check mới `s28-polish2-regression` chạy Days 1–9 với 36 xe, và guard `s28-bay-fit`. Release build 108/108 × 3 trên Chrome headless; soak Day-9 180 s đạt 60 fps; 145 capture V1–V5.
+3. **Review:** 2 vòng, 1 fix round.
+   - r1 CHANGES_REQUESTED, F1: khoang máy trông như sticker, không nằm trong lỗ nắp capo. Writer chỉnh `hood.bay` của 3 thân xe (w 156, h 46) và thêm guard `s28-bay-fit` (đỏ trên build cũ, xanh sau khi sửa).
+   - r2 APPROVED, còn 3 điểm minor. F4: ở pickup khoang lệch 6 px dưới mép trên, vẫn trong margin 0…9 px của guard; nên siết margin ≤ 3 px. F2: regression chỉ lấy mẫu 12 completion đầu. F3: HOW_TO H-48 / RC-42 vẫn ghi "1.1" (S28-D1 thay thế).
+   - Static check lần 2 WARN (scope). 3 manual_deferred: feel thời gian thực của hood_swap / jack_lift / step_ui_fade, pass trên máy thật (FOLLOWUPS #13), fps soak reviewer không chạy lại.
+4. **Token:** slice-agent 3 sess / 202 turns / 35.0M (writer + 2 reviewer, Sonnet high). Pilot session mới tốn rất ít: 1 lần dựng, 1 lần thức khi merge.
+5. **Memory:** plan và review đều ghi "memory used: none"; pack chỉ có các mục recovery tab Orca của dự án khác. Record `s18-overlap-probe-settled-vs-transient` (retrieval miss ở S27) lại không có trong pack. Harvest được lesson `s28-settle-before-drag-in-api-walk`: smoke dùng step API rồi drag ngay sau handoff thì fail khoảng 1/20 lần; settle 45 frame thì 20/20 xanh; check multi-seed mới nên chạy 8 lần.
+
+### Pilot 12 — tổng kết v1.1 (cc-car-service-kids S10–S28, 2026-10-08 03:46Z → 2026-10-09 16:42Z)
+
+- **19/19 slice v1.1 merged** trong khoảng 37 h wall: 4 single lane (S10, S11, S18, S28: 30 phút – 1 h 15) và 15 fleet (1 h 05 – 5 h 57). Gồm 3 đợt amendment của director: GP-01..10 (S10–S18), polish GP-11..19 (S19–S23), polish 2 GP-20..25 (S24–S28).
+- **Token:** khoảng 1,37 tỷ context. Fleet trung bình khoảng 85M/slice, single khoảng 27M/slice. Riêng fleet-orch có khoảng 70 % là wait + mechanical, có thể thay bằng script.
+- **Câu hỏi:** 31 câu (21 fleet_gate, 5 fleet_stall, 3 gate_unresolved, 2 lane_blocked), không câu nào ở single lane. Judge trả lời 6; 25 câu còn lại do director hoặc pilot delegated trả lời (ghi `human` trước khi bật `pilot --auto` lúc 2026-10-09 15:05Z).
+- **Thời gian mất vì hạ tầng:** F10 OmniRoute (khoảng 4,5 h ở S13/S14/S24), F18 stall API retry (khoảng 2,5 h ở S26), F17 docs-index (khoảng 20 phút ở S24).
+- **Còn mở (workflow):** F14 memory pack path nằm ngoài worktree fleet; F16 gate đổi key bỏ sót file còn dùng key cũ; F18 phát hiện stall phải đọc màn hình worker và diff worktree; retrieval miss `s18-overlap-probe-settled-vs-transient` (S27 + S28); `by: human` cho câu delegated trước `--auto`.
+- **Còn mở (director):** build / deploy / tag v1.1.1 và push các commit contract sau v1.0.1; pass trên máy thật (FOLLOWUPS #13); HOW_TO H-48 / RC-42 "1.1" → "1.1.1"; S17-D1 voice licence; manual_deferred tích luỹ.
