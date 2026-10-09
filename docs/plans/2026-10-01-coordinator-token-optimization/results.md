@@ -1462,3 +1462,11 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 5. **Token:** fleet-orch 1 / 83 / 15.1M; fleet-worker 6 / 342 / 61.9M + **codex 7.9M** (gen ảnh nhiều vòng); verifier 1.2M. Tổng khoảng 86M.
 6. **Memory:** reviewer ghi "none", nhưng `s09-wheels-from-arch-table` (lesson S09) nhắc nó đo trên frame đã render. Integrator dùng `s03-editor-authored-ui-bulk-recipe-results`. Writer: "the injected memory file was not at the spec path in this worktree; the one found in the main checkout was read", tức F14 lại xảy ra (đường dẫn pack trong spec không trỏ được trong worktree).
 7. **Tiếp theo:** S25 tyre-lift (fleet, Run `run_2e1d984ca7f6`) từ 07:03Z.
+
+### Pilot 17 — S20 kết quả (S20 merge 2026-10-09 ~07:17Z, single lane)
+
+- Merged: 0b047cb (bookkeeping 08f22d3). Wall ~39 min (06:40→07:19Z). Writer opus: 15 code files / 393 lines (budget 19/800), +1 node (Basket Front), +1 asset (window_closed), 1 retired; smoke 63/63, unit 276/276, 3 new + 2 edited smoke checks, 7 negative controls. Review APPROVED (Chrome headless, pixel 2× crops). Tokens ~35M (3 slice-agent sessions).
+- Questions 1: q48 reviewer_hung → autopilot spawned a fresh reviewer. 0 director/pilot decisions needed during the run.
+- manual_deferred (2): wall-clock timing/fps (stepped-clock evidence only), V2 visual crop.
+- Pilot check of docs/evidence/S20 2× crops: rider stands inside the basket behind the front rail with one gun; victim visible from the waist up behind the sill; closed window uses the burning window's sash frame. Matches the director's three images.
+- Note: assets/.meta deleted again in main after the merge/reopen — restored (third time); cause still open.
