@@ -368,6 +368,8 @@ export function preflight(project, id, { initial = false } = {}) {
     add('slice_file', err.message);
     return out;
   }
+  const dirty = uncommittedContracts(project, id);
+  if (dirty.length) add('contracts_uncommitted', `the slice worktree is cut from HEAD, which lacks: ${dirty.join(', ')}. Commit the contract set on the main checkout first (git add slices/ *.md && git commit), then retry`);
   if (!/^[SML]$/.test(sliceSize(front))) add('slice_file', `${id} size is "${front.size}", not S, M or L`);
   for (const k of ['writer_agent', 'reviewer_agent', ...(sliceSize(front) === 'L' ? ['orchestrator_agent'] : [])]) {
     if (!project.fleet[k]) add('agent_conflict', `AGENT_NOTES fleet.${k} is empty`);
@@ -389,6 +391,27 @@ export function preflight(project, id, { initial = false } = {}) {
     if (g && g !== 'done') add('brief_progress', `brief-progress: ${g}; contracts are not final`);
   }
   return out;
+}
+
+const CONTRACT_FILES = ['GAME_BRIEF.md', 'HOW_TO.md', 'EXPECT_GAMEPLAY_VISUAL.md', 'ASSET_MANIFEST.md', 'SCOPE.md', 'ARCHITECTURE.md', 'FOLLOWUPS.md', 'PLAYTEST.md', 'CONTEXT.md', 'MILESTONES.md', 'RELEASE_CHECKLIST.md'];
+
+/**
+ * Contract files a slice worktree (cut from HEAD) needs but HEAD does not carry: untracked files under
+ * slices/ or among the root contracts, and uncommitted edits to the selected slice file. AGENT_NOTES.md
+ * is the runner's own bookkeeping (merge.mjs notesCommitOwn) and never counts; the lanes edit
+ * PLAYTEST/FOLLOWUPS, so modifications there are not flagged either.
+ */
+function uncommittedContracts(project, id) {
+  const sliceRel = project.sliceFiles[id];
+  const out = git(project.root, ['status', '--porcelain', '-uall', '--', 'slices', ...CONTRACT_FILES]);
+  const bad = [];
+  for (const line of out.split('\n')) {
+    if (!line) continue;
+    const code = line.slice(0, 2);
+    const rel = line.slice(3).replace(/^"|"$/g, '');
+    if (code === '??' || code[0] === 'A' && code[1] !== ' ' ? true : rel === sliceRel) bad.push(rel);
+  }
+  return bad;
 }
 
 function tableNeedsOk(project, id) {

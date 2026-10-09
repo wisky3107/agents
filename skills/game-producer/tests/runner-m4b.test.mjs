@@ -435,6 +435,27 @@ test('dry-run and status are read-only even with docs/brief-progress.json; the b
   assert.deepEqual(runner(p.root, f, 'start', '--dry-run').out[0].blockers, []);
 });
 
+test('contracts_uncommitted: untracked slices/contracts or a dirty slice file block the dispatch; runner-owned AGENT_NOTES dirt does not', () => {
+  const p = project({ slices: { S01: { needs: false }, S02: { needs: false } } });
+  const f = fakes();
+  const codes = () => runner(p.root, f, 'start', '--dry-run').out[0].blockers.map((b) => b.code);
+  const g = (...a) => spawnSync('git', ['-C', p.root, ...a], { encoding: 'utf8' });
+  p.commit('feat(S01): first slice'); // past the brief gate
+  fs.appendFileSync(path.join(p.root, 'AGENT_NOTES.md'), '\n- runner note\n');
+  assert.deepEqual(codes(), []);
+  const s2 = path.join(p.root, 'slices', 'S02-x.md');
+  fs.writeFileSync(s2, fs.readFileSync(s2, 'utf8') + '\nedit\n');
+  assert.deepEqual(codes(), ['contracts_uncommitted']);
+  g('checkout', '--', 'slices');
+  fs.writeFileSync(path.join(p.root, 'HOW_TO.md'), '# how\n');
+  const dry = runner(p.root, f, 'start', '--dry-run').out[0];
+  assert.deepEqual(dry.blockers.map((b) => b.code), ['contracts_uncommitted']);
+  assert.match(dry.blockers[0].detail, /HOW_TO\.md.*Commit the contract set/);
+  g('add', 'HOW_TO.md');
+  g('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'docs: contracts');
+  assert.deepEqual(codes(), []);
+});
+
 test('locks: policy agents vs yaml, budget mode, lite flag, cursor state, cc4, study pin, template guard, status aliases', async () => {
   assert.deepEqual(policyAgents('goal=end_to_end budget=advisory orchestrator=codex:gpt-6-luna-high:high scanner=claude:sonnet:high writer=claude:sonnet:high reviewer=codex:gpt-6.1-sol art=antigravity (director gate: S01 GIVEN, reviewer=x (nested) still inside)'), {
     orchestrator_agent: 'codex:gpt-6-luna-high:high', scanner_agent: 'claude:sonnet:high', writer_agent: 'claude:sonnet:high', reviewer_agent: 'codex:gpt-6.1-sol',
