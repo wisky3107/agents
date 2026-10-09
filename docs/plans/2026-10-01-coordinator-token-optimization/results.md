@@ -1351,3 +1351,10 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 5. **Token:** fleet-orch 1 / 86 / 16.9M; fleet-worker 8 / 362 / 75.1M + codex 1.0M; verifier 0.9M. Tổng khoảng 95M.
 6. **Memory:** trích `T-S03/t-s03-bare-finger-step-and-step-mode` (bọt biển trong bước xịt là wrong tool) và `T-S15/s15-per-step-tray-tools` (`StepDef.tools` override khay theo từng bước). Lesson của S15 được dùng ngay ở S20.
 7. **Tiếp theo:** S21 spray-particles (fleet, Run `run_e9befbc49c9d`). Art PASS, đang implement.
+
+### Pilot 15 — S16 kết quả (S16 merge 2026-10-09 00:10Z, fleet)
+
+- Merged: 2c87e8a (merge faef495, bookkeeping a8d8083). Wall 1 h 21 m (22:52→00:13Z). Review 1 round APPROVED (1 pre-review fix); smoke 52/52 at V1/V2/V3 (chrome GPU), unit 250/250.
+- Tokens: fleet-orch 18.1M, workers claude 59.8M + codex 2.5M, slice-agent 1.1M → ~82M.
+- Delegated decisions: q44 (23:08Z) approve 1+2+3 — move only `Button - Facts` (old rect overlapped the new M1 hitbox by 5 775 px²) with a disjoint-set unit test incl. Facts/Home/PLAY/title/star chip/station/12 nodes; minimal edits to S01-06/S02-01/S04-01/S12-01 to step past the 3 s drive, EXPECT unchanged; drive hangs off GO! only. q45 (23:29Z) one narrow art round 3 for city_map_bg + drive_road_strip, H-40 street geometry kept (option "move street y in code" rejected) → r3 PASS.
+- Findings: fifth brief geometry miss (kept rect vs new node hitbox); fourth "new phase breaks old smoke solvers" (drive). Art-2d 2-round cap hit on a guide-dependent map background — a guide image as reference from round 1 would have avoided it.
