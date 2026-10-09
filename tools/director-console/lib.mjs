@@ -224,7 +224,8 @@ export function pending(ps = projects()) {
   });
   const home = memHome();
   const draftRoot = path.join(home, 'reports', 'judge-drafts');
-  const drafts = (fs.existsSync(draftRoot) ? fs.readdirSync(draftRoot) : []).flatMap((proj) =>
+  // one dir per project; a stray file there (a run summary) must not take the overview down
+  const drafts = (fs.existsSync(draftRoot) ? fs.readdirSync(draftRoot, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name) : []).flatMap((proj) =>
     fs.readdirSync(path.join(draftRoot, proj)).filter((f) => f.endsWith('.json')).map((f) => readJson(path.join(draftRoot, proj, f))).filter((d) => d && !d.applied_at));
   const refresh = readJson(path.join(home, 'reports', 'refresh-latest.json'));
   const ageH = refresh ? (Date.now() - Date.parse(refresh.at)) / 3600000 : null;

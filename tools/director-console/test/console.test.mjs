@@ -47,6 +47,9 @@ before(async () => {
   fs.mkdirSync(path.join(repo, '.cursor', 'evidence', 'tasks', 'T-S02', 'evidence'), { recursive: true });
   fs.writeFileSync(path.join(repo, '.cursor', 'evidence', 'tasks', 'T-S02', 'evidence', 'manual-deferred.json'), JSON.stringify({ v: 2, items: ['fps on device'], signed_off: { at: '2026-10-07T00:00:00Z', by: 'director', note: 'waived: no device' } }));
   fs.mkdirSync(path.join(home, 'config'), { recursive: true });
+  // a run summary left next to the per-project draft dirs (2026-10-09 broke /api/overview with ENOTDIR)
+  fs.mkdirSync(path.join(home, 'reports', 'judge-drafts'), { recursive: true });
+  fs.writeFileSync(path.join(home, 'reports', 'judge-drafts', 'sample-run.json'), '{}');
   fs.writeFileSync(path.join(home, 'config', 'projects.json'), JSON.stringify({ projects: [{
     project_id: 'cc-a', paths: [repo], domain: 'cocos', stack: { engine_version: '3.8.8', mode: '2d', target: 'web-mobile' },
     data_owner: 'internal', memory: { mode: 'off', backend: 'local' }, evidence_dir: '.cursor/evidence',
