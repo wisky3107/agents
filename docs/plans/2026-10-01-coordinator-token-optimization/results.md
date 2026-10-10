@@ -1648,3 +1648,10 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Authority: delegated — director duyệt S09–S13 "Duyệt hết, chạy", target "Hạ xuống 2.500", deploy prod "Sau khi v1.1 xong". `pilot --set --n 19 --auto`.
 - Contracts: codex gpt-6.1-sol-xhigh, run 4ac7cf5c, ~1 h 30 gồm GP-06 bổ sung; commit fca6b2b (pushed). F5: validate-contracts bắt release-polish lịch sử (S08) phải là release_slice → fix 8f8c92b (patch của brief author, review + merge). Brief author dừng giữa lượt 1 lần (codex), nudge 1 lần.
 - Config: runner pid 64122 (term_d2c639c0), S09 fleet, coordinator term_eba10f86 (claude sonnet), plan pack 1809 tk / 5 items, mark assist. Waiter pilot-wait --once; cron dự phòng 2 h.
+
+### Pilot 20 — cc-cat-dash full-campaign rip port (end_to_end, runner), từ 2026-10-10T08:16Z
+
+- Purpose: general workflow; authority **delegated** (director: "pilot dự án cc-cat-dash, tự động toàn bộ") → `pilot --set --n 20 --auto`.
+- Bootstrap, rip-port-analysis (Sonnet analyst) and game-brief (Fable 5.1) are run by the director's "Cat Dash xapk asset rip" session; that session launched the runner at 08:13Z before the brief gate was done (phase contracts_written, contracts uncommitted, S01 slice study missing).
+- **F1** contracts_uncommitted had no runner QUESTION entry: asked with the fallback options, the answer "fixed, retry" went to the lane handler → `no action for contracts_uncommitted: fixed, retry` (q1 → q2 runner_error). Fixed 35b9508 (own option `committed, retry`, clears the stop; regression test; 179/179; independent review APPROVED). Runner restarted 08:22Z (pid 10433, term_1f15edf0).
+- Resolve-by-pilot checked live: `answer --choice "resolve by pilot agent"` on q3 → runner printed `handed_to_pilot`, dialog closed (`dialog_done: pilot`). q3 held until the contract set is committed.
