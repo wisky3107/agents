@@ -1605,3 +1605,9 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Tokens: fleet-orch 19.3M (96 turns), fleet-worker 6 sess 69.0M, slice-agent 1.3M.
 - Memory (assist 1994 tk / 7 items): 4 cite, toàn record cc-lego-stack — `T-S11/emulate-viewport-in-frozen-tab…` (V1–V4 qua Chrome), `T-S13/rendered-label-floor-shrink` ×2 (assert `Label.actualFontSize`), `T-S14/stepped-feel-curves-method` — áp dụng thật, slice có nhiều cite nhất.
 - Kit slice-check: 4 feature, 0 kept. S06 bắt đầu 00:00Z — **single lane** (lần đầu trong pilot), pack 1815 tk / 5 items, đã mark assist.
+
+### Pilot 18 — S06 kết quả (S06 merge 2026-10-10 ~01:12Z, single lane)
+- Merged 1619ba0 (bookkeeping 31b1240). e2e 00:00 → 01:15Z ≈ 1 h 14 — nhanh nhất pilot. Single lane: 1 writer opus + 2 reviewer sonnet. fix_rounds 1, budget bump 26→29 files (advisory, tự động), 1397/1550 dòng. Smoke 66/66 (13 mới, 2 sửa). manual_deferred 2. 0 câu hỏi.
+- Tokens: slice-agent 3 sess 73.9M (257 turns) — không có coordinator; tổng thấp hơn mọi slice fleet.
+- Memory (assist 1815 tk / 5 items): `cc-monopoly-go/T-S06/lesson-L4` cite 2 lần (writer: test lại F1/F3 bằng trusted pointer input; reviewer: S06-05 assert rendered text) — slice thứ 4 dùng lesson này → ứng viên promote.
+- Kit slice-check: 3 feature, 0 kept. S07 bắt đầu 01:15Z (single lane), pack 1934 tk / 7 items, đã mark assist.
