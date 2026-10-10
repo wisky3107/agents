@@ -1752,3 +1752,14 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Memory (assist): writer and reviewer cited and acted on this game's own lesson `cc-cat-dash/T-S01/cc-cat-dash-s01-oracle-search-tap-replay` (runtime breadth search → replay the taps) — it produced the route evidence for the 2187 decision. 5 learning candidates validated.
 - manual_required: human finish with real input, device touch feel/audio, flash ring / blend frame timing, Park look pixel tolerance.
 - S05 (flying city) dispatched 21:29Z, coordinator term_a2056a47.
+
+### Pilot 20 — S05 kết quả (merge 2026-10-10 23:17Z, fleet)
+
+- S05 flying-city (Flying/Propeller form, flashing lights, Cat City kit, City levels 2163 2165 2265 2264 2263 2184) merged a073baf (feat e0ac9ec). Dispatch 21:29Z → merge 23:17Z ≈ 1 h 48 m. 0 fix rounds, 1 review APPROVED. Budget advisory files 17→63, lines 1050→2700 (asset/rig/level volume).
+- Questions 3, director 0, all pilot: q20 consolidated gate (approve-recommended + S04 conditions: form study before tuning, route search per level, lock unwinnable, gate early), q21 lane_blocked (form-study clip showed UFO, not Flying → A: fetch an Attention video, store probe outputs only, 45 min box, fallback ASSUMPTION ids), q22 verify_manual (measured: drift max 13 ms; retry seek 0–17 ms).
+- The coordinator settled three further gates itself under the q20 conditions (no runner question): 2184 no route → "coming soon", integrator Player.showRig 3-line fix, route-search press semantics.
+- **Conditions worked:** Flying measured on the Attention video (OGISpjUGvrk: hold ≈ +75, release ≈ −70 u/s²) before tuning; five City levels finish in the live runtime (routes in docs/evidence/S05/routes.md, fps 59.5–60.2); **2184 Ievan Polka locked** early (its Ball section needs unmeasured jelly/jump-ring launches, FOLLOWUPS 31/32) — raised as a gate after the first failed search, not after a sweep (compare S04 F11). Assumptions kept with ids (A-24.G3 tap threshold 0.15 s, G5, box x, flash timing).
+- Locked levels so far: 2187 (S04), 2184 (S05). Both blocked by unmeasured form/item launch rules → a cross-slice follow-up: one measurement pass over Ball/jelly/ring launches from video could unlock both.
+- Tokens (since 21:29Z): fleet-orch 1 sess 90 turns 17.7M · fleet-worker 7 sess 492 turns 145.5M · slice-agent 2.0M · producer 15k. Coordinator replaceable ≈ 61 %.
+- Memory (assist): this game's own lessons cited and acted on — T-S02 `autoplay-markers-as-triggers` (replay press semantics are the real Player ones) and T-S01 `oracle-search-tap-replay` (search → runtime replay). Own-game lessons now dominate citations (S03 was the cross-game exception).
+- S06 (spider forest) dispatched 23:21Z, coordinator term_0f0685a7.
