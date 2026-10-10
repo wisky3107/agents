@@ -210,8 +210,11 @@ Do:
        --expect-dims "<x,y,z from the row, glTF order>" --forward <row forward> \
        --concepts <ART_PATHS>/concepts/<STEM>
      (add --engine eevee when stats.json render_notes asks for it, or to judge vertex colours)
-5. Read contact-sheet.png, compare-sheet.png, stats.json, the concept PNGs (and gen3d-report.json
-   on route 3B). Write evidence/art/<STEM>/model-check.md (per-stem file):
+5. Read this round's contact-sheet.png, compare-sheet.png and stats.json (and gen3d-report.json on
+   route 3B). Open the concept PNGs in round 1 only: compare-sheet.png already shows them next to
+   the model. Never reopen an earlier round's sheets. Every image you open stays in the context,
+   and a codex worker dies with `413 Payload Too Large` past the 50 MB proxy cap (mesh round 4,
+   2026-10-10). Write evidence/art/<STEM>/model-check.md (per-stem file):
      ## <MODEL_FILE> — round <n>
      route: blender | 3dgenstudio — <reason / fallback note>
      source: gen_<STEM>.py | gen3d-report.json (high <n> tris → game <n>, coverage <c>, ~<n> credits)
