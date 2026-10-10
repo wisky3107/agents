@@ -21,6 +21,14 @@
  *     --state keeps idle_streak / last HANDOFF mtime across calls and restarts; keep it in the main
  *     checkout (T-<Sxx>/producer-state.json), never in the lane's evidence dir.
  *
+ *     While it waits, coord also rescues lost Enters (pilot 18 F3): `worker-start` can paste the brief into a
+ *     Claude Code TUI and lose the Enter, leaving the dispatch `dispatched` with no heartbeat forever. Every
+ *     ~30 s it looks at the Run's dispatches; one that is `dispatched`, has `last_heartbeat_at` null and is
+ *     older than 45 s gets its assignee read, and if the screen starts with `draft:` ONE bare
+ *     `orca terminal send --enter`, at most once per dispatch id (kept in --state, default
+ *     <TMPDIR>/orca-wait/<run>/draft-state.json). Reported as "draft_submitted":[{handle,dispatch,task}] on the
+ *     result. Every orca call is bounded and a failing probe never breaks the wait.
+ *
  * Every call also reports, only when something is wrong: a stale orca cheatsheet, and (for a session
  * launched with --role) a coordinator guard that never logged this very call.
  */
@@ -124,13 +132,96 @@ function healthNotes(startedAt) {
   return notes;
 }
 
+const DRAFT_AGE_MS = Number(process.env.ORCA_WAIT_DRAFT_AGE_MS ?? 45000);
+const PROBE_MS = Number(process.env.ORCA_WAIT_PROBE_MS) || 30000;
+const PROBE_CALL_MS = 15000;
+
+function toMs(t) {
+  if (t == null || t === '') return NaN;
+  if (typeof t === 'number' || /^\d+(\.\d+)?$/.test(String(t))) {
+    const n = Number(t);
+    return n < 1e12 ? n * 1000 : n;
+  }
+  return Date.parse(String(t));
+}
+
+/** All text in a terminal-read result, whatever the key (tail, lines, text ...). */
+function textOf(x, depth = 0) {
+  if (typeof x === 'string') return x;
+  if (depth > 4 || x == null) return '';
+  if (Array.isArray(x)) return x.map((e) => textOf(e, depth + 1)).join('\n');
+  if (typeof x === 'object') return Object.values(x).map((e) => textOf(e, depth + 1)).filter(Boolean).join('\n');
+  return '';
+}
+
+/**
+ * Pilot 18 F3: submit a pasted-but-unsent worker brief. Returns the [{handle,dispatch,task}] it nudged.
+ * Dispatches of the bound Run that are `dispatched`, never heartbeated and older than DRAFT_AGE_MS get their
+ * assignee read; a screen whose first line starts with `draft:` gets one bare Enter, once per dispatch id.
+ */
+function rescueDrafts(run, stateFile) {
+  const done = [];
+  try {
+    const st = readState(stateFile);
+    const sent = new Set(st.draft_enter_sent || []);
+    const tl = orcaJson(['orchestration', 'task-list', ...(run ? ['--run', run] : [])], PROBE_CALL_MS);
+    const tr = tl.parsed?.result;
+    const tasks = Array.isArray(tr) ? tr : tr?.tasks || [];
+    for (const t of tasks) {
+      if (/^(pending|ready|completed|done|failed|cancell?ed|blocked)$/i.test(String(t.status || ''))) continue;
+      const ds = orcaJson(['orchestration', 'dispatch-show', '--task', t.id], PROBE_CALL_MS).parsed?.result;
+      const list = Array.isArray(ds) ? ds : ds?.dispatches || [ds?.dispatch || ds?.context || ds].filter(Boolean);
+      for (const d of list) {
+        const id = d.id || d.dispatch_id;
+        const handle = d.assignee_handle || d.assignee || d.terminal_handle || d.worker_handle;
+        const age = Date.now() - toMs(d.dispatched_at);
+        if (!id || !handle || d.status !== 'dispatched' || d.last_heartbeat_at || !(age >= DRAFT_AGE_MS) || sent.has(id)) continue;
+        const rd = orcaJson(['terminal', 'read', '--terminal', handle], PROBE_CALL_MS);
+        const first = textOf(rd.parsed?.result).split('\n').find((l) => l.trim()) || '';
+        if (!/^\s*draft:/.test(first)) continue;
+        sent.add(id); // once per dispatch, even when the send fails: no Enter storms
+        const se = spawnSync('orca', ['terminal', 'send', '--terminal', handle, '--enter', '--json'], { encoding: 'utf8', timeout: PROBE_CALL_MS });
+        if (se.status === 0) done.push({ handle, dispatch: id, task: t.id });
+      }
+    }
+    if (sent.size !== (st.draft_enter_sent || []).length) {
+      fs.mkdirSync(path.dirname(path.resolve(stateFile)), { recursive: true });
+      fs.writeFileSync(`${stateFile}.tmp`, JSON.stringify({ ...st, draft_enter_sent: [...sent] }, null, 1));
+      fs.renameSync(`${stateFile}.tmp`, stateFile);
+    }
+  } catch {
+    /* a failing probe never breaks the wait */
+  }
+  return done;
+}
+
 function coord(v) {
   const limit = maxMs(v);
+  const started = Date.now();
+  const deadline = started + limit;
+  const stateFile = v.state || path.join(process.env.TMPDIR || os.tmpdir(), 'orca-wait', String(v.run || 'bound'), 'draft-state.json');
+  const drafts = [];
+  let ack = v.ack;
+  for (;;) {
+    drafts.push(...rescueDrafts(v.run, stateFile));
+    const slice = Math.max(1000, Math.min(PROBE_MS, deadline - Date.now()));
+    const t0 = Date.now();
+    const out = coordCheck(v, ack, slice, started);
+    ack = undefined; // consumed by the first check
+    if (!out.timeout || Date.now() + 1000 >= deadline) {
+      return drafts.length ? { ...out, draft_submitted: drafts } : out;
+    }
+    // a check that timed out early (fakes, a restarted runtime) must not spin
+    const pause = Math.min(slice - (Date.now() - t0), deadline - Date.now());
+    if (pause > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, pause);
+  }
+}
+
+function coordCheck(v, ackId, limit, started) {
   const args = ['orchestration', 'check'];
-  if (v.ack) args.push('--ack', v.ack);
+  if (ackId) args.push('--ack', ackId);
   if (v.run) args.push('--run', v.run);
   args.push('--wait', '--types', v.types || 'worker_done,escalation,question', '--timeout-ms', String(limit));
-  const started = Date.now();
   const r = orcaJson(args, limit + 30000);
   const res = r.parsed?.result;
   // the documented shape is result.timedOut; an ok:false error whose code is a wait timeout is the same

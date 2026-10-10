@@ -19,6 +19,10 @@ case "$1 $2" in
   "orchestration run-show") cat "${dir}/run-show.json" ;;
   "orchestration gate-list") cat "${dir}/gates.json" ;;
   "orchestration inbox") cat "${dir}/inbox.json" ;;
+  "orchestration task-list") if [ -f "${dir}/task-list.json" ]; then cat "${dir}/task-list.json"; else exit 1; fi ;;
+  "orchestration dispatch-show") cat "${dir}/dispatch-show.json" ;;
+  "terminal read") cat "${dir}/read.json" ;;
+  "terminal send") echo '{"ok":true}' ;;
   "terminal wait") cat "${dir}/wait.json" ;;
   "terminal show") if [ -f "${dir}/show.json" ]; then cat "${dir}/show.json"; else echo '{"ok":false,"error":{"code":"terminal_not_found"}}'; exit 1; fi ;;
   *) echo '{"ok":false}'; exit 1 ;;
@@ -53,7 +57,7 @@ test('coord: one compact line, full Delivery on disk, ack and cap passed through
     task: 'task_54bb', dispatch: 'ctx_655c', outcome: 'succeeded', body: 'line one / line two',
   });
   assert.equal(JSON.parse(fs.readFileSync(out.full, 'utf8')).messages[0].body, delivery.result.messages[0].body);
-  assert.match(calls, /orchestration check --ack delivery_prev --wait --types worker_done,escalation,question --timeout-ms 540000 --json/);
+  assert.match(calls, /orchestration check --ack delivery_prev --wait --types worker_done,escalation,question --timeout-ms 30000 --json/);
   fs.rmSync(bin, { recursive: true });
 });
 
@@ -142,9 +146,9 @@ test('guard self-check: the hook entry for this call counts even after a long wa
   const bin = fakeOrca({ check: { ok: true, result: { count: 0, timedOut: true, messages: [] } } });
   const log = path.join(bin, 'guard.jsonl');
   const env = { CC_ROLE: 'coordinator', CC_PROJECT: '/p', CC_GUARD_LOG: log };
-  assert.match(run(bin, ['coord'], env).out.notes.guard, /inactive/);
+  assert.match(run(bin, ['coord', '--max-ms', '1000'], env).out.notes.guard, /inactive/);
   fs.writeFileSync(log, JSON.stringify({ ts: new Date(Date.now() - 20000).toISOString(), cmd: 'node orca-wait.mjs coord', project: '/p' }) + '\n');
-  assert.equal(run(bin, ['coord'], env).out.notes, undefined);
+  assert.equal(run(bin, ['coord', '--max-ms', '1000'], env).out.notes, undefined);
   fs.rmSync(bin, { recursive: true });
 });
 
@@ -183,4 +187,50 @@ test('lane: a stale handle that `terminal show` still finds is not terminal-miss
   fs.rmSync(path.join(bin, 'show.json'));
   assert.equal(run(bin, args).out.event, 'terminal-missing');
   fs.rmSync(bin, { recursive: true });
+});
+
+// pilot 18 F3: worker-start pasted the brief but the Enter was lost -> the TUI shows `draft: "..."`
+function draftFixtures(over = {}) {
+  return {
+    check: { ok: true, result: { count: 0, timedOut: true, messages: [] } },
+    'task-list': { ok: true, result: { tasks: [{ id: 'task_a', status: 'dispatched' }, { id: 'task_b', status: 'completed' }] } },
+    'dispatch-show': { ok: true, result: { dispatch: { id: 'ctx_1', status: 'dispatched', assignee_handle: 'term_w', dispatched_at: new Date(Date.now() - 120000).toISOString(), last_heartbeat_at: null, ...over } } },
+    read: { ok: true, result: { terminal: { tail: ['draft: "Please carry out this task from my Orca coordinator [Pasted text #1 +199 lines]"', '> '] } } },
+  };
+}
+const sends = (calls) => calls.split('\n').filter((l) => l.startsWith('terminal send'));
+
+test('coord: a dispatch whose pasted brief was never submitted gets one bare Enter, once per dispatch', () => {
+  const bin = fakeOrca(draftFixtures());
+  const state = path.join(bin, 'state.json');
+  const a = run(bin, ['coord', '--run', 'run_1', '--state', state, '--max-ms', '1000']);
+  assert.deepEqual(a.out.draft_submitted, [{ handle: 'term_w', dispatch: 'ctx_1', task: 'task_a' }]);
+  assert.equal(a.out.timeout, true);
+  assert.deepEqual(sends(a.calls), ['terminal send --terminal term_w --enter --json']);
+  assert.match(a.calls, /orchestration task-list --run run_1 --json/);
+  // second wait, same state: already nudged, no second Enter
+  const b = run(bin, ['coord', '--run', 'run_1', '--state', state, '--max-ms', '1000']);
+  assert.equal(b.out.draft_submitted, undefined);
+  assert.equal(sends(b.calls).length, 1);
+  fs.rmSync(bin, { recursive: true });
+});
+
+test('coord: no Enter for a fresh dispatch, a heartbeating one, or a screen without a draft; failing probes never break the wait', () => {
+  for (const over of [{ dispatched_at: new Date().toISOString() }, { last_heartbeat_at: '2026-10-09T17:00:00Z' }]) {
+    const bin = fakeOrca(draftFixtures(over));
+    const r = run(bin, ['coord', '--run', 'run_1', '--max-ms', '1000']);
+    assert.equal(sends(r.calls).length, 0);
+    assert.equal(r.out.timeout, true);
+    fs.rmSync(bin, { recursive: true });
+  }
+  const noDraft = draftFixtures();
+  noDraft.read = { ok: true, result: { terminal: { tail: ['working on it', 'draft: later'] } } };
+  const bin = fakeOrca(noDraft);
+  assert.equal(sends(run(bin, ['coord', '--run', 'run_1', '--max-ms', '1000']).calls).length, 0);
+  fs.rmSync(bin, { recursive: true });
+  // task-list failing: the wait still reports its timeout
+  const bin2 = fakeOrca({ check: draftFixtures().check });
+  const r2 = run(bin2, ['coord', '--run', 'run_1', '--max-ms', '1000']);
+  assert.deepEqual([r2.status, r2.out.timeout], [0, true]);
+  fs.rmSync(bin2, { recursive: true });
 });

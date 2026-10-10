@@ -672,7 +672,10 @@ after a valid `worker_done`; never release on idle/heartbeat.
 - After each accepted settlement do exactly one: reuse the proven terminal for the next Dispatch,
   `worker-retain` (only when the user asked), or `worker-release` (recipe A). An uncertain release
   follows its recovery receipt; never substitute `terminal close` for it.
-- After every `worker-start` (fresh or reused terminal): within ~1 min `orca terminal read` must show
+- `orca-wait.mjs coord --run <run>` now does this itself: a dispatch of the Run still `dispatched`, with
+  `last_heartbeat_at` null for 45 s, whose assignee screen starts with `draft:` gets one bare Enter (once
+  per dispatch; the result carries `draft_submitted`). If you wait any other way, check by hand: after every
+  `worker-start` (fresh or reused terminal), within ~1 min `orca terminal read` must show
   a new turn. If its first line is `draft: "Please carry out this task…"`, the brief was pasted but
   the Enter was lost — send `orca terminal send --terminal <h> --enter` once and read again. Before
   reusing a terminal, also wait `orca terminal wait --terminal <h> --for tui-idle --timeout-ms 90000`
