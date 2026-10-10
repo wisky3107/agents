@@ -1599,3 +1599,9 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Kit slice-check: 4 feature, 0 kept. S05 bắt đầu 22:20Z (fleet, coordinator term_d049ef5e), pack 1994 tk / 7 items, đã mark assist.
 - Ghi chú: nodes budget 120 bị vượt 55 % mà không ai hỏi — budget node của slice-schema có vẻ ước quá thấp cho slice UI garage (5 xe × card); đáng xem lại khi author slice.
 - 22:31Z (S05) q5 handed (auto, judge defer: H-18 hub entry còn ASSUMPTION). Writer hỏi coordinator 3 quyết định; pilot quyết như delegated director, GIVEN cả 3 đề xuất của writer: (1a) card Freestyle vào Freestyle, mode-plate ở Ready là toggle FREESTYLE↔TRICK PRACTICE; (2a) writer sửa tối thiểu S01-01, S02-01, S03-01, S03-08, S04-01/02 (+ helper openGarage S04-03/04/06/09) qua `ctrl.enterRoute(...)` và BACK→Hub, khai báo scope, không nới ngưỡng, negative control; (3a) Pause→Home chỉ hỏi Keep/Leave khi run đã chạy. Bài học author: slice thay shell (selector → hub) phải pre-declare các smoke check cũ sẽ đổi (đúng checklist bước 2 của skill — game-brief chưa làm).
+
+### Pilot 18 — S05 kết quả (S05 merge 2026-10-09 23:58Z, fleet)
+- Merged 44a7877 (merge cd68ad4, bookkeeping 73e181f). e2e 22:20 → 00:00Z ≈ 1 h 40. fix_rounds 1, review_rounds 2. manual_deferred 3. Câu hỏi: q5 (H-18, pilot quyết 1a/2a/3a). stats.json chỉ có fix/review.
+- Tokens: fleet-orch 19.3M (96 turns), fleet-worker 6 sess 69.0M, slice-agent 1.3M.
+- Memory (assist 1994 tk / 7 items): 4 cite, toàn record cc-lego-stack — `T-S11/emulate-viewport-in-frozen-tab…` (V1–V4 qua Chrome), `T-S13/rendered-label-floor-shrink` ×2 (assert `Label.actualFontSize`), `T-S14/stepped-feel-curves-method` — áp dụng thật, slice có nhiều cite nhất.
+- Kit slice-check: 4 feature, 0 kept. S06 bắt đầu 00:00Z — **single lane** (lần đầu trong pilot), pack 1815 tk / 5 items, đã mark assist.
