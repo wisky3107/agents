@@ -1682,3 +1682,11 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Tokens: fleet-orch 15.6M, fleet-worker 10 sess 91.1M (4 fix rounds), slice-agent 1.3M.
 - Memory (1761 tk): 6 × none (đọc T-S04 selector, lego T-S10 lighting fit, lego T-S11 viewport — không dùng). Lesson ánh sáng lego chưa giúp được ở đây.
 - S12 (mud tyre trails) bắt đầu 11:29Z, fleet, coordinator term_f99b9951, pack 1944 tk / 6, mark assist.
+
+### Pilot 19 — S12 kết quả (S12 merge 2026-10-10 13:09Z, fleet)
+- Merged 3778152 (merge 80e512a, bookkeeping d796d99): vệt bánh bùn bám mặt đất (batched quads) + bùn văng sau, có giới hạn. e2e 11:29 → 13:13Z ≈ 1 h 44. fix_rounds 2, review 1 APPROVED, smoke 89/89, check bắt buộc giữ nguyên đều PASS, 0 console error. manual_deferred 1. 0 câu hỏi. Evidence: ground-crops.png (2x crop như checklist), realtime-strip.png, mud-trace.json.
+- Pilot xem V1-mud: vệt bánh rõ trên đất; trời vẫn trắng xám.
+- Tokens: fleet-orch 15.4M, fleet-worker 4 sess 86.2M, slice-agent 1.5M.
+- Memory (1944 tk): `T-S09-aba-zfight-metric` (lesson S09 của chính game) cite cho mark trên đất. 3 lần "no MEMORY line in this round's card" = card fix round không mang dòng MEMORY → **F6 nhỏ**: fix-round cards bỏ memory pack của writer (ghi nhận, chưa sửa).
+- Kit slice-check: ứng viên `kit-mud-config`.
+- S13 (release-polish v1.1) bắt đầu 13:13Z, fleet, coordinator term_31a38a9e, pack 1938 tk / 5, mark assist. Pilot (delegated) gửi coordinator: S13 phải sửa F-S11-sky — EXPECT E-01 (#8ACFF1 → #E7F4FF) đang FAIL (trời ~221,226,228), chỉ chỉnh sky (gradient/exposure riêng sky), không đổi sun/ambient đã duyệt, đo pixel V1–V4 sai số ≤12/kênh + negative control; kiểm lại khung Freestyle V1 (rào navy góc trái).
