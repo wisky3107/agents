@@ -136,6 +136,32 @@ test('valid full contract passes, malformed YAML and DAG cycles fail',()=>{
   put(p,f,'```yaml\n'+stringify({slices:['S01','S02'],dag:{S01:['S02'],S02:['S01']},parallel_ok:[],v1_slice:'S01',release_slice:'S02',stop_when:'done'})+'```');
   assert.ok(validate(p).errors.some(e=>e.code==='dag_cycle'));
 });
+test('late amendment preserves completed release-polish history and checks the active release',()=>{
+  const p=validProject();
+  const historicalFile='slices/S02-slice.md';
+  const historical=fs.readFileSync(path.join(p,historicalFile),'utf8');
+  const milestone={slices:['S01','S02','S03'],dag:{S02:['S01'],S03:['S02']},parallel_ok:[],v1_slice:'S01',release_slice:'S03',stop_when:'RC pass'};
+  put(p,'MILESTONES.md','```yaml\n'+stringify(milestone)+'```\n');
+  const active=historical.replace('id: S02\n','id: S03\n').replace('- S01\n','- S02\n').replace('assets/S02.ts','assets/S03.ts').replace('release_items:\n  - RC-02\n','release_items: []\n');
+  put(p,'slices/S03-slice.md',active);
+  const originalNotes=fs.readFileSync(path.join(p,'AGENT_NOTES.md'),'utf8');
+  for (const state of ['merged','shipped',{status:'merged'},{status:'shipped'}]) {
+    put(p,'AGENT_NOTES.md',originalNotes.replace('release:\n','release:\n'+stringify({slices:{S02:state}}).split('\n').filter(Boolean).map(line=>'  '+line+'\n').join('')));
+    assert.deepEqual(validate(p).errors,[],JSON.stringify(state));
+    assert.equal(fs.readFileSync(path.join(p,historicalFile),'utf8'),historical);
+  }
+  for (const state of ['planned','approved',{status:'in_progress'}]) {
+    put(p,'AGENT_NOTES.md',originalNotes.replace('release:\n','release:\n'+stringify({slices:{S02:state}}).split('\n').filter(Boolean).map(line=>'  '+line+'\n').join('')));
+    assert.ok(validate(p).errors.some(e=>e.code==='release_polish_pointer' && e.file===historicalFile));
+  }
+  put(p,'AGENT_NOTES.md',originalNotes.replace('release:\n','release:\n  slices:\n    S02: merged\n'));
+  put(p,'slices/S03-slice.md',active.replace('name: release-polish','name: feature'));
+  assert.ok(validate(p).errors.some(e=>e.code==='missing_release_polish'));
+  put(p,'slices/S03-slice.md',active);
+  milestone.release_slice='S02';
+  put(p,'MILESTONES.md','```yaml\n'+stringify(milestone)+'```\n');
+  assert.ok(validate(p).errors.some(e=>e.code==='invalid_release_order'));
+});
 test('import paths and RC ownership are checked even when Source is not first',()=>{
   const p=validProject();
   put(p,'ASSET_MANIFEST.md','| Stem | Source | Priority | Path |\n|---|---|---|---|\n| impact | import | P0 | reference/demo/missing.png |\n');

@@ -151,7 +151,7 @@ export function validate(p, options = {}) {
       const bad = rows.find(t => SHIP.test(t) && !SHIP_HANDOFF.test(t));
       if (bad) fail('slice_performs_ship', s.file, `deploy/tag/push is producer Step 3 (director-gated), not slice work; hand it off ("ship handed to producer Step 3"): ${bad.slice(0, 100)}`);
     }
-    if (x.name === 'release-polish' && id !== m.release_slice) fail('release_polish_pointer', s.file, 'release-polish must be release_slice');
+    if (x.name === 'release-polish' && id !== m.release_slice && !done(n, id)) fail('release_polish_pointer', s.file, 'Active release-polish must be release_slice; merged/shipped history is preserved');
   }
   if (byId.get(m.release_slice)?.data.name !== 'release-polish') fail('missing_release_polish', 'MILESTONES.md', 'Final slice must be named release-polish');
   if (!Array.isArray(m.parallel_ok)) fail('invalid_parallel_pairs', 'MILESTONES.md', 'parallel_ok must be a list');
