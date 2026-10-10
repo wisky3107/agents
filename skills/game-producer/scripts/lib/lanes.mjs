@@ -223,10 +223,11 @@ export const cursorArtBlocked = (project, id) =>
   project.fleet.art_backend === 'cursor' && !fleetIsLite(project, id) && cursorState(project).state === 'off';
 
 /**
- * Who runs art-mesh / art-anim. Default Opus (2026-10-05 blind pilots, 8 meshes: 7 wins, 1 tie, 0 losses).
- * Unlike art_backend it has a claude substitute, so Cursor off moves it to Opus without a question.
+ * Who runs art-mesh / art-anim. Default codex gpt-6.1-sol (2026-10-10 blind round 3 vs Opus 5.5, 5 meshes:
+ * 5 wins, shippable 5/5 vs 4/5). Unlike art_backend it needs no image tools, so Cursor off moves it
+ * to the default without a question.
  */
-export const MESH_AGENT_DEFAULT = 'claude --model opus';
+export const MESH_AGENT_DEFAULT = 'codex --model gpt-6.1-sol --effort high';
 export function meshAgent(project) {
   const spec = project.fleet.mesh_agent || MESH_AGENT_DEFAULT;
   if (spec === 'art_backend') return spec;

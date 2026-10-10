@@ -168,7 +168,7 @@ On PASS, send status to the art-mesh handle; art-anim waits on the mesh.
 
 ## art-mesh-<stem> (locked mesh_agent; mesh_backend decides the route)
 
-Launch on the locked `mesh_agent` (default `claude --model opus`; `art_backend` means the agent
+Launch on the locked `mesh_agent` (default `codex --model gpt-6.1-sol --effort high`; `art_backend` means the agent
 `art_backend` launches): `cursor` → recipe **A**; `claude` / `codex` / `antigravity` → recipe
 **C** (no AGENTS.md boot — art spec is the first turn).
 

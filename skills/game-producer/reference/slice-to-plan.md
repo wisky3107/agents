@@ -19,7 +19,7 @@ writer_agent: <spec>
 reviewer_agent: <spec>
 art_backend: <backend>
 mesh_backend: <backend>
-mesh_agent: <spec>                        # art-mesh / art-anim worker; default claude --model opus
+mesh_agent: <spec>                        # art-mesh / art-anim worker; default codex --model gpt-6.1-sol --effort high
 studio_available: <bool | n/a>
 fallback_ok: <bool | n/a>                 # studio down: director accepted a Blender block-out for complex meshes
 lite: <true|false>                        # true when the slice has no assets (skip scan/art)

@@ -202,7 +202,7 @@ Settles every agent the run will launch: brief author, orchestrator / implemente
    - `brief` (brief_author=`fable` only; game-brief default = `claude --model claude-fable-5-1`)
    - `orchestrator` (producer / fleet coordinator; the implementer when mode=`single`)
    - mode `producer` / `fleet`: `scanner`, `planner`, `writer`, `reviewer`, `art_backend`,
-     `mesh_backend` and `mesh_agent` (3D only; `mesh_agent` default `claude --model opus`, the
+     `mesh_backend` and `mesh_agent` (3D only; `mesh_agent` default `codex --model gpt-6.1-sol --effort high`, the
      agent that writes Blender generators and judges mesh sheets); mode `producer` also `judge`
      (`release.judge_agent`)
 5. Hard rules for every combo:

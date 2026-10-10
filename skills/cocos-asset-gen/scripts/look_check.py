@@ -9,7 +9,7 @@ Usage:
 
 The mesh worker grades its own rounds and tends to pass them (pilot 2026-10-05: an Opus worker
 called its own pig PASS "lenient"). This runs one fresh `claude -p` session on --judge-model
-(default sonnet, so it differs from the default Opus mesh_agent) with Read only. It opens the
+(default sonnet, so it differs from the default codex mesh_agent) with Read only. It opens the
 concept PNGs plus compare-sheet.png and contact-sheet.png from --render and answers a fixed
 rubric. The verdict block is appended to --out.
 

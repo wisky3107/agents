@@ -182,9 +182,9 @@ one line together with the worker locks.
 | `codex-image` | `--agent codex` | **C**; every image row via `codex-image-gen` |
 
 `mesh_backend` does not change the agent. The `art-mesh-<stem>` and `art-anim-<stem>` workers
-launch on the locked **`mesh_agent`** (default `claude --model opus`; the value `art_backend`
+launch on the locked **`mesh_agent`** (default `codex --model gpt-6.1-sol --effort high`; the value `art_backend`
 means the agent `art_backend` launches) and run whichever route the contract selects. Concepts
-and 2D stay on `art_backend`. `mesh_agent` on Cursor with Cursor off → `claude --model opus`
+and 2D stay on `art_backend`. `mesh_agent` on Cursor with Cursor off → `codex --model gpt-6.1-sol --effort high`
 (no ask). When `mesh_backend` resolves to `3dgenstudio` or
 `auto` **and** the PLAN has complex Source=generate meshes, the coordinator runs
 `python3 .cursor/skills/cocos-asset-gen/scripts/gen3d_studio.py --check` once at Step 0.2 and
@@ -227,7 +227,7 @@ integrate ← all art-mesh + all art-anim + art-2d + implement
 |---|---|---|---|
 | `art-manifest` | `cursor --model auto` (Cursor off → `claude --model sonnet --effort high`) | `art_paths/manifest.json` skeleton only (rows carry `complexity`, `tri_budget`) | concepts, meshes, evidence art |
 | `art-concept-<stem>` | concept route: `agy --dangerously-skip-permissions`, or `codex` when `art_backend` is gpt-image-gen / codex-image | `art_paths/concepts/<stem>/**` + `evidence/art/<stem>/concept-check.md` | other stems' concepts, any `.glb`, `manifest.json` |
-| `art-mesh-<stem>` | locked `mesh_agent` (default `claude --model opus`) | `art_paths/gen_<stem>_*.py`, `art_paths/gen3d/<stem>/**`, `art_paths/<stem>.glb` (or PLAN name), `evidence/art/<stem>/**`, its `model-check.md`; may patch **only** its manifest row (`complexity`/`concepts`/`verify`) | other stems' files, Creator, `.meta` |
+| `art-mesh-<stem>` | locked `mesh_agent` (default `codex --model gpt-6.1-sol --effort high`) | `art_paths/gen_<stem>_*.py`, `art_paths/gen3d/<stem>/**`, `art_paths/<stem>.glb` (or PLAN name), `evidence/art/<stem>/**`, its `model-check.md`; may patch **only** its manifest row (`complexity`/`concepts`/`verify`) | other stems' files, Creator, `.meta` |
 | `art-anim-<stem>` | locked `art_backend` (needs local Blender + write access to `char_anim_home`) | `<char_anim_home>` files of id `<slug>-<stem>`, `art_paths/<stem>.fbx` (row `file`), `art_paths/<fbf_dir>/**`, `evidence/art/<stem>/anim/**`, `anim-check.md`; may patch **only** its row's `anim_verify` | other characters' pipeline files, pipeline code, Creator, `.meta` |
 | `art-2d` | locked `art_backend` | 2D files under `art_paths` that are not concepts/meshes; `evidence/art/2d/gen_2d.py`; `evidence/art/2d/2d-check.md` (every backend but cursor) | 3D |
 
@@ -330,7 +330,7 @@ account out (`!`) — then the choice is wait for the reset it prints, or the Ta
 | scan | discover | per locked `scanner_agent` (default `cursor --model auto`; Cursor off: Locks) | `evidence/discovery.md`, `evidence/baseline/` | writes outside evidence dir |
 | art-manifest | writer (assets) | `cursor --model auto`; `claude --model sonnet --effort high` when Cursor is off | `art_paths/manifest.json` skeleton | concepts, meshes |
 | art-concept-<stem> | writer (assets) | concept route (cocos-asset-gen): antigravity, or codex-image when `art_backend` is gpt-image-gen / codex-image | `concepts/<stem>/**`, concept-check block | meshes, other stems |
-| art-mesh-<stem> | writer (assets) | locked `mesh_agent` (default `claude --model opus`); route per `mesh_backend` (Blender script ∣ 3D Gen Studio ∣ fallback Blender) | generator or `gen3d/<stem>/**` + `.glb` for stem, iso/compare evidence, model-check block | other stems, Creator |
+| art-mesh-<stem> | writer (assets) | locked `mesh_agent` (default `codex --model gpt-6.1-sol --effort high`); route per `mesh_backend` (Blender script ∣ 3D Gen Studio ∣ fallback Blender) | generator or `gen3d/<stem>/**` + `.glb` for stem, iso/compare evidence, model-check block | other stems, Creator |
 | art-anim-<stem> | writer (assets) | locked `art_backend`; char-anim-pipeline (`char-anim` skill) | rigged FBX / FBF atlas for stem, anim evidence, anim-check block | other stems, pipeline code, Creator |
 | art-2d | writer (assets) | locked `art_backend` | 2D textures/sprites under `art_paths` per row `method`, gen_2d.py, 2d-check block (every backend but cursor) | 3D concepts/meshes |
 | implement | writer | per locked `writer_agent` (default `claude --model opus --effort high`) | `code_paths` TS | Funplay, lock, scene files, `art_paths` |
@@ -344,7 +344,7 @@ Fleet Progress:
 - [ ] 0.1 First reply line: `Task size: L — <reason> → fleet`
 - [ ] 0.2 Extract ONLY the leading yaml fence of AGENT_NOTES.md (python/sed — do not load
           Notes sections). Lock art_backend (antigravity | cursor | gpt-image-gen | codex-image),
-          mesh_backend (auto | blender | 3dgenstudio), mesh_agent (default claude --model opus),
+          mesh_backend (auto | blender | 3dgenstudio), mesh_agent (default codex --model gpt-6.1-sol --effort high),
           scanner_agent, planner_agent,
           writer_agent, reviewer_agent once (prompt > AGENT_NOTES.md > default); Cursor state from
           the producer's `cursor=on|off`, else — when any role, art-manifest included, is on

@@ -27,27 +27,30 @@ first turn (see `cocos-orca-fleet` Worker start recipes).
 |---|---|---|---|
 | `art_backend` | `antigravity` | `antigravity` · `cursor` · `gpt-image-gen` · `codex-image` | who makes concepts and 2D files |
 | `mesh_backend` | `auto` | `auto` · `blender` · `3dgenstudio` | how `.glb` meshes are produced (see routing) |
-| `mesh_agent` | `claude --model opus` | a fleet launch spec (`claude --model <m> [--effort <e>]` · `codex` · `cursor --model <m>` · `antigravity`) · `art_backend` | who runs `art-mesh-<stem>` and `art-anim-<stem>`: writes the Blender generator, runs the studio route, judges the sheets |
+| `mesh_agent` | `codex --model gpt-6.1-sol --effort high` | a fleet launch spec (`claude --model <m> [--effort <e>]` · `codex` · `cursor --model <m>` · `antigravity`) · `art_backend` | who runs `art-mesh-<stem>` and `art-anim-<stem>`: writes the Blender generator, runs the studio route, judges the sheets |
 
 Synonyms at first resolve only: `agy` → `antigravity`; `gpt image` / `chatgpt image` /
 `orca-gpt-image-gen` → `gpt-image-gen`; `codex image` / `omniroute image` / `codex-image-gen` →
 `codex-image`; `3dgs` / `gen studio` / `tripo` → `3dgenstudio`; `script` / `bpy` → `blender`;
-`mesh_agent` `opus` / bare `claude` → `claude --model opus`, `agy` → `antigravity`, and
+`mesh_agent` `sol` / bare `codex` → `codex --model gpt-6.1-sol --effort high`, `opus` / bare `claude` →
+`claude --model opus`, `agy` → `antigravity`, and
 `art_backend` → the agent that `art_backend` launches (the pre-2026-10 behaviour).
 Announce `Art: backend=<v> · mesh=<v> · mesh_agent=<spec>` once; never re-ask or switch mid-task. `gpt-image-gen`
 without the `orca-gpt-image-gen` skill installed, or `codex-image` when
 `node ~/.agents/skills/codex-image-gen/scripts/codex-image.mjs check` exits 2 → one `ask` to
-pick another backend. `mesh_agent` on Cursor with Cursor off → `claude --model opus`, said in
-the announce line (unlike `art_backend`, a mesh worker needs no image tools, so claude is a
+pick another backend. `mesh_agent` on Cursor with Cursor off → `codex --model gpt-6.1-sol --effort high`, said in
+the announce line (unlike `art_backend`, a mesh worker needs no image tools, so codex is a
 full substitute).
 
-**Why `mesh_agent` defaults to Opus.** Two blind A/B rounds on 8 meshes (2026-10-05,
-`~/Works/games/pilots/opus-bpy-2026-10-05` and `…-r2-2026-10-05`, `results/results.md`): four
-simple cc-bus-fever-party meshes and four coloured hard-surface ones (fire truck, double-decker,
-kiosk, boom barrier), same spec for both arms. The director picked the Opus generator 7 times,
-tied once and never picked Antigravity; Opus meshes were shippable 7/8 against 6/8. Opus took
-~8 min a mesh against ~14 for Antigravity (Gemini 3.8 Flash), ~100–140k tokens, with generators
-half as long and 1–5 nodes per mesh instead of up to 45.
+**Why `mesh_agent` defaults to codex gpt-6.1-sol.** Blind round 3 (2026-10-10,
+`~/Works/games/pilots/mesh-agent-r3-2026-10-10/results/results.md`): Opus 5.5 against codex
+gpt-6.1-sol (effort high) on the round-2 hard-surface concepts plus passenger_blob, same spec, max
+3 rounds. The director picked Sol on all 5 meshes (no position bias: X 2 / Y 3); shippable
+Sol 5/5 against Opus 4/5 (Opus's ticket kiosk was not). Sol is ~3× slower (mean ~11 min a mesh
+against ~3.5) and grades itself harder (it called 4 shippable meshes FAIL; Opus called a
+non-shippable one PASS). Rounds 1–2 (2026-10-05, `pilots/opus-bpy-2026-10-05` and
+`…-r2-2026-10-05`) had put Opus ahead of Antigravity 7 wins, 1 tie, 0 losses. art-anim follows
+the same key but was not part of round 3; `mesh_agent=claude --model opus` is still the faster choice.
 
 **OpenAI image lanes.** `gpt-image-gen` splits by row with the `codex-image-gen` "Pick the
 backend" rule: rows with `"tier": "hero"` go through `orca-gpt-image-gen` (ChatGPT,
