@@ -1642,3 +1642,9 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - ui-popup 1.0.2: car-service-kids 706ca89, firefighter-kids 386486e; love-train bỏ qua (uiManager.ts có ref-count block/loading từ S11 → cần merge tay).
 - Template: postbuild og/twitter md5 rewrite → cc-game-template acf3a11 (playable/cc4 khác, bỏ qua). Lesson-L4 → rule 60-embedded-browser.mdc ở agent-skills a00c91f + 4 template, `orca-memory promote` + normalize.
 - v1.1 amendment (GP-01..05: phuộc, môi trường/ánh sáng kids, vệt bùn, giật khi cất cánh, khán đài glitch) đang được codex gpt-6.1-sol-xhigh viết (run 4ac7cf5c, term_006c74bc).
+
+### Pilot 19 — cc-monster-truck-show v1.1 S09–S13 (end_to_end, runner), từ 2026-10-10T06:05Z
+- Mục đích: chạy amendment v1.1 (GP-01..06 từ director 2026-10-10: phuộc lò xo, môi trường công viên sáng/mềm, vệt bùn, giật khi cất cánh, khán đài glitch, target 3,000→2,500) qua cùng runner; kiểm F3 (orca-wait tự gửi Enter, 2e53455) và F4 (grace 10 phút cho worker `blocked`, bb42ad1) chạy thật.
+- Authority: delegated — director duyệt S09–S13 "Duyệt hết, chạy", target "Hạ xuống 2.500", deploy prod "Sau khi v1.1 xong". `pilot --set --n 19 --auto`.
+- Contracts: codex gpt-6.1-sol-xhigh, run 4ac7cf5c, ~1 h 30 gồm GP-06 bổ sung; commit fca6b2b (pushed). F5: validate-contracts bắt release-polish lịch sử (S08) phải là release_slice → fix 8f8c92b (patch của brief author, review + merge). Brief author dừng giữa lượt 1 lần (codex), nudge 1 lần.
+- Config: runner pid 64122 (term_d2c639c0), S09 fleet, coordinator term_eba10f86 (claude sonnet), plan pack 1809 tk / 5 items, mark assist. Waiter pilot-wait --once; cron dự phòng 2 h.
