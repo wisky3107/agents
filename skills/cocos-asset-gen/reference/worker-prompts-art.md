@@ -50,6 +50,8 @@ Do:
    forward (glTF axis the front faces, default -Z), intended_node,
    notes, tri_budget, "complexity": "simple" | "complex" (cocos-asset-gen SKILL.md routing table;
    ties → simple), "concepts": [], "verify": null. Do not invent assets beyond change_budget.
+   A static character or creature row (a body with a face) gets "tri_budget" ≥ 6000: on the
+   Blender route its character rules need it (mesh round 5, 2026-10-10).
    A character that must move (PLAN lists clips / sprite animation for it) is an **animated** row:
      "complexity": "complex", "tri_budget": 30000, "file": "<Stem>.fbx" (or null when export is fbf only),
      "animated": {"clips": ["idle","run",...], "mocap": {"<clip>": "<take path>"},
@@ -176,7 +178,7 @@ Launch on the locked `mesh_agent` (default `codex --model gpt-6.1-sol --effort h
 ROLE: writer (assets) — one mesh. Depends on art-concept-<STEM> CONCEPT: PASS.
 mesh_backend=<MESH_BACKEND> (auto | blender | 3dgenstudio). complexity=<from manifest row>.
 Owns ONLY: <ART_PATHS>/gen_<STEM>_*.py, <ART_PATHS>/gen3d/<STEM>/**, <ART_PATHS>/<MODEL_FILE>,
-evidence/art/<STEM>/**, evidence/art/<STEM>/model-check.md, and a read-modify-write of THAT ROW
+<ART_PATHS>/concepts/<STEM>/toy/**, evidence/art/<STEM>/**, evidence/art/<STEM>/model-check.md, and a read-modify-write of THAT ROW
 ONLY in manifest.json (complexity if missing, concepts, verify).
 
 Do:
@@ -192,6 +194,25 @@ Do:
                     model-check.md); otherwise ask once ("studio down: open it, or Blender block-out?")
 3A. BLENDER: write <ART_PATHS>/gen_<STEM>_*.py citing the concept paths as source of truth;
     export <ART_PATHS>/<MODEL_FILE> at manifest dims / pivot / forward; respect tri_budget.
+    CHARACTER ROWS (the concept shows a character or creature: a body with a face) follow these
+    rules on 3A (mesh round 5: 3/3 shippable against 0/3 without them):
+    - First make the toy concept and the face decal from the approved front:
+        python3 ~/.agents/skills/cocos-asset-gen/scripts/character_toy_pack.py \
+          --concepts <ART_PATHS>/concepts/<STEM> --out <ART_PATHS>/concepts/<STEM>/toy \
+          --subject "<short noun: kid character | knight character | cat>" [--face-extra "whiskers"]
+      Exit 2 (codex-image down) or 3 → ask once ("no toy concept: wait, or plain block-out?").
+      The toy concepts are the SHAPE source; the original concept stays the source for identity
+      and colours.
+    - Rounded primitives (spheres, capsules, rounded boxes, cylinders), shade smooth, soft
+      bevels; an applied Subdivision Surface on a low cage is fine within budget. Hair, fur and
+      plumes are a few chunky smooth lobes, never strands or spikes.
+    - The face is a TEXTURE, never geometry: copy the head's front face-region polygons, offset
+      ~1 mm out along the normals, UV-project from the front so toy/face-decal.png lands where the
+      toy concept's face is, and give that shell a material with the decal as Base Color + alpha
+      (glTF alphaMode BLEND or MASK), packed into the .glb. Everything else is flat colour
+      (≤ 6 materials with the decal).
+    - Round 1 is a silhouette block-out: main masses + the face decal, matched to the toy
+      concept's front / three-quarter / back. Rounds 2–3 add secondary detail.
 3B. 3D GEN STUDIO:
       python3 .cursor/skills/cocos-asset-gen/scripts/gen3d_studio.py \
         --image <ART_PATHS>/concepts/<STEM>/concept-front.png --stem <STEM> \
@@ -208,7 +229,7 @@ Do:
        --input <ART_PATHS>/<MODEL_FILE> \
        --out <EVIDENCE_ROOT>/art/<STEM>[/round-<n>] \
        --expect-dims "<x,y,z from the row, glTF order>" --forward <row forward> \
-       --concepts <ART_PATHS>/concepts/<STEM>
+       --concepts <ART_PATHS>/concepts/<STEM>      (3A character rows: <ART_PATHS>/concepts/<STEM>/toy)
      (add --engine eevee when stats.json render_notes asks for it, or to judge vertex colours)
 5. Read this round's contact-sheet.png, compare-sheet.png and stats.json (and gen3d-report.json on
    route 3B). Open the concept PNGs in round 1 only: compare-sheet.png already shows them next to
@@ -244,7 +265,8 @@ Do:
    look-check.md included).
 
 Never: touch other stems; create .meta; open Creator; skip --concepts; PASS without opening
-compare-sheet.png; ship the Tripo high-poly as the asset; pick 3dgenstudio for a simple prop.
+compare-sheet.png; ship the Tripo high-poly as the asset; pick 3dgenstudio for a simple prop;
+model a character's eyes, brows or mouth as meshes on 3A.
 ```
 
 **Animated addendum** (append when the row has `animated`):

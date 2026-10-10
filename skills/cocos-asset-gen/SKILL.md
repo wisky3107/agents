@@ -133,8 +133,9 @@ mesh_backend = auto (default):
 ```
 
 **Studio down for a complex mesh is a director decision.** Blender is a full substitute for
-hard-surface shapes. For organic ones it gives a block-out: the 2026-10-05 pig came out with
-slab ears and a boxy body. So the coordinator probes once at Step 0.2 and, when the studio is down
+hard-surface shapes. For organic ones it gives a block-out (the 2026-10-05 pig came out with
+slab ears and a boxy body) unless the row is a character or creature, where the character
+rules in Route A give a shippable toy-style mesh. So the coordinator probes once at Step 0.2 and, when the studio is down
 and the PLAN has complex Source=generate meshes, asks once for all of them: "open 3D Gen Studio
 and re-probe, or accept a Blender block-out for <stems>". The answer goes into the PLAN as
 `fallback_ok: true|false`, and mesh workers read it instead of asking again.
@@ -166,6 +167,18 @@ Generator habits that held up in the pilot:
 - A closed part's signed volume must be positive. Have the generator check it and fail loudly.
 - Spend the triangle budget where the game camera sees it, and print tris per part while
   tuning.
+
+**Character and creature rows** (a body with a face) take more than primitives. Before writing
+the generator, the worker runs `scripts/character_toy_pack.py`: two codex-image-gen edits of the
+approved concept-front.png give `concepts/<stem>/toy/` a chunky-vinyl-toy turnaround (the shape
+source) and `face-decal.png` (the face graphics on a transparent background). The generator
+builds rounded primitives with lobed hair or fur, puts the face on a 1 mm decal shell
+with an alpha material instead of modelling eyes, and spends round 1 on the silhouette only.
+art-manifest gives these rows ≥ 6000 tris. Mesh round 5 (2026-10-10,
+`~/Works/games/pilots/mesh-agent-r5-2026-10-10/results/results.md`, both arms codex
+gpt-6.1-sol, judged blind against the original concept): with these rules chibi kid, chibi
+knight and sitting cat all won and shipped (3/3); the round-4 method shipped none of them (0/3).
+The rules were tested only as a bundle (toy concept, decal face, 2× budget, block-out round).
 
 ### Route B — 3D Gen Studio (complex)
 
