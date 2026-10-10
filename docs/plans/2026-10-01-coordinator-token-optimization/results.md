@@ -1611,3 +1611,9 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Tokens: slice-agent 3 sess 73.9M (257 turns) — không có coordinator; tổng thấp hơn mọi slice fleet.
 - Memory (assist 1815 tk / 5 items): `cc-monopoly-go/T-S06/lesson-L4` cite 2 lần (writer: test lại F1/F3 bằng trusted pointer input; reviewer: S06-05 assert rendered text) — slice thứ 4 dùng lesson này → ứng viên promote.
 - Kit slice-check: 3 feature, 0 kept. S07 bắt đầu 01:15Z (single lane), pack 1934 tk / 7 items, đã mark assist.
+
+### Pilot 18 — S07 kết quả (S07 merge 2026-10-10 ~01:53Z, single lane)
+- Merged 3f7f35a (bookkeeping cf7cc84). e2e 01:15 → 01:55Z ≈ 40 phút — nhanh nhất pilot. 1 writer + 1 reviewer, 0 fix round, budget bump 19→21 files (advisory), 1150 dòng. manual_deferred 2. 0 câu hỏi.
+- Tokens: slice-agent 2 sess 33.6M (151 turns).
+- Memory: `cc-monopoly-go/T-S06/lesson-L4 r2` cite 2 lần (writer + reviewer) — slice thứ 5 liên tiếp.
+- S08 (release-polish) bắt đầu 01:55Z — fleet lane, pack 1752 tk / 5 items, đã mark assist.
