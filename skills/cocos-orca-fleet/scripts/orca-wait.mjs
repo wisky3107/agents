@@ -142,7 +142,9 @@ function toMs(t) {
     const n = Number(t);
     return n < 1e12 ? n * 1000 : n;
   }
-  return Date.parse(String(t));
+  const str = String(t);
+  // dispatch-show prints UTC without a zone ("2026-10-09 17:08:12"); Date.parse would read it as local time
+  return Date.parse(/^\d{4}-\d\d-\d\d[ T]\d\d:\d\d(:\d\d(\.\d+)?)?$/.test(str) ? `${str.replace(' ', 'T')}Z` : str);
 }
 
 /** All text in a terminal-read result, whatever the key (tail, lines, text ...). */
@@ -177,8 +179,10 @@ function rescueDrafts(run, stateFile) {
         const age = Date.now() - toMs(d.dispatched_at);
         if (!id || !handle || d.status !== 'dispatched' || d.last_heartbeat_at || !(age >= DRAFT_AGE_MS) || sent.has(id)) continue;
         const rd = orcaJson(['terminal', 'read', '--terminal', handle], PROBE_CALL_MS);
-        const first = textOf(rd.parsed?.result).split('\n').find((l) => l.trim()) || '';
-        if (!/^\s*draft:/.test(first)) continue;
+        // `terminal read --json` carries the unsent input as result.terminal.draft (the text view prints `draft: "…"`)
+        const term = rd.parsed?.result?.terminal ?? rd.parsed?.result;
+        const draft = typeof term?.draft === 'string' ? term.draft.trim() : /^\s*draft:/.test(textOf(term?.tail).split('\n').find((l) => l.trim()) || '');
+        if (!draft) continue;
         sent.add(id); // once per dispatch, even when the send fails: no Enter storms
         const se = spawnSync('orca', ['terminal', 'send', '--terminal', handle, '--enter', '--json'], { encoding: 'utf8', timeout: PROBE_CALL_MS });
         if (se.status === 0) done.push({ handle, dispatch: id, task: t.id });

@@ -195,7 +195,8 @@ function draftFixtures(over = {}) {
     check: { ok: true, result: { count: 0, timedOut: true, messages: [] } },
     'task-list': { ok: true, result: { tasks: [{ id: 'task_a', status: 'dispatched' }, { id: 'task_b', status: 'completed' }] } },
     'dispatch-show': { ok: true, result: { dispatch: { id: 'ctx_1', status: 'dispatched', assignee_handle: 'term_w', dispatched_at: new Date(Date.now() - 120000).toISOString(), last_heartbeat_at: null, ...over } } },
-    read: { ok: true, result: { terminal: { tail: ['draft: "Please carry out this task from my Orca coordinator [Pasted text #1 +199 lines]"', '> '] } } },
+    // real `orca terminal read --json` shape (Orca 1.4, probed 2026-10-10): the unsent input is a `draft` field
+    read: { ok: true, result: { terminal: { handle: 'term_w', status: 'running', tail: [' ▐▛███▛█   Claude Code', '❯'], source: 'screen', draft: 'Please carry out this task from my Orca coordinator [Pasted text #1 +199 lines]' } } },
   };
 }
 const sends = (calls) => calls.split('\n').filter((l) => l.startsWith('terminal send'));
@@ -223,8 +224,13 @@ test('coord: no Enter for a fresh dispatch, a heartbeating one, or a screen with
     assert.equal(r.out.timeout, true);
     fs.rmSync(bin, { recursive: true });
   }
+  // dispatch-show prints `dispatched_at` as UTC without a zone ("2026-10-09 17:08:12"); a just-made dispatch is fresh
+  const utc = new Date(Date.now() - 5000).toISOString().replace('T', ' ').slice(0, 19);
+  const fresh = fakeOrca(draftFixtures({ dispatched_at: utc }));
+  assert.equal(sends(run(fresh, ['coord', '--run', 'run_1', '--max-ms', '1000']).calls).length, 0);
+  fs.rmSync(fresh, { recursive: true });
   const noDraft = draftFixtures();
-  noDraft.read = { ok: true, result: { terminal: { tail: ['working on it', 'draft: later'] } } };
+  noDraft.read = { ok: true, result: { terminal: { handle: 'term_w', tail: ['working on it', 'draft: later'], draft: '' } } };
   const bin = fakeOrca(noDraft);
   assert.equal(sends(run(bin, ['coord', '--run', 'run_1', '--max-ms', '1000']).calls).length, 0);
   fs.rmSync(bin, { recursive: true });
