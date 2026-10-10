@@ -151,6 +151,13 @@ to Source=generate. Review checks behavior parity scenarios as well as EXPECT vi
   (`bootstrap.mjs trust` sets `autoMemoryEnabled: false` in a linked worktree's
   `.claude/settings.local.json`), so the reviewer never inherits a writer's memory; reusable
   findings go to `learning-candidates.json`.
+- **One gate per rename, with its full blast radius.** Before a gate (or a fix spec) that renames
+  or re-purposes a string key, audio stem, step id, enum value or node name, grep the whole
+  checkout for the old token: `git grep -n -w '<old>' -- assets tests scripts/smoke docs/flows`
+  plus the `StepId` / `Strings` / manifest rows the slice touches. List every hit in that gate as
+  "breaks by design → fixed in this slice" or "untouched, why". A check that turns red later from
+  the same decision is a missed hit, not a new question (S20: q31 renamed `step.spray`, q32
+  listed 6 old checks, q33 was a 7th the grep would have found).
 - **Fleet ends at "offer commit".** Commit, push, close Creator, merge, `worktree rm` are the
   director's, via the `cocos-orca-worktree` finish sequence.
 

@@ -122,7 +122,9 @@ Do:
      clips are idle/run/jump/attack, any other clip needs a mocap take or a gate question.
 3. Write <EVIDENCE_ROOT>/specs/plan-notes.md: OBSERVED vs ASSUMPTION list, the 3–5 riskiest
    decisions (with the alternative you rejected), and any question that changes product
-   behavior — phrase each as a yes/no the director can answer at the gate.
+   behavior — phrase each as a yes/no the director can answer at the gate. A question that
+   renames a key, stem, step id or enum value carries `git grep -n -w '<old>'` hits for
+   assets, tests, scripts/smoke and docs/flows, so one gate covers every old check it breaks.
 4. Self-check against the "PLAN validation" list in cocos-orca-fleet/SKILL.md before reporting.
 
 Never: touch assets/**, .scene/.prefab/.meta, scripts/, AGENT_NOTES.md; open Creator; start
