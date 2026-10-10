@@ -42,13 +42,17 @@ pick another backend. `mesh_agent` on Cursor with Cursor off → `codex --model 
 the announce line (unlike `art_backend`, a mesh worker needs no image tools, so codex is a
 full substitute).
 
-**Why `mesh_agent` defaults to codex gpt-6.1-sol.** Blind round 3 (2026-10-10,
-`~/Works/games/pilots/mesh-agent-r3-2026-10-10/results/results.md`): Opus 5.5 against codex
-gpt-6.1-sol (effort high) on the round-2 hard-surface concepts plus passenger_blob, same spec, max
-3 rounds. The director picked Sol on all 5 meshes (no position bias: X 2 / Y 3); shippable
-Sol 5/5 against Opus 4/5 (Opus's ticket kiosk was not). Sol is ~3× slower (mean ~11 min a mesh
-against ~3.5) and grades itself harder (it called 4 shippable meshes FAIL; Opus called a
-non-shippable one PASS). Rounds 1–2 (2026-10-05, `pilots/opus-bpy-2026-10-05` and
+**Why `mesh_agent` defaults to codex gpt-6.1-sol.** Blind rounds 3 and 4 (2026-10-10,
+`~/Works/games/pilots/mesh-agent-r3-2026-10-10` and `…-r4-2026-10-10`, `results/results.md`): Opus
+5.5 against codex gpt-6.1-sol (effort high), same spec, max 3 rounds. Round 3 used the round-2
+hard-surface concepts plus passenger_blob; round 4 used new concepts for objects, animals,
+characters and vehicles (chest, watering can, cat, turtle, chibi kid, chibi knight, monster truck,
+plane). Across the 13 meshes the director picked Sol 12 times and Opus once, and found Sol
+shippable 12/13 against Opus 4/13 (0/8 on the new concepts). Sol is 1.6–3× slower (~9–11 min a
+mesh against ~3.5–5.5) and grades itself harder: it called almost every shippable mesh FAIL
+while Opus called every mesh PASS, so a worker's own verdict says little about quality. One Sol
+worker died with `413 Payload Too Large` once the images it had opened passed OmniRoute's 50 MB
+request cap; its last glb was still usable. Rounds 1–2 (2026-10-05, `pilots/opus-bpy-2026-10-05` and
 `…-r2-2026-10-05`) had put Opus ahead of Antigravity 7 wins, 1 tie, 0 losses. art-anim follows
 the same key but was not part of round 3; `mesh_agent=claude --model opus` is still the faster choice.
 
