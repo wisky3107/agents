@@ -274,3 +274,27 @@ test('classifyClients: agents keep an editor, preview viewers never do', () => {
   assert.match(verdicts[0].why, /^idle 60 min: no lane agent, no agent client; 2 preview viewer\(s\) do not keep it/);
   assert.equal(verdicts[0].verdict, 'close');
 });
+
+test('restartOmniroute: a serve that exits at once while nothing LISTENs is started again', async () => {
+  const home = tmp('rg-omni-');
+  const port = 20000 + Math.floor(Math.random() * 9000);
+  const bin = path.join(home, 'omniroute');
+  // first serve exits like the "port in use" false alarm; the second one serves /api/health
+  fs.writeFileSync(bin, `const fs = require('fs');
+if (process.argv[2] === 'stop') process.exit(0);
+const mark = ${JSON.stringify(path.join(home, 'tried'))};
+if (!fs.existsSync(mark)) { fs.writeFileSync(mark, ''); process.exit(1); }
+require('http').createServer((q, r) => r.end('ok')).listen(${port}, '127.0.0.1');
+setTimeout(() => process.exit(0), 20000);
+`);
+  process.env.RES_GUARD_HOME = home;
+  process.env.RES_GUARD_NOTIFY = '0';
+  process.env.RES_GUARD_OMNIROUTE_BIN = bin;
+  const { restartOmniroute } = await import(`../res-guard.mjs?omni=${Date.now()}`);
+  await restartOmniroute({ omniroute: { pid: null, supervisorPid: null, footMB: 3500 } }, { omniroute: { port } }, 'test', false);
+  const rows = fs.readFileSync(path.join(home, 'logs', 'res-guard.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(rows.map((r) => r.kind), ['omniroute_restart', 'omniroute_exited', 'omniroute_up']);
+  assert.equal(rows[1].code, 1);
+  assert.equal(rows[2].attempt, 2);
+  try { process.kill(rows[2].pid); } catch { /* gone */ }
+});

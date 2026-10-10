@@ -59,7 +59,10 @@ node res-guard.mjs install-launchd        # com.agents.res-guard, `tick` every 6
 5. **OmniRoute** restarts past 1.5 GB footprint, once no client has held a connection to :20128 for
    2 ticks in a row. Past 3 GB it restarts regardless. Never twice within an hour. The restart runs
    `omniroute stop` and then starts `node ~/.local/bin/omniroute` detached, with logs in
-   `~/.agents/logs/omniroute.out`.
+   `~/.agents/logs/omniroute.out`. It waits up to 15 s for :20128 to stop LISTENing first.
+   `omniroute serve` checks the port with a bare `lsof -ti`, so a browser tab still connected to
+   the old server makes it exit with "port in use". When it exits and nothing LISTENs on the
+   port, res-guard starts it again (3 tries, events `omniroute_exited`).
 
 ## The runner's side (game-producer `scripts/lib/editors.mjs`)
 

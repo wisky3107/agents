@@ -23,6 +23,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { rawSnapshot, parseSnapshot } from './probe.mjs';
 import { DEFAULTS, mergeConfig, gate, alerts, dueAlerts, omnirouteAction, reapPlan, gb, short } from './policy.mjs';
 import { editorFacts, lifecyclePlan, closeEditor } from './lifecycle.mjs';
@@ -93,25 +94,47 @@ function omniClients(port, serverPid) {
   return pids.size;
 }
 
-async function restartOmniroute(s, cfg, why, dry) {
+/** Pids LISTENing on `port`. Clients (a browser tab on the dashboard) do not count. */
+function listeners(port) {
+  const r = spawnSync('lsof', ['-nP', '-t', `-iTCP:${port}`, '-sTCP:LISTEN'], { encoding: 'utf8', timeout: 10000 });
+  return (r.stdout || '').split('\n').map(Number).filter((p) => p > 0);
+}
+
+const healthy = (port) => spawnSync('curl', ['-s', '-m', '2', '-o', '/dev/null', '-w', '%{http_code}', `http://127.0.0.1:${port}/api/health`], { encoding: 'utf8' }).stdout === '200';
+
+export async function restartOmniroute(s, cfg, why, dry) {
   event({ kind: 'omniroute_restart', why, footMB: s.omniroute.footMB, dry });
   if (dry) return;
   notify('Restarting OmniRoute', why);
+  const port = cfg.omniroute.port;
   const bin = process.env.RES_GUARD_OMNIROUTE_BIN || path.join(os.homedir(), '.local', 'bin', 'omniroute');
   spawnSync(bin, ['stop'], { stdio: 'ignore', timeout: 30000 });
   for (const pid of [s.omniroute.pid, s.omniroute.supervisorPid].filter(Boolean)) if (alive(pid)) await kill(pid, 5000);
+  for (let t = 0; t < 15000 && listeners(port).length; t += 500) await sleep(500);
   fs.mkdirSync(path.join(HOME, 'logs'), { recursive: true });
   const out = fs.openSync(path.join(HOME, 'logs', 'omniroute.out'), 'a');
-  // same command the director starts by hand (`omniroute` = serve), detached from this tick
-  const child = spawn(process.execPath, [bin], { cwd: os.homedir(), detached: true, stdio: ['ignore', out, out] });
-  child.unref();
-  for (let t = 0; t < 60; t += 2) {
-    await sleep(2000);
-    const r = spawnSync('curl', ['-s', '-m', '2', '-o', '/dev/null', '-w', '%{http_code}', `http://127.0.0.1:${cfg.omniroute.port}/api/health`], { encoding: 'utf8' });
-    if (r.stdout === '200') { event({ kind: 'omniroute_up', pid: child.pid, after_s: t + 2 }); return; }
+  // `omniroute serve` finds "the port is in use" with a bare `lsof -ti :PORT`, so a browser tab still
+  // connected to the old server makes it exit at once (2026-10-10). Nothing LISTENing then means
+  // that false alarm: start it again, up to 3 tries.
+  let child;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    // same command the director starts by hand (`omniroute` = serve), detached from this tick
+    child = spawn(process.execPath, [bin], { cwd: os.homedir(), detached: true, stdio: ['ignore', out, out] });
+    let exited = null;
+    child.on('exit', (code) => { exited = code ?? 'signal'; });
+    child.unref();
+    for (let t = 0; t < 60 && exited === null; t += 2) {
+      await sleep(2000);
+      if (healthy(port)) { event({ kind: 'omniroute_up', pid: child.pid, attempt, after_s: t + 2 }); return; }
+    }
+    if (exited === null) break; // still running but never healthy: retrying would only race it
+    const held = listeners(port);
+    event({ kind: 'omniroute_exited', pid: child.pid, attempt, code: exited, listeners: held });
+    if (held.length) break; // a real server holds the port
+    await sleep(3000);
   }
   event({ kind: 'omniroute_down', pid: child.pid });
-  notify('OmniRoute did not come back', `no /api/health 200 after 60 s; see ${path.join(HOME, 'logs', 'omniroute.out')}`, 'critical');
+  notify('OmniRoute did not come back', `no /api/health 200; see ${path.join(HOME, 'logs', 'omniroute.out')}`, 'critical');
 }
 
 // ------------------------------------------------------------------ passes
@@ -330,4 +353,7 @@ async function main() {
   }
 }
 
-main().catch((e) => { process.stderr.write(`res-guard: ${e.message}\n`); process.exitCode = 1; });
+// imported by the tests: run only as the CLI
+if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((e) => { process.stderr.write(`res-guard: ${e.message}\n`); process.exitCode = 1; });
+}
