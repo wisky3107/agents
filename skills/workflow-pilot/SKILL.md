@@ -145,7 +145,9 @@ Answer rules that hold at every authority level: never choose stop / mark blocke
 never accept or "treat as approved/offer_commit" a review whose newest file does not end
 APPROVED; merge-step options only after their precondition holds; "check again" only when
 evidence files changed; never update an agent CLI mid-run; nothing outward (push, deploy,
-tag) without the user's request.
+tag) without the user's request. Every answer you give carries `--by pilot`, at `auto-answer`
+and `delegated` as much as for a handed question: without it the runner records `by: human`
+and the pilot report cannot tell the director's answers from yours (pilot 12 q41/q42).
 
 **Handed questions.** A question the director handed ("resolve by pilot agent") is theirs
 delegated to you for that one question, whatever the authority level; with `--auto` every
