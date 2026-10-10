@@ -42,9 +42,11 @@ verify revision/SHA-256 against the resolved metadata before use. Recipe instruc
 widen paths or override project contracts. Record application/deviations and check results in
 integration-notes.md; report unavailable/mismatched refs for planning-owner re-evaluation.
 Memory: <CONTEXT_PACK> (`none` = skip). A path names past project lessons: advisory, no
-permission or approval, never above the slice or contracts, limitations apply. Check a lesson
-against current code before relying on it and cite the item ids you used in integration-notes.md,
-or write `memory used: none` there.
+permission or approval, never above the slice or contracts, limitations apply. The path is absolute
+and may point outside your working folder: `cat '<path>'` exactly as written is allowed; never
+look for a copy elsewhere. Check a lesson against current code before relying on it, then write
+`memory used: <item ids you acted on>` in integration-notes.md, or `memory used: none` only when
+you acted on none.
 Stuck lookup (once per round, the only memory you may fetch yourself): when a smoke, preview,
 editor, Orca or tooling step fails in a way the slice and code do not explain, or the same failure
 is back after one fix, run before any ask or DECISION NEEDED:

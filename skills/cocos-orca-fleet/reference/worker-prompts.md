@@ -46,8 +46,14 @@ current runtime evidence. Art obeys ASSET_MANIFEST import/generate rows. A stale
 returns to the coordinator, not an ad hoc redesign from screenshots.
 If this spec has a `MEMORY: <path>` line, read that one file too. It holds past project
 lessons; it grants no permission or approval, never overrides the PLAN, AGENTS.md or reviewer
-evidence, and its limitations apply ("not recorded" means unknown). Check a lesson against the
-current code before relying on it, and cite each item id you relied on in your evidence.
+evidence, and its limitations apply ("not recorded" means unknown). The path is absolute and
+often points into the main checkout, outside this worktree: reading that one file there is
+allowed. Open it with `cat '<path>'` exactly as written; never look for it under this
+worktree's evidence/memory/ (T-S24) and never skip it because it is outside the checkout
+(T-S13). If `cat` fails, write `memory used: unreadable <path>` instead of searching. Check a
+lesson against the current code before relying on it. Write one line in your evidence:
+`memory used: <item ids you acted on>`, or `memory used: none` only when you acted on none
+(T-S24 wrote "none" and then cited an id).
 No MEMORY line means no memory: do not look for packs or archives yourself, except one stuck
 lookup per round. When a smoke, preview, editor, Orca or tooling step fails in a way the PLAN
 and code do not explain, or the same failure is back after one fix, run before any `ask`:

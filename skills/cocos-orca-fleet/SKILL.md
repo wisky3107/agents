@@ -460,7 +460,8 @@ and the specs go out exactly as before. The mode lives in the operator config on
 - Right before each `task-create`, run `hook check <evidence root>/memory/<role>/memory-context.json`.
   If it prints `stale`, drop the line for that role.
 - Only then add one spec line: `MEMORY: <absolute path of that role's memory-context.md>`.
-  Workers run in the worktree, so a relative path finds nothing. Name the path; never paste pack
+  Workers run in the worktree, so a relative path finds nothing. Run `test -f '<that path>'`
+  first; if it fails, drop the line and note it, never send a path nobody can open. Name the path; never paste pack
   text into the spec or the PLAN. The line goes in that role's spec
   only, never in a header shared by every spec: in T-S12 a shared header gave the reviewer the
   planner pack. A reviewer spec without its own review pack has no memory line.
