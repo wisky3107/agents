@@ -83,6 +83,8 @@ const QUESTION = {
   director_gate: { options: ['decided, retry', 'skip this slice', 'stop'], text: 'This slice waits for the director: approve it here (the runner writes "<Sxx> GIVEN" on the policy line), or record your own decision on the policy line and retry.' },
   contract_depth: { options: ['contracts expanded, retry', 'stop'], text: 'Contracts are playable-depth; run the targeted game-brief expansion first.' },
   brief_progress: { options: ['contracts final, retry', 'stop'], text: 'game-brief is not done (brief-progress); finish the contract gate first.' },
+  // pilot 20: without its own entry the answer went to the lane handler and became a runner_error
+  contracts_uncommitted: { options: ['committed, retry', 'stop'], text: 'The contract set is not committed on main.' },
   needs_slice_study: { options: ['study recorded, retry', 'stop'], text: 'Port slice needs a reviewed slice study (rip-port-analysis); runner phase 1 does not run studies.' },
   max_parallel: { options: ['set max_parallel=1, retry', 'stop'], text: 'Runner phase 1 runs one slice at a time.' },
   slice_file: { options: ['fixed, retry', 'stop'], text: 'The slice file is missing or unreadable.' },
