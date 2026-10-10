@@ -1655,3 +1655,12 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Bootstrap, rip-port-analysis (Sonnet analyst) and game-brief (Fable 5.1) are run by the director's "Cat Dash xapk asset rip" session; that session launched the runner at 08:13Z before the brief gate was done (phase contracts_written, contracts uncommitted, S01 slice study missing).
 - **F1** contracts_uncommitted had no runner QUESTION entry: asked with the fallback options, the answer "fixed, retry" went to the lane handler → `no action for contracts_uncommitted: fixed, retry` (q1 → q2 runner_error). Fixed 35b9508 (own option `committed, retry`, clears the stop; regression test; 179/179; independent review APPROVED). Runner restarted 08:22Z (pid 10433, term_1f15edf0).
 - Resolve-by-pilot checked live: `answer --choice "resolve by pilot agent"` on q3 → runner printed `handed_to_pilot`, dialog closed (`dialog_done: pilot`). q3 held until the contract set is committed.
+
+### Pilot 19 — S09 kết quả (S09 merge 2026-10-10 08:09Z, fleet)
+- Merged 0c1d7fe (merge ca1527b, bookkeeping aa9f441). e2e 06:05 → 08:29Z ≈ 2 h 24 (merge → record mất 19 phút: verifier + kit check). 0 fix round, 1 review APPROVED, smoke 82/82, budget bump 900→1000 dòng (advisory), manual_deferred 2. 0 câu hỏi.
+- Root cause (docs/evidence/S09/root-cause.md): (1) mặt khán đài trùng/đồng phẳng → nhấp nháy: pixel đổi màu khi camera quét 45,526/106,867 → ~500/~340, negative control (GLB gốc) tái hiện lại; (2) crowd excitation lift gây giật. Chứng minh bằng chuỗi frame như contract yêu cầu.
+- Runner gửi 1 nudge stall coordinator lúc 07:09 (coordinator chạy tiếp). Implement được dispatch lại 07:24 sau khi sửa spec; worker heartbeat bình thường, không thấy `draft:` → F3 không tái hiện ở slice này (chưa kiểm được auto-Enter của orca-wait).
+- Tokens: fleet-orch 10.8M, fleet-worker 6 sess 38.9M, slice-agent 1.9M — slice fleet rẻ nhất tới giờ.
+- Memory (assist 1809 tk): `T-S07-frame-stepped-tween-timing` (cc.director.tick(1/60) + readPixels cùng task) cite 3 lần — lesson của chính game này từ S07. 1 role ghi "no MEMORY line in spec" → coordinator quên dòng MEMORY cho 1 spec (ghi nhận, chưa sửa).
+- Branch worktree giờ có prefix `wisky3107/` (từ khi repo có remote GitHub) — merge vẫn đúng.
+- S10 (suspension + takeoff + target 2,500) bắt đầu 08:29Z, fleet, coordinator term_66e7d06e, pack 1910 tk / 7 items, mark assist.
