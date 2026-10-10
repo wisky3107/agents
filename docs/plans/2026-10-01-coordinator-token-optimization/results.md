@@ -1623,3 +1623,4 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Tokens: slice-agent 2 sess 33.6M (151 turns).
 - Memory: `cc-monopoly-go/T-S06/lesson-L4 r2` cite 2 lần (writer + reviewer) — slice thứ 5 liên tiếp.
 - S08 (release-polish) bắt đầu 01:55Z — fleet lane, pack 1752 tk / 5 items, đã mark assist.
+- 02:46Z (S08) q6 handed (fleet_gate, judge defer — out-of-path): RC-16 share card 404 vì md5Cache đổi tên `share-card.png` → `share-card.<md5>.png` nhưng og:image/twitter:image vẫn tên cũ. Pilot (delegated) chọn **(a)**: thêm bước generic vào `build/scripts/postbuild.mjs` (đang = template) rewrite meta content sang tên hashed, giữ md5Cache, release-smoke + negative control, scope exception + FOLLOWUPS "upstream lên cc-game-template postbuild". Bài học template: postbuild của template chưa biết md5Cache → mọi game có share card dính lỗi này.
