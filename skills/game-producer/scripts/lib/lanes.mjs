@@ -46,6 +46,7 @@ const gitOut = (root, args) => {
 const GATE_PATIENCE = 10; // idle pauses after relaying a gate decision before asking again
 const GATE_SETTLE = 3; // idle pauses after a relay before another pending gate becomes a question
 const MISSING_RECHECKS = 5; // "terminal missing" from orca-wait while `terminal show` finds it: ask after this many
+const WORKER_BLOCKED_GRACE_MS = () => Number(process.env.PRODUCER_RUNNER_WORKER_BLOCKED_GRACE_MS ?? 10 * 60 * 1000); // pilot 18 F4: a worker's `blocked` hand-off is the coordinator's to settle first
 const STALE_STALL_MS = 30 * 60 * 1000; // stale `terminal wait` (orca-wait keeps waiting) and no HANDOFF change this long: ask
 const BAD_JSON_PATIENCE = 3; // a HANDOFF caught mid-write parses on the next look
 const VERDICT_PATIENCE = 2; // looks after a HANDOFF verdict before its review file disagreeing is a question
@@ -298,7 +299,7 @@ function readHandoff(file, base) {
   const fresh = m !== base;
   return {
     exists: true, mtime: m, fresh, ok, raw: ok ? j.status ?? null : null,
-    status: ok && fresh ? normalizeStatus(j.status) : null, sha: ok && fresh ? j.sha || null : null, detail: ok ? String(j.detail || '') : '',
+    role: ok ? String(j.role || '').trim().toLowerCase() : '', status: ok && fresh ? normalizeStatus(j.status) : null, sha: ok && fresh ? j.sha || null : null, detail: ok ? String(j.detail || '') : '',
   };
 }
 
@@ -1246,8 +1247,23 @@ function fleetStep(ctx, s, phase) {
     if (q !== PAUSE) return q;
   }
   if (h.status === 'blocked' || h.status === 'infra_blocked') {
-    return ask(s, 'lane_blocked', `fleet HANDOFF ${h.status}: ${h.detail || 'no detail'}`, LANE_BLOCKED_OPTIONS, { obs: obs('lane_blocked') });
+    // a worker (integrator, writer, reviewer…) hands `blocked` back to the coordinator, who is usually already
+    // routing it in the lane: give the coordinator a window; any change of the HANDOFF restarts / cancels it
+    let note = '';
+    if (h.role && !/^(coordinator|orchestrator)$/.test(h.role) && !(s.acked || []).includes(obs('lane_blocked'))) {
+      const key = `${h.role}|${h.status}|${h.detail}`;
+      const g = s.blocked_grace;
+      if (!g || g.key !== key) {
+        st.writeSliceState(root, id, { blocked_grace: { key, since: Date.now() } });
+        st.log(root, id, `fleet HANDOFF ${h.status} from ${h.role}: the coordinator has ${Math.round(WORKER_BLOCKED_GRACE_MS() / 1000)}s to settle it before it is asked`);
+        if (WORKER_BLOCKED_GRACE_MS() > 0) return PAUSE;
+      } else if (Date.now() - g.since < WORKER_BLOCKED_GRACE_MS()) return PAUSE;
+      const gm = WORKER_BLOCKED_GRACE_MS();
+      note = ` (the coordinator did not settle it within ${gm >= 60000 ? `${Math.round(gm / 60000)} min` : `${Math.round(gm / 1000)} s`})`;
+    } else if (s.blocked_grace) st.writeSliceState(root, id, { blocked_grace: null });
+    return ask(s, 'lane_blocked', `fleet HANDOFF ${h.status}: ${h.detail || 'no detail'}${note}`, LANE_BLOCKED_OPTIONS, { obs: obs('lane_blocked') });
   }
+  if (s.blocked_grace) st.writeSliceState(root, id, { blocked_grace: null });
   // a decision parked in HANDOFF.json's detail while no gate is open
   const parked = directorPending(ctx, s, h, w);
   if (parked) return parked;
