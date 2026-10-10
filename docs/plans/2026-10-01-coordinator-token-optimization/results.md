@@ -1675,3 +1675,10 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Kit slice-check: ứng viên `kit-suspension-config` vào learning-candidates.
 - S11 (soft park environment) bắt đầu 09:44Z, fleet, coordinator term_17bdb4f6, pack 1761 tk / 5, mark assist.
 - 11:09Z (S11) q7 handed (fleet_gate, judge defer): review r1 F1 — check bắt buộc giữ nguyên S03-04-photo-arm fail (realPicture: 22 màu 5-bit < 24) vì ánh sáng mềm đã duyệt làm phẳng đất/trời (park ẩn 21; khôi phục đèn S10 → 26). Pilot chọn **A**: hạ ngưỡng 24→20 chỉ trong check đó, kèm negative control (RT không render, khung 1–2 màu) phải FAIL, ghi số đo. Không chọn B (thêm chi tiết chỉ cho camera ảnh = lách check) hay C (mở lại ánh sáng đã duyệt). F2 trời nhạt (#DDE2E4 vs #E7F4FF), F3, F4 → FOLLOWUPS cho S13. Bài học author: slice đổi ánh sáng/palette phải dự báo các check đếm màu/độ tương phản cũ (ở đây S03-04) — checklist "old checks" chỉ bắt check bị sửa, không bắt check có ngưỡng nhạy palette.
+
+### Pilot 19 — S11 kết quả (S11 merge 2026-10-10 11:27Z, fleet)
+- Merged 82c9fd5 (merge 1e23aa5, bookkeeping 02a94af): công viên sáng — trời, đồi, cây, nắng ấm, bóng mềm. e2e 09:44 → 11:29Z ≈ 1 h 45. fix_rounds 4 (fix-code r1..r4 trên terminal mới), review 2 → APPROVED. 11 files / 1666 dòng code, +31 node cảnh. 1 câu hỏi (q7, pilot A). 1 nudge stall coordinator 09:49.
+- Pilot xem V1 capture: sáng, mềm, cỏ/cây/đất cát ấm, TARGET 2,500 đúng. Nhưng **trời trắng xám** (F2, #DDE2E4 vs mock #E7F4FF, ACES khóa) — lệch ý "tươi sáng" của director; phải sửa ở S13. Freestyle V1: tường navy tiền cảnh trái chiếm góc màn hình (camera gần rào) — ghi cho S13.
+- Tokens: fleet-orch 15.6M, fleet-worker 10 sess 91.1M (4 fix rounds), slice-agent 1.3M.
+- Memory (1761 tk): 6 × none (đọc T-S04 selector, lego T-S10 lighting fit, lego T-S11 viewport — không dùng). Lesson ánh sáng lego chưa giúp được ở đây.
+- S12 (mud tyre trails) bắt đầu 11:29Z, fleet, coordinator term_f99b9951, pack 1944 tk / 6, mark assist.
