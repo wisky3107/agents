@@ -1252,6 +1252,8 @@ function fleetStep(ctx, s, phase) {
   const parked = directorPending(ctx, s, h, w);
   if (parked) return parked;
   if (panel?.hold) return PAUSE; // a panel the director has in the terminal: only wait (no nudge, no stall question)
+  const stuck = stuckWorker(ctx, s, run);
+  if (stuck) return stuck;
   if (w.event === 'idle') {
     if (serviceBlip(ctx, s, coordinator, STALL_NUDGE, 'stall')) return PAUSE; // a provider error, not a stall: back off and resend
     // idle with any other status: stalled (S08 lost ~3 h) → one nudge, then the human
@@ -1420,6 +1422,18 @@ export function applyAnswer(ctx, q) {
     case 'coordinator_missing:taken over, continue':
     case 'fleet_stall:nudged again, continue':
       return ack();
+    case 'worker_stuck:keep waiting':
+      return ack();
+    case 'worker_stuck:asked the coordinator again, continue': {
+      // a new request to the coordinator, and the stuck clock for that worker starts again
+      const sw = s.stuck_workers || {};
+      const k = sw[q.ref];
+      ack();
+      if (!k) return null;
+      st.writeSliceState(root, id, { stuck_workers: { ...sw, [q.ref]: { ...k, since: Date.now() } } });
+      return sendOnce(ctx, `worker_stuck:${q.ref}:${q.id}`, COORDINATOR,
+        `Producer: worker ${q.ref} (task ${k.task}, dispatch ${k.dispatch}) is still stuck in an API retry loop. Stop it (orca orchestration worker-stop --dispatch ${k.dispatch}) and dispatch task ${k.task} to a fresh worker${note ? ` (${note.replace(/^ — /, '')})` : ''}, then go back to your wait loop.`);
+    }
     default:
       if (MERGE_KINDS.has(q.kind)) return applyMergeAnswer(ctx, q);
       if (q.kind === 'coordinator_question') return applyCoordinatorQuestion(ctx, q);
@@ -1567,6 +1581,62 @@ function serviceBlip(ctx, s, handle, text, key) {
   st.log(root, ctx.id, `provider error on ${handle} (${err}): retry ${n} — resending ${key}, next look in ${Math.round(wait / 1000)} s`);
   sendOnce(ctx, `blip:${key}:${b.since}:${n}`, handle, text, { blip: { since: b.since, n, next_at: now + wait } });
   return true;
+}
+
+// A worker stuck in the agent's own API retry loop (S26, F18: "API error · Retrying in 0s · attempt 1/9" for ~70 min
+// right after dispatch) leaves the coordinator waiting with status working and no idle event: only the worker's
+// screen shows it. The runner reads the Run's live workers every WORKER_SCAN_MS; one stuck past WORKER_STUCK_MS gets
+// the coordinator one re-dispatch request, and the same worker still stuck that long again is a question.
+const WORKER_RETRY = /API Error[^\n]*Retrying|Retrying in \d+\s*s\w*[^\n]*attempt \d+\s*\/\s*\d+/i;
+const WORKER_SCAN_MS = () => Number(process.env.PRODUCER_RUNNER_WORKER_SCAN_MS ?? 2 * 60 * 1000);
+const WORKER_STUCK_MS = () => Number(process.env.PRODUCER_RUNNER_WORKER_STUCK_MS ?? 15 * 60 * 1000);
+
+/** The retry / provider error a worker's screen ends on (last few non-blank lines), or null. */
+function workerError(handle) {
+  let screen = null;
+  try {
+    screen = io.readScreen(handle);
+  } catch {
+    return null;
+  }
+  const lines = (screen?.lines || []).map((l) => String(l).trim()).filter(Boolean);
+  const tail = lines.slice(-6);
+  for (let i = tail.length - 1; i >= 0; i--) {
+    if (WORKER_RETRY.test(tail[i]) || BLIP_ERROR.test(tail[i])) return oneLine(tail[i]).slice(0, 200);
+  }
+  return null;
+}
+
+/** null = no worker stuck (or not yet long enough); else a question, or PAUSE after the re-dispatch request. */
+function stuckWorker(ctx, s, run) {
+  const { root } = ctx.project;
+  if (!run) return null;
+  const now = Date.now();
+  if (s.worker_scan_at && now - s.worker_scan_at < WORKER_SCAN_MS()) return null;
+  const was = s.stuck_workers || {};
+  const next = {};
+  let hit = null;
+  for (const wk of io.runWorkers(run)) {
+    const err = workerError(wk.handle);
+    if (!err) continue;
+    const since = was[wk.handle]?.since || now;
+    next[wk.handle] = { since, task: wk.task, dispatch: wk.dispatch, asked: was[wk.handle]?.asked || 0 };
+    if (!was[wk.handle]) st.log(root, ctx.id, `worker ${wk.handle} (task ${wk.task}) shows a provider retry/error: ${err}`);
+    if (!hit && now - since >= WORKER_STUCK_MS()) hit = { ...wk, err, since, asked: next[wk.handle].asked };
+  }
+  for (const h of Object.keys(was)) if (!next[h]) st.log(root, ctx.id, `worker ${h} no longer shows a provider retry/error`);
+  st.writeSliceState(root, ctx.id, { worker_scan_at: now, stuck_workers: next });
+  if (!hit) return null;
+  const mins = Math.round((now - hit.since) / 60000);
+  if (!hit.asked) {
+    st.writeSliceState(root, ctx.id, { stuck_workers: { ...next, [hit.handle]: { ...next[hit.handle], asked: 1, since: now } } });
+    st.log(root, ctx.id, `worker ${hit.handle} stuck ${mins} min on "${hit.err}": asking the coordinator to re-dispatch task ${hit.task}`);
+    sendOnce(ctx, `worker_stuck:${hit.handle}:${hit.since}`, COORDINATOR,
+      `Producer: worker ${hit.handle} (task ${hit.task}, dispatch ${hit.dispatch}) has shown "${hit.err}" for ${mins} min and is not working. Stop it (orca orchestration worker-stop --dispatch ${hit.dispatch}), dispatch task ${hit.task} again to a fresh worker (spec note: retry of ${hit.dispatch}, stuck in an API retry loop; continue from the changes already in the worktree), then go back to your wait loop.`);
+    return PAUSE;
+  }
+  return ask(s, 'worker_stuck', `fleet worker ${hit.handle} (task ${hit.task}) still shows "${hit.err}" ${mins} min after the coordinator was asked to re-dispatch it`,
+    ['asked the coordinator again, continue', 'keep waiting', 'mark blocked', 'stop'], { obs: `worker_stuck@${hit.handle}:${hit.since}`, ref: hit.handle });
 }
 
 /** What goes to a TUI as typed text: one line, no control bytes (an escape sequence would be a key). */

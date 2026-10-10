@@ -1110,3 +1110,46 @@ test('provider blip: an error that newer agent output followed (or one far above
   assert.equal(run(p.root, f, 'start', '--once').out.at(-1).kind, 'fleet_stall'); // the old rules
   assert.doesNotMatch(log(p.root), /provider error/);
 });
+
+// F18 (pilot 12, S26): a worker stuck in its own API retry loop right after dispatch; the coordinator kept
+// status working, so only the worker's screen showed it.
+const RETRY = ['• Reading the PLAN', '', '  ⎿  API Error (fetch failed) · Retrying in 0 seconds… (attempt 1/9)', '', '› '];
+const WORKER = { dispatchId: 'ctx_w1', taskId: 'task_impl', agentTerminalHandle: 'term_w', terminalState: 'active', projection: { outcome: 'in_progress' } };
+const workerScreen = (lines) => ({ term_1: { at: 'a', frames: { a: { lines: ['• waiting on workers', '› '] } } }, term_w: { at: 'a', frames: { a: { lines } } } });
+const fast = { PRODUCER_RUNNER_KEY_MS: '0', PRODUCER_RUNNER_WORKER_SCAN_MS: '0', PRODUCER_RUNNER_WORKER_STUCK_MS: '0' };
+
+test('stuck worker: a worker screen in an API retry loop → one re-dispatch request to the coordinator, then a worker_stuck question', () => {
+  const p = fleet();
+  const f = fakes();
+  f.queue([{ ...start(workerScreen(RETRY)), workers: [WORKER] }, tick(2)]);
+  const out = runner(p.root, f, 'start', '--once', { env: fast }).out;
+  assert.equal(f.sends().length, 1);
+  assert.match(f.sends()[0].text, /worker term_w \(task task_impl, dispatch ctx_w1\).*worker-stop --dispatch ctx_w1.*dispatch task task_impl again/);
+  const q1 = out.find((o) => o.blocked === 'worker_stuck');
+  assert.ok(q1, 'worker_stuck asked');
+  assert.deepEqual(q1.options, ['asked the coordinator again, continue', 'keep waiting', 'mark blocked', 'stop']);
+  assert.match(log(p.root), /worker term_w \(task task_impl\) shows a provider retry\/error/);
+
+  runner(p.root, f, 'answer', '--id', q1.question, '--choice', 'asked the coordinator again, continue', { env: fast });
+  fs.rmSync(path.join(p.root, '.cursor', 'producer.control'), { force: true }); // the empty queue stopped the first run
+  f.queue([tick(3)]);
+  runner(p.root, f, 'start', '--once', { env: { ...fast, PRODUCER_RUNNER_WORKER_STUCK_MS: '600000' } });
+  assert.equal(f.sends().length, 2);
+  assert.match(f.sends()[1].text, /still stuck in an API retry loop/);
+});
+
+test('stuck worker: a short retry is only logged; a fine screen, a settled worker or one that recovers asks nothing', () => {
+  const p = fleet();
+  const f = fakes();
+  f.queue([{ ...start(workerScreen(RETRY)), workers: [WORKER] }, tick(2), tick(3, undefined, { screens: workerScreen(['• editing a.ts', '› ']) }), tick(4)]);
+  const out = runner(p.root, f, 'start', '--once', { env: { ...fast, PRODUCER_RUNNER_WORKER_STUCK_MS: '600000' } }).out;
+  assert.equal(out.some((o) => o.waiting || o.blocked), false);
+  assert.equal(f.sends().length, 0);
+  assert.match(log(p.root), /worker term_w no longer shows a provider retry\/error/);
+
+  const q = fleet();
+  const g = fakes();
+  g.queue([{ ...start(workerScreen(RETRY)), workers: [{ ...WORKER, projection: { outcome: 'completed' } }] }, tick(2)]);
+  assert.equal(runner(q.root, g, 'start', '--once', { env: fast }).out.some((o) => o.waiting), false);
+  assert.equal(g.sends().length, 0);
+});

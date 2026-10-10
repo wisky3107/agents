@@ -134,6 +134,18 @@ export function runCoordinator(run) {
   return orca(['orchestration', 'run-show', '--id', run]).parsed?.result?.run?.coordinator_handle || null;
 }
 
+/**
+ * The Run's supervised workers still on their task → [{ dispatch, task, handle }]; [] when Orca does not answer.
+ * A settled worker (outcome other than in_progress) or a released terminal is not listed.
+ */
+export function runWorkers(run) {
+  const r = orca(['orchestration', 'worker-list', '--run', run]);
+  const rows = r.parsed?.result?.workers;
+  return (Array.isArray(rows) ? rows : [])
+    .filter((x) => x.agentTerminalHandle && (x.projection?.outcome ?? 'in_progress') === 'in_progress' && !/^release/.test(x.terminalState || ''))
+    .map((x) => ({ dispatch: x.dispatchId, task: x.taskId, handle: x.agentTerminalHandle }));
+}
+
 /** The fleet Run whose coordinator is this terminal (it appears once the coordinator ran run-create). */
 export function runFor(coordinatorHandle) {
   const r = orca(['orchestration', 'run-list']);

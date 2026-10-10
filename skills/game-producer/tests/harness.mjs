@@ -113,6 +113,7 @@ if (cmd === 'terminal wait') {
     fs.writeFileSync(path.join(D, 'last-commit'), sha);
   }
   if (step.runs) fs.writeFileSync(path.join(D, 'runs.json'), JSON.stringify(step.runs));
+  if (step.workers) fs.writeFileSync(path.join(D, 'workers.json'), JSON.stringify(step.workers));
   if (step.result === 'idle') out({ ok: true, result: { wait: { handle: arg('--terminal'), satisfied: true } } });
   if (step.result === 'missing') out({ ok: false, error: { code: 'terminal_handle_stale' } }, 1);
   if (step.result === 'error') out({ ok: false, error: { code: 'runtime_unreachable', message: 'connect ECONNREFUSED' } }, 1);
@@ -164,6 +165,8 @@ if (cmd === 'terminal show') {
 }
 if (cmd === 'orchestration run-list') out({ ok: true, result: { runs: read('runs.json', []) } });
 if (cmd === 'orchestration run-show') out({ ok: true, result: { run: read('runs.json', []).find((r) => r.id === arg('--id')) || null } });
+// workers.json: worker-list rows ({ dispatchId, taskId, agentTerminalHandle, terminalState, projection: { outcome } })
+if (cmd === 'orchestration worker-list') out({ ok: true, result: { workers: read('workers.json', []) } });
 if (cmd === 'orchestration gate-list') out({ ok: true, result: { gates: read('gates.json', []) } });
 if (cmd === 'orchestration inbox') out({ ok: true, result: { messages: [] } });
 out({ ok: false, error: { code: 'unknown_command', message: cmd } }, 1);
