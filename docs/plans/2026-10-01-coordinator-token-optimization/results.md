@@ -1882,3 +1882,11 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Memory: 3 × "memory used: none" (pack items covered physics + audio unlock; none fit SFX/camera).
 - S11 (pause-settings-persistence) dispatched 16:36Z, single lane.
 - 17:06Z (S18) **F4 fix chạy thật lần đầu:** integrator HANDOFF `blocked` → runner "the coordinator has 600s to settle it" → writer sửa F-INT-1 (ButtonStateView SLICED chỉ cho frame có cap) trước hạn → không có câu hỏi lane_blocked thừa. art-2d đã qua, S18 ở implement/integrate.
+
+### Pilot 20 — S11 kết quả (merge 2026-10-11 18:00Z, single lane)
+
+- S11 pause-settings-persistence (Settings popup from map gear + pause, sound/music toggles saved, tab-switch pause with frozen tweens/song, reload resumes on the map at the current level, junk/schema-0 saves start fresh) committed cd1bee8, bookkeeping f3fd392. Dispatch 16:36Z → done 18:00Z ≈ 1 h 24 m, of which 30 min res-guard hold of the main-editor reopen (editor threshold 4 GB; swap 5.9 → 4.7 GB after the pilot closed 8 idle sessions). Review APPROVED first round; 0 runner questions. Smoke 33/34 (only s01-audio-drift).
+- **Memory:** a cross-game lesson visibly drove the fix — cc-firefighter-kids T-S06 `freeze-all-tweens-before-popup` (pauseAllRunningActions before showDialog, resume on every exit) cited by writer and reviewer.
+- **F16 follow-up:** the director asked to free memory; the pilot closed 8 idle Claude terminals (resumable) → swap 7.9 → 4.9 GB; the editor-reopen threshold (4 GB) is stricter than the agent-spawn one (6 GB), so the reopen still waited the full 30-min cap. Explained swap to the director.
+- Tokens (since 16:36Z): slice-agent 2 sess 219 turns 49.5M.
+- S16 trace-fidelity (pilot-authored, director "làm 1 và 2", cc-cat-dash 575b449) dispatched 18:00Z in the **fleet** lane.
