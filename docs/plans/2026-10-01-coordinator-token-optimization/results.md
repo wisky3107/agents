@@ -1932,3 +1932,12 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Memory: cocos-playbook recipe `smoke-negative-controls-without-preview` r2 cited and used (one negative control redone in-page).
 - Tokens (since 20:03Z): slice-agent 2 sess 187 turns 43.4M.
 - S13 (loading-branding) dispatched 20:55Z, single lane.
+
+### Pilot 20 — S13 kết quả (merge 2026-10-11 21:54Z, single lane)
+
+- S13 loading-branding (HTML splash → Cocos LoadingView in the same cream, original Cat Dash logo rig intro, a byte-true progress bar over world_map + focused level + song, branded build template "Cat Dash (internal port)" with icons from the original logo, portrait rotate prompt) committed 3804362, bookkeeping 00003bb. Dispatch 20:55Z → done 21:54Z ≈ 59 min. Review APPROVED first round, 0 runner questions, no res-guard holds. Slow-3G cold load on the web-mobile build: bar 0.17 → 0.98 over 33 s, monotonic, 0 console errors.
+- F17 again (D-1 "rotating back resumes"): input and map return at once; a run the portrait guard paused stays on the pause popup until Resume (same as the S11 tab-switch pause). Pilot (delegated) accepts it as implemented — no auto-resume mid-run is the kid-safe reading.
+- Writer fix worth a lesson: Spine track set in a parent's onLoad (before the Skeleton's own onLoad) rendered stretched regions → set tracks in start() after setToSetupPose().
+- Memory: cc-car-service-kids T-S13 `orca-tab-starved-chrome-fallback` cited by writer and reviewer (smoke fell back to Chrome headless as that lesson predicts).
+- Tokens (since 20:55Z): slice-agent 2 sess 168 turns 34.2M.
+- S14 release-polish (last slice) dispatched 21:54Z, fleet lane.
