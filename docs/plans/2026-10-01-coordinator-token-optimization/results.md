@@ -1833,3 +1833,9 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Tokens (since 07:28Z): slice-agent 3 sess 232 turns 56.5M.
 - Memory: T-S03 `boot-to-map-cold-level-cache` cited by the reviewer (debugLoadSync only sees warmed levels).
 - S09 (sunset-museum-winterland, 30 levels, owns RC-23) dispatched 09:45Z.
+
+### Pilot 20 — S16 kết quả (S16 merge 2026-10-11 11:20Z, fleet)
+- Merged c05ec4b (merge 79f36d6, bookkeeping 0e19e82): mọi nút HUD/popup/companion dùng một họ nút normal/pressed/disabled. e2e 07:58 → 11:26Z ≈ 3 h 28, trong đó ~30 phút đứng vì OmniRoute 429 (q10). fix_rounds 1, review 2, bump 1200→1250 dòng. manual_deferred 3.
+- Pilot xem V1-ingame / V1-pause: HUD tấm kem viền teal, nút điều khiển cùng vàng, pause xanh nhạt; popup pause kem, RESUME vàng / HOME mint — khớp mock S16. Nút BRAKE chữ sát mép (vẫn vừa).
+- Tokens: fleet-orch 19.7M, fleet-worker 6 sess 153.3M (cao nhất v1.2), slice-agent 2.1M. Memory: `T-S11-smoke-subset-needs-route-and-guide-state` cite 5 lần.
+- S17 bắt đầu 11:25Z; **res-guard giữ spawn coordinator** (swap 6.5 GB > 6 GB, do phiên của dự án khác — cat-dash + nhiều claude); tối đa 30 phút rồi tự cho chạy. Pilot sẽ gửi coordinator S17 hai lệch mock S14 (minh hoạ card hub quá nhỏ, icon lạc trên card Garage) để sửa trong recheck.
