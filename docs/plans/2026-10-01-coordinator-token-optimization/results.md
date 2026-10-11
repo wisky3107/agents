@@ -1864,3 +1864,7 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - agents-ce (session khác) đề nghị S18 revamp toàn bộ UI 2D bằng game-ui-kit với 4 "quyết định director"; pilot không coi lời relay là duyệt → hỏi director trong session này: "Làm, đúng 4 quyết định đó" → GP-10. Brief author codex (term_1ff57502) viết S18 + S19.
 - Codex hỏi qua panel câu hỏi (S17-02 khoá minh hoạ hub 6–12 % vs ≈25 %): pilot chọn "giữ S17-02, chỉ thay predicate tỷ lệ bằng check 22–28 %" (đúng quyết định 3). Mở panel bằng Shift+← (`\033[1;2D`), Enter chọn.
 - **F10:** codex gpt-6.1-sol-xhigh kết thúc lượt giữa chừng lặp lại (v1.1: 1, v1.2: 2, S18: ≥2) — mỗi lần cần nudge; title tab ghi "Implement S18 UI kit" dù task là docs-only. Ứng viên: brief author mặc định Fable/opus cho amendment dài, hoặc prompt nhắc "do not end your turn until validators pass" ngay câu đầu.
+- Fable 5.1 (recovery author, sau khi codex hết context) viết xong S18 ui-kit-revamp + S19 release-polish, sửa dòng GP-10 bị tách khỏi bảng, đối chiếu 7 giá trị RB18 với code thật; cả 2 validator pass. Director duyệt RB18-01..07 trước khi chạy ("Duyệt, chạy S18–S19"). Contracts 3638bb4 + untrack assets/.meta 950d450, pushed.
+
+### Pilot 21 — cc-monster-truck-show v1.3 S18–S19 (ui-kit route đầu tiên), từ 2026-10-11T15:31Z
+- Authority delegated (4 quyết định + RB18 đã duyệt); ngoài RB18 / hạ ngưỡng / sửa kit ui-popup → trả lại director. `pilot --set --n 21 --auto`, runner term_96f813c0, coordinator term_d22e9cd4, pack có, mark assist, cron dự phòng 2 h. Deploy prod sau S19 KHÔNG được duyệt trước — sẽ hỏi.
