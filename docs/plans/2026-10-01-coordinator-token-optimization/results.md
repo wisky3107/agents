@@ -1816,3 +1816,9 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Tokens (since 06:11Z): slice-agent 3 sess 233 turns 42.4M (single lane, no fleet).
 - Memory (assist): own-game lessons cited — T-S05 `route-search-must-drive-player-input`, T-S02 `video-launch-by-time-to-apex` (launch speed from contact-to-apex time).
 - S08 (carnival-beach) dispatched 07:28Z.
+
+### Pilot 20 — S15 kết quả (S15 merge 2026-10-11 07:53Z, fleet)
+- Merged adf54bd (merge dc166e9, bookkeeping f07f0d3): lật/nghiêng theo vật lý va chạm + squat khi tăng tốc / dive khi phanh, rollover fail xác định. e2e 06:08 → 07:58Z ≈ 1 h 50. fix_rounds 1, review 1. manual_deferred 3. 2 câu hỏi pilot trả lời: q8 (B — xung xoay xác định cho tiếp đất đã bị loại, giữ luật lật = thua), q9 (D15-6 — nâng mesh hiển thị, không nới 0.05 m).
+- Số đo (docs/evidence/S15): throttle peak pitch +0.82° @200 ms, đuôi lún 0.023 m, rear−front 0.043 m; brake từ 11.85 m/s peak −1.48° @200 ms, đầu lún 0.039 m — trong khoảng H-44 nhưng **nhẹ, khó thấy trong ảnh tĩnh** (integrator tự ghi). d15-6-mesh-fit-runtime PASS (≤0.05 m cả 6 xe, negative control lún lại). V1-tip: xe lật qua bánh sau lên cabin, không cắm đất, có bóng.
+- Tokens: fleet-orch 13.8M, fleet-worker 4 sess 90.2M. Memory: `T-S10-kinematic-root-frame-spring-artefacts` (lesson S10 của game) cite 2 lần.
+- S16 (coherent game UI) bắt đầu 07:58Z, fleet, coordinator term_ada0674a, pack có, mark assist.
