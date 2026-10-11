@@ -1891,3 +1891,19 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Tokens (since 16:36Z): slice-agent 2 sess 219 turns 49.5M.
 - S16 trace-fidelity (pilot-authored, director "làm 1 và 2", cc-cat-dash 575b449) dispatched 18:00Z in the **fleet** lane.
 - 18:55Z (S18) q18 handed (verdict_override, F9 lặp lại): review.md vòng 2 (01:54 local) APPROVED, mới hơn r1. Pilot "treat as approved"; quyết định mục mở: D-S18-1 bóng nút disabled giữ màu họ (S19 tint #9CB0B4), D-S18-2 icon close/home/replay chưa gắn, D-S18-3 giữ wordmark; hero = codex "hero not final" (Orca không hiện) → S19 gen lại bằng ChatGPT khi Orca hiển thị. Review r2: hub art 23.6 % ×4 tâm (0,−42), Pit Party V4 sạch, 46 stem + border + ART2D PASS, smoke 102/104 (S16-03 baseline artefact, S17-02 chỉ predicate đã thay theo D18-3).
+
+### Pilot 21 — S18 kết quả (merge 2026-10-11 ~19:05Z, fleet)
+- S18 ui-kit-revamp merged eac1727 (merge 7783a44, bookkeeping d01834a): 46 stem v13 kit trên mọi màn 2D game-owned (Hub card minh hoạ, nút amber/mint đủ normal/pressed/disabled, popup, HUD, loading); hình học/input/state/vật lý giữ nguyên; ui-popup 1.0.2 31/31 byte-identical. Launch 15:31Z → merge ~19:05Z ≈ 3 h 34. fix 1, review 2 (r2 APPROVED), manual_deferred 3, worktree giữ lại (dirty). 6 câu hỏi (q13–q18): 1 trả director (q13 hero/Orca → A), 5 pilot.
+- Tokens (since 15:31Z): fleet-orch 27.8M · claude workers 6 sess 161.4M · codex workers 3 sess 23.6M · producer 0.15M ≈ 213M — slice đắt nhất series (S14–S17 ≈ 100–175M). fleet-orch 59 % context thay được bằng script (wait 26 %, mechanical 29 %).
+- Pilot xem V1 trước/sau: HUD/nút trong game nhất quán, rõ hơn (vàng = hành động, xám = disabled khi popup); popup Show Complete sạch. **Hub:** minh hoạ giờ là dải 360×61 dưới đáy card (23.6 % diện tích, đúng band D18-3) — xe nhỏ hơn bản S17 (minh hoạ góc phải cao hơn); đúng hợp đồng, nhưng cần director nhìn lại.
+- Hero (park backdrop, loading hero) vẫn là codex fallback "hero not final" → S19 gen lại bằng ChatGPT khi Orca ở trước.
+- **ui-kit route findings (route đầu tiên chạy thật):**
+  - (a) hero ChatGPT cần cửa sổ Orca hiển thị (rAF bị throttle); chưa có hướng dẫn chờ/fallback → agents-ce thêm SKILL §4 (chờ 10 phút → codex "hero not final").
+  - (b) bug `post`/`gate` đòi ≥1 % pixel trong suốt cho alpha:yes → primitive bo góc nhỏ fail → alphaOk (alpha thật > 0 / góc trong suốt).
+  - (c) codex image cho mặt nút sáng bị alpha một phần ở tâm (key=none) → check faceOpaquePct ≥ 97 % + `kit.mjs recolour`.
+  - (d) route art có viền vàng/xanh sau key → `defringe` tất định trong post.
+  - (e) cap regen 2 vòng khiến lane tự viết option "stop, report FAIL" → judge chọn (F11) → prompt sửa + judge filter 1341ea5.
+  - (f) method deviations ghi trong evidence/art/2d/2d-check.md: 4 route = image-gen base + composition gen_2d.py; 12 chrome re-flatten vòng 4.
+  - Các patch (a)–(e) của agents-ce còn uncommitted trong ~/.agents (skills/game-ui-kit/ untracked).
+- Workflow: F11 fix chạy đúng sau restart (không còn judge chọn dừng); F4 grace 600 s xác nhận live (17:06Z); F9 lặp lại (q18) — vẫn mở.
+- S19 release-polish v1.3 dispatched ~19:05Z (coordinator term_e7bfd95f, pack có, mark assist); mang D-S18-1 tint #9CB0B4 + hero ChatGPT. Deploy v1.3 chưa được duyệt — hỏi sau S19.
