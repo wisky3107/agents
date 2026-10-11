@@ -26,7 +26,9 @@ const PROMPT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 
 /** The options each kind may offer the judge (a fleet gate: its own options, never stop). */
 const ALLOW = {
   // a gate's options are lane-written: the runner's own actions are never the judge's to pick
-  fleet_gate: (o) => !['stop', 'mark blocked', 'skip this slice'].includes(o),
+  // lane-written halting options too ("C: stop, report FAIL to producer", pilot 21 F11): the option's own verb, after an
+  // optional "A:" label, is stop / halt / abandon / skip / mark blocked, or it reports a FAIL up instead of acting
+  fleet_gate: (o) => !/^(?:[A-Z][:.)]\s*)?(?:stop|halt|abandon|skip|mark blocked|give up)\b|\breport\s+fail/i.test(o.trim()),
   lane_blocked: (o) => o === 'send this answer to the lane',
   unknown_status: (o) => ['treat as working, keep waiting', 'treat as ready_for_review', 'treat as changes_requested', 'treat as offer_commit'].includes(o),
   verdict_mismatch: (o) => ['treat as approved', 'treat as changes_requested'].includes(o),
@@ -35,6 +37,8 @@ const ALLOW = {
 // options are screen text, not contract wording) and director_pending (the coordinator itself said the
 // decision is the director's). Both always wait for the director; autopilot does not answer them either.
 export const JUDGE_KINDS = new Set(Object.keys(ALLOW));
+/** The options of `kind` the judge may pick from (empty when the judge may not answer that kind). */
+export const judgeOptions = (kind, options) => (ALLOW[kind] ? options.filter(ALLOW[kind]) : []);
 const FROM_CONTRACTS = new Set(['fleet_gate', 'lane_blocked']); // these answers must quote a contract line
 const NEEDS_TEXT = new Set(['send this answer to the lane', 'answer with --text']);
 // money, budget and plan sign-off are the director's (SKILL Step 2c / 2d), whatever the contracts say
@@ -176,7 +180,7 @@ export function consult(project, q) {
   if (!JUDGE_KINDS.has(q.kind)) return { defer: `${q.kind} questions are the director's` };
   if (DIRECTORS.test(`${q.text} ${q.options.join(' ')}`)) return { defer: 'a plan sign-off, budget, credit or cost question is the director\'s' };
   const dir = evidenceDir(project, q.slice);
-  let options = q.options.filter(ALLOW[q.kind]);
+  let options = judgeOptions(q.kind, q.options);
   // approve only a review whose HANDOFF and verdict line both say approved (markup aside)
   if (!/^HANDOFF says approved\b/.test(q.text) || !verdictIsApproved(dir)) options = options.filter((o) => o !== 'treat as approved');
   if (!options.length) return { defer: 'no option the judge may choose' };
