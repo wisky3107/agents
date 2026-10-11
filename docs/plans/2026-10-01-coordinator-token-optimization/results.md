@@ -1881,3 +1881,4 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Tokens (since 13:58Z): slice-agent 4 sess 311 turns 83.7M.
 - Memory: 3 × "memory used: none" (pack items covered physics + audio unlock; none fit SFX/camera).
 - S11 (pause-settings-persistence) dispatched 16:36Z, single lane.
+- 17:06Z (S18) **F4 fix chạy thật lần đầu:** integrator HANDOFF `blocked` → runner "the coordinator has 600s to settle it" → writer sửa F-INT-1 (ButtonStateView SLICED chỉ cho frame có cap) trước hạn → không có câu hỏi lane_blocked thừa. art-2d đã qua, S18 ở implement/integrate.
