@@ -1853,3 +1853,8 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Tokens (since 09:45Z): slice-agent 5 sess 382 turns 119.0M.
 - Memory: this game's T-S08 `route-proof-must-touch-the-finish-trigger` cited by writer and reviewers (finish = PointEnd overlap through the real GameFlow).
 - S10 (audio-juice-camera) dispatched 13:58Z, single lane.
+
+### Pilot 20 — S17 kết quả + tổng kết (S17 merge 2026-10-11 ~14:28Z, fleet) — PILOT DONE
+- S17 merged 72bd41b (merge a33e490, bookkeeping 4d42b4b): v1.2 release-polish + 2 lệch mock S14 (minh hoạ card hub to lên; card Garage sạch icon lạc) + D17-6 Pit Party không đè Meet ở V4. e2e 11:25 → 14:31Z ≈ 3 h 06 (11 phút res-guard). fix 2, review 2. manual_deferred 6. Tokens fleet-orch 15.1M, worker 84.8M. Pilot xem V1-hub/V1-garage-selected: khớp ý.
+- **Tổng pilot 20:** 4/4 slice (S14–S17) merged trong 11 h 08 (03:23Z → 14:31Z). 5 câu hỏi pilot trả lời (q8 vật lý vs luật lật → B, q9 lún mesh → nâng hiển thị D15-6, q10 OmniRoute 429, q11 V4 Pit Party → widen, q12 F9 báo động giả), 0 trả lại director. Context ≈ S14 153M · S15 105M · S16 175M · S17 102M ≈ 535M.
+  - Findings: F8 plan query rỗng từ YAML block-sequence (fix orca-memory 0926504, xác nhận S15+) · F9 verdict_override đòi id gate · OmniRoute 429 sonnet cooldown → fleet_stall · res-guard giữ spawn 11 phút (swap từ phiên khác) · bài học author: probe tính khả thi khi "vật lý thật" + "giữ luật" (S15), review UI phải đo kích thước minh hoạ vs mock (S14), restyle nút phải chạy lại hình học Pit Party ở V4 (S16).
