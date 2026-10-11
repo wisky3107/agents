@@ -1907,3 +1907,13 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
   - Các patch (a)–(e) của agents-ce còn uncommitted trong ~/.agents (skills/game-ui-kit/ untracked).
 - Workflow: F11 fix chạy đúng sau restart (không còn judge chọn dừng); F4 grace 600 s xác nhận live (17:06Z); F9 lặp lại (q18) — vẫn mở.
 - S19 release-polish v1.3 dispatched ~19:05Z (coordinator term_e7bfd95f, pack có, mark assist); mang D-S18-1 tint #9CB0B4 + hero ChatGPT. Deploy v1.3 chưa được duyệt — hỏi sau S19.
+
+### Pilot 20 — S16 kết quả (merge 2026-10-11 ~20:00Z, fleet lite) — pilot-authored trace-fidelity slice
+
+- S16 trace-fidelity (director 2026-10-11 "làm 1 và 2"; pilot-authored, cc-cat-dash 575b449) merged 4c580a9 (feat d72d6d5). Dispatch 18:00Z → merge ≈ 2 h. Lite DAG (no scan/art), 1 fix round, 2 review rounds (r1 CHANGES_REQUESTED, r2 APPROVED). Questions 2: q46 fleet_gate (judge: add s08-map-gates.check.js to paths), q47 verify_manual (pilot measured: drift max 19 ms, retry 3–12 ms).
+- **Fit (GP-06, residuals in docs/evidence/S16/trace-fidelity.md):** Dash ledge step-up 1.0 → `_safeDistanceToTop` 1.25 (tiny 0.8 → 1.0) from three traces dying grounded at walls (2150, 2262, 2308); Rocket band A-26 floor-anchored → portal-centred (A-12 rule); OnTop env-top capped at the PointEnd trigger top (fixes 2316 passing 85 u above it). Jump ×1.05 / gravity ×1.05 tried and rejected (no residual support; raised set-B residual 0.65 → 0.82).
+- **Outcome: 37 → 39/71 playable** (2310 Savannah, 2318 Invincible via free-input routes); traces reaching PointEnd 5 → 6 of 45; regression 39/39 + 327 specs green; level JSON untouched. 31 levels still 'coming soon' + 2316 (its only route rides the capped ceiling for 79.7 % of the run → coordinator kept it locked under the accepted-deviation row).
+- **Why only +2:** the traces stop before every Ball / UFO / Small-tiny (A-09) / Jetpack section, so those rules cannot be fitted from traces; the remaining blockers need footage (or a director decision to accept tuned assumptions with ids). Trace fitting fixed the Dash and boundary rules the traces do reach.
+- Tokens (since 18:00Z): fleet-orch 7.9M · fleet-worker 4 sess 41.9M · slice-agent 1.9M — the cheapest slice of pilot 20.
+- Open minors: s09-winter-obstacles intermittent in the reviewer's Chrome (Map06 snowman rig animations[0] null / warm-up race), stale S08 comment, missing V1 result captures for three worlds.
+- S12 (onboarding-tutorial) dispatched ≈ 20:02Z, single lane.
