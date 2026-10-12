@@ -1990,3 +1990,9 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Follow-up: FOLLOWUPS 120 — build.sh should also use the clone Creator (builds already done with it by hand).
 - Tokens: slice-agent 2 sess 121 turns 18.7M.
 - Director added S19 ball-item-rule + S20 release-polish after S18 (cc-cat-dash 65b3482); runner relaunched ≈ 07:58Z (term_bceb19e6), S19 single lane; cron f7732656.
+
+### cc-monster-truck-show — FROZEN 2026-10-12 (director "tạm chốt dự án này ở đây")
+- v1.3.1 on prod (dpl_4w7KfJdNfvYVYwME915uPe1UkbQA). Main b4ff04c and tags v1.1.0…v1.3.1 pushed (private GitHub). S18/S20 worktrees removed (merged; only scratch art was discarded); 7 project terminals closed; no editor running.
+- Project docs b4ff04c: docs/retro.md (v1.0.0–v1.3.1, ≈1.96B context tokens over 20 slices, F1–F14 table, resume guide), FOLLOWUPS "v1.4 backlog" (47 rows: human/device 12, visual 14, perf 4, hygiene 17), docs/evidence/device-checklist-v1.3.1.md (20 steps), AGENT_NOTES FROZEN line.
+- Playbook 0488554 pushed: learnings/cc-monster-truck-show.md, 8 candidate recipes (spring-over-kinematic-root, batched decal trails, hull-contact tipping, loop stability probes, button-state-view family, ui-kit skin slots, ttf cold-load font gate, editor-preview launch-scene fallbacks), 3 revisions, 11 reuses, no kit. orca-memory: 47 of 107 records promoted, 60 left active with reasons, refresh ok (802 records).
+- Open (workflow, not the game): F13 HANDOFF "done" alias in game-producer lanes.mjs; three tooling lessons left active (fleet check-slice quoted slice id, template ClientEvent off during dispatch, editor profile write reverting disk edits); F6/F7/F9/F12/F14.
