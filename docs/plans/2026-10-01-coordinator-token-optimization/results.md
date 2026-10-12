@@ -2006,3 +2006,11 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Lesson: the S17 census turned "tune numbers" into "a missing rule" — one shared-rule change unlocked 3× more levels than 66 scalar tunings, and without contradicting the original's markers.
 - Tokens: slice-agent 3 sess 174 turns 41.8M.
 - S20 release-polish dispatched ≈ 08:56Z.
+
+### Pilot 21 — S20 kết quả + tổng kết (merge 2026-10-12 10:24Z, single lane) — PILOT DONE
+
+- S20 release-polish committed b4cd123, bookkeeping 7816b5f. ≈ 1 h 28 m from dispatch. Review APPROVED, 0 runner questions. No runtime code changed.
+- RELEASE_CHECKLIST § "S20 regression results": 29 PASS (some desktop-only), RC-20/21 N/A (Step 3), 0 FAIL; **RC-23 55/71 finishable**, the 16 'coming soon' listed with blockers. Spine 4.2 confirmed on the clone preview and the web-mobile build. Smoke 51/52 + s01-audio-drift by real-play probe (max 30 ms, 63 samples, 3 retries — the writer tapped through the S12 freezes too). Tests 345/0/15 todo. Release build 183.5 MB: audit PASS, 0 missing, 0 off-origin, fps 60.0 avg / 59.5 1 % low on the heaviest playable levels. Playtest: one level per world to 100 % on the release build (11 captures).
+- **Pilot 21 total (2026-10-12 05:21Z → 10:24Z, ≈ 5 h):** 4 slices (S17 assumption-tuning, S18 release-polish, S19 ball-item-rule, S20 release-polish), **39 → 55/71 playable**, F14 fixed for good by a per-project Creator clone (custom engine path is editor-wide in 3.8.8 — tested and rejected). Director decisions: tuned assumptions, Creator clone, S19 after S18. Pilot questions: q52 only (drift); judge/autopilot q51 (S17 band K), q53 (reviewer_hung).
+- Findings: the S17 census (where each locked level dies) mattered more than tuning — it exposed a missing Ball rule; probe-quality lesson (the drift probe and s01-audio-drift's ≥1 s longRun threshold both missed the S12 freeze-frame stall).
+- Open for the director: push/tag/deploy (repo has NO git remote yet; AGENT_NOTES policy deploy=preview), device checks (RC-01/06/07/11/12), 16 levels still 'coming soon', FOLLOWUPS 120 (build.sh → clone Creator), s01-audio-drift longRun threshold.
