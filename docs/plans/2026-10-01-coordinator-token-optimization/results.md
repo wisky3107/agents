@@ -1996,3 +1996,13 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - Project docs b4ff04c: docs/retro.md (v1.0.0–v1.3.1, ≈1.96B context tokens over 20 slices, F1–F14 table, resume guide), FOLLOWUPS "v1.4 backlog" (47 rows: human/device 12, visual 14, perf 4, hygiene 17), docs/evidence/device-checklist-v1.3.1.md (20 steps), AGENT_NOTES FROZEN line.
 - Playbook 0488554 pushed: learnings/cc-monster-truck-show.md, 8 candidate recipes (spring-over-kinematic-root, batched decal trails, hull-contact tipping, loop stability probes, button-state-view family, ui-kit skin slots, ttf cold-load font gate, editor-preview launch-scene fallbacks), 3 revisions, 11 reuses, no kit. orca-memory: 47 of 107 records promoted, 60 left active with reasons, refresh ok (802 records).
 - Open (workflow, not the game): F13 HANDOFF "done" alias in game-producer lanes.mjs; three tooling lessons left active (fleet check-slice quoted slice id, template ClientEvent off during dispatch, editor profile write reverting disk edits); F6/F7/F9/F12/F14.
+
+### Pilot 21 — S19 kết quả (merge 2026-10-12 ~08:55Z, single lane) — director "Add S19 after S18"
+
+- S19 ball-item-rule committed e4c740c, bookkeeping 69bada2. ≈ 57 min from relaunch. Review APPROVED (q53 reviewer_hung → runner autopilot spawned a fresh reviewer). 0 pilot questions.
+- **43 → 55/71 playable** (+2184 City; 2314 2315 2316 Beach; 2333 2336 2337 2338 Sunset; 2353 2356 2359 2364 Museum). The Ball now uses the Spider's item code (`FormBase.BodyItems`, shared) with its own `_jumpItem` 33 × size factor — no new number — and the Ball band is back to the original 16 (S17's 0.8 removed; no playable level needs it, marker outliers 25 → 8).
+- Fidelity guards held: 2331 (env-top route) and 2360 (finishes as a Spider off the view) have routes but stay 'coming soon'; band-edge/env-top resting per Ball section 0–9.9 % (2338 first section 21.4 %, named).
+- Regression 43/43 earlier levels finish; tests 345 pass / 0 fail / 15 todo; smoke 50/51 (only s01-audio-drift headless); level JSON untouched.
+- Lesson: the S17 census turned "tune numbers" into "a missing rule" — one shared-rule change unlocked 3× more levels than 66 scalar tunings, and without contradicting the original's markers.
+- Tokens: slice-agent 3 sess 174 turns 41.8M.
+- S20 release-polish dispatched ≈ 08:56Z.
