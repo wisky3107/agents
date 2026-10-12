@@ -309,6 +309,11 @@ row needs a different method, the worker sends an `ask`.
 | `acquire` | fonts and other licensed files | download from the official source; record URL, commit/version, sha256 and licence |
 
 Tie → `image-gen` if the file shows an object, character or symbol; otherwise `procedural`.
+**UI kit route.** When a slice has ≥ 5 UI chrome / icon rows, the art-2d worker runs
+`game-ui-kit` over the manifest (`kit.mjs from-manifest` → generate → `post --to-project` →
+`gate`); same gate, same `verify`, plus nine-slice borders the integrator writes into `.meta`
+(`kit.mjs meta`). Prompt: worker-prompts-art.md "art-2d / ui-kit route".
+
 `art-manifest` marks hero `image-gen` rows `"tier": "hero"`: key art, splash / title, store
 art, logo, full-scene backgrounds and character hero art. A row without `tier` (older
 manifests) is routed by that same list.

@@ -293,7 +293,11 @@ Do:
    `ART2D: PASS` (missing or FAIL → do not import; `ask`, owner art-2d). Then refresh_assets →
    verify every file in the manifest has a .meta pair and no import errors (editor-log.txt via
    get_recent_logs); for meshes also confirm the imported prefab/mesh sub-assets appear and the
-   model shows at the manifest's scale.
+   model shows at the manifest's scale. When evidence/art/2d/ui-kit/manifest.json exists (art-2d
+   took the UI kit route), write its nine-slice borders into the sprite-frame .meta files:
+   `node ~/.agents/skills/game-ui-kit/scripts/kit.mjs meta --kit evidence/art/2d/ui-kit/kit.json --project .`
+   then refresh_assets again; a WARN about caps over half height means that sprite needs one copy
+   per node height (do not shrink the node).
 5. Apply evidence/integration-notes.md: scene-tool first for identity-preserving edits; Funplay
    for structural/identity work; one mutation contract per structural change; ensure_* so a retry
    cannot duplicate. Stay within allowed_scene_objects; max_nodes is an estimate (advisory mode) —

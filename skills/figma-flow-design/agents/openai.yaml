@@ -1,0 +1,4 @@
+interface:
+  display_name: "Figma Flow Design"
+  short_description: "Hi-fi game screen flow in Figma: screens, prototype hotspots, flow arrows, variants"
+  default_prompt: "Use $figma-flow-design to lay out my game's screens and transitions as a hi-fi flow in the Figma file open in Orca, with prototype hotspots, labelled arrows and a v2 variant when I ask."

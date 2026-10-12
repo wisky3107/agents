@@ -1,0 +1,10 @@
+{
+  "name": "melody-tiles",
+  "title": "Melody Tiles",
+  "subtitle": "Piano rhythm game · FHD 1080×1920 · click a hotspot in Present mode to follow the flow",
+  "fileKey": "0gTVXpVLz3rwogxwTmICQ0",
+  "page": "Page 1",
+  "fonts": [["Fredoka", "Bold"], ["Fredoka", "SemiBold"], ["Fredoka", "Medium"], ["Poppins", "Regular"],
+            ["Poppins", "Medium"], ["Poppins", "SemiBold"], ["Poppins", "Bold"], ["Poppins", "ExtraBold"]],
+  "layout": { "W": 1080, "H": 1920, "GX": 640, "GY": 760, "bg": { "c": ["#2B0F5E", "#1A1446", "#0A1B45"], "a": 90 } }
+}

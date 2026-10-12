@@ -394,6 +394,39 @@ Check, before worker_done:
               "tool":"<image tool | evidence/art/2d/gen_2d.py | source URL>"}.
 ```
 
+### art-2d / ui-kit route (any art_backend but cursor)
+
+Take this route when the slice's 2D rows hold ≥ 5 UI chrome / icon rows (buttons, panels,
+cards, ribbons, tabs, bars, icons) or the director asks for a UI kit. One art bible for the
+set beats per-file prompts. The rest of the art-2d / <backend> block still applies.
+
+```text
+UI kit route — game-ui-kit (~/.agents/skills/game-ui-kit/SKILL.md):
+K=~/.agents/skills/game-ui-kit/scripts; D=evidence/art/2d/ui-kit
+1. node $K/kit.mjs from-manifest --art-manifest <ART_PATHS>/manifest.json --art-backend <ART_BACKEND> --dir $D
+   [--override <cat>=<backend>,…  only when the director's prompt / AGENT_NOTES names one]
+   Rows it lists under "manual" (sprite sheets, exact apertures) stay on the normal art-2d route.
+2. Write kit.style in $D/kit.json: the art bible from GAME_BRIEF / EXPECT_GAMEPLAY_VISUAL
+   (rendering style, palette hex, light, mood). Enrich any thin row subject.
+3. node $K/kit.mjs jobs --kit $D/kit.json, then per backend (SKILL.md §4): codex → codex-image.mjs
+   gen with $D/codex-jobs.json; agy → node $K/kit.mjs agy --kit $D/kit.json --skip-permissions;
+   gpt-image-gen (hero rows) → orca-gpt-image-gen; procedural → evidence/art/2d/gen_2d.py writing
+   the todo.json outs. Quota / down → the fallback in SKILL.md §2, noted in 2d-check.
+4. node $K/kit.mjs post --kit $D/kit.json --to-project .     (exact row sizes, borders rescaled)
+5. node $K/kit.mjs sheet --kit $D/kit.json, Read $D/sheet.png and every PNG that looks off
+   (set consistency, empty chrome, clean alpha, slice-safe).
+6. node $K/kit.mjs gate --kit $D/kit.json --look PASS   (or --look "FAIL:<files + reason>")
+   It appends the round to evidence/art/2d/2d-check.md and sets each kit row's verify.
+   FAIL → regenerate only those rows (max 2 rounds), post + gate again. At the cap, never offer
+   "stop" or "report FAIL"; take the recorded fallback and gate again:
+     face FAIL (chrome face not opaque) → "flattenFace": true on the row, post again; still blotchy →
+       kit.mjs recolour --row <failing> --from <passing sibling> --color <hex>
+     generated base needs exact geometry/composition → "compose": "gen_2d.py:<fn>" (planned hybrid, SKILL.md §3)
+     fringe / halo left round a subject → set "defringe": <px> on the row (erodes the alpha edge), post again
+   The gate's method line records each fallback as a deviation; the reviewer weighs it.
+The integrator writes the nine-slice borders into .meta (kit.mjs meta) after import.
+```
+
 ### art-2d / cursor
 
 ```text

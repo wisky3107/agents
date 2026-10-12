@@ -1,0 +1,4 @@
+interface:
+  display_name: "Game UI Kit"
+  short_description: "UI kit from a brief, art backend per asset (codex / agy / chatgpt / procedural)"
+  default_prompt: "Use $game-ui-kit to turn my brief into a game UI kit: pick the art backend per asset (or the one I name), generate, key, trim, add nine-slice borders and give me the manifest and contact sheet."

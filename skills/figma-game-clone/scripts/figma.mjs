@@ -167,7 +167,7 @@ function evalJs(page, expr) {
 
 function findPage(cfg) {
   const tabs = orca(['tab', 'list', '--worktree', 'all']).tabs || [];
-  return tabs.find((t) => /figma\.com\/(design|file)\//.test(t.url) && t.url.includes(cfg.fileKey))?.browserPageId;
+  return tabs.find((t) => /figma\.com\/(design|file)\//.test(t.url) && (!cfg.fileKey || t.url.includes(cfg.fileKey)))?.browserPageId;
 }
 
 function ensurePage(cfg) {
@@ -184,6 +184,13 @@ function ensurePage(cfg) {
     execFileSync('sleep', ['1']);
   }
   throw new Error('Figma tab not ready: log in to Figma in the Orca browser with an account that can view this file, then retry');
+}
+
+// For other skills (game-ui-kit figma-kit, figma-flow-design): the Figma tab for fileKey (any
+// Figma tab when omitted), opened from url when missing, with the `figma` global ready.
+export function connectFigma({ fileKey, url } = {}) {
+  const page = ensurePage({ fileKey, url: url || (fileKey && `https://www.figma.com/design/${fileKey}`) });
+  return { page, eval: (js) => evalJs(page, js) };
 }
 
 const resolveNode = (G, v) => loadViews(G)[v]?.node || v;
@@ -215,6 +222,11 @@ if(skip&&!ALL)continue;const g=anc.filter(a=>a.type!=='INSTANCE').slice(-3).map(
 if(g!==last){out.push('');out.push('### '+g);last=g;}
 const t=n.type==='TEXT'?n.characters:n.text.characters;out.push('- '+(n.visible===false?'[hidden] ':'')+t.replace(/\\n/g,' / ')+'  ⟨'+n.id+'⟩');}
 return out.join('\\n');})()`;
+
+// Image hashes held by kit libraries (top-level frames named "Image library…", written by
+// game-ui-kit figma-kit and figma-flow-design): those images come from the kit, not an export.
+const KIT_HASHES_JS = `(async()=>{const m={};for(const f of figma.currentPage.children.filter(n=>/^Image library/.test(n.name)&&'children' in n))
+for(const c of f.children)for(const p of (c.fills||[]))if(p.type==='IMAGE'&&p.imageHash)m[p.imageHash]={library:f.name,name:c.name};return JSON.stringify(m);})()`;
 
 const IMAGES_JS = (id, screens) => `(async()=>{const R=${J(id)};const S=new Set(${J(screens)});${PRELUDE}
 const res=[];root.findAll(n=>{if('fills' in n&&Array.isArray(n.fills))for(const f of n.fills)if(f.type==='IMAGE'&&f.imageHash){
@@ -462,11 +474,13 @@ function cmdDraftJobs() {
   const list = imagesOf(G, page);
   const views = loadViews(G);
   const hasScreens = Object.values(views).some((v) => v.kind === 'screen');
-  const used = new Set(), jobs = [], seen = new Set();
+  const kit = JSON.parse(evalJs(page, KIT_HASHES_JS));
+  const used = new Set(), jobs = [], seen = new Set(), fromKit = {};
   const uniq = (base) => { let n = base, i = 2; while (used.has(n)) n = `${base}-${i++}`; used.add(n); return n; };
   for (const x of list) {
     if (seen.has(x.hash) || (hasScreens && !x.inScreen) || !x.visible) continue;
     seen.add(x.hash);
+    if (kit[x.hash]) { fromKit[x.hash] = kit[x.hash]; continue; }
     jobs.push({ id: x.id, hash: x.hash, out: `images/${uniq(slugify(x.name) || 'image')}.png`, mode: 'raw', note: `${x.w}x${x.h} ${x.path}` });
   }
   for (const [k, v] of Object.entries(views)) {
@@ -474,7 +488,12 @@ function cmdDraftJobs() {
   }
   const out = resolve(G, arg('out', 'tools/figma/export-jobs.json'));
   writeJson(out, jobs);
-  console.log(`wrote ${relative(G, out)}: ${jobs.length} jobs (${seen.size} raw images, rest screen shots). Re-file images into ui/ pets/ backgrounds/…, add node jobs for vector UI (hideTexts for buttons/pills), then export --jobs.`);
+  const kitHits = Object.values(fromKit);
+  if (kitHits.length) {
+    writeJson(join(G, 'tools/figma/kit-images.json'), fromKit);
+    console.log(`${kitHits.length} images come from a kit (${[...new Set(kitHits.map((k) => k.library))].join(', ')}): no export jobs; take them from the kit (game-ui-kit post --to) — list in tools/figma/kit-images.json`);
+  }
+  console.log(`wrote ${relative(G, out)}: ${jobs.length} jobs (${seen.size - kitHits.length} raw images, rest screen shots). Re-file images into ui/ pets/ backgrounds/…, add node jobs for vector UI (hideTexts for buttons/pills), then export --jobs.`);
 }
 
 function runJob(page, j, root) {

@@ -35,7 +35,7 @@ Never invent mechanics that neither the notes nor the screens show.
 | Bootstrap | `~/.agents/skills/new-cocos-game` (`bootstrap.mjs`, Step 0b agent combo) |
 | Brief author | `~/.agents/skills/game-brief`, **source mode `media`**, reference `reference/<slug>/` |
 | Producer | `<project>/.cursor/skills/game-producer` (default handoff) |
-| Batch art (only when notes ask for new art) | `codex-image-gen`; hero art `orca-gpt-image-gen` |
+| New art (only when notes ask, or the Figma is a wireframe) | `game-ui-kit` (picks codex / agy / ChatGPT / procedural per row; prompt override wins) |
 
 ## Progress checklist
 
@@ -200,6 +200,12 @@ missing pieces, baked text, clipped edges and stray backgrounds. Export one-offs
 A font that is not on Google Fonts: ask the director for the file and never substitute
 silently. Note it in GAME_BRIEF.
 
+**Kit images are never re-exported.** Images held by an `Image library…` frame (made by
+`game-ui-kit` / `figma-flow-design`) come from the kit: `draft-jobs` skips their hashes and
+lists them in `tools/figma/kit-images.json`; copy them with `kit.mjs post --to assets --notes
+ASSET_MANIFEST.md` (original pixels plus nine-slice borders in the usage notes). Exporting a
+kit button as `mode: node` would bake its nine-slice at one size.
+
 **Done when:** every job is `ok`, the montage looks right, every font has a status of `ok`
 or is listed as pending, and `manifest` has run last.
 
@@ -233,7 +239,8 @@ Do the extras **only when the notes or the director ask**. Record each in GAME_B
 | Note says | Do |
 |---|---|
 | Values come from the server / "chừa sẵn API" / "data tạm để test" | `API_CONTRACT.md` (endpoints, payloads, errors), `data/config/*.json`, `data/mock/fixtures/*.json` + `scenarios.json`, a tiny stateful `data/mock/mock-server.mjs` |
-| New art in the current style (VFX, missing icons) | `codex-image-gen` with exported Figma art as style reference → `assets/vfx/…`, plus particle presets if asked |
+| New art in the current style (VFX, missing icons) | `game-ui-kit` with `ref` = the closest exported Figma art (codex edit keeps the designer's look) → `kit.mjs post --to assets --notes ASSET_MANIFEST.md`, then `figma.mjs manifest`; plus particle presets if asked |
+| The Figma is a grey wireframe and the director wants hi-fi | `game-ui-kit` for the whole UI (rows from the wireframe's elements, style from the notes); optionally re-skin the screens with `figma-flow-design` for approval before Step 8 |
 | Animation comes later (spine per character) | Keep static art as fallback. If a sample spine was supplied, normalise its file names to the asset key and map all characters to it in `data/config` |
 | Multi-device / wide screens | Fit policy in the brief §1b; bleed backgrounds extended past the design frame (love-train: 1080×1920 → 1920×2520) |
 | Resize oversized images | `resize --factor <n>` (Step 5) |
@@ -348,4 +355,4 @@ slices, then stop.
 - Love-train pack (worked example): `/Users/wikz/orca-global/games/love-train/` (GAME_BRIEF, FIGMA_NOTES, FIGMA_GUIDE, API_CONTRACT, data/, tools/figma/)
 - Guide template: [reference/figma-guide-template.md](reference/figma-guide-template.md)
 - Gameplay notes format: [../game-brief/reference/gameplay-notes.md](../game-brief/reference/gameplay-notes.md)
-- Sibling skills: `store-game-clone`, `new-cocos-game`, `game-brief`, `game-producer`, `codex-image-gen`, `orca-cli`
+- Sibling skills: `store-game-clone`, `new-cocos-game`, `game-brief`, `game-producer`, `game-ui-kit`, `figma-flow-design`, `codex-image-gen`, `orca-cli`
