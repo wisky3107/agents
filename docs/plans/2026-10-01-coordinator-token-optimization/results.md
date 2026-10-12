@@ -2032,3 +2032,12 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - q54 verify_manual (pilot): drift run A max 57 ms during load avg ~19; reruns 34/34 ms; typical drift rose from ~10–25 ms to ~20–34 ms after S21's rendering → S22 asked to measure fps / drift on a quiet machine.
 - Tokens (since 13:55Z): fleet-orch 16.8M · fleet-worker 8 sess 165.1M · slice-agent 2.3M.
 - S22 release-polish dispatched ≈ 17:39Z (single lane).
+
+### Pilot 22 — S22 kết quả + tổng kết (merge 2026-10-12 ~19:10Z, single lane) — PILOT DONE
+
+- S22 release-polish committed ffcb280, bookkeeping 01634d6. ≈ 1 h 32 m; 1 fix round, review APPROVED. RELEASE_CHECKLIST § S22: 31 rows, 0 FAIL (RC-20/21 Step 3). 55/55 playable levels finish on the preview and the release build; smoke 58/59 (+ s22-01-coin-glyph; s01-audio-drift by real-play probe, max 35 ms). Release build: audit PASS, 0 missing, 0 off-origin of 1384, 0 console errors, 2146/2310 at 60.0 fps avg. Tests 359/0/15 todo. Regressions fixed: s01-die-retry fresh-page race (GameFlow warm-up order), audit class for S21's manifest.json.
+- **Coin glyph (director point 2) — three steps:** S21's coordinator kept the paw (decision K) against its own video capture; the pilot amended S22 to bind "ManaOrb" by its file name — **pilot error**, ManaOrb is a gold cat-ear coin (the writer caught it via an interactive question); the writer measured the candidates against three video frames and the pilot chose **c**: rip `Shield_Bubble` byte-for-byte, node colour #D2E7E6 = the measured video fill, 0.75 u → RMS 14.5 (render 14.9) vs paw 34.0, untinted 24.0, background control 19.9. Residual: the video rim is darker than the fill; Shield_Bubble's rim is lighter (declared).
+- **F18** A worker's interactive AskUserQuestion menu blocks runner sends (`agent_prompt_blocked` → send_failed q55): the runner should detect a worker question menu and route it as a lane question instead of nudging.
+- Questions: q54 verify_manual (pilot, 3 drift runs), q55 send_failed (pilot: drop nudge), q56 lane_blocked coin D-1 (pilot: c).
+- Tokens: slice-agent 4 sess 275 turns 46.0M.
+- **Pilot 22 total (2026-10-12 13:55Z → 19:10Z, ≈ 5 h 15 m):** S21 + S22, the director's 8 look-and-feel points delivered from the rip (floor, coin + VFX, LerpTexture ground, obstacle skins, radial mood spread, finish outro set, measured jump tilt, camera with in-view guard), 55/71 playable kept, release re-verified. Open: device checks, redeploy decision, ground _Mask (FOLLOWUPS 124), finish board under HUD on high finishes, drift trend (~20–35 ms after S21).
