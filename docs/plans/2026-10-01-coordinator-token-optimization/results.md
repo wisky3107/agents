@@ -1981,3 +1981,12 @@ Mục này ghi sau mục Pilot 8 vì pilot 8 (cc-love-train) bắt đầu trư�
 - q52 verify_manual (pilot): drift max 36 ms over 26.5 s, retry to checkpoint 1–15 ms. **Pilot probe bug found:** since S12 the 2306 run has tutorial freeze-frame bubbles on a fresh save; the one-tap probe stalled at run 1.84 s and s01-audio-drift still "passed" because its longRun threshold is ≥ 1 s. Probe now taps through freezes; no earlier answer was affected (last drift answer before S12 was S16). FOLLOWUPS candidate: s01-audio-drift longRun threshold should be the 25 s it documents.
 - Tokens (since 05:21Z): fleet-orch 6.5M · fleet-worker 2 sess 67.0M · slice-agent 3.2M.
 - S18 release-polish dispatched ≈ 07:00Z (single lane).
+
+### Pilot 21 — S18 kết quả (merge 2026-10-12 07:52Z, single lane)
+
+- S18 release-polish committed 145ea72, bookkeeping e9fe543. ≈ 50 min (incl. a 14-min res-guard hold of the reviewer, swap 7.2 GB). Review APPROVED, 0 runner questions.
+- **F14 confirmed fixed:** the cat-dash Creator clone preview serves spine-version-4.2 and the web-mobile build (built with the clone) loads 4.2.80 rigs — new check `s18-01-spine-runtime` PASS on both; S14's residue `s09-winter-obstacles` + `s13-01-loading-layout` PASS. Full smoke 49/50 (only s01-audio-drift), 0 console errors; tests 336/0/15 todo.
+- Release build 183.5 MB: audit-assets PASS (after removing an orphan fonts.meta), verify-no-404 0 missing, 0 off-origin of 1676 requests. RELEASE_CHECKLIST: 29 rows PASS, RC-20/21 N/A (Step 3), **RC-23 43/71 playable, 28 'coming soon' listed by blocker**; device rows deferred (fps, iOS audio, touch, throttled boot).
+- Follow-up: FOLLOWUPS 120 — build.sh should also use the clone Creator (builds already done with it by hand).
+- Tokens: slice-agent 2 sess 121 turns 18.7M.
+- Director added S19 ball-item-rule + S20 release-polish after S18 (cc-cat-dash 65b3482); runner relaunched ≈ 07:58Z (term_bceb19e6), S19 single lane; cron f7732656.
