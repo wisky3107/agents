@@ -60,17 +60,18 @@ If the description editor is absent, disabled, or cannot be verified, prepend a 
 Maintain a map like:
 
 ```text
-01 -> page A -> /output/subject-01.png -> prompt A
-02 -> page B -> /output/subject-02.png -> prompt B
+01 -> gpt-2 -> page A -> /output/subject-01.png -> prompt A
+02 -> gpt-2 -> page B -> /output/subject-02.png -> prompt B
 ```
 
-Create each page with Orca's typed tab command, then navigate through the project UI and verify the project name before submitting. Only after all workers are verified should independent fill/send operations run concurrently. Keep at most four active workers by default; queue the rest in deterministic index order.
+Create each page with Orca's typed tab command, passing `--profile <id>` of the account picked for the run, then navigate through the project UI and verify the project name before submitting. Only after all workers are verified should independent fill/send operations run concurrently. Keep at most four active workers by default; queue the rest in deterministic index order.
 
 Use a fresh snapshot for every action on every page. A page ID remains stable, but snapshot refs are page-local and invalidated by navigation. Never issue a command with a ref copied from a sibling worker.
 
 ## Parallel recovery
 
-- **One worker is blocked by login/CAPTCHA/quota:** leave other workers running, record the blocker, and retry only the blocked index after the UI is usable.
+- **One worker is blocked by CAPTCHA:** leave other workers running, record the blocker, and retry only the blocked index after the UI is usable.
+- **An account hits its image limit or shows a login screen:** every worker on that account is affected, not only the one that showed it. Mark the account, pick the next one and move the account's unfinished workers there (SKILL.md section 4a). Workers on other accounts keep running.
 - **One worker has a stale ref:** snapshot that page and retry the action once.
 - **One worker errors during generation:** open a fresh project chat in a fresh tab and retry that index once.
 - **A download collides with another worker:** use the preassigned unique destination; do not let ChatGPT's suggested filename decide the final path.
