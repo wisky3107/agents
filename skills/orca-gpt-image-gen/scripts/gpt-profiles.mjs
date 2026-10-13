@@ -81,6 +81,8 @@ export function saveState(state, file = STATE_FILE) {
 }
 
 /** "j***@gmail.com" — enough to tell accounts apart in a report. */
+const setPatternOf = (s) => (s.set.length ? `^(${s.set.join('|')})$` : null);
+
 export const maskEmail = (e) => (e ? e.replace(/^(.)[^@]*/, '$1***') : null);
 
 /** --reset value → ISO time: an ISO string, or a number of minutes from `now`. */
@@ -195,7 +197,9 @@ function row(r) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const cmd = args._[0];
-  const pattern = args.pattern || process.env.GPT_PROFILE_PATTERN || '^gpt-\\d+$';
+  // an account split (account-split.mjs) narrows pick to its ChatGPT set; an explicit --pattern wins
+  const split = args.pattern || process.env.GPT_PROFILE_PATTERN ? null : (await import('./account-split.mjs')).loadSplit();
+  const pattern = args.pattern || process.env.GPT_PROFILE_PATTERN || (cmd === 'pick' && split && setPatternOf(split)) || '^gpt-\\d+$';
   const state = loadState();
   const print = (obj, text) => console.log(args.json ? JSON.stringify(obj, null, 1) : text);
 
@@ -211,7 +215,16 @@ async function main() {
     const exclude = new Set(String(args.exclude || '').split(',').filter(Boolean));
     const rows = await survey(pattern, state, (p) => !exclude.has(p.id) && !exclude.has(p.label));
     saveState(state);
-    const best = rank(rows, need);
+    let best = rank(rows, need);
+    if (!best && split) {
+      // nothing usable left in the ChatGPT set: rotate to other profiles (OmniRoute follows), then pick again
+      const { rotate, saveSplit, setPattern } = await import('./account-split.mjs');
+      const r = rotate(split); saveSplit(split);
+      console.error(`account split rotated: ${JSON.stringify(r)}`);
+      if (r.ok) rows.splice(0, rows.length, ...await survey(setPattern(split), state, (p) => !exclude.has(p.id) && !exclude.has(p.label)));
+      saveState(state);
+      best = rank(rows, need);
+    }
     if (!best) {
       const resets = rows.map((r) => r.verdict.until).filter(Boolean).sort();
       print({ ok: false, reason: 'no usable profile', earliestReset: resets[0] || null, profiles: rows },
@@ -233,6 +246,13 @@ async function main() {
     m.markedAt = new Date().toISOString();
     state.profiles[p.id] = m;
     saveState(state);
+    const sp = (await import('./account-split.mjs')).loadSplit();
+    if (args.limited && sp && sp.set.includes(p.label)) {
+      // a ChatGPT-set profile hit its limit: rotate it out now (its account goes back to Codex in OmniRoute)
+      const { rotate, saveSplit } = await import('./account-split.mjs');
+      const r = rotate(sp); saveSplit(sp);
+      console.error(`account split rotated: ${JSON.stringify(r)}`);
+    }
     print({ ok: true, id: p.id, label: p.label, mark: m },
       `${p.label}: ${m.limitedUntil ? `limited until ${m.limitedUntil}` : m.signedOutUntil ? `signed out until ${m.signedOutUntil}` : 'cleared'}`);
     return 0;
