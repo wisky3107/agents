@@ -240,3 +240,33 @@ test('coord: no Enter for a fresh dispatch, a heartbeating one, or a screen with
   assert.deepEqual([r2.status, r2.out.timeout], [0, true]);
   fs.rmSync(bin2, { recursive: true });
 });
+
+test('lane (single): an idle screen with live background work (monitors, shells) holds idle_streak at 0; unchanged for ORCA_WAIT_BG_STUCK_MS it counts again', () => {
+  const screen = (...tail) => ({ ok: true, result: { terminal: { handle: 'term_w1', tail } } });
+  const bin = fakeOrca({
+    wait: { ok: true, result: { wait: { handle: 'term_w1', condition: 'tui-idle', satisfied: true } } },
+    read: screen('✻ Baked for 3s · done 7:52 AM · 2 monitors still running', '', '  ⏵⏵ bypass permissions on · 2 monitors · ← 1 agent'),
+  });
+  const handoff = path.join(bin, 'HANDOFF.json');
+  fs.writeFileSync(handoff, JSON.stringify({ status: 'working', detail: 'bake', sha: null }));
+  const state = path.join(bin, 'producer-state.json');
+  const args = ['lane', '--handle', 'term_w1', '--handoff', handoff, '--state', state, '--max-ms', '5000'];
+  fs.writeFileSync(state, JSON.stringify({ handle: 'term_w1', last_mtime: fs.statSync(handoff).mtimeMs, idle_streak: 2 }));
+  for (let i = 0; i < 3; i++) {
+    const a = run(bin, args).out;
+    assert.deepEqual([a.event, a.idle_streak, a.background, a.background_stuck], ['idle', 0, '2 monitors, 1 agent', undefined]);
+  }
+  // same screen, the clock past the limit: idle again
+  const stuck = run(bin, args, { ORCA_WAIT_BG_STUCK_MS: '0' }).out;
+  assert.deepEqual([stuck.idle_streak, stuck.background_stuck], [1, true]);
+  // the screen changes: the clock restarts
+  fs.writeFileSync(path.join(bin, 'read.json'), JSON.stringify(screen('● Monitor event: tests passed', '  ⏵⏵ bypass permissions on · 1 monitor')));
+  const moved = run(bin, args, { ORCA_WAIT_BG_STUCK_MS: '600000' }).out;
+  assert.deepEqual([moved.idle_streak, moved.background_stuck], [0, undefined]);
+  // no background work on the screen: the plain idle streak
+  fs.writeFileSync(path.join(bin, 'read.json'), JSON.stringify(screen('● Done for now.', '  ⏵⏵ bypass permissions on')));
+  const plain = run(bin, args).out;
+  assert.deepEqual([plain.idle_streak, plain.background], [1, undefined]);
+  assert.equal(run(bin, args).out.idle_streak, 2);
+  fs.rmSync(bin, { recursive: true });
+});

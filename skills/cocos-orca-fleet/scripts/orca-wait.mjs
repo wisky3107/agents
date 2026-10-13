@@ -21,6 +21,11 @@
  *     --state keeps idle_streak / last HANDOFF mtime across calls and restarts; keep it in the main
  *     checkout (T-<Sxx>/producer-state.json), never in the lane's evidence dir.
  *
+ *     An idle terminal whose screen shows live background work (Claude Code: "2 monitors still running", footer
+ *     "· 2 monitors", "1 shell") is reported with idle_streak 0 and "background":"2 monitors": the agent ended its
+ *     turn between Monitor events, it is not stalled. The same screen unchanged for ORCA_WAIT_BG_STUCK_MS (45 min)
+ *     counts as idle again ("background_stuck":true).
+ *
  *     While it waits, coord also rescues lost Enters (pilot 18 F3): `worker-start` can paste the brief into a
  *     Claude Code TUI and lose the Enter, leaving the dispatch `dispatched` with no heartbeat forever. Every
  *     ~30 s it looks at the Run's dispatches; one that is `dispatched`, has `last_heartbeat_at` null and is
@@ -35,6 +40,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -275,6 +281,34 @@ function readHandoff(file) {
   }
 }
 
+// pilot 23 (cc-capytal-war S06): a Claude Code writer that waits on `Monitor` / run_in_background work ends its turn
+// between events. The TUI is idle then, but the screen says "N monitors still running" and the footer "· N monitors"
+// (also "N shells", "← N agents"). That is a working agent, not a stalled one: the runner nudged and respawned it
+// (killing the monitors) twice. The idle streak is held while such a screen keeps changing; one that stays
+// byte-identical for BG_STUCK_MS counts as idle again, so a truly stuck agent is still caught.
+const BG_STUCK_MS = Number(process.env.ORCA_WAIT_BG_STUCK_MS ?? 45 * 60 * 1000);
+const BG_WORK = /\b\d+ (?:monitors?|shells?|background (?:tasks?|shells?|commands?))\b/i;
+const BG_AGENTS = /[·←]\s*\d+ agents?\b/;
+
+/** Live background work on an idle terminal's screen (the last lines: status line + footer). → { what, hash } | null */
+function backgroundWork(handle) {
+  try {
+    const rd = orcaJson(['terminal', 'read', '--terminal', handle], PROBE_CALL_MS);
+    const term = rd.parsed?.result?.terminal ?? rd.parsed?.result;
+    const lines = textOf(term?.tail).split('\n').filter((l) => l.trim()).slice(-8);
+    const what = [];
+    for (const l of lines) {
+      for (const m of [l.match(BG_WORK), l.match(BG_AGENTS)]) {
+        const t = m && m[0].replace(/^[·←]\s*/, '');
+        if (t && !what.includes(t)) what.push(t);
+      }
+    }
+    return what.length ? { what: what.join(', '), hash: crypto.createHash('sha1').update(lines.join('\n')).digest('hex') } : null;
+  } catch {
+    return null; // a failing probe never breaks the wait
+  }
+}
+
 function lane(v) {
   if (!v.handoff || !v.state) fail('lane needs --handoff <HANDOFF.json> and --state <file>');
   if (!v.run && !v.handle) fail('lane needs --run <run_id> (fleet) or --handle <h> (single lane)');
@@ -350,16 +384,25 @@ function lane(v) {
   const handoffChanged = after.mtime !== baseMtime;
   const handleChanged = Boolean(prev.handle && handle && prev.handle !== handle);
   // a new terminal (resume lane, takeover) starts its own streak
-  const idleStreak = event === 'idle' ? (!handoffChanged && !handleChanged ? (prev.idle_streak || 0) + 1 : 1) : 0;
+  let idleStreak = event === 'idle' ? (!handoffChanged && !handleChanged ? (prev.idle_streak || 0) + 1 : 1) : 0;
+  // an idle screen that shows live background work is a busy agent: hold the streak, until the screen stops changing
+  const bg = event === 'idle' && handle ? backgroundWork(handle) : null;
+  let bgChanged = null;
+  let bgStuck = false;
+  if (bg) {
+    bgChanged = prev.bg_hash === bg.hash && prev.bg_changed_at ? prev.bg_changed_at : Date.now();
+    bgStuck = Date.now() - bgChanged >= BG_STUCK_MS;
+    if (!bgStuck) idleStreak = 0;
+  }
   const out = {
     event, handle, handle_changed: handleChanged, ...(errorText ? { error: errorText } : {}),
     ...(event === 'terminal-missing' && missingWhy ? { error: missingWhy } : {}),
     ...(staleRechecks ? { stale_rechecks: staleRechecks } : {}),
     status: after.status, detail: after.detail, sha: after.sha, handoff_changed: handoffChanged,
-    idle_streak: idleStreak, pending_gates: pendingGates, unread_to_run: unread, waited_ms: Date.now() - started,
+    idle_streak: idleStreak, ...(bg ? { background: bg.what, ...(bgStuck ? { background_stuck: true } : {}) } : {}), pending_gates: pendingGates, unread_to_run: unread, waited_ms: Date.now() - started,
   };
   fs.mkdirSync(path.dirname(path.resolve(v.state)), { recursive: true });
-  const next = { ...prev, handle, last_mtime: after.mtime, last_status: after.status, idle_streak: idleStreak, last_event: event, updated: new Date().toISOString() };
+  const next = { ...prev, handle, last_mtime: after.mtime, last_status: after.status, idle_streak: idleStreak, bg_hash: bg ? bg.hash : null, bg_changed_at: bg ? bgChanged : null, last_event: event, updated: new Date().toISOString() };
   fs.writeFileSync(`${v.state}.tmp`, JSON.stringify(next, null, 1));
   fs.renameSync(`${v.state}.tmp`, v.state);
   return out;
