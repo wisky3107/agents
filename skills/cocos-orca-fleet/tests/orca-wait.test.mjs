@@ -254,7 +254,7 @@ test('lane (single): an idle screen with live background work (monitors, shells)
   fs.writeFileSync(state, JSON.stringify({ handle: 'term_w1', last_mtime: fs.statSync(handoff).mtimeMs, idle_streak: 2 }));
   for (let i = 0; i < 3; i++) {
     const a = run(bin, args).out;
-    assert.deepEqual([a.event, a.idle_streak, a.background, a.background_stuck], ['idle', 0, '2 monitors, 1 agent', undefined]);
+    assert.deepEqual([a.event, a.idle_streak, a.background, a.background_stuck], ['idle', 0, '2 monitors', undefined]);
   }
   // same screen, the clock past the limit: idle again
   const stuck = run(bin, args, { ORCA_WAIT_BG_STUCK_MS: '0' }).out;
@@ -276,6 +276,10 @@ test('lane (single): an idle screen with live background work (monitors, shells)
   fs.writeFileSync(path.join(bin, 'read.json'), JSON.stringify(screen('● Done for now.', '  ⏵⏵ bypass permissions on')));
   const plain = run(bin, args).out;
   assert.deepEqual([plain.idle_streak, plain.background], [1, undefined]);
-  assert.equal(run(bin, args).out.idle_streak, 2);
+  // the Orca worker footer "← 1 agent" is there on every idle writer: not background work (pilot 23 S10)
+  fs.writeFileSync(path.join(bin, 'read.json'), JSON.stringify(screen('✻ Cogitated for 29s · done 8:13 PM', '  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← 1 agent')));
+  const orcaFooter = run(bin, args).out;
+  assert.deepEqual([orcaFooter.idle_streak, orcaFooter.background], [2, undefined]);
+  assert.equal(run(bin, args).out.idle_streak, 3);
   fs.rmSync(bin, { recursive: true });
 });

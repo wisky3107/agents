@@ -284,14 +284,15 @@ function readHandoff(file) {
 
 // pilot 23 (cc-capytal-war S06): a Claude Code writer that waits on `Monitor` / run_in_background work ends its turn
 // between events. The TUI is idle then, but the screen says "N monitors still running" and the footer "· N monitors"
-// (also "N shells", "← N agents"). That is a working agent, not a stalled one: the runner nudged and respawned it
+// (also "N shells", "· N background agents"). That is a working agent, not a stalled one: the runner nudged and respawned it
 // (killing the monitors) twice. The idle streak is held while such a screen keeps changing; one that stays
 // byte-identical for BG_STUCK_MS counts as idle again, so a truly stuck agent is still caught.
 const BG_STUCK_MS = Number(process.env.ORCA_WAIT_BG_STUCK_MS ?? 45 * 60 * 1000);
 const BG_MAX_MS = Number(process.env.ORCA_WAIT_BG_MAX_MS ?? 4 * 60 * 60 * 1000); // ticking status lines can keep the screen "changing": a hard ceiling
 const BG_UNIT = '\\d+ (?:monitors?|shells?|background (?:tasks?|shells?|commands?))';
 const BG_WORK = new RegExp(`(?:[·←]\\s*${BG_UNIT}\\b|^\\s*${BG_UNIT}\\s*(?:[·←↓]|$)|\\b${BG_UNIT} still running)`, 'i'); // footer "· 2 monitors" / "1 shell · ↓ to manage" / status "2 monitors still running", not prose
-const BG_AGENTS = /[·←]\s*\d+ (?:local |background )?agents?\b/;
+// "← 1 agent" is on every Orca worker's footer, idle or not (pilot 23 S10: it held a finished writer for 45 min): never count it
+const BG_AGENTS = /·\s*\d+ (?:local |background )agents?\b/;
 
 /** Live background work on an idle terminal's screen (the last lines: status line + footer). → { what, hash } | null */
 function backgroundWork(handle) {

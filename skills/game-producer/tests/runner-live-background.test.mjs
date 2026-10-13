@@ -69,8 +69,8 @@ test('a live-looking screen that never changes is idle again after ORCA_WAIT_BG_
   assert.equal(q.kind, 'lane_hung', 'asked at once, not a silent first respawn');
   assert.ok(q.options.includes('writer is alive, keep waiting'));
   const row = question(p.root, q.waiting);
-  assert.match(row.text, /live background work \(2 monitors, 1 agent\)/);
-  assert.equal(row.background, '2 monitors, 1 agent');
+  assert.match(row.text, /live background work \(2 monitors\)/);
+  assert.equal(row.background, '2 monitors');
   assert.equal(row.answer, null, 'autopilot does not respawn a writer whose screen shows background work');
   assert.equal(out.some((o) => o.autopilot), false);
   assert.deepEqual([f.closes().length, f.spawns().length], [0, 1], 'nothing closed, no resume lane');
