@@ -116,10 +116,13 @@ Verify that the exact destination exists, is a regular non-empty file, and has a
 
 For every `other game asset`, inspect the downloaded PNG rather than trusting its filename or preview. Confirm it has an alpha channel and contains both fully transparent pixels (`alpha = 0`) and visible pixels (`alpha > 0`). A uniform opaque background, fake checkerboard, black/white matte, or alpha channel with no transparent pixels fails verification. Ask ChatGPT to regenerate that worker once with the alpha-channel contract strengthened, then download and verify again. If it still fails, report the asset as failed and keep the rejected file clearly identified; never claim it as a valid transparent game asset.
 
-After the downloads, close the probe tabs `pick` opened for other accounts: `node <SKILL>/scripts/gpt-profiles.mjs close-probes --keep <worker page ids,…>`.
+After the downloads, close the tabs this run opened, so they don't pile up in Orca's memory:
+- probe tabs `pick` opened for other accounts: `node <SKILL>/scripts/gpt-profiles.mjs close-probes`;
+- each worker tab once its image is saved and verified (or its failure recorded): note the chat URL first (`<ORCA> eval --page <id> --expression 'location.href'`), then `<ORCA> tab close --page <id>`. A later edit or retry reopens that URL in a new tab bound to the same profile (`<ORCA> tab create --url <chat url> --profile <profile id>`).
+Keep a worker tab open only while the user or the caller still needs that chat (an edit queued next in the same conversation).
 
-Completion criterion: one verified raster image exists at each successful worker's final absolute path, and every non-background game asset passes alpha transparency inspection.
+Completion criterion: one verified raster image exists at each successful worker's final absolute path, every non-background game asset passes alpha transparency inspection, and no tab this run opened is still open unless a queued edit needs it.
 
 ## 7. Report
 
-Return the project name and whether its art bible was saved or applied as a prompt fallback, the account profile label(s) used and any rotation with its reason, the art bible, every improved prompt, each successful file as a clickable local link, and any failed worker with its visible error/timeout. State any alternate filename or ChatGPT-side limitation.
+Return the project name and whether its art bible was saved or applied as a prompt fallback, the account profile label(s) used and any rotation with its reason, the art bible, every improved prompt, each successful file as a clickable local link with its chat URL (the tab is closed), and any failed worker with its visible error/timeout. State any alternate filename or ChatGPT-side limitation.
