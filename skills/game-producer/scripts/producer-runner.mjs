@@ -119,6 +119,8 @@ const UNATTENDED_LIMIT = { changes_after_rounds: 2, unknown_status: 3, verdict_m
 function autopilotChoice(root, project, q) {
   const mode = String(project.policy?.tokens?.autopilot ?? project.release.autopilot ?? 'off');
   if ((mode !== 'retry_once' && mode !== 'unattended') || q.answer) return null;
+  // a hung lane whose screen shows live background work (monitors, shells) is working: never respawn it blindly (pilot 23 q2)
+  if (q.background) return null;
   const used = st.readRunner(root).questions.filter((x) => x.id !== q.id && x.slice === q.slice && x.kind === q.kind && x.answer?.by === 'autopilot').length;
   let pick = null;
   if (mode === 'unattended') {
@@ -246,11 +248,12 @@ function stopFor(root, slice, code, detail, extra = {}) {
   const text = `${(q.text || '').replace(/<Sxx>/g, slice || 'Sxx')} ${detail}`.trim();
   let { question, isNew } = st.ask(root, {
     key, slice, kind: code, text, detail, options, ref: extra.ref || null, obs: extra.obs || null,
+    ...(extra.background ? { background: extra.background } : {}),
     ...(extra.also?.length ? { also: extra.also } : {}),
   });
   // the same question still open from an older runner: it gets this runner's options and wording
-  if (!isNew && !question.answer && (JSON.stringify(question.options) !== JSON.stringify(options) || question.text !== text)) {
-    question = st.setQuestion(root, question.id, { options, text });
+  if (!isNew && !question.answer && (JSON.stringify(question.options) !== JSON.stringify(options) || question.text !== text || (extra.background && question.background !== extra.background))) {
+    question = st.setQuestion(root, question.id, { options, text, ...(extra.background ? { background: extra.background } : {}) });
   }
   if (slice) st.log(root, slice, `blocked ${code}: ${detail}${isNew ? ` (question ${question.id})` : ''}`);
   st.writeRunner(root, { slice, step: `blocked:${code}` });

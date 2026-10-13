@@ -623,6 +623,29 @@ function wait(ctx, s, which, opts) {
   return w;
 }
 
+/**
+ * Pilot 23 (cc-capytal-war S06): orca-wait holds the idle streak while the screen shows live background work
+ * (Claude Code "N monitors still running"); a hung question after all that means the screen sat unchanged for
+ * ORCA_WAIT_BG_STUCK_MS. The note tells the human, and autopilot leaves the question alone.
+ */
+const backgroundNote = (w) => (w.background ? ` — its screen shows live background work (${w.background}), unchanged ${w.background_stuck ? 'for a long time' : 'since the last look'}` : '');
+
+/** "Keep waiting" only helps while the terminal exists and the lane has not said blocked. */
+const aliveOption = (w, h) => w.event === 'idle' && h.status !== 'blocked';
+
+/** "Keep waiting" on a live terminal: the idle count (and the screen-unchanged clock) start again, nothing is closed. */
+function keepWaiting(ctx, which) {
+  const file = path.join(st.sliceDir(ctx.project.root, ctx.id), `wait-${which}.json`);
+  let cur = {};
+  try {
+    cur = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    /* no wait state yet */
+  }
+  fs.writeFileSync(`${file}.tmp`, JSON.stringify({ ...cur, idle_streak: 0, bg_changed_at: cur.bg_hash ? Date.now() : null, bg_since: cur.bg_since ? Date.now() : null }, null, 1));
+  fs.renameSync(`${file}.tmp`, file);
+}
+
 const parsedAgain = (root, id, s, h) => {
   if (h.ok && s.bad_handoff) st.writeSliceState(root, id, { bad_handoff: 0 });
 };
@@ -776,9 +799,9 @@ function singleStep(ctx, s, phase) {
       return null;
     }
     if (w.event === 'terminal-missing' || (w.event === 'idle' && w.idle_streak >= 3)) {
-      if ((s.respawns || 0) >= 1 || h.status === 'blocked') {
-        return ask(s, 'lane_hung', `writer ${s.writer} stopped (${w.event}) with HANDOFF ${h.raw || 'missing'}${s.respawns ? ' after a resume lane' : ''}`,
-          ['spawn another resume lane', 'mark blocked', 'stop'], { obs: obs(`lane_hung:${s.writer}`) });
+      if ((s.respawns || 0) >= 1 || h.status === 'blocked' || w.background_stuck) { // a screen that sat on background work for hours is asked, not silently respawned
+        return ask(s, 'lane_hung', `writer ${s.writer} stopped (${w.event}) with HANDOFF ${h.raw || 'missing'}${s.respawns ? ' after a resume lane' : ''}${backgroundNote(w)}`,
+          ['spawn another resume lane', ...(aliveOption(w, h) ? ['writer is alive, keep waiting'] : []), 'mark blocked', 'stop'], { obs: obs(`lane_hung:${s.writer}`), ...(w.background ? { background: w.background } : {}) });
       }
       return resumeWriter(ctx, s, `stopped (${w.event}, idle_streak ${w.idle_streak})`);
     }
@@ -856,7 +879,7 @@ function singleStep(ctx, s, phase) {
       return null;
     }
     if (w.event === 'terminal-missing' || (w.event === 'idle' && w.idle_streak >= 3)) {
-      return ask(s, 'reviewer_hung', `reviewer ${s.reviewer} stopped without a verdict (${w.event})`, ['spawn a fresh reviewer', 'mark blocked', 'stop'], { obs: obs(`reviewer_hung:${s.reviewer}`) });
+      return ask(s, 'reviewer_hung', `reviewer ${s.reviewer} stopped without a verdict (${w.event})${backgroundNote(w)}`, ['spawn a fresh reviewer', ...(aliveOption(w, h) ? ['reviewer is alive, keep waiting'] : []), 'mark blocked', 'stop'], { obs: obs(`reviewer_hung:${s.reviewer}`), ...(w.background ? { background: w.background } : {}) });
     }
     if (h.fresh && !h.status) {
       return ask(s, 'unknown_status', `reviewer HANDOFF status "${h.raw ?? '(none)'}" is not one the runner knows`, ['treat as working, keep waiting', 'treat as approved', 'treat as changes_requested', 'mark blocked', 'stop'], { obs: obs('unknown_status') });
@@ -1356,6 +1379,12 @@ export function applyAnswer(ctx, q) {
       return sendOnce(ctx, `commit:${q.id}`, laneHandle, commitText(ctx), { commit_idles: 0 });
     case 'lane_hung:spawn another resume lane':
       return resumeWriter(ctx, s, 'stopped (human: another resume lane)');
+    case 'lane_hung:writer is alive, keep waiting':
+      st.log(root, id, `writer ${s.writer} is alive (answered): idle count restarts, terminal kept`);
+      return keepWaiting(ctx, 'writer');
+    case 'reviewer_hung:reviewer is alive, keep waiting':
+      st.log(root, id, `reviewer ${s.reviewer} is alive (answered): idle count restarts, terminal kept`);
+      return keepWaiting(ctx, 'reviewer');
     case 'reviewer_hung:spawn a fresh reviewer':
     case 'infra_blocked:spawn a fresh reviewer':
     case 'infra_blocked:writer refreshed the preview, review again':

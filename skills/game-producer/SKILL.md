@@ -59,7 +59,9 @@ node ~/.agents/skills/game-producer/scripts/producer-runner.mjs start --dry-run 
   logged as `autopilot on qN`:
   - `retry_once`: the routine "try again" answers, once per slice and kind — commit_stalled → resend
     commit, reviewer_hung → a fresh reviewer, lane_hung → another resume lane, changes_after_rounds →
-    one more fix round, orca_error → retry;
+    one more fix round, orca_error → retry (not lane_hung / reviewer_hung when the lane's screen shows
+    live background work such as "2 monitors still running": those questions also offer "writer is alive,
+    keep waiting" / "reviewer is alive, keep waiting", which closes nothing; such a question waits for the director even under `unattended`, and orca-wait counts the lane idle again once that screen sat unchanged 45 min or showed background work 4 h);
   - `unattended`: `retry_once`, plus a director's standing "run every slice, answer for me" — every
     director_gate → `<Sxx> GIVEN — record it` (the policy line says autopilot gave it), an unknown
     status → keep waiting, verdict_mismatch → whatever the newest review file says (APPROVED or
