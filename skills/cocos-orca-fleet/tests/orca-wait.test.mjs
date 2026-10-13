@@ -267,10 +267,15 @@ test('lane (single): an idle screen with live background work (monitors, shells)
   fs.writeFileSync(path.join(bin, 'read.json'), JSON.stringify(screen('● tick 1', '  ⏵⏵ bypass permissions on · 1 monitor')));
   const ticking = run(bin, args, { ORCA_WAIT_BG_STUCK_MS: '600000', ORCA_WAIT_BG_MAX_MS: '0' }).out;
   assert.deepEqual([ticking.idle_streak, ticking.background_stuck], [1, true]);
+  // a footer that starts with the count, and a new terminal restarting the ceiling clock
+  fs.writeFileSync(path.join(bin, 'read.json'), JSON.stringify(screen('● x', '  1 shell · ↓ to manage')));
+  fs.writeFileSync(state, JSON.stringify({ handle: 'term_old', last_mtime: fs.statSync(handoff).mtimeMs, idle_streak: 2, bg_since: 1, bg_hash: 'x', bg_changed_at: 1 }));
+  const fresh = run(bin, args, { ORCA_WAIT_BG_STUCK_MS: '600000', ORCA_WAIT_BG_MAX_MS: '600000' }).out;
+  assert.deepEqual([fresh.idle_streak, fresh.background, fresh.background_stuck], [0, '1 shell', undefined]);
   // no background work on the screen: the plain idle streak
   fs.writeFileSync(path.join(bin, 'read.json'), JSON.stringify(screen('● Done for now.', '  ⏵⏵ bypass permissions on')));
   const plain = run(bin, args).out;
-  assert.deepEqual([plain.idle_streak, plain.background], [2, undefined]); // continues the streak the ceiling started
-  assert.equal(run(bin, args).out.idle_streak, 3);
+  assert.deepEqual([plain.idle_streak, plain.background], [1, undefined]);
+  assert.equal(run(bin, args).out.idle_streak, 2);
   fs.rmSync(bin, { recursive: true });
 });

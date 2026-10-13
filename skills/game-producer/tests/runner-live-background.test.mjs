@@ -85,13 +85,31 @@ test('a live-looking screen that never changes is idle again after ORCA_WAIT_BG_
   assert.match(log(p.root), /writer term_1 is alive \(answered\): idle count restarts, terminal kept/);
 });
 
-test('no "alive, keep waiting" option when the terminal is gone', () => {
+test('no "alive, keep waiting" option when the terminal is gone; the ceiling clock restarts on "keep waiting"', () => {
   const p = single();
   const f = fakes();
-  f.queue([{ name: 'gone', result: 'missing' }, { name: 'gone again', result: 'missing' }, { name: 'gone 3', result: 'missing' }]);
+  f.queue([{ name: 'gone', result: 'missing', dead: ['term_1'] }, { name: 'gone again', result: 'missing', dead: ['term_2'] }]);
   const out = runner(p.root, f, 'start', '--once').out;
-  const q = out.find((o) => o.kind === 'lane_hung' || o.blocked === 'lane_hung');
-  if (q) assert.ok(!q.options.includes('writer is alive, keep waiting'));
+  const q = out.at(-1);
+  assert.equal(q.kind, 'lane_hung');
+  assert.ok(!q.options.includes('writer is alive, keep waiting'));
+  assert.deepEqual(q.options.slice(-2), ['mark blocked', 'stop']);
+
+  // the 4 h ceiling: "keep waiting" restarts its clock, so the question is not re-asked at once
+  const r = single();
+  const g = fakes();
+  g.screens(screen('term_1', MONITORS));
+  g.queue(idle(5));
+  const first = runner(r.root, g, 'start', '--once', { env: { ORCA_WAIT_BG_MAX_MS: '1' } }).out.at(-1);
+  assert.equal(first.kind, 'lane_hung');
+  const stateFile = path.join(path.dirname(ev(r.root, 'S01', 'producer-state.json')), 'wait-writer.json');
+  const before = JSON.parse(fs.readFileSync(stateFile, 'utf8')).bg_since;
+  runner(r.root, g, 'answer', '--id', first.waiting, '--choice', 'writer is alive, keep waiting');
+  g.queue(idle(1));
+  runner(r.root, g, 'start', '--once', { env: { ORCA_WAIT_BG_MAX_MS: '600000' } });
+  const after = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  assert.ok(after.bg_since > before, 'bg_since restarted');
+  assert.equal(after.idle_streak, 0);
 });
 
 test('autopilot still respawns a hung writer that shows no background work', () => {

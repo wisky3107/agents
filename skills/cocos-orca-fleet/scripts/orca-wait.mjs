@@ -290,7 +290,7 @@ function readHandoff(file) {
 const BG_STUCK_MS = Number(process.env.ORCA_WAIT_BG_STUCK_MS ?? 45 * 60 * 1000);
 const BG_MAX_MS = Number(process.env.ORCA_WAIT_BG_MAX_MS ?? 4 * 60 * 60 * 1000); // ticking status lines can keep the screen "changing": a hard ceiling
 const BG_UNIT = '\\d+ (?:monitors?|shells?|background (?:tasks?|shells?|commands?))';
-const BG_WORK = new RegExp(`(?:[·←]\\s*${BG_UNIT}\\b|\\b${BG_UNIT} still running)`, 'i'); // footer "· 2 monitors" / status "2 monitors still running", not prose
+const BG_WORK = new RegExp(`(?:[·←]\\s*${BG_UNIT}\\b|^\\s*${BG_UNIT}\\s*(?:[·←↓]|$)|\\b${BG_UNIT} still running)`, 'i'); // footer "· 2 monitors" / "1 shell · ↓ to manage" / status "2 monitors still running", not prose
 const BG_AGENTS = /[·←]\s*\d+ (?:local |background )?agents?\b/;
 
 /** Live background work on an idle terminal's screen (the last lines: status line + footer). → { what, hash } | null */
@@ -302,7 +302,7 @@ function backgroundWork(handle) {
     const what = [];
     for (const l of lines) {
       for (const m of [l.match(BG_WORK), l.match(BG_AGENTS)]) {
-        const t = m && m[0].replace(/^[·←]\s*/, '');
+        const t = m && m[0].replace(/^[\s·←]+/, '').replace(/[\s·←↓]+$/, '');
         if (t && !what.includes(t)) what.push(t);
       }
     }
@@ -394,8 +394,10 @@ function lane(v) {
   let bgStuck = false;
   let bgSince = null;
   if (bg) {
-    bgChanged = prev.bg_hash === bg.hash && prev.bg_changed_at ? prev.bg_changed_at : Date.now();
-    bgSince = prev.bg_since || Date.now();
+    // a new terminal, or progress in the HANDOFF, starts both clocks again
+    const same = !handleChanged && !handoffChanged;
+    bgChanged = same && prev.bg_hash === bg.hash && prev.bg_changed_at ? prev.bg_changed_at : Date.now();
+    bgSince = same && prev.bg_since ? prev.bg_since : Date.now();
     bgStuck = Date.now() - bgChanged >= BG_STUCK_MS || Date.now() - bgSince >= BG_MAX_MS;
     if (!bgStuck) idleStreak = 0;
   }
@@ -407,7 +409,7 @@ function lane(v) {
     idle_streak: idleStreak, ...(bg ? { background: bg.what, ...(bgStuck ? { background_stuck: true } : {}) } : {}), pending_gates: pendingGates, unread_to_run: unread, waited_ms: Date.now() - started,
   };
   fs.mkdirSync(path.dirname(path.resolve(v.state)), { recursive: true });
-  const next = { ...prev, handle, last_mtime: after.mtime, last_status: after.status, idle_streak: idleStreak, bg_hash: bg ? bg.hash : null, bg_changed_at: bg ? bgChanged : null, bg_since: bg ? bgSince : event === 'idle' ? null : prev.bg_since ?? null, last_event: event, updated: new Date().toISOString() };
+  const next = { ...prev, handle, last_mtime: after.mtime, last_status: after.status, idle_streak: idleStreak, bg_hash: bg ? bg.hash : null, bg_changed_at: bg ? bgChanged : null, bg_since: bg ? bgSince : event === 'idle' || handleChanged || handoffChanged ? null : prev.bg_since ?? null, last_event: event, updated: new Date().toISOString() };
   fs.writeFileSync(`${v.state}.tmp`, JSON.stringify(next, null, 1));
   fs.renameSync(`${v.state}.tmp`, v.state);
   return out;

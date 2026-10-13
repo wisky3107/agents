@@ -642,7 +642,7 @@ function keepWaiting(ctx, which) {
   } catch {
     /* no wait state yet */
   }
-  fs.writeFileSync(`${file}.tmp`, JSON.stringify({ ...cur, idle_streak: 0, bg_changed_at: cur.bg_hash ? Date.now() : null }, null, 1));
+  fs.writeFileSync(`${file}.tmp`, JSON.stringify({ ...cur, idle_streak: 0, bg_changed_at: cur.bg_hash ? Date.now() : null, bg_since: cur.bg_since ? Date.now() : null }, null, 1));
   fs.renameSync(`${file}.tmp`, file);
 }
 
