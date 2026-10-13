@@ -263,10 +263,14 @@ test('lane (single): an idle screen with live background work (monitors, shells)
   fs.writeFileSync(path.join(bin, 'read.json'), JSON.stringify(screen('● Monitor event: tests passed', '  ⏵⏵ bypass permissions on · 1 monitor')));
   const moved = run(bin, args, { ORCA_WAIT_BG_STUCK_MS: '600000' }).out;
   assert.deepEqual([moved.idle_streak, moved.background_stuck], [0, undefined]);
+  // a screen that keeps changing (ticking status line) still counts once background work was seen for ORCA_WAIT_BG_MAX_MS
+  fs.writeFileSync(path.join(bin, 'read.json'), JSON.stringify(screen('● tick 1', '  ⏵⏵ bypass permissions on · 1 monitor')));
+  const ticking = run(bin, args, { ORCA_WAIT_BG_STUCK_MS: '600000', ORCA_WAIT_BG_MAX_MS: '0' }).out;
+  assert.deepEqual([ticking.idle_streak, ticking.background_stuck], [1, true]);
   // no background work on the screen: the plain idle streak
   fs.writeFileSync(path.join(bin, 'read.json'), JSON.stringify(screen('● Done for now.', '  ⏵⏵ bypass permissions on')));
   const plain = run(bin, args).out;
-  assert.deepEqual([plain.idle_streak, plain.background], [1, undefined]);
-  assert.equal(run(bin, args).out.idle_streak, 2);
+  assert.deepEqual([plain.idle_streak, plain.background], [2, undefined]); // continues the streak the ceiling started
+  assert.equal(run(bin, args).out.idle_streak, 3);
   fs.rmSync(bin, { recursive: true });
 });

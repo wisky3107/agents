@@ -252,8 +252,8 @@ function stopFor(root, slice, code, detail, extra = {}) {
     ...(extra.also?.length ? { also: extra.also } : {}),
   });
   // the same question still open from an older runner: it gets this runner's options and wording
-  if (!isNew && !question.answer && (JSON.stringify(question.options) !== JSON.stringify(options) || question.text !== text)) {
-    question = st.setQuestion(root, question.id, { options, text });
+  if (!isNew && !question.answer && (JSON.stringify(question.options) !== JSON.stringify(options) || question.text !== text || (extra.background && question.background !== extra.background))) {
+    question = st.setQuestion(root, question.id, { options, text, ...(extra.background ? { background: extra.background } : {}) });
   }
   if (slice) st.log(root, slice, `blocked ${code}: ${detail}${isNew ? ` (question ${question.id})` : ''}`);
   st.writeRunner(root, { slice, step: `blocked:${code}` });

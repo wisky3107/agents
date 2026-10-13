@@ -47,6 +47,7 @@ test('footer-only and shell wording count; text far above the footer does not', 
   for (const [name, lines, live] of [
     ['footer monitors', ['x', '  ⏵⏵ bypass permissions on · 1 monitor'], true],
     ['shells', ['x', '  ⏵⏵ bypass permissions on · 1 shell'], true],
+    ['prose inside the window', ['the build ran 3 monitors', 'x'], false],
     ['old output', ['the build ran 3 monitors', ...Array.from({ length: 10 }, (_, i) => `line ${i}`)], false],
   ]) {
     const p = single();
@@ -58,31 +59,39 @@ test('footer-only and shell wording count; text far above the footer does not', 
   }
 });
 
-test('a live-looking screen that never changes is idle again after ORCA_WAIT_BG_STUCK_MS; lane_hung then names the screen and autopilot leaves it', () => {
+test('a live-looking screen that never changes is idle again after ORCA_WAIT_BG_STUCK_MS: lane_hung names the screen, offers "alive, keep waiting", autopilot leaves it', () => {
   const p = single('  autopilot: retry_once\n');
   const f = fakes();
-  f.screens({ ...screen('term_1', MONITORS), ...screen('term_2', MONITORS) });
-  f.queue([...idle(5), ...idle(5)]);
+  f.screens(screen('term_1', MONITORS));
+  f.queue(idle(5));
   const out = runner(p.root, f, 'start', '--once', { env: { ORCA_WAIT_BG_STUCK_MS: '1' } }).out;
-  assert.match(log(p.root), /writer term_1 stopped \(idle, idle_streak 3\): resume lane/, 'a stuck screen still gets the resume lane');
   const q = out.at(-1);
-  assert.equal(q.kind, 'lane_hung');
+  assert.equal(q.kind, 'lane_hung', 'asked at once, not a silent first respawn');
   assert.ok(q.options.includes('writer is alive, keep waiting'));
   const row = question(p.root, q.waiting);
   assert.match(row.text, /live background work \(2 monitors, 1 agent\)/);
+  assert.equal(row.background, '2 monitors, 1 agent');
   assert.equal(row.answer, null, 'autopilot does not respawn a writer whose screen shows background work');
   assert.equal(out.some((o) => o.autopilot), false);
-  assert.equal(f.closes().length, 1, 'only the first writer was closed');
+  assert.deepEqual([f.closes().length, f.spawns().length], [0, 1], 'nothing closed, no resume lane');
 
   // "writer is alive, keep waiting": nothing is closed or spawned, the idle count starts again
-  const spawns = f.spawns().length;
   runner(p.root, f, 'answer', '--id', q.waiting, '--choice', 'writer is alive, keep waiting');
   f.queue([{ name: 'ready', write: { ...W('ready_for_review'), ...preview } }, { name: 'approved', write: R('approved', 'APPROVED') }, commitStep('S01')]);
   const after = runner(p.root, f, 'start', '--once', { env: { ORCA_WAIT_BG_STUCK_MS: '60000' } }).out;
   assert.equal(after.find((o) => o.merged)?.commit, lastCommit(f));
-  assert.equal(f.spawns().length, spawns + 1, 'only the reviewer was spawned');
-  assert.equal(f.closes().filter((h) => h === 'term_2').length, 1, 'the live writer was closed only after its commit');
-  assert.match(log(p.root), /writer term_2 is alive \(answered\): idle count restarts, terminal kept/);
+  assert.equal(f.spawns().length, 2, 'only the reviewer was spawned');
+  assert.deepEqual(f.closes(), ['term_2', 'term_1'], 'the live writer was closed only after its commit');
+  assert.match(log(p.root), /writer term_1 is alive \(answered\): idle count restarts, terminal kept/);
+});
+
+test('no "alive, keep waiting" option when the terminal is gone', () => {
+  const p = single();
+  const f = fakes();
+  f.queue([{ name: 'gone', result: 'missing' }, { name: 'gone again', result: 'missing' }, { name: 'gone 3', result: 'missing' }]);
+  const out = runner(p.root, f, 'start', '--once').out;
+  const q = out.find((o) => o.kind === 'lane_hung' || o.blocked === 'lane_hung');
+  if (q) assert.ok(!q.options.includes('writer is alive, keep waiting'));
 });
 
 test('autopilot still respawns a hung writer that shows no background work', () => {

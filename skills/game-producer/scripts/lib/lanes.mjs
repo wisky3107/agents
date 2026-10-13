@@ -630,6 +630,9 @@ function wait(ctx, s, which, opts) {
  */
 const backgroundNote = (w) => (w.background ? ` — its screen shows live background work (${w.background}), unchanged ${w.background_stuck ? 'for a long time' : 'since the last look'}` : '');
 
+/** "Keep waiting" only helps while the terminal exists and the lane has not said blocked. */
+const aliveOption = (w, h) => w.event === 'idle' && h.status !== 'blocked';
+
 /** "Keep waiting" on a live terminal: the idle count (and the screen-unchanged clock) start again, nothing is closed. */
 function keepWaiting(ctx, which) {
   const file = path.join(st.sliceDir(ctx.project.root, ctx.id), `wait-${which}.json`);
@@ -796,9 +799,9 @@ function singleStep(ctx, s, phase) {
       return null;
     }
     if (w.event === 'terminal-missing' || (w.event === 'idle' && w.idle_streak >= 3)) {
-      if ((s.respawns || 0) >= 1 || h.status === 'blocked') {
+      if ((s.respawns || 0) >= 1 || h.status === 'blocked' || w.background_stuck) { // a screen that sat on background work for hours is asked, not silently respawned
         return ask(s, 'lane_hung', `writer ${s.writer} stopped (${w.event}) with HANDOFF ${h.raw || 'missing'}${s.respawns ? ' after a resume lane' : ''}${backgroundNote(w)}`,
-          ['spawn another resume lane', 'writer is alive, keep waiting', 'mark blocked', 'stop'], { obs: obs(`lane_hung:${s.writer}`), ...(w.background ? { background: w.background } : {}) });
+          ['spawn another resume lane', ...(aliveOption(w, h) ? ['writer is alive, keep waiting'] : []), 'mark blocked', 'stop'], { obs: obs(`lane_hung:${s.writer}`), ...(w.background ? { background: w.background } : {}) });
       }
       return resumeWriter(ctx, s, `stopped (${w.event}, idle_streak ${w.idle_streak})`);
     }
@@ -876,7 +879,7 @@ function singleStep(ctx, s, phase) {
       return null;
     }
     if (w.event === 'terminal-missing' || (w.event === 'idle' && w.idle_streak >= 3)) {
-      return ask(s, 'reviewer_hung', `reviewer ${s.reviewer} stopped without a verdict (${w.event})${backgroundNote(w)}`, ['spawn a fresh reviewer', 'reviewer is alive, keep waiting', 'mark blocked', 'stop'], { obs: obs(`reviewer_hung:${s.reviewer}`), ...(w.background ? { background: w.background } : {}) });
+      return ask(s, 'reviewer_hung', `reviewer ${s.reviewer} stopped without a verdict (${w.event})${backgroundNote(w)}`, ['spawn a fresh reviewer', ...(aliveOption(w, h) ? ['reviewer is alive, keep waiting'] : []), 'mark blocked', 'stop'], { obs: obs(`reviewer_hung:${s.reviewer}`), ...(w.background ? { background: w.background } : {}) });
     }
     if (h.fresh && !h.status) {
       return ask(s, 'unknown_status', `reviewer HANDOFF status "${h.raw ?? '(none)'}" is not one the runner knows`, ['treat as working, keep waiting', 'treat as approved', 'treat as changes_requested', 'mark blocked', 'stop'], { obs: obs('unknown_status') });
