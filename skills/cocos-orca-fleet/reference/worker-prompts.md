@@ -414,7 +414,8 @@ Static (commit-guard gates 1–4, read-only):
   (`node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice <plan_source> --out evidence/static-check.txt`):
   each FAIL line is a finding (owner code; `evidence` lines owner scene), and so is each WARN
   scope line integration-notes.md does not declare, each WARN scene line it does not declare (owner
-  scene; check the node on the preview), and each WARN assumptions line (a "tune on the
+  scene; check the node on the preview; a `pre-existing:` line is the base's, a followup at most), and
+  each WARN assumptions line (a "tune on the
   preview" note left in code; minor, major if it positions art). Rule on each row this slice added to
   scripts/smoke/known-red.json: the cause is outside the slice, or it is a finding. static-smoke.json
   beside static-check.txt is the full smoke run: read it, do not rerun the corpus. Redo one `## negative controls` line: a check

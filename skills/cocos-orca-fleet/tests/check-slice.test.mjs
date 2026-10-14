@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { specCommands, slicePaths, outOfScope, nanUnsafe, es5Errors, sliceFacts, evidenceRe, section, classifyErrors, assumptionNotes, errorKey, splitAgainstBaseline, renameMap, defaultBase, smokeVerdict, smokePort, parseKnownRed, reusableSmoke, smokeArgs, smokeEstimateMs, smokeGroups, smokeGate, sceneFindings, textWidth } from '../scripts/check-slice.mjs';
+import { specCommands, slicePaths, outOfScope, nanUnsafe, es5Errors, sliceFacts, evidenceRe, section, classifyErrors, assumptionNotes, errorKey, splitAgainstBaseline, renameMap, defaultBase, smokeVerdict, smokePort, parseKnownRed, reusableSmoke, smokeArgs, smokeEstimateMs, smokeGroups, smokeGate, sceneFindings, textWidth, splitScene } from '../scripts/check-slice.mjs';
 
 const SCRIPT = new URL('../scripts/check-slice.mjs', import.meta.url).pathname;
 
@@ -625,5 +625,29 @@ test('end to end: scene WARNs only for changed .scene/.prefab files, every file 
   assert.equal(r.status, 0);  // WARN, never a block
   assert.match(r.stdout, /WARN scene: 1 scene\/text problem\(s\) in 1 file\(s\)[^\n]*\n  assets\/scenes\/game\.scene: game\/Canvas: Canvas has no Widget/);
   r = exec(d, '--only', 'scene', '--all-checks');
-  assert.match(r.stdout, /WARN scene: 2 scene\/text problem\(s\) in 2 file\(s\)/);
+  assert.match(r.stdout, /WARN scene: 1 scene\/text problem\(s\) in 2 file\(s\)[^\n]*; 1 pre-existing at the base, not this slice's/);  // old.scene is unchanged since the base
+});
+
+test('end to end: a touched prefab keeps its old layout debt as pre-existing; a problem the slice adds is new', () => {
+  const { d, g } = repo();
+  fs.mkdirSync(path.join(d, 'assets/ui'), { recursive: true });
+  const short = { name: 'Label - Ticket', text: '0', size: 50, ov: 2, w: 222, h: 40 };
+  fs.writeFileSync(path.join(d, 'assets/ui/PopupJackpot.prefab'), JSON.stringify(sceneDoc({ labels: [short] })));
+  g('add', '-A'); g('commit', '-qm', 'base');
+  // the slice renames a member elsewhere in the prefab: the ticket box is the base's
+  const doc = sceneDoc({ labels: [short] }); doc[3]._name = 'Main Camera';  // a node outside the label's path
+  fs.writeFileSync(path.join(d, 'assets/ui/PopupJackpot.prefab'), JSON.stringify(doc));
+  let r = exec(d, '--only', 'scene');
+  assert.match(r.stdout, /WARN scene: 1 pre-existing scene\/text problem\(s\) at the base in the 1 file\(s\) this slice touched — not this slice's/);
+  assert.match(r.stdout, /\n  pre-existing: assets\/ui\/PopupJackpot\.prefab: [^\n]*Label - Ticket/);
+  // now the slice also adds a label that cannot hold its text
+  fs.writeFileSync(path.join(d, 'assets/ui/PopupJackpot.prefab'), JSON.stringify(sceneDoc({ labels: [short, { name: 'Label - Cash', text: 'Cash prize of the week', size: 40, ov: 1, w: 120, h: 50 }] })));
+  r = exec(d, '--only', 'scene');
+  assert.match(r.stdout, /WARN scene: 1 scene\/text problem\(s\) in 1 file\(s\)[^\n]*; 1 pre-existing at the base/);
+  assert.match(r.stdout, /\n  assets\/ui\/PopupJackpot\.prefab: [^\n]*Label - Cash[^\n]*\n  pre-existing: [^\n]*Label - Ticket/);
+});
+
+test('splitScene: a line counts as pre-existing as often as the base had it', () => {
+  assert.deepEqual(splitScene(['a', 'a', 'b'], ['a', 'c']), [['a', 'b'], ['a']]);
+  assert.deepEqual(splitScene(['a'], []), [['a'], []]);
 });

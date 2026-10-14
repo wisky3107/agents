@@ -92,7 +92,8 @@ Build:
    outside this slice goes into scripts/smoke/known-red.json (`"<id>": {"since", "followup", "reason"}`);
    fix every other red one. Declare each WARN scope line in integration-notes.md; measure each WARN assumptions value from
    the art or list it under `## gaps`; fix each WARN scene line (Canvas camera / Canvas or dim Widget /
-   Label box) or declare the node in integration-notes.md as laid out by code. The producer reruns it
+   Label box) or declare the node in integration-notes.md as laid out by code (`pre-existing:` lines
+   were there at the base: leave them). The producer reruns it
    before the reviewer and sends a FAIL back to you.
 6. Budget: stage, `bash .cursor/skills/setup-pre-commit/check-change-budget.sh --report`, unstage;
    paste the line into <EVIDENCE_DIR>/integration-notes.md. Budget mode <BUDGET_MODE>:
@@ -171,7 +172,8 @@ not explain it, you may run one stuck lookup: `M=~/.orca-memory/bin/orca-memory;
    code). tsc/lint output read, not assumed. Read <EVIDENCE_DIR>/static-check.txt (the producer's
    check-slice run; rerun it, with the same `--base <BASE>`, if missing or older than the last code change): each FAIL line is a
    finding (owner code), and so is each WARN scope line integration-notes.md does not declare, each
-   WARN scene line it does not declare (owner scene; check the node on the preview), and each
+   WARN scene line it does not declare (owner scene; check the node on the preview; a `pre-existing:`
+   line is the base's, a followup at most), and each
    WARN assumptions line (a "tune on the preview" note left in code; minor, major if it positions art).
    Rule on each row this slice added to scripts/smoke/known-red.json: the cause is outside the slice,
    or it is a finding. static-smoke.json beside it is the full smoke run: read it, do not rerun the corpus.

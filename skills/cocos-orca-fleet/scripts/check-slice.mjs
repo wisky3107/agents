@@ -65,7 +65,9 @@
  *               saved below 80% of the authored size, a box shorter than the font, text estimated wider
  *               than a no-wrap SHRINK/CLAMP box, a RESIZE_HEIGHT box narrower than two glyphs (car-service
  *               S01/S03, monster-truck S03-S05, firefighter S01). WARN: fix it, or declare the node in
- *               integration-notes.md when it is laid out by code; the reviewer rules on each line.
+ *               integration-notes.md when it is laid out by code; the reviewer rules on each line. A line
+ *               the same file already gave at the slice base is listed as `pre-existing` — not this
+ *               slice's (a prefab a slice only renamed a member in kept its old layout debt: capytal S19).
  *   smoke       the whole scripts/smoke/checks corpus through the smoke-test skill's run-smoke.mjs on the
  *               chrome channel (a fresh page), with the project's own run-smoke flags from
  *               scripts/smoke/run-args.json (`["--delay", "12000", "--viewport", "1080x1920"]`), then every
@@ -695,19 +697,36 @@ export function sceneFindings(doc) {
   return out;
 }
 
-function checkScene(root, changed, all) {
+/** Split a file's lines against the same file at the base, as multisets: [new, pre-existing]. */
+export function splitScene(now, before) {
+  const left = new Map();
+  for (const l of before) left.set(l, (left.get(l) || 0) + 1);
+  const fresh = [], old = [];
+  for (const l of now) {
+    if (left.get(l) > 0) { old.push(l); left.set(l, left.get(l) - 1); } else fresh.push(l);
+  }
+  return [fresh, old];
+}
+
+function checkScene(root, changed, all, base) {
   const isScene = (f) => /^assets\/.*\.(scene|prefab)$/.test(f);
   const files = (all ? filesUnder(root, 'assets').filter(isScene) : changed.filter(isScene)).filter((f) => fs.existsSync(path.join(root, f)));
   if (!files.length) return { status: 'SKIP', note: all ? 'no .scene/.prefab under assets/' : 'no changed .scene/.prefab' };
-  const lines = [];
+  const fresh = [], old = [];
   for (const f of files) {
     let doc;
     try { doc = JSON.parse(fs.readFileSync(path.join(root, f), 'utf8')); } catch { continue; }
-    for (const l of sceneFindings(doc)) lines.push(`${f}: ${l}`);
+    let before = [];
+    if (base) { try { before = sceneFindings(JSON.parse(git(root, 'show', `${base}:${f}`) || 'null')); } catch { /* new or unreadable at the base */ } }
+    const [n, o] = splitScene(sceneFindings(doc), before);
+    fresh.push(...n.map((l) => `${f}: ${l}`));
+    old.push(...o.map((l) => `pre-existing: ${f}: ${l}`));
   }
-  return lines.length
-    ? { status: 'WARN', note: `${lines.length} scene/text problem(s) in ${files.length} file(s) — fix each, or declare it in integration-notes.md (laid out by code)`, lines }
-    : { status: 'PASS', note: `${files.length} scene/prefab file(s)` };
+  if (!fresh.length && !old.length) return { status: 'PASS', note: `${files.length} scene/prefab file(s)` };
+  const note = fresh.length
+    ? `${fresh.length} scene/text problem(s) in ${files.length} file(s) — fix each, or declare it in integration-notes.md (laid out by code)${old.length ? `; ${old.length} pre-existing at the base, not this slice's` : ''}`
+    : `${old.length} pre-existing scene/text problem(s) at the base in the ${files.length} file(s) this slice touched — not this slice's, a followup at most`;
+  return { status: 'WARN', note, lines: [...fresh, ...old] };
 }
 
 /** Preview port: --port, else the slice's evidence/preview-startup.json (previewUrl). */
@@ -921,7 +940,7 @@ export function main(argv) {
     evidence: () => checkEvidence(root, o, changed),
     notes: () => checkNotes(root, o, changed),
     assumptions: () => checkAssumptions(root, changed),
-    scene: () => checkScene(root, changed, o.allChecks),
+    scene: () => checkScene(root, changed, o.allChecks, base),
     smoke: () => checkSmoke(root, o, changed, base),
   };
   const out = [`check-slice ${path.basename(root)} slice=${o.slice || '-'} base=${base || '-'}${dflt?.note ? ` (${dflt.note})` : ''} at ${new Date().toISOString()}`];
