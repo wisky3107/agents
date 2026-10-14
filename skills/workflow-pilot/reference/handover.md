@@ -21,9 +21,13 @@ keeps running.
    `producer-runner.mjs pilot --project <p>` shows `waiter_alive: false`.
 4. Start the new session in `~/.agents`, with the same permission mode as this one:
    `orca terminal create --worktree path:/Users/wikz/.agents --title "pilot-<N>" --command 'claude --permission-mode bypassPermissions "Read ~/.agents/skills/workflow-pilot/reference/handover.md, section New session, and take over pilot <N> for <project path>."' --json`
-5. Wait until the new session confirms with a cross-session message. Then tell the user in one
-   line, and stay quiet: no cron and no waiter, so this session costs nothing. The user can close
-   its tab.
+5. Wait until the new session confirms with a cross-session message (`taken over: cron <id>,
+   waiter running`). Then write the user one line (who took over, its cron id), record
+   `handed over to <name>` under the Handover entry, and close this session's own terminal:
+   `orca terminal close --terminal "$ORCA_TERMINAL_HANDLE" --json`. Close only that handle,
+   never another terminal, and only after the confirmation arrived; it ends this session, so it is
+   the last call. Without `$ORCA_TERMINAL_HANDLE` (not an Orca terminal), stay quiet instead: no
+   cron and no waiter, so this session costs nothing, and the user can close its tab.
 
 ## New session
 
