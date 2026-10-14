@@ -118,6 +118,23 @@ export function slicePort(root, id) {
 const hasAssets = (front) =>
   Boolean(front.assets && typeof front.assets === 'object' && Object.values(front.assets).some((v) => (Array.isArray(v) ? v.length : v)));
 
+/**
+ * The ref check-slice compares a single-lane slice against: the commit the slice started from (base_sha, recorded when
+ * the lane was selected; the writer works uncommitted on the base branch, so the branch name alone moves with its
+ * commits), else for a slice selected before base_sha existed the last commit older than selected_at, else the base
+ * branch, else HEAD (uncommitted work only). A recorded sha that is no longer behind HEAD is dropped.
+ */
+export function sliceBase(root, id) {
+  const s = st.readSliceState(root, id);
+  const git = (...a) => spawnSync('git', ['-C', root, ...a], { encoding: 'utf8' });
+  if (s.base_sha && isAncestor(root, s.base_sha)) return s.base_sha;
+  if (s.selected_at) {
+    const r = git('rev-list', '-1', '--first-parent', `--before=${s.selected_at}`, 'HEAD');
+    if (r.status === 0 && r.stdout.trim()) return r.stdout.trim();
+  }
+  return s.base_branch || 'HEAD';
+}
+
 export function promptValues(project, id) {
   const { file, data } = sliceFront(project, id);
   const f = project.fleet;
@@ -129,6 +146,7 @@ export function promptValues(project, id) {
     PROJECT: project.root,
     Sxx: id,
     SLICE_FILE: file,
+    BASE: sliceBase(project.root, id),
     ENGINE_LINE: isCc4(project)
       ? 'Engine: cc4 — COCOS CLI MCP and `cocos preview` on this checkout\'s pinned ports (cocos-cli-mcp.config.json).'
       : 'Engine: Cocos Creator 3.8 + Funplay MCP on this checkout\'s pinned port (funplay-cocos-mcp.config.json).',
@@ -728,9 +746,9 @@ function staticGate(ctx, s, h) {
   const { project, id } = ctx;
   const root = project.root;
   if (!fs.existsSync(CHECK_SLICE)) return true;
-  const slice = promptValues(project, id).SLICE_FILE;
+  const { SLICE_FILE: slice, BASE: base } = promptValues(project, id);
   const out = path.join(evidenceDir(root, id), 'static-check.txt');
-  const r = spawnSync(process.execPath, [CHECK_SLICE, '--root', root, '--slice', slice, '--out', out], { encoding: 'utf8', timeout: 600000, cwd: root });
+  const r = spawnSync(process.execPath, [CHECK_SLICE, '--root', root, '--slice', slice, '--base', base, '--out', out], { encoding: 'utf8', timeout: 600000, cwd: root });
   const result = ((r.stdout || '').match(/^RESULT (\w+)(.*)$/m) || [])[1] || 'ERROR';
   const which = ((r.stdout || '').match(/^RESULT \w+ \((.*)\)$/m) || [])[1] || '';
   const bounces = s.static_bounces || 0;
@@ -739,7 +757,7 @@ function staticGate(ctx, s, h) {
     st.writeSliceState(root, id, { static_result: result });
     return true;
   }
-  const cmd = `node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice ${slice} --out ${path.relative(root, out)}`;
+  const cmd = `node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice ${slice} --base ${base} --out ${path.relative(root, out)}`;
   sendOnce(ctx, `static:${s.fix_rounds || 0}:${bounces + 1}`, s.writer,
     `Static check FAIL before review (${which}), see ${out}. Fix every FAIL line; for each WARN scope line either move the change or declare it in integration-notes.md. Rerun \`${cmd}\` until RESULT is not FAIL, then set HANDOFF.json ready_for_review again. This is not a review round.`,
     { static_bounces: bounces + 1, static_fail_mtime: h.mtime, static_result: result, nudged_writer: false });

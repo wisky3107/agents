@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { specCommands, slicePaths, outOfScope, nanUnsafe, es5Errors, sliceFacts, evidenceRe, section, classifyErrors, assumptionNotes, errorKey, splitAgainstBaseline } from '../scripts/check-slice.mjs';
+import { specCommands, slicePaths, outOfScope, nanUnsafe, es5Errors, sliceFacts, evidenceRe, section, classifyErrors, assumptionNotes, errorKey, splitAgainstBaseline, renameMap, defaultBase } from '../scripts/check-slice.mjs';
 
 const SCRIPT = new URL('../scripts/check-slice.mjs', import.meta.url).pathname;
 
@@ -297,4 +297,79 @@ test('baseline: a config error at the base is no baseline (old rule + note), and
   assert.equal(r.status, 1, r.stdout);
   assert.match(r.stdout, /FAIL tsc: 1 error\(s\) in files this slice changed \(no baseline: tsc at \w+ reported a config error \(error TS5083/);
   assert.equal(spawnSync('git', ['worktree', 'list'], { cwd: d, encoding: 'utf8' }).stdout.trim().split('\n').length, 1);
+});
+
+test('errorKey: a TS2719 row that embeds the checkout path matches its baseline twin (<root>, either spelling of the root); a moved file keys under its new path', () => {
+  const long = (r, f) => `assets/scripts/ViewManager.ts(40,9): error TS2719: Type 'import("${r}/assets/abstract/Group").Group<T, import("${r}/assets/abstract/ScrollAdapter").ScrollAdapter<T>>' is not assignable to type 'import("${r}/assets/abstract/Group").Group<T, import("${r}/assets/abstract/ScrollAdapter").ScrollAdapter<T>>'. Two different types with this name exist, but they are unrelated.`.replace('ViewManager.ts', f);
+  const roots = ['/Users/x/proj', '/private/Users/x/proj']; // the checkout, its realpath
+  const base = long('<root>', 'ViewManager.ts'); // baseline lines come back with the worktree as <root>
+  for (const r of roots) assert.equal(errorKey(long(r, 'ViewManager.ts'), roots), errorKey(base, roots), r);
+  assert.equal(splitAgainstBaseline([long(roots[1], 'ViewManager.ts')], [base], roots).fresh.length, 0);
+  // moved: baseline path → current path; without the map the same error is new
+  const moved = new Map([['assets/Telegram/Ton.ts', 'assets/managers/Ton.ts']]);
+  const oldLine = "assets/Telegram/Ton.ts(3,1): error TS2322: Type 'null' is not assignable to type 'X'.";
+  const newLine = "assets/managers/Ton.ts(9,1): error TS2322: Type 'null' is not assignable to type 'X'.";
+  assert.equal(splitAgainstBaseline([newLine], [oldLine], roots).fresh.length, 1);
+  const s = splitAgainstBaseline([newLine, newLine], [oldLine], roots, moved);
+  assert.deepEqual([s.pre.length, s.fresh.length], [1, 1]); // multiset: the second copy is new
+});
+
+test('renameMap: staged and untracked moves are found; the real index and the work tree stay as they were', () => {
+  const { d, g } = repo();
+  const body = Array.from({ length: 30 }, (_, i) => `line ${i}`).join('\n');
+  fs.mkdirSync(path.join(d, 'assets/Telegram'), { recursive: true }); fs.mkdirSync(path.join(d, 'assets/managers'));
+  fs.writeFileSync(path.join(d, 'assets/Telegram/Ton.ts'), body);
+  fs.writeFileSync(path.join(d, 'assets/Telegram/Wallet.ts'), `${body}\nwallet`);
+  fs.writeFileSync(path.join(d, 'assets/keep.ts'), 'keep');
+  g('add', '-A'); g('commit', '-qm', 'before');
+  const from = g('rev-parse', 'HEAD').stdout.trim();
+  fs.renameSync(path.join(d, 'assets/Telegram/Ton.ts'), path.join(d, 'assets/managers/Ton.ts')); // untracked at the new path
+  fs.appendFileSync(path.join(d, 'assets/managers/Ton.ts'), '\nmore');
+  g('mv', 'assets/Telegram/Wallet.ts', 'assets/managers/Wallet.ts'); // staged
+  const status = g('status', '--short').stdout;
+  const m = renameMap(d, from);
+  assert.deepEqual([...m], [['assets/Telegram/Ton.ts', 'assets/managers/Ton.ts'], ['assets/Telegram/Wallet.ts', 'assets/managers/Wallet.ts']]);
+  assert.equal(g('status', '--short').stdout, status);
+  assert.deepEqual([...renameMap(d, 'no-such-ref')], []);
+});
+
+test('end to end: a file the slice moved keeps its pre-existing errors as pre-existing (base HEAD, move left untracked)', () => {
+  const { d, g } = repo();
+  const w = (f, txt) => fs.writeFileSync(path.join(d, f), txt);
+  fs.mkdirSync(path.join(d, 'assets')); fs.mkdirSync(path.join(d, 'node_modules/.bin'), { recursive: true });
+  w('.gitignore', 'node_modules/\n.cache-baseline/\n');
+  w('tsconfig.json', '{}\n');
+  w('node_modules/.bin/tsc', FAKE_TSC); fs.chmodSync(path.join(d, 'node_modules/.bin/tsc'), 0o755);
+  const pad = Array.from({ length: 25 }, (_, i) => `export const v${i} = ${i};`).join('\n');
+  w('assets/TonOld.ts', `${pad}\n// ERR TS2322 Type 'null' is not assignable to type 'X'.\n// ERR TS2339 Property 'p' does not exist on type 'Q'.\n`);
+  g('add', '-A'); g('commit', '-qm', 'legacy');
+  fs.renameSync(path.join(d, 'assets/TonOld.ts'), path.join(d, 'assets/TonNew.ts'));
+  let r = exec(d, '--only', 'tsc', '--base', 'HEAD');
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, /WARN tsc: 2 pre-existing error\(s\) in touched files, 0 new/);
+  fs.appendFileSync(path.join(d, 'assets/TonNew.ts'), "// ERR TS2322 Type 'string' is not assignable to type 'X'.\n");
+  r = exec(d, '--only', 'tsc', '--base', 'HEAD');
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /FAIL tsc: 1 new error\(s\) in files this slice changed; 2 pre-existing in touched files not counted/);
+  assert.equal(spawnSync('git', ['worktree', 'list'], { cwd: d, encoding: 'utf8' }).stdout.trim().split('\n').length, 1);
+});
+
+test('defaultBase: main / master; else a linked worktree takes the main checkout\'s branch; else HEAD with a note; detached → none', () => {
+  const { d, g } = repo();
+  assert.deepEqual(defaultBase(d), { ref: 'main', note: '' });
+  g('branch', '-m', 'trunk'); // this project's base branch is neither main nor master (cc-capytal-war: reskin/pirate-cat)
+  const nb = defaultBase(d);
+  assert.equal(nb.ref, 'HEAD');
+  assert.match(nb.note, /^no main\/master: only uncommitted work/);
+  assert.match(exec(d, '--only', 'scope').stdout, /^check-slice \S+ slice=- base=HEAD \(no main\/master: only uncommitted work/);
+  // a fleet lane: its own branch in a linked worktree; committed branch work must stay visible, so the base is trunk, not HEAD
+  const wt = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'check-slice-lane-')), 'wt');
+  g('worktree', 'add', '-q', '-b', 'lane', wt);
+  assert.deepEqual(defaultBase(wt), { ref: 'trunk', note: "the main checkout's branch trunk" });
+  fs.writeFileSync(path.join(wt, 'committed.js'), 'x');
+  spawnSync('git', ['add', 'committed.js'], { cwd: wt }); spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'lane work'], { cwd: wt });
+  fs.writeFileSync(path.join(wt, 'slices/S12-x.md'), 'id: S12\npaths:\n  code: [src/a.js]\n  art: []\n');
+  assert.match(exec(wt, '--slice', 'slices/S12-x.md', '--only', 'scope').stdout, /WARN scope:[^\n]*\n[^\n]*committed\.js/);
+  spawnSync('git', ['checkout', '-q', '--detach'], { cwd: d });
+  assert.equal(defaultBase(d), null);
 });

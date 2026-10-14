@@ -95,6 +95,10 @@ export const currentBranch = (root) => {
   const r = git(root, ['symbolic-ref', '--short', 'HEAD']);
   return r.status === 0 ? r.stdout.trim() : null;
 };
+export const headSha = (root) => {
+  const r = git(root, ['rev-parse', 'HEAD']);
+  return r.status === 0 ? r.stdout.trim() : null;
+};
 const slug = (root) => path.basename(root).replace(/^cc4?-/, '');
 
 /** `budget_bump: 650→680` (or `->`) in the integration notes or the newest review; the last one wins. */

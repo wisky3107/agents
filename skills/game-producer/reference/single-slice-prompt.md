@@ -82,7 +82,7 @@ Build:
    play the feel rows once; batch state reads into one eval. Screenshots: ONE preview.png total.
    A frozen Orca tab falls back to Chrome headless by itself (`channel` in the JSON;
    ~/.agents/skills/cocos-orca-fleet/reference/orca/frozen-tab.md); play the feel rows there too.
-   Then `node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice <SLICE_FILE> --out <EVIDENCE_DIR>/static-check.txt` must
+   Then `node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice <SLICE_FILE> --base <BASE> --out <EVIDENCE_DIR>/static-check.txt` must
    not end RESULT FAIL: it runs tsc, the ES5 web build, EVERY spec in tests/ (old ones too), slice
    scope, the smoke-guard lint, the docs/evidence/ paths the slice names and the integration-notes
    sections below. Declare each WARN scope line in integration-notes.md; measure each WARN assumptions value from
@@ -163,7 +163,7 @@ not explain it, you may run one stuck lookup: `M=~/.orca-memory/bin/orca-memory;
    overrun is never a finding; flag extra code only for paths outside the slice, `scope.out` work,
    dead/duplicated code or architecture breaks. gate:<pct> → overrun > pct is a finding (owner
    code). tsc/lint output read, not assumed. Read <EVIDENCE_DIR>/static-check.txt (the producer's
-   check-slice run; rerun it if missing or older than the last code change): each FAIL line is a
+   check-slice run; rerun it, with the same `--base <BASE>`, if missing or older than the last code change): each FAIL line is a
    finding (owner code), and so is each WARN scope line integration-notes.md does not declare and each
    WARN assumptions line (a "tune on the preview" note left in code; minor, major if it positions art).
    Visible hierarchy built with `new Node()` + `addComponent` that final-report.md does not list

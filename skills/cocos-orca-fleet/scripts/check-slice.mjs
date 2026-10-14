@@ -16,7 +16,13 @@
  *               and quoted object types collapsed, compared as multisets so a duplicate still counts as new.
  *               Errors that were already there in a changed file are WARN ("N pre-existing in touched files,
  *               0 new"): a legacy project with non-strict code blocked every slice (cc-capytal-war S14, S15).
+ *               A file the slice moved (git rename detection of the base against the checkout as it is, untracked
+ *               files included) keeps its old errors: they are keyed under the new path. git's default similarity
+ *               (50%) and rename limit apply: a moved-and-rewritten file or a mass move falls back to "all new".
  *               No base or no buildable baseline: every error in a changed file FAILs, and the note says why.
+ *               Without --base: main / master; in a linked worktree the main checkout's branch; else HEAD (only
+ *               uncommitted work counts as changed; the header line says so). The runner passes the commit a
+ *               single-lane slice started from (base_sha).
  *               Errors elsewhere in the project are WARN (pre-existing), and extensions/, temp/ and engine
  *               declarations are ignored.
  *   es5         the same tsconfig with --target es5, TS2802 in assets/ only, same split and baseline. The editor
@@ -125,25 +131,57 @@ export function classifyErrors(errors, changed) {
   return out;
 }
 
-/** "file|TS code|message": no line numbers, the checkout root as <root>, quoted object types collapsed (they grow with the code). */
-export function errorKey(line, roots) {
+/**
+ * "file|TS code|message": no line numbers, the checkout root as <root>, quoted object types collapsed (they grow with
+ * the code). `moved` (old path → new path, from renameMap) keys an error of a moved file under its new path.
+ */
+export function errorKey(line, roots, moved) {
   const m = line.trim().match(/^(.+?)\(\d+,\d+\):\s*error (TS\d+):\s*(.*)$/);
   if (!m) return null;
   let msg = m[3];
   for (const r of [...roots].sort((x, y) => y.length - x.length)) if (r) msg = msg.split(r.replace(/\/$/, '')).join('<root>');
-  return `${m[1]}|${m[2]}|${msg.replace(/'\{[^']*\}'/g, "'{…}'")}`;
+  return `${moved?.get(m[1]) ?? m[1]}|${m[2]}|${msg.replace(/'\{[^']*\}'/g, "'{…}'")}`;
 }
 
-/** Split lines into new ones and ones the baseline already had (multiset: the second copy of a baseline error is new). */
-export function splitAgainstBaseline(lines, baseLines, roots) {
+/**
+ * Split lines into new ones and ones the baseline already had (multiset: the second copy of a baseline error is new).
+ * `moved` maps a baseline path to the path it has now (a file the slice moved keeps its old errors).
+ */
+export function splitAgainstBaseline(lines, baseLines, roots, moved) {
   const left = new Map();
-  for (const l of baseLines) { const k = errorKey(l, roots); if (k) left.set(k, (left.get(k) || 0) + 1); }
+  for (const l of baseLines) { const k = errorKey(l, roots, moved); if (k) left.set(k, (left.get(k) || 0) + 1); }
   const out = { fresh: [], pre: [] };
   for (const l of lines) {
     const k = errorKey(l, roots);
     if (k && left.get(k) > 0) { left.set(k, left.get(k) - 1); out.pre.push(l); } else out.fresh.push(l);
   }
   return out;
+}
+
+/**
+ * Files git sees as moved between `from` and the checkout as it is now (committed, staged, unstaged and untracked):
+ * Map old path → new path. Untracked files are added as intent-to-add to a COPY of the index (GIT_INDEX_FILE), so
+ * the real index and the object store are untouched. Empty when anything fails.
+ */
+export function renameMap(root, from) {
+  const moved = new Map();
+  let tmp = null;
+  try {
+    const idx = path.resolve(root, git(root, 'rev-parse', '--git-path', 'index').trim());
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'check-slice-idx-'));
+    const copy = path.join(tmp, 'index');
+    if (fs.existsSync(idx)) fs.copyFileSync(idx, copy);
+    const env = { ...process.env, GIT_INDEX_FILE: copy };
+    const run = (...a) => spawnSync('git', a, { cwd: root, encoding: 'utf8', env, maxBuffer: 64 << 20, timeout: 120000 });
+    if (run('add', '-N', '-A', '.').status !== 0) return moved;
+    const r = run('diff', '-M', '--name-status', '-z', from);
+    if (r.status !== 0) return moved;
+    const f = r.stdout.split('\0');
+    for (let i = 0; i < f.length - 1;) {
+      if (/^[RC]\d*$/.test(f[i])) { if (f[i][0] === 'R' && f[i + 1] && f[i + 2]) moved.set(f[i + 1], f[i + 2]); i += 3; } else i += 2;
+    }
+  } catch { /* no rename info: the old keys apply */ } finally { if (tmp) fs.rmSync(tmp, { recursive: true, force: true }); }
+  return moved;
 }
 
 /**
@@ -189,12 +227,13 @@ function makeBaseline(root, base) {
     try {
       res = { problem: prep() };
       if (!res.problem) {
+        res.moved = renameMap(root, mb);
         const mtime = (f) => (fs.existsSync(path.join(root, f)) ? fs.statSync(path.join(root, f)).mtimeMs : 0);
         const id = crypto.createHash('sha1').update(`v1|${fs.realpathSync(root)}|${mb}|${mtime('temp/tsconfig.cocos.json')}|${mtime('temp/declarations')}|${key}`).digest('hex').slice(0, 20);
         const cache = path.join(process.env.CHECK_SLICE_CACHE_DIR || path.join(os.tmpdir(), 'check-slice-baseline'), `${id}.json`);
         let cached = null;
         try { cached = JSON.parse(fs.readFileSync(cache, 'utf8')); } catch { /* none */ }
-        if (cached) res = { lines: cached };
+        if (cached) res = { lines: cached, moved: res.moved };
         else {
           res.problem = wt ? null : build();
           if (!res.problem) {
@@ -203,7 +242,7 @@ function makeBaseline(root, base) {
             if (!t.errors.length && t.status !== 0) res.problem = `tsc failed at ${mb.slice(0, 8)} without error lines`;
             else if (t.errors.some((l) => !/\(\d+,\d+\)/.test(l))) res.problem = `tsc at ${mb.slice(0, 8)} reported a config error (${t.errors.find((l) => !/\(\d+,\d+\)/.test(l)).trim().slice(0, 100)})`;
             else {
-              res = { lines: t.errors.map(strip) };
+              res = { lines: t.errors.map(strip), moved: res.moved };
               try { fs.mkdirSync(path.dirname(cache), { recursive: true }); fs.writeFileSync(cache, JSON.stringify(res.lines)); } catch { /* cache is optional */ }
             }
           }
@@ -236,7 +275,7 @@ function tscResult(r, changed, what, fix, baseline, extra) {
       const roots = [baseline.root, fs.realpathSync(baseline.root)];
       const baseLines = extra.includes('es5') ? es5Errors(b.lines) : b.lines;
       // a config error names no file: never pre-existing noise
-      const split = splitAgainstBaseline(own.filter((l) => /\(\d+,\d+\)/.test(l)), baseLines, roots);
+      const split = splitAgainstBaseline(own.filter((l) => /\(\d+,\d+\)/.test(l)), baseLines, roots, b.moved);
       own = [...own.filter((l) => !/\(\d+,\d+\)/.test(l)), ...split.fresh];
       pre = split.pre;
     }
@@ -368,9 +407,23 @@ export function outOfScope(changed, allowed) {
   });
 }
 
-function defaultBase(root) {
-  for (const b of ['main', 'master']) if (sh('git', ['rev-parse', '--verify', '-q', b], root).status === 0) return b;
-  return null;
+/**
+ * The slice base when --base is not given: main / master; in a linked worktree (a fleet lane on its own branch) the
+ * branch the main checkout is on; in the main checkout on another branch HEAD itself (a single lane works uncommitted
+ * on the base branch, so changed = working tree + untracked) with a note that commits of this slice are not seen.
+ * The runner passes --base (the commit the slice started from), so this is the fallback for a hand run.
+ * → { ref, note } | null
+ */
+export function defaultBase(root) {
+  for (const b of ['main', 'master']) if (sh('git', ['rev-parse', '--verify', '-q', b], root).status === 0) return { ref: b, note: '' };
+  const here = git(root, 'rev-parse', '--abbrev-ref', 'HEAD').trim();
+  const dir = (a) => { const o = git(root, 'rev-parse', a).trim(); return o ? fs.realpathSync(path.resolve(root, o)) : ''; };
+  if (dir('--git-dir') !== dir('--git-common-dir')) {
+    const main = git(root, 'worktree', 'list', '--porcelain').split('\n\n')[0].match(/^branch refs\/heads\/(.+)$/m)?.[1];
+    return main && main !== here ? { ref: main, note: `the main checkout's branch ${main}` } : null;
+  }
+  if (!here || here === 'HEAD') return null;
+  return { ref: 'HEAD', note: `no main/master: only uncommitted work is seen as changed, commits of this slice are not (pass --base <sha>)` };
 }
 
 function changedFiles(root, base) {
@@ -534,7 +587,8 @@ function checkAssumptions(root, changed) {
 export function main(argv) {
   const o = parseArgs(argv);
   const root = path.resolve(o.root || git(process.cwd(), 'rev-parse', '--show-toplevel').trim() || process.cwd());
-  const base = o.base || defaultBase(root);
+  const dflt = o.base ? null : defaultBase(root);
+  const base = o.base || dflt?.ref || null;
   const changed = changedFiles(root, base);
   const baseline = makeBaseline(root, base);
   const run = {
@@ -547,7 +601,7 @@ export function main(argv) {
     notes: () => checkNotes(root, o, changed),
     assumptions: () => checkAssumptions(root, changed),
   };
-  const out = [`check-slice ${path.basename(root)} slice=${o.slice || '-'} base=${base || '-'} at ${new Date().toISOString()}`];
+  const out = [`check-slice ${path.basename(root)} slice=${o.slice || '-'} base=${base || '-'}${dflt?.note ? ` (${dflt.note})` : ''} at ${new Date().toISOString()}`];
   const worst = { FAIL: [], WARN: [] };
   try {
     for (const name of CHECKS.filter((c) => o.only.includes(c))) {

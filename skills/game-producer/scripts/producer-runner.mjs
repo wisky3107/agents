@@ -37,7 +37,7 @@ import * as st from './lib/state.mjs';
 import { submit, menu, parseReply, textNeed, answerProblem, openQuestions, givenChoice, isGivenChoice, extraChoices, PILOT_CHOICE, pilotOf, handToPilot, returnToDirector } from './lib/answer.mjs';
 import { questionContext } from './lib/context.mjs';
 import { laneFor, runSlice, applyAnswer, cursorUndecided, cursorState, resetCursorProbe, agentOrAsk, cursorArtBlocked, CursorUndecided, CURSOR_FALLBACK, manualItems, reviewVerdict, MAX_FIX_ROUNDS } from './lib/lanes.mjs';
-import { currentBranch, appendLessons, lessonRows, readJournal } from './lib/merge.mjs';
+import { currentBranch, headSha, appendLessons, lessonRows, readJournal } from './lib/merge.mjs';
 import { consult, judgeSpec, JUDGE_KINDS, MAX_JUDGED } from './lib/judge.mjs';
 import * as io from './lib/orca.mjs';
 import { fileURLToPath } from 'node:url';
@@ -299,8 +299,9 @@ function judgeOnce(root, project, open) {
 function freshLane(root, id, project) {
   const moved = st.archiveSliceState(root, id);
   const lane = laneFor(project, id);
-  // the branch main is on now is where this slice merges back (asked when main moved on meanwhile)
-  st.writeSliceState(root, id, { phase: lane === 'fleet' ? 'spawn-coordinator' : 'spawn-writer', lane, selected_at: st.now(), base_branch: currentBranch(root) });
+  // the branch main is on now is where this slice merges back (asked when main moved on meanwhile);
+  // base_sha is the commit the slice starts from: check-slice's tsc baseline and changed-files base
+  st.writeSliceState(root, id, { phase: lane === 'fleet' ? 'spawn-coordinator' : 'spawn-writer', lane, selected_at: st.now(), base_branch: currentBranch(root), base_sha: headSha(root) });
   return { lane, moved };
 }
 

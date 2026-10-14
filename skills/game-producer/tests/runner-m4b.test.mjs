@@ -5,7 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { loadProject, preflight, policyAgents, sameSpec, budgetMode, liteWhenNoAssets, isCc4, ripStudy, sliceFront } from '../scripts/lib/project.mjs';
-import { fill, prompts, normalizeStatus, manualRequired } from '../scripts/lib/lanes.mjs';
+import { fill, prompts, normalizeStatus, manualRequired, sliceBase } from '../scripts/lib/lanes.mjs';
 import { NOTES, POLICY, project, fakes, runner, evRel, ev, sliceState, clearControl, approvedEvidence, commitStep, lastCommit, singleCommitText } from './harness.mjs';
 
 // Lane state machines (plan M4b) against a fake orca / bootstrap (pretty-printed JSON, like the
@@ -544,6 +544,52 @@ test('locks: policy agents vs yaml, budget mode, lite flag, cursor state, cc4, s
   assert.deepEqual(['READY_FOR_REVIEW', 'ready_for_independent_review', 'done', null].map(normalizeStatus), ['ready_for_review', 'ready_for_review', null, null]);
   // a lane naming its step (pilot 1: "implementing") is working: the runner only waits on it
   assert.deepEqual(['implementing', 'In_Progress', 'reviewing', 'shipped'].map(normalizeStatus), ['working', 'working', 'working', null]);
+});
+
+test('single lane: the slice starts from base_sha; the static gate, the writer prompt and the writer rerun command all carry --base <it>', () => {
+  const p = project({
+    slices: { S01: { needs: false } },
+    files: {
+      'tests/old.spec.ts': '/**\n * Run:\n *   node tests/run-old.js\n */\n',
+      'tests/run-old.js': "const fs = require('fs'); if (!fs.existsSync('tests/fixed.flag')) { console.log('FAIL placement'); process.exit(1); }\n",
+    },
+  });
+  const head = spawnSync('git', ['-C', p.root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+  const f = fakes();
+  f.queue([
+    { name: 'writer ready, spec red', write: { ...W('ready_for_review'), ...preview(7461) } },
+    { name: 'writer fixed', write: { 'tests/fixed.flag': 'x', ...W('ready_for_review', { detail: 'static fixed' }) } },
+    { name: 'review approved', write: R('approved', 'APPROVED') },
+    commitStep('S01'),
+  ]);
+  runner(p.root, f, 'start', '--once');
+  assert.equal(sliceState(p.root, 'S01').base_sha, head);
+  assert.match(f.spawns()[0].prompt, new RegExp(`check-slice\\.mjs --slice \\S+ --base ${head} --out `));
+  assert.match(f.sends()[0].text, new RegExp(`check-slice\\.mjs --slice \\S+ --base ${head} --out `));
+  // the runner's own run: the header names the base (not "base=-": no baseline was possible without one)
+  assert.match(fs.readFileSync(ev(p.root, 'S01', 'evidence/static-check.txt'), 'utf8'), new RegExp(`^check-slice \\S+ slice=\\S+ base=${head} at `));
+});
+
+test('sliceBase: base_sha while it is behind HEAD; else the last commit before selected_at; else the base branch; else HEAD', () => {
+  const p = single();
+  const g = (...a) => spawnSync('git', ['-C', p.root, ...a], { encoding: 'utf8' }).stdout.trim();
+  const first = g('rev-parse', 'HEAD');
+  const state = (patch) => {
+    fs.mkdirSync(path.dirname(ev(p.root, 'S01', 'producer-state.json')), { recursive: true });
+    fs.writeFileSync(ev(p.root, 'S01', 'producer-state.json'), JSON.stringify(patch));
+  };
+  fs.writeFileSync(path.join(p.root, 'x.txt'), 'x');
+  g('add', 'x.txt');
+  spawnSync('git', ['-C', p.root, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'mid-slice commit'], { env: { ...process.env, GIT_COMMITTER_DATE: '2030-01-01T00:00:00Z' } });
+  assert.notEqual(g('rev-parse', 'HEAD'), first);
+  state({ base_sha: first, base_branch: 'zzz', selected_at: '2029-01-01T00:00:00Z' });
+  assert.equal(sliceBase(p.root, 'S01'), first);
+  state({ base_sha: '1'.repeat(40), base_branch: 'zzz', selected_at: '2029-01-01T00:00:00Z' }); // not in this history: dropped
+  assert.equal(sliceBase(p.root, 'S01'), first); // the newest commit older than selected_at
+  state({ base_branch: 'zzz', selected_at: '2000-01-01T00:00:00Z' });
+  assert.equal(sliceBase(p.root, 'S01'), 'zzz');
+  state({});
+  assert.equal(sliceBase(p.root, 'S01'), 'HEAD');
 });
 
 test('single lane: check-slice FAIL at ready_for_review goes back to the writer (not a fix round); fixed → reviewer', () => {
