@@ -541,6 +541,11 @@ off (policy `no_cursor=true` or the runner's probe), then it asks instead.
    Single lane committed on main → nothing to merge.
 4. `release.slices[<Sxx>] = merged`, `current_slice = ""`; rewrite the slice's line in the notes:
    `- <Sxx> <lane> merged fix_rounds=<n> bump=<from→to|none> commit=<sha> merged=<y/n> <blocker|->`.
+   Kit check first (skip if `~/.agents/skills/cocos-playbook/kits/kit.mjs` is missing):
+   `node ~/.agents/skills/cocos-playbook/kits/kit.mjs slice-check <main> --base <base>
+   --write <main>/.cursor/evidence/tasks/T-<Sxx>/evidence --slice <Sxx>`, where `<base>` is
+   `<merge sha>^1` (fleet) or `<slice commit>^` (single lane) — static, seconds; it appends
+   `kit-*` candidates with `kit_signal` for new self-contained features.
    Reconcile harvested cost events, `learning-candidates.json` and reviewed recipe outcomes
    into `lessons.jsonl` once — see Notes discipline. Successful patterns need no cost threshold.
 5. Release the lane terminal (`orca terminal close`) unless the director wants it kept.

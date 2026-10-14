@@ -274,6 +274,7 @@ export const env = (root, fake) => ({
   PRODUCER_RUNNER_CURSOR: 'on', // no real cursor-agent probe in tests
   CC_SPAWN_REGISTRY: path.join(fake.dir, 'registry.jsonl'),
   ORCA_MEMORY_BIN: path.join(fake.dir, 'no-orca-memory'),
+  KIT_MJS: path.join(fake.dir, 'no-kit.mjs'),
   PRODUCER_RUNNER_WAIT_MS: '1500',
   PRODUCER_RUNNER_IDLE_MS: '5',
   PRODUCER_RUNNER_POLL_MS: '20',

@@ -38,6 +38,12 @@ You are the brief author in <PROJECT>.
   Resolve engine/render mode/platform from this project. Pin id/revision/sha256/path into
   recipe_refs in relevant slices; add in-scope checks and ADR rationale. Missing/no match = [].
   A candidate is guidance to validate, not observed product behavior; preserve GIVEN/ASSUMPTION.
+- Reuse first (kits): for each meta/UI feature you cut into a slice (popups, settings, shop, daily
+  reward, tutorial, effects…), run `node ~/.agents/skills/cocos-playbook/kits/kit.mjs find <2-3 feature words>` once. A matching kit →
+  the slice installs it (scope.in + kit paths). A matching file in another game → run the printed
+  `kit.mjs check`; when it says kit-ready or kit-possible, add a `risks` line "Reuse: <game>/<folder>
+  (<verdict>) — extract into a kit before <Sxx>?" so the director decides at the gate. Read only the
+  verdict lines, never the other game's code.
 - Worked example of a passing contract set (store + rip + port + gameplay notes): /Users/wikz/Works/games/CocosCreator/cc-monopoly-go/ — MILESTONES.md, slices/S01-polished-playable.md (v1), slices/S03-chance-chain.md (later M slice), slices/S07-release-polish.md, EXPECT_GAMEPLAY_VISUAL.md (visual target + feel table). Read these for format and level of detail when unsure; never copy its mechanics, numbers or assets. Skip if the path is missing.
 - Contract depth: <CONTRACT_DEPTH>. Follow docs/brief-workflow.md. With playable depth, S01 remains complete; later slices are outlines that cannot dispatch until expanded. Preserve full GP coverage and release ownership in either mode.
 - Engine: <ENGINE_LINE>; TypeScript strict; web-mobile target

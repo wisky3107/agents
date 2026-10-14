@@ -1,7 +1,7 @@
 /**
  * Every outside call the runner makes, in one place: `orca`, bootstrap.mjs agent-session, orca-wait,
- * curl, the optional orca-memory launcher. Paths resolve inside this repo (so a pilot from a worktree
- * runs the worktree's tools); PRODUCER_RUNNER_BOOTSTRAP / _ORCA_WAIT / ORCA_MEMORY_BIN override them in
+ * curl, the optional orca-memory launcher, the optional cocos-playbook kit.mjs. Paths resolve inside this repo (so a pilot from a worktree
+ * runs the worktree's tools); PRODUCER_RUNNER_BOOTSTRAP / _ORCA_WAIT / ORCA_MEMORY_BIN / KIT_MJS override them in
  * tests, and `orca` comes from PATH.
  */
 import fs from 'node:fs';
@@ -15,6 +15,7 @@ const SKILLS = path.resolve(HERE, '..', '..', '..');
 export const BOOTSTRAP = process.env.PRODUCER_RUNNER_BOOTSTRAP || path.join(SKILLS, 'new-cocos-game', 'scripts', 'bootstrap.mjs');
 export const ORCA_WAIT = process.env.PRODUCER_RUNNER_ORCA_WAIT || path.join(SKILLS, 'cocos-orca-fleet', 'scripts', 'orca-wait.mjs');
 const MEMORY_BIN = process.env.ORCA_MEMORY_BIN || path.join(os.homedir(), '.orca-memory', 'bin', 'orca-memory');
+const KIT_MJS = process.env.KIT_MJS || path.join(SKILLS, 'cocos-playbook', 'kits', 'kit.mjs');
 
 function json(cmd, args, opts = {}) {
   const r = spawnSync(cmd, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, ...opts });
@@ -167,6 +168,14 @@ export function memoryPack(kind, args, cwd) {
   const r = spawnSync(bin, ['hook', kind, ...args], { encoding: 'utf8', timeout: 120000, cwd });
   const pack = path.join(out, 'memory-context.md');
   return r.status === 0 && /inject["':\s]+true/.test(r.stdout) && fs.existsSync(pack) ? pack : 'none';
+}
+
+/** Optional kit check at slice acceptance: new self-contained features → kit_signal candidates. */
+export function kitSliceCheck(root, slice, base, evidenceDir) {
+  if (!fs.existsSync(KIT_MJS)) return { ran: false, status: 0 };
+  const r = spawnSync(process.execPath, [KIT_MJS, 'slice-check', root, '--base', base, '--write', evidenceDir, '--slice', slice],
+    { encoding: 'utf8', timeout: 120000, cwd: root });
+  return { ran: true, status: r.status, out: ((r.stdout || '') + (r.stderr || '')).trim().slice(-300) };
 }
 
 /** One orca-memory hook call with its status line read: exit 0 also covers `off` and `nothing`. */

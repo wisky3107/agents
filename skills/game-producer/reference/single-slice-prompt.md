@@ -23,7 +23,8 @@ Task size is <S|M>. Touch only paths.code / paths.art / paths.scene_objects. Eve
 row and feel_row is a verifiable observation you must meet.
 Never stop a process by pattern (pkill / killall / kill $(pgrep …)): on macOS `pkill -f X -n`
 kills every Orca terminal and Cocos editor. Kill only a pid you started (`$!`) or one you checked.
-Popups (prefab/ui/Popup* in the slice): docs/flows/03-popup-system.md; when the slice lists
+Kits: run `node ~/.agents/skills/cocos-playbook/kits/kit.mjs find <2-3 words of the slice's feature>` once before coding; install a
+matching kit instead of writing it. Popups (prefab/ui/Popup* in the slice): docs/flows/03-popup-system.md; when the slice lists
 assets/scripts/common/uiManager.ts and the file is missing, run
 `node ~/.agents/skills/cocos-playbook/kits/kit.mjs install ui-popup .` first, then refresh the
 asset-db. New popup script + key: `kit.mjs scaffold ui-popup popup . <Name>`.
@@ -105,7 +106,8 @@ Build:
    runtime-state.json (smoke JSON + eval reads; manual_required only with the real reason),
    preview.png, stats.json, final-report.md. If a concrete reusable technique emerged, add
    learning-candidates.json: [{id,kind:failure_fix|successful_pattern,topic,context:{engine,mode,platform},
-   finding,reuse_value,existing_recipe:null|id,evidence:[relative paths],limitations:[]}].
+   finding,reuse_value,existing_recipe:null|id,evidence:[relative paths],limitations:[],kit_signal?}]
+   (kit_signal: paste what `kit.mjs check . <feature folder>` prints for a self-contained feature).
    Capture successful techniques too; omit the file when empty. Do not edit the shared library.
 Release the editor lock. Do not commit. Then HANDOFF.json status ready_for_review, print the
 cocos-output-contract YAML, and stop. If you pass ~35 turns without a new evidence file, write

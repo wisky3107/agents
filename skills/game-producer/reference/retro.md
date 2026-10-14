@@ -20,6 +20,8 @@ is project-local proposals; shared-library curation uses existing director autho
 - Kit candidates (when `<playbook>/kits/kit.mjs` exists): `node <playbook>/kits/kit.mjs candidates
   --project <game dir name>`, plus `kit.mjs check <project> <files>` for each candidate group and
   each `kit_signal` in learning-candidates. Read only the verdict lines; never open the other games.
+  The cross-game view is `<playbook>/kits/reports/proposals.md` (daily `kit.mjs proposals`); cite
+  its row for this game's features instead of re-scanning.
 - Policy already resolved by producer; do not reread Notes history.
 - Optional memory (run only if `~/.orca-memory/bin/orca-memory` exists; use a pack only on
   `inject: true`): for each proposed operational fix or candidate topic, at most one

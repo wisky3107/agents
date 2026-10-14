@@ -423,6 +423,7 @@ export function lessonRows(root, id, s, j = {}) {
       event: 'recipe_candidate', candidate_id: `${path.basename(root)}/T-${id}/${c.id}`, slice: id, at, kind: c.kind, context: c.context,
       finding: c.finding, reuse_value: c.reuse_value, existing_recipe: c.existing_recipe ?? null,
       evidence: (c.evidence || []).map((p) => path.join(ev, p)), limitations: c.limitations || [],
+      ...(c.kit_signal ? { kit_signal: c.kit_signal } : {}),
     });
   }
   return rows;
@@ -446,6 +447,10 @@ function record(ctx, s, j) {
   const bump = j.bump ? `${j.bump.from}→${j.bump.to}` : 'none';
   const noteLine = `- ${id} ${ctx.lane} merged fix_rounds=${j.fix_rounds ?? '?'} bump=${bump} commit=${String(j.sha).slice(0, 7)} merged=y ${blockers.join('; ') || '-'}`;
   writeSliceNote(loadProject(root), id, noteLine);
+  // kit check before the lessons, so its kit-* candidates are reconciled with the writer's; the slice
+  // commit's parent is the base (one commit per slice via commit-guard). Advisory: a failure is logged only.
+  const kc = j.sha ? io.kitSliceCheck(root, id, `${j.sha}^`, path.join(root, evidenceRel(id))) : { ran: false };
+  if (kc.ran) st.log(root, id, `kit slice-check ${kc.status === 0 ? 'done' : `failed (${kc.status})`}: ${kc.out.split('\n').slice(-1)[0] || ''}`);
   const added = appendLessons(root, lessonRows(root, id, s, j));
   // Step 2d.5: release the lane terminal (reviewer and verifier were closed at their verdicts)
   io.closeTerminal(ctx.lane === 'fleet' ? s.coordinator : s.writer);

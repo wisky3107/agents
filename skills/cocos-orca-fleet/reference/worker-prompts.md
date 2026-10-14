@@ -103,6 +103,9 @@ Do:
      button/tab states are scene or prefab nodes, repeated items are prefabs under a container.
      Visible hierarchy that code must build (`new Node()` + `addComponent`) goes under
      `## code-built nodes` in plan-notes.md with owner and why no prefab serves.
+   - Kits: run `node ~/.agents/skills/cocos-playbook/kits/kit.mjs find <2-3 feature words>` once; a matching kit is installed (step +
+     kit paths), never rewritten. A kit-ready/kit-possible match in another game goes in
+     plan-notes.md as a reuse note (verdict line only; do not read that game's code).
    - Popups (overlay that opens and closes: result, pause, settings, shop, reward, toast):
      follow docs/flows/03-popup-system.md — prefab `assets/resources/prefab/ui/Popup<Name>.prefab`
      in allowed_scene_objects, script under modules/popup/**, key in constant/PopupDefine.ts.
@@ -247,7 +250,9 @@ Do:
    budget_auto_bump_pct continue and say so; more → stop and `ask`. tripo_credits → always a cap.
 7. If a reusable finding emerged, record evidence/learning-candidates.json as an array:
    {id,kind:failure_fix|successful_pattern,topic,context:{engine,mode,platform},finding,reuse_value,
-   existing_recipe:null|id,evidence:[relative paths],limitations:[]}. Omit when empty; reviewer
+   existing_recipe:null|id,evidence:[relative paths],limitations:[],kit_signal?}. kit_signal: when
+   you built a self-contained feature (popup, meta system, effect), paste the `kit_signal` that
+   `node ~/.agents/skills/cocos-playbook/kits/kit.mjs check . <feature folder>` prints. Omit when empty; reviewer
    supplies validation in review.md. This evidence file is an allowed handoff output.
    Schema: cocos-playbook references/workflow.md §Capture. If `~/.orca-memory/bin/orca-memory`
    exists, run it as `capture --validate-only <file>` and fix every error it prints.
@@ -400,8 +405,9 @@ Static (commit-guard gates 1–4, read-only):
   sliding/floating feet or a missing event is a finding (owner anim). Generated 2D on any
   art_backend but cursor has `ART2D: PASS` in evidence/art/2d/2d-check.md (missing → blocker,
   owner asset); an `image-gen` row whose `verify.tool` is a script (gen_2d.py, Pillow, SVG) is a
-  blocker (owner asset); a sprite with matte/halo, a seam on a tileable, or off-style art in preview is a
-  finding (owner asset).
+  blocker (owner asset); a worker-set method (listed in 2d-check) that breaks the method rule —
+  e.g. a pictured icon marked procedural — is a finding (owner asset); a sprite with
+  matte/halo, a seam on a tileable, or off-style art in preview is a finding (owner asset).
 - STATIC: tsc + lint clean (read the tool output, do not assume). Run check-slice yourself
   (`node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice <plan_source> --out evidence/static-check.txt`):
   each FAIL line is a finding (owner code; `evidence` lines owner scene), and so is each WARN
