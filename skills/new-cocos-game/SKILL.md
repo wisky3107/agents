@@ -2,21 +2,15 @@
 name: new-cocos-game
 description: >-
   Bootstrap a brand-new Cocos Creator game under /Users/wikz/Works/games/CocosCreator
-  by copying /Users/wikz/Works/games/template/cc-game-template (already a full CC
-  project + cc-skills) — or cc-playable-template when the request says "playable"
-  (playable ad / playable slice / tạo playable) — or cc4-game-template when the
-  request says "cc4" / "COCOS 4" / "cocos 4" — registering it in Orca, pinning MCP
-  (Funplay per-project port for 3.8; COCOS CLI per-checkout MCP/preview pins for cc4), opening the
-  editor channel, waiting until MCP answers for THAT project, git init + commit,
-  advising 5 agent combos from provider status + the brief (skipped when the
-  user already noted agents), optionally authoring deep contracts with game-brief (brief_author=fable,
-  from an idea or media folder — no store needed), running /setup-project from the
-  brief, and when implement=yes spawning an Orca
-  agent session in that folder. If the user asks for cocos-orca-fleet / fleet /
-  orchestrator, hand off by spawning the orchestrator agent inside the new
-  project (never coordinate the fleet from the bootstrap chat). Use when the user
-  wants a new Cocos game, "game mới cocos", "new cocos game", "tạo game cocos",
-  or similar.
+  from the local template: cc-game-template, or cc-playable-template when the request
+  says "playable" (playable ad / playable slice / tạo playable), or cc4-game-template
+  when it says "cc4" / "COCOS 4" / "cocos 4". Registers it in Orca, pins MCP, waits
+  until MCP answers for THAT project, git init + commit, advises agent combos,
+  optionally authors contracts with game-brief and runs /setup-project, and when
+  implement=yes spawns an Orca agent session there; a fleet / orchestrator request is
+  handed off to an orchestrator spawned inside the new project. Use when the user
+  wants a new Cocos game, "game mới cocos", "new cocos game", "tạo game cocos", or
+  similar.
 ---
 
 # New Cocos Game

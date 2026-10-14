@@ -2,18 +2,14 @@
 name: cocos-orca-fleet
 description: >-
   Run one Cocos Creator L-lane feature as a supervised Orca orchestration fleet:
-  cheap mechanical coordinator, planner (PLAN given by the director > copied from a
-  slice file > authored by a `plan` worker on planner_agent, default claude opus, then
-  director-gated once), scanner (default cursor auto), writer (default claude opus),
-  integrator (editor lock + Funplay), art per the cocos-asset-gen contract
-  (antigravity | cursor | gpt-image-gen | codex-image; meshes via Blender or 3D Gen Studio), and an
-  independent reviewer (default claude opus) that playtests via the Orca
-  browser. Scanner/writer/reviewer agents and art backend are locked once at task start
-  from prompt > AGENT_NOTES.md > default, planner_agent likewise. Maps every role onto the AGENTS.md role table,
-  plan-schema.md, cocos-output-contract.md, and the per-task evidence bundle.
-  Use when the director asks for a fleet, team, multi-agent, parallel agents,
-  orchestrator, or "use Orca to split this feature across agents" on a Cocos
-  project. Not for S/M tweaks or BUG fixes — those stay single-agent.
+  cheap mechanical coordinator, planner (PLAN given, copied from a slice file or
+  authored by a `plan` worker, then director-gated once), scanner, writer, integrator
+  (editor lock + Funplay), art per the cocos-asset-gen contract, and an independent
+  reviewer that playtests via the Orca browser; agents and art backend are locked
+  once at task start from prompt > AGENT_NOTES.md > default. Use when the director
+  asks for a fleet, team, multi-agent, parallel agents, orchestrator, or "use Orca to
+  split this feature across agents" on a Cocos project. Not for S/M tweaks or BUG
+  fixes — those stay single-agent.
 disable-model-invocation: true
 ---
 
