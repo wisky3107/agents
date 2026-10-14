@@ -468,6 +468,10 @@ whether the concept or the model is at fault; anim rows name the stem and the cl
 failure caused by the model is a mesh or concept row, not anim). Only blocker/major ids must appear; minors may be
 listed as `owner: followup`.
 
+Before the verdict line write `## escaped`: one line `F<n> ← S<nn>` for each finding whose fault
+an earlier slice committed (`git blame` the faulty lines; the commit subject names its slice,
+`pre-slice` when older than every slice), or the single line `none`. Faults this slice made stay out.
+
 Last line of review.md is exactly APPROVED, CHANGES_REQUESTED, or INFRA_BLOCKED (Step 0 only).
 Done: HANDOFF.json status approved | changes_requested | infra_blocked, then worker_done
 --outcome succeeded for APPROVED, --outcome failed otherwise, body = the verdict line plus the

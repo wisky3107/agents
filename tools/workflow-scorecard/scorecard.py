@@ -135,6 +135,10 @@ CREATE TABLE IF NOT EXISTS runs_log (at TEXT, step TEXT, ok INTEGER, note TEXT);
 CREATE TABLE IF NOT EXISTS static_checks (
   project TEXT, slice TEXT, seq INTEGER, at TEXT, source TEXT, result TEXT, failed TEXT, warned TEXT,
   PRIMARY KEY (project, slice, seq));
+CREATE TABLE IF NOT EXISTS escapes (
+  project TEXT, found_in TEXT, finding TEXT, origin TEXT, source TEXT,
+  PRIMARY KEY (project, found_in, finding, origin));
+CREATE TABLE IF NOT EXISTS escape_tracked (project TEXT, slice TEXT, PRIMARY KEY (project, slice));
 CREATE TABLE IF NOT EXISTS flag_history (
   day TEXT, kpi TEXT, scope TEXT, status TEXT, text TEXT, PRIMARY KEY (day, kpi, scope));
 """
@@ -518,6 +522,24 @@ def fix_owners(text: str) -> collections.Counter:
     return out
 
 
+ESCAPED_RE = re.compile(r'^## escaped\s*$(.*?)(?=^## |^[\s*#`>_-]*(?:APPROVED|CHANGES_REQUESTED|INFRA_BLOCKED)\b|\Z)', re.M | re.S)
+ESCAPE_ROW_RE = re.compile(r'\b((?:R\d+-)?F\d+(?:\s*,\s*(?:R\d+-)?F\d+)*)\b.*?(?:←|<-+|\|)\s*[*`]*(S\d+[a-z]?|pre-slice)\b', re.I)
+
+
+def parse_escapes(text: str) -> list[tuple[str, str]] | None:
+    """The review's `## escaped` section: [(finding, origin slice)] for findings whose cause an
+    earlier slice committed (`F3 ← S08`, `pre-slice` when older than every slice); [] when it says
+    none; None when the review has no such section (written before reviewers were asked for it)."""
+    m = ESCAPED_RE.search(text)
+    if not m:
+        return None
+    out = []
+    for fs, origin in ESCAPE_ROW_RE.findall(m.group(1)):
+        origin = origin.upper() if origin.lower() != 'pre-slice' else 'pre-slice'
+        out += [(f.strip().upper(), origin) for f in fs.split(',')]
+    return out
+
+
 def owner_from_paths(text: str) -> str:
     t = text.lower()
     for owner, rx in (('scene', r'\.scene|\.prefab'), ('code', r'\.(ts|mjs|js)\b|assets/scripts'),
@@ -776,7 +798,7 @@ def collect_project(con, project: str, root: str | None = None) -> str:
         return f'{project}: missing'
     ev_dir = os.path.join(root, '.cursor', 'evidence')
     for table in ('slices', 'events', 'learnings', 'gates', 'project_facts', 'runner_slices', 'runner_stops',
-                  'slice_agents', 'ship', 'infra', 'static_checks'):
+                  'slice_agents', 'ship', 'infra', 'static_checks', 'escapes', 'escape_tracked'):
         con.execute(f'DELETE FROM {table} WHERE project=?', (project,))
 
     lessons = read_jsonl(os.path.join(ev_dir, 'lessons.jsonl'))
@@ -793,6 +815,9 @@ def collect_project(con, project: str, root: str | None = None) -> str:
         con.execute('INSERT INTO events VALUES (?,?,?,?,?,?,?,?,?,?)', (
             project, line, s, row.get('event'), system, rule, str(row.get('fix_target') or '')[:200],
             str(row.get('cause') or row.get('cost') or '')[:300], ratio, row.get('at')))
+        origin = str(row.get('origin_slice') or '').upper()
+        if s and re.fullmatch(r'S\d+[A-Z]?', origin) and origin != s:
+            con.execute('INSERT OR IGNORE INTO escapes VALUES (?,?,?,?,?)', (project, s, f'L{line}', origin, 'lessons'))
         if row.get('event') == 'budget_bump' and ratio and s:
             budget[s] = max(budget.get(s, 0), ratio)
         if row.get('event') == 'fix_round' and s:
@@ -844,6 +869,13 @@ def collect_project(con, project: str, root: str | None = None) -> str:
                     verdicts.append(v)
                     infra += v == 'INFRA_BLOCKED'
                 owners += fix_owners(text)
+                esc = parse_escapes(text)
+                if esc is not None:
+                    con.execute('INSERT OR IGNORE INTO escape_tracked VALUES (?,?)', (project, s))
+                    for finding_id, origin in esc:
+                        if origin != s:  # a finding renumbered across rounds counts once per origin
+                            con.execute('INSERT OR IGNORE INTO escapes VALUES (?,?,?,?,?)',
+                                        (project, s, finding_id, origin, 'review'))
             sp = os.path.join(evd, 'stats.json')
             if os.path.exists(sp):
                 try:
@@ -1144,6 +1176,8 @@ def report(con, projects: list[str]) -> str:
             esc.append([p, s, ', '.join(sorted(other)), (cause or '')[:90]])
     md.append('Ứng viên lỗi lọt (sự cố ở slice này nhắc tới slice khác; cần `origin_slice` ở S1 để chắc chắn):\n')
     md.append(table(['project', 'slice phát hiện', 'slice được nhắc', 'nguyên nhân'], esc[:15]))
+    md.append('Lỗi lọt theo slice gốc (mục `## escaped` của review, `origin_slice` của lessons):\n')
+    md.append(table(['project', 'slice gốc', 'lane gốc', 'writer gốc', 'lỗi lọt', 'phát hiện ở'], escape_rows(con, projects)))
 
     # 4 engine
     md.append('## 4. Engine, MCP và preview\n')
@@ -1239,7 +1273,7 @@ def report(con, projects: list[str]) -> str:
         rows = [[p, m, len(v), sum(1 for h in v if h.get('inject')),
                  round(statistics.mean(h.get('elapsed_ms') or 0 for h in v)),
                  round(statistics.mean([h['pack_tokens'] for h in v if h.get('pack_tokens')] or [0]))]
-                for (p, m), v in sorted(by.items())]
+                for (p, m), v in sorted(by.items(), key=lambda kv: tuple(x or '' for x in kv[0]))]  # a hook row may lack project/mode
         md.append('Hook orca-memory:\n')
         md.append(table(['project', 'mode', 'lần gọi', 'đã inject', 'ms trung bình', 'pack tokens trung bình'], rows))
 
@@ -1296,6 +1330,7 @@ THRESHOLDS = {
     'agent.first_pass': (0.50, 0.30, 'low', 5),
     'agent.infra_blocked': (1, 3, 'high', 1),
     'agent.static_first_fail': (0.30, 0.50, 'high', 3),
+    'agent.escaped': (0.25, 0.50, 'high', 5),
     'engine.funplay_reach': (0.95, 0.80, 'low', 5),
     'engine.incidents_per_slice': (0.20, 0.50, 'high', 5),
     'brief.budget_ratio': (1.5, 2.0, 'high', 3),
@@ -1314,6 +1349,7 @@ ACTIONS = {
     'agent.first_pass': 'xem fix_routing owner; cân nhắc đổi writer/reviewer (§4.3, S3)',
     'agent.infra_blocked': 'reviewer không tới được preview: đổi reviewer hoặc sửa preflight',
     'agent.static_first_fail': 'writer giao slice khi check-slice còn FAIL: xem loại FAIL lặp lại, sửa prompt writer hoặc nguồn lỗi',
+    'agent.escaped': 'lỗi lọt: xem bảng lỗi lọt theo slice gốc (lane, writer, reviewer); thêm check hoặc rule cho loại lỗi đó',
     'engine.funplay_reach': 'sửa setup hook / pin port',
     'engine.incidents_per_slice': 'retro các sự cố engine; sửa template/skill liên quan',
     'brief.budget_ratio': 'sửa cách calibrate change_budget trong slice-schema.md',
@@ -1405,6 +1441,11 @@ def evaluate(con, projects: list[str]) -> list[dict]:
             kinds = collections.Counter(k for _, f in bad for k in f.split(',') if k)
             add('agent.static_first_fail', p, len(bad) / len(sc), len(sc),
                 f'{len(bad)}/{len(sc)} slice FAIL ở lần chạy đầu' + (' (' + ', '.join(f'{k} {n}' for k, n in kinds.most_common()) + ')' if kinds else ''))
+        tracked = q('SELECT COUNT(*) FROM escape_tracked WHERE project=?', p)[0][0]
+        if tracked:
+            # per slice whose reviews wrote `## escaped`: defects an earlier slice let through
+            n_esc = q("SELECT COUNT(*) FROM escapes WHERE project=? AND source='review' AND origin != 'pre-slice'", p)[0][0]
+            add('agent.escaped', p, n_esc / tracked, tracked, f'{n_esc} lỗi lọt / {tracked} slice có mục escaped')
         ib = q('SELECT COALESCE(SUM(infra_blocked_reviews), 0) FROM slices WHERE project=?', p)[0][0]
         ib += q("SELECT COUNT(*) FROM events WHERE project=? AND event='infra_blocked' AND system LIKE 'agent%'", p)[0][0]
         nsl = q('SELECT COUNT(*) FROM slices WHERE project=?', p)[0][0]
@@ -1614,6 +1655,19 @@ def registered_experiments(con, switches: list[dict] | None = None) -> list[dict
 
 
 STATIC_HEAD = ['project', 'slice', 'lần chạy', 'lần đầu', 'lần cuối', 'bị trả lại', 'check FAIL', 'check WARN']
+
+
+def escape_rows(con, projects: list[str]) -> list[list]:
+    """One row per origin slice: how many findings it let through, its lane and writer, where caught."""
+    ph = ','.join('?' * len(projects))
+    rows = []
+    for p, origin, n, found in con.execute(f'''SELECT project, origin, COUNT(*), GROUP_CONCAT(DISTINCT found_in)
+                                              FROM escapes WHERE project IN ({ph}) GROUP BY 1, 2''', projects):
+        lane = con.execute('SELECT lane FROM runner_slices WHERE project=? AND slice=?', (p, origin)).fetchone()
+        writer = con.execute("SELECT agent FROM slice_agents WHERE project=? AND slice=? AND role='implement'", (p, origin)).fetchone()
+        rows.append([p, origin, lane[0] if lane else '—', short_agent(writer[0]) if writer else '—', n,
+                     ', '.join(sorted(found.split(','), key=lambda x: (len(x), x)))])
+    return sorted(rows, key=lambda r: (r[0], -r[4], r[1]))
 
 
 def static_rows(con, projects: list[str]) -> list[list]:

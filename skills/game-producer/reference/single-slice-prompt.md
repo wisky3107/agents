@@ -175,7 +175,10 @@ not explain it, you may run one stuck lookup: `M=~/.orca-memory/bin/orca-memory;
    finding (owner code).
 4. Screenshots: one final preview.png plus at most one per blocker/major finding.
 Write <EVIDENCE_DIR>/review.md (findings F1…, owner code|scene, `## fix_routing` table when
-CHANGES_REQUESTED) ending with exactly APPROVED or CHANGES_REQUESTED, runtime-state.json
+CHANGES_REQUESTED, then `## escaped`: one line `F<n> ← S<nn>` per finding whose fault an earlier
+slice committed — `git blame` the faulty lines, the commit subject names its slice, `pre-slice`
+when older than every slice — or the single line `none`) ending with exactly APPROVED or
+CHANGES_REQUESTED, runtime-state.json
 (verified | manual_required with reason), HANDOFF.json status approved|changes_requested. Review
 evidence only; do not edit game files. Then stop.
 ```

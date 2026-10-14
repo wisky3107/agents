@@ -1,3 +1,4 @@
+import collections
 import json
 import os
 import sqlite3
@@ -443,6 +444,46 @@ class StaticAndAlerts(unittest.TestCase):
             finally:
                 del os.environ['SCORECARD_NOTIFY']
             self.assertIn(' x\n', open(os.path.join(d, 'scorecard-alerts.log')).read())
+
+
+class Escapes(unittest.TestCase):
+    def test_parse(self):
+        text = ('# Review S12\n## fix_routing\n| ids | owner |\n|---|---|\n| F1,F3 | code |\n'
+                '## escaped\n- F1 ← S08 (GameFlow listener added in S08)\n- F3, F4 <- s10\n- R2-F1 | pre-slice\n'
+                'CHANGES_REQUESTED\n')
+        self.assertEqual(sc.parse_escapes(text), [('F1', 'S08'), ('F3', 'S10'), ('F4', 'S10'), ('R2-F1', 'pre-slice')])
+        self.assertEqual(sc.parse_escapes('## escaped\nnone\n\nAPPROVED\n'), [])
+        self.assertIsNone(sc.parse_escapes('## fix_routing\n| F1 | code |\nAPPROVED\n'))
+        # the section ends at the next heading or the verdict: a later F-row is not an escape
+        self.assertEqual(sc.parse_escapes('## escaped\nnone\n## notes\nF9 ← S01\n'), [])
+        self.assertEqual(sc.fix_owners(text), collections.Counter({'code': 1}))  # fix_routing stops at escaped
+
+    def test_collect_kpi_and_table(self):
+        with tempfile.TemporaryDirectory() as root:
+            ev = os.path.join(root, '.cursor', 'evidence')
+            for sl, body in (('S08', '## escaped\nnone\nAPPROVED\n'), ('S09', '## escaped\nnone\nAPPROVED\n'),
+                             ('S10', 'no section\nAPPROVED\n'), ('S11', '## escaped\n- F2 ← S08\n- F5 ← S11\nCHANGES_REQUESTED\n'),
+                             ('S12', '## escaped\n- F1 ← S08\n- F2 ← pre-slice\nAPPROVED\n')):
+                os.makedirs(os.path.join(ev, 'tasks', f'T-{sl}', 'evidence'))
+                with open(os.path.join(ev, 'tasks', f'T-{sl}', 'evidence', 'review.md'), 'w') as fh:
+                    fh.write(body)
+            os.makedirs(os.path.join(ev, 'tasks', 'T-S12', 'evidence', 'r2'))
+            with open(os.path.join(ev, 'tasks', 'T-S12', 'evidence', 'review-r2.md'), 'w') as fh:
+                fh.write('## escaped\n- F1 ← S08\nAPPROVED\n')  # carried into round 2: counted once
+            with open(os.path.join(ev, 'lessons.jsonl'), 'w') as fh:
+                fh.write(json.dumps({'slice': 'S13', 'event': 'fix_round', 'origin_slice': 'S09', 'cause': 'x'}) + '\n')
+            subprocess.run(['git', '-C', root, 'init', '-q'], check=True)
+            con = sc.connect(os.path.join(root, 'sc.sqlite'))
+            sc.collect_project(con, 'cc-x', root)
+            con.execute("INSERT INTO runner_slices (project, slice, lane) VALUES ('cc-x','S08','fleet')")
+            con.execute("INSERT INTO slice_agents VALUES ('cc-x','S08','implement','claude --model sonnet --effort high')")
+            self.assertEqual(sc.escape_rows(con, ['cc-x']), [
+                ['cc-x', 'S08', 'fleet', 'claude sonnet', 2, 'S11, S12'],
+                ['cc-x', 'S09', '—', '—', 1, 'S13'],
+                ['cc-x', 'pre-slice', '—', '—', 1, 'S12']])
+            k = [f for f in sc.evaluate(con, ['cc-x']) if f['kpi'] == 'agent.escaped']
+            self.assertEqual((k[0]['n'], round(k[0]['value'], 2)), (4, 0.5))  # 2 from review / 4 tracked slices
+            self.assertEqual(k[0]['status'], 'na')  # below min_n 5
 
 
 class ActiveProjects(unittest.TestCase):
