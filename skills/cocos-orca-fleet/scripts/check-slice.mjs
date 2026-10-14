@@ -70,7 +70,9 @@
  *               chrome channel (a fresh page), with the project's own run-smoke flags from
  *               scripts/smoke/run-args.json (`["--delay", "12000", "--viewport", "1080x1920"]`), then every
  *               new or changed check on a fresh page together with the earlier checks of its own slice
- *               (same `Sxx-` prefix: step 2 of 3 needs step 1). A red check FAILs unless
+ *               (same `Sxx-` prefix: step 2 of 3 needs step 1), after the suite's gate — the full run's
+ *               first check, or `"gate": [...]` in run-args.json — since run-smoke waits --delay only
+ *               after a check, a group without it reads an unloaded scene (capytal S18). A red check FAILs unless
  *               scripts/smoke/known-red.json lists it (`{"<check id>": {"since": "S13", "followup": "F-12",
  *               "reason": "…"}}`); a check red on that fresh page but green in the full run FAILs (it
  *               passes on state another slice's check or a warm page left). Smoke findings were
@@ -84,7 +86,7 @@
  *               seconds (default 300; the runner gives check-slice 600 in all); a run whose estimate
  *               (checks × --delay) does not fit is not started — WARN, save the last full run in evidence
  *               (cc-capytal-war: 61 checks × 12 s = 12 min). With --out the full report is saved beside
- *               it as static-smoke.json for the reviewer.
+ *               it as static-smoke.json for the reviewer, with the fresh-page runs under `fresh_page`.
  *
  * Prints one line per check and the detail under it, then `RESULT PASS|WARN|FAIL (...)`.
  * Exit 1 on any FAIL, else 0. SKIP (no tsconfig, no tests, no slice) is not a failure.
@@ -807,6 +809,14 @@ export function smokeArgs(text) {
   return out;
 }
 
+/** The suite gate files from run-args.json (`{"args": [...], "gate": ["S01-00-boot.check.js"]}`); [] when not set. */
+export function smokeGate(text) {
+  try {
+    const j = JSON.parse(text || '[]');
+    return Array.isArray(j?.gate) ? j.gate.map((f) => (String(f).endsWith('.check.js') ? String(f) : `${f}.check.js`)) : [];
+  } catch { return []; }
+}
+
 /** Rough wall time of a run of n checks: --delay (run-smoke default 300 ms) plus ~1 s each, plus page start. */
 export function smokeEstimateMs(n, args) {
   const i = args.indexOf('--delay');
@@ -815,9 +825,10 @@ export function smokeEstimateMs(n, args) {
 }
 
 /** A changed check and the earlier checks of its slice (same `Sxx-` prefix), in corpus order; others alone. */
-export function smokeGroups(corpus, touched) {
+export function smokeGroups(corpus, touched, gate = []) {
   const sorted = [...corpus].sort();
   const groups = new Map();
+  const head = gate.filter((f) => corpus.includes(f));
   for (const file of touched) {
     const prefix = (file.match(/^(S\d+[a-z]?)-/i) || [])[1];
     const key = prefix || file;
@@ -828,7 +839,8 @@ export function smokeGroups(corpus, touched) {
     g.judge.push(file);
     groups.set(key, g);
   }
-  return [...groups.values()].map((g) => ({ files: g.files.sort(), judge: g.judge }));
+  // run order: the suite gate first (it absorbs the boot --delay), then the slice chain in corpus order
+  return [...groups.values()].map((g) => ({ files: [...head, ...g.files.sort().filter((f) => !head.includes(f))], judge: g.judge }));
 }
 
 function runSmoke(root, port, checksDir, timeout, extra = []) {
@@ -860,24 +872,29 @@ function checkSmoke(root, o, changed, base) {
   const full = reused ? reused.report
     : est > left() ? { infra_error: `no full-corpus *smoke*.json in ${evDir ? path.relative(root, evDir) : 'the slice evidence'} newer than the last code change, and a run (${all.length} checks${extra.length ? ` with ${extra.join(' ')}` : ''}, ~${Math.round(est / 60000)} min) does not fit the ${Math.round(left() / 1000)} s budget — save your last full run there` }
     : runSmoke(root, port, dir, Math.max(1000, left()), extra);
-  if (o.out) {
-    const f = path.join(path.dirname(path.resolve(root, o.out)), 'static-smoke.json');
-    fs.mkdirSync(path.dirname(f), { recursive: true });
-    fs.writeFileSync(f, `${JSON.stringify(full, null, 2)}\n`);
-  }
   const touched = changed.filter((f) => /^scripts\/smoke\/checks\/[^/]+\.check\.js$/.test(f) && fs.existsSync(path.join(root, f))).map((f) => path.basename(f));
-  const cold = [];
+  const cold = [], runs = [];
   if (full && Array.isArray(full.checks)) {
-    for (const g of smokeGroups(all, touched.slice(0, SMOKE_COLD_MAX))) {
+    const gateText = readText(path.join(root, 'scripts', 'smoke', 'run-args.json'));
+    const gate = smokeGate(gateText).length ? smokeGate(gateText) : full.checks[0]?.file ? [full.checks[0].file] : [];
+    for (const g of smokeGroups(all, touched.slice(0, SMOKE_COLD_MAX), gate)) {
       const need = smokeEstimateMs(g.files.length, extra);
       if (need > left()) { for (const file of g.judge) cold.push({ file, report: { infra_error: `smoke budget used up (${g.files.length} checks need ~${Math.round(need / 1000)} s, ${Math.max(0, Math.round(left() / 1000))} s left)` } }); continue; }
       const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'check-slice-smoke-'));
       try {
-        for (const f of g.files) fs.copyFileSync(path.join(dir, f), path.join(tmp, f));
+        // run-smoke sorts the folder by name: a numbered copy keeps the gate first; names map back after
+        g.files.forEach((f, i) => fs.copyFileSync(path.join(dir, f), path.join(tmp, `${String(i).padStart(3, '0')}~${f}`)));
         const report = runSmoke(root, port, tmp, Math.max(1000, Math.min(need * 2, left())), extra);
+        for (const c of report.checks || []) if (c.file) c.file = String(c.file).replace(/^\d{3}~/, '');
+        runs.push({ files: g.files, judged: g.judge, report });
         for (const file of g.judge) cold.push({ file, report });
       } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
     }
+  }
+  if (o.out) {
+    const f = path.join(path.dirname(path.resolve(root, o.out)), 'static-smoke.json');
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    fs.writeFileSync(f, `${JSON.stringify(runs.length ? { ...full, fresh_page: runs } : full, null, 2)}\n`);
   }
   const r = smokeVerdict(full, cold, known, knownBase);
   if (reused) r.note = `${r.note}; full run reused from evidence/${reused.file}`;

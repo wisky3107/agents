@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { specCommands, slicePaths, outOfScope, nanUnsafe, es5Errors, sliceFacts, evidenceRe, section, classifyErrors, assumptionNotes, errorKey, splitAgainstBaseline, renameMap, defaultBase, smokeVerdict, smokePort, parseKnownRed, reusableSmoke, smokeArgs, smokeEstimateMs, smokeGroups, sceneFindings, textWidth } from '../scripts/check-slice.mjs';
+import { specCommands, slicePaths, outOfScope, nanUnsafe, es5Errors, sliceFacts, evidenceRe, section, classifyErrors, assumptionNotes, errorKey, splitAgainstBaseline, renameMap, defaultBase, smokeVerdict, smokePort, parseKnownRed, reusableSmoke, smokeArgs, smokeEstimateMs, smokeGroups, smokeGate, sceneFindings, textWidth } from '../scripts/check-slice.mjs';
 
 const SCRIPT = new URL('../scripts/check-slice.mjs', import.meta.url).pathname;
 
@@ -430,24 +430,29 @@ test('smokePort / parseKnownRed: --port wins, else previewUrl of the slice evide
   assert.deepEqual(parseKnownRed(null), {});
 });
 
-test('end to end: smoke runs the corpus and each changed check alone through the runner; ledger rows at the base are not "added"', () => {
+test('end to end: smoke runs the corpus, then each changed slice chain on a fresh page after the suite gate; ledger rows at the base are not "added"', () => {
   const { d, g } = repo();
-  // fake run-smoke: RED is red; COLD is red without S01-old in the run (another slice's state); NEEDS:<f> is red without <f>
+  // fake run-smoke (names may carry the gate's NNN~ order prefix): BOOT must run first or every later check
+  // reads an unloaded scene; RED is red; COLD is red without S05-mid in the run (another slice's state);
+  // NEEDS:<f> is red without <f>
   const fake = path.join(d, 'fake-smoke.mjs');
   fs.writeFileSync(fake, `import fs from 'node:fs';
 const a = process.argv.slice(2); const dir = a[a.indexOf('--checks') + 1];
 if (a[a.indexOf('--port') + 1] !== '7458') { console.log(JSON.stringify({ ok: false, infra_error: 'wrong port' })); process.exit(2); }
 const files = fs.readdirSync(dir).filter((f) => f.endsWith('.check.js')).sort();
-const checks = files.map((f) => { const t = fs.readFileSync(dir + '/' + f, 'utf8');
+const names = files.map((f) => f.replace(/^\\d{3}~/, ''));
+const checks = files.map((f, i) => { const t = fs.readFileSync(dir + '/' + f, 'utf8');
   const need = (t.match(/NEEDS:(\\S+)/) || [])[1];
-  const bad = t.includes('RED') || (t.includes('COLD') && !files.includes('S01-old.check.js')) || (need && !files.includes(need));
-  return { id: f.replace('.check.js', ''), file: f, status: bad ? 'FAIL' : 'PASS' }; });
+  const bad = (i > 0 && names[0] !== 'S01-boot.check.js') || t.includes('RED') || (t.includes('COLD') && !names.includes('S05-mid.check.js')) || (need && !names.includes(need));
+  return { id: names[i].replace('.check.js', ''), file: f, status: bad ? 'FAIL' : 'PASS' }; });
 fs.appendFileSync(process.env.FAKE_LOG, a.filter((x) => !x.startsWith('/')).join(' ') + ' | ' + files.join(',') + '\\n');
 console.log(JSON.stringify({ ok: checks.every((c) => c.status === 'PASS'), checks }));`);
   const env = { ...process.env, CHECK_SLICE_SMOKE_RUNNER: fake, CHECK_SLICE_CACHE_DIR: path.join(d, '.cache-baseline'), FAKE_LOG: path.join(d, 'fake.log') };
   const run = (...a) => spawnSync(process.execPath, [SCRIPT, '--root', d, '--only', 'smoke', ...a], { encoding: 'utf8', env });
   fs.mkdirSync(path.join(d, 'scripts/smoke/checks'), { recursive: true });
+  fs.writeFileSync(path.join(d, 'scripts/smoke/checks/S01-boot.check.js'), '// suite gate\n');
   fs.writeFileSync(path.join(d, 'scripts/smoke/checks/S01-old.check.js'), '// RED since S05\n');
+  fs.writeFileSync(path.join(d, 'scripts/smoke/checks/S05-mid.check.js'), '// leaves state behind\n');
   fs.writeFileSync(path.join(d, 'scripts/smoke/known-red.json'), JSON.stringify({ 'S01-old': { since: 'S05', followup: 'F-2' } }));
   g('add', '-A'); g('commit', '-qm', 'S05');
 
@@ -455,26 +460,36 @@ console.log(JSON.stringify({ ok: checks.every((c) => c.status === 'PASS'), check
   assert.match(r.stdout, /SKIP smoke: no preview port/);  // no --port, no preview-startup.json
   assert.equal(r.status, 0);
 
-  fs.writeFileSync(path.join(d, 'scripts/smoke/checks/S12-new.check.js'), '// COLD: reads what S01 left\n');
+  fs.writeFileSync(path.join(d, 'scripts/smoke/checks/S12-new.check.js'), '// COLD: reads what S05-mid left\n');
   fs.writeFileSync(path.join(d, 'scripts/smoke/checks/S12-two.check.js'), '// step 2 of 2 NEEDS:S12-new.check.js\n');
   fs.writeFileSync(path.join(d, 'scripts/smoke/run-args.json'), JSON.stringify(['--delay', '50', '--viewport', '1080x1920', '--port', '9999']));
   const out = '.cursor/evidence/tasks/T-S12/evidence/static-check.txt';
   r = run('--slice', 'slices/S12-x.md', '--port', '7458', '--out', out);
   assert.equal(r.status, 1, r.stdout);
-  assert.match(r.stdout, /FAIL smoke: 3 checks, 1 red \(1 known\), 2 new\/changed run on a fresh page/);
+  assert.match(r.stdout, /FAIL smoke: 5 checks, 1 red \(1 known\), 2 new\/changed run on a fresh page/);
   assert.match(r.stdout, /red on a fresh page with its slice's earlier checks[^\n]*S12-new FAIL/);
-  assert.doesNotMatch(r.stdout, /S12-two FAIL/);  // step 2 ran with step 1 on its page
+  assert.doesNotMatch(r.stdout, /S12-two FAIL/);  // step 2 ran with step 1, both after the gate
   const log = fs.readFileSync(path.join(d, 'fake.log'), 'utf8').trim().split('\n');
   assert.equal(log.length, 2);  // the corpus, then one page for the S12 group
-  assert.match(log[0], /--port 7458 --channel chrome --quiet --checks --delay 50 --viewport 1080x1920 \| S01-old/);  // the project's flags, never its --port
-  assert.match(log[1], /\| S12-new\.check\.js,S12-two\.check\.js$/);
+  assert.match(log[0], /--port 7458 --channel chrome --quiet --checks --delay 50 --viewport 1080x1920 \| S01-boot/);  // the project's flags, never its --port
+  assert.match(log[1], /\| 000~S01-boot\.check\.js,001~S12-new\.check\.js,002~S12-two\.check\.js$/);  // the full run's first check leads the page
   assert.doesNotMatch(r.stdout, /added to/);
-  assert.equal(JSON.parse(fs.readFileSync(path.join(d, path.dirname(out), 'static-smoke.json'), 'utf8')).checks.length, 3);
+  const saved = JSON.parse(fs.readFileSync(path.join(d, path.dirname(out), 'static-smoke.json'), 'utf8'));
+  assert.equal(saved.checks.length, 5);
+  assert.deepEqual(saved.fresh_page.map((x) => x.files), [['S01-boot.check.js', 'S12-new.check.js', 'S12-two.check.js']]);
+  assert.deepEqual(saved.fresh_page[0].report.checks.map((c) => `${c.file} ${c.status}`), ['S01-boot.check.js PASS', 'S12-new.check.js FAIL', 'S12-two.check.js PASS']);
 
+  // a declared gate wins over the full run's first check
+  fs.writeFileSync(path.join(d, 'scripts/smoke/run-args.json'), JSON.stringify({ args: ['--delay', '50'], gate: ['S05-mid'] }));
+  fs.writeFileSync(path.join(d, 'fake.log'), '');
+  r = run('--slice', 'slices/S12-x.md', '--port', '7458');
+  assert.match(fs.readFileSync(path.join(d, 'fake.log'), 'utf8'), /\| 000~S05-mid\.check\.js,001~S12-new/);
+
+  fs.writeFileSync(path.join(d, 'scripts/smoke/run-args.json'), JSON.stringify(['--delay', '50']));
   fs.writeFileSync(path.join(d, 'scripts/smoke/checks/S12-new.check.js'), '// fixed\n');
   r = run('--slice', 'slices/S12-x.md', '--port', '7458');
   assert.equal(r.status, 0, r.stdout);
-  assert.match(r.stdout, /PASS smoke: 3 checks, 1 red \(1 known\)/);
+  assert.match(r.stdout, /PASS smoke: 5 checks, 1 red \(1 known\)/);
 });
 
 test('reusableSmoke: the newest full-corpus report written after the last change; stale, partial or infra reports are not', () => {
@@ -508,6 +523,10 @@ test('smokeArgs / smokeEstimateMs / smokeGroups: project flags minus the gate\'s
     { files: ['S13-05-x.check.js', 'S13-06-y.check.js'], judge: ['S13-06-y.check.js'] },
     { files: ['misc.check.js'], judge: ['misc.check.js'] },
   ]);
+  assert.deepEqual(smokeGroups(corpus, ['S17-01-b.check.js'], ['S01-a.check.js', 'gone.check.js'])[0].files,
+    ['S01-a.check.js', 'S17-00-a.check.js', 'S17-01-b.check.js']);  // the gate leads; a gate not in the corpus is dropped
+  assert.deepEqual(smokeGate('{"args": [], "gate": ["S01-00-boot"]}'), ['S01-00-boot.check.js']);
+  assert.deepEqual(smokeGate('["--delay", "1"]'), []);
 });
 
 test('end to end: a quoted slice id finds its evidence; no fresh report and a run over budget is a WARN, not a run', () => {
