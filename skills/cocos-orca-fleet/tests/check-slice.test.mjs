@@ -533,6 +533,8 @@ test('end to end: a quoted slice id finds its evidence; no fresh report and a ru
   const checks = fs.readdirSync(path.join(d, 'scripts/smoke/checks')).map((f) => ({ id: f.replace('.check.js', ''), file: f, status: 'PASS' }));
   fs.writeFileSync(path.join(ev, 'run3/smoke-run3.json'), JSON.stringify({ checks }));
   fs.writeFileSync(path.join(d, 'notes.md'), 'after the run');
+  fs.writeFileSync(path.join(d, 'scripts/smoke/run-args.json'), '["--delay", "12000"] ');  // gate config, not code
+  fs.writeFileSync(path.join(d, 'scripts/smoke/known-red.json'), '{}');
   r = run();
   assert.match(r.stdout, /PASS smoke: 30 checks, 0 red \(0 known\), 0 new\/changed run on a fresh page; full run reused from evidence\/run3\/smoke-run3\.json/);
 });

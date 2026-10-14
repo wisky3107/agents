@@ -93,6 +93,7 @@ const SPEC_TIMEOUT_MS = 180000;
 const SMOKE_BUDGET_S = 300;
 const SMOKE_COLD_MAX = 8; // new/changed checks run alone, each on its own page (~10 s each)
 const KNOWN_RED = 'scripts/smoke/known-red.json';
+const GATE_CONFIG = [KNOWN_RED, 'scripts/smoke/run-args.json'];
 
 export function parseArgs(argv) {
   const o = { only: CHECKS, allChecks: false };
@@ -750,8 +751,9 @@ function checkSmoke(root, o, changed, base) {
   const deadline = Date.now() + (o.smokeBudget > 0 ? o.smokeBudget : SMOKE_BUDGET_S) * 1000;
   const left = () => deadline - Date.now();
   const evDir = id ? path.join(root, '.cursor', 'evidence', 'tasks', `T-${id}`, 'evidence') : null;
-  // notes, docs and evidence written after the last full run do not make it stale
-  const newest = Math.max(0, ...changed.filter((f) => fs.existsSync(path.join(root, f)) && !f.startsWith('.cursor/') && !/\.md$/.test(f) && !f.startsWith('docs/'))
+  // notes, docs, evidence and the gate's own config (ledger, run flags) written after the last full run do not make it stale
+  const newest = Math.max(0, ...changed.filter((f) => fs.existsSync(path.join(root, f)) && !f.startsWith('.cursor/') && !/\.md$/.test(f) && !f.startsWith('docs/')
+    && !GATE_CONFIG.includes(f))
     .map((f) => fs.statSync(path.join(root, f)).mtimeMs));
   const extra = smokeArgs(readText(path.join(root, 'scripts', 'smoke', 'run-args.json')));
   const reused = reusableSmoke(evDir, all, newest);
