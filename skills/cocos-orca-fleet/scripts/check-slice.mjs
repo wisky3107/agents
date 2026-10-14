@@ -8,11 +8,19 @@
  *   node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs [--slice slices/Sxx-*.md] [--base <ref>]
  *        [--out <file>] [--only <checks>] [--skip <checks>] [--notes <integration-notes.md>] [--all-checks]
  *
- *   tsc         project tsconfig, --noEmit. A writer's "tsc clean" is not evidence (S05 F1). FAIL only
- *               for errors in files the slice changed; errors elsewhere in the project are WARN
- *               (pre-existing), and extensions/, temp/ and engine declarations are ignored.
- *   es5         the same tsconfig with --target es5, TS2802 in assets/ only, same split. The editor preview runs
- *               ES2015+, the web-mobile build is ES5 loose: `[...map.values()]` became
+ *   tsc         project tsconfig, --noEmit. A writer's "tsc clean" is not evidence (S05 F1). In files the
+ *               slice changed FAIL only for errors that are new against the slice base (merge-base with
+ *               --base): the base is built in a temporary `git worktree add --detach` (temp/tsconfig.cocos.json
+ *               copied with the root rewritten, temp/declarations, node_modules and extensions linked), and
+ *               errors are keyed by file + TS code + message with line numbers and the checkout root dropped
+ *               and quoted object types collapsed, compared as multisets so a duplicate still counts as new.
+ *               Errors that were already there in a changed file are WARN ("N pre-existing in touched files,
+ *               0 new"): a legacy project with non-strict code blocked every slice (cc-capytal-war S14, S15).
+ *               No base or no buildable baseline: every error in a changed file FAILs, and the note says why.
+ *               Errors elsewhere in the project are WARN (pre-existing), and extensions/, temp/ and engine
+ *               declarations are ignored.
+ *   es5         the same tsconfig with --target es5, TS2802 in assets/ only, same split and baseline. The editor
+ *               preview runs ES2015+, the web-mobile build is ES5 loose: `[...map.values()]` became
  *               `[].concat(iterator)` and broke every level change (S08, caught in S09).
  *   specs       every tests/**\/*.spec.ts runs through the commands of its own `Run:` header, old
  *               specs included: a data change turned the S01 spec red and nobody reran it (S08 F3).
@@ -49,6 +57,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 
 const CHECKS = ['tsc', 'es5', 'specs', 'scope', 'smoke-lint', 'evidence', 'notes', 'assumptions'];
@@ -92,9 +101,9 @@ function tsconfigProblem(root) {
   return null;
 }
 
-function runTsc(root, extra) {
+function runTsc(root, extra, cwd = root) {
   const [bin, pre] = tscBin(root);
-  const r = sh(bin, [...pre, '-p', 'tsconfig.json', '--noEmit', ...extra], root, 300000);
+  const r = sh(bin, [...pre, '-p', 'tsconfig.json', '--noEmit', ...extra], cwd, 300000);
   const errors = `${r.stdout}${r.stderr}`.split('\n').filter((l) => /error TS\d+/.test(l));
   return { status: r.status, errors, raw: `${r.stdout}${r.stderr}`.trim() };
 }
@@ -116,30 +125,142 @@ export function classifyErrors(errors, changed) {
   return out;
 }
 
-function tscResult(r, changed, what, fix) {
+/** "file|TS code|message": no line numbers, the checkout root as <root>, quoted object types collapsed (they grow with the code). */
+export function errorKey(line, roots) {
+  const m = line.trim().match(/^(.+?)\(\d+,\d+\):\s*error (TS\d+):\s*(.*)$/);
+  if (!m) return null;
+  let msg = m[3];
+  for (const r of [...roots].sort((x, y) => y.length - x.length)) if (r) msg = msg.split(r.replace(/\/$/, '')).join('<root>');
+  return `${m[1]}|${m[2]}|${msg.replace(/'\{[^']*\}'/g, "'{…}'")}`;
+}
+
+/** Split lines into new ones and ones the baseline already had (multiset: the second copy of a baseline error is new). */
+export function splitAgainstBaseline(lines, baseLines, roots) {
+  const left = new Map();
+  for (const l of baseLines) { const k = errorKey(l, roots); if (k) left.set(k, (left.get(k) || 0) + 1); }
+  const out = { fresh: [], pre: [] };
+  for (const l of lines) {
+    const k = errorKey(l, roots);
+    if (k && left.get(k) > 0) { left.set(k, left.get(k) - 1); out.pre.push(l); } else out.fresh.push(l);
+  }
+  return out;
+}
+
+/**
+ * tsc errors at the slice base, from a detached worktree of the merge-base (cached by project + sha + flags).
+ * Lines come back with the worktree path as <root>. `problem` instead of `lines` when it cannot be built.
+ */
+function makeBaseline(root, base) {
+  const dirs = [];
+  let mb = null;
+  let wt = null;
+  const prep = () => {
+    if (!base) return 'no base ref';
+    mb = git(root, 'merge-base', base, 'HEAD').trim();
+    if (!mb) return `no merge-base of ${base} and HEAD`;
+    return null;
+  };
+  const build = () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'check-slice-base-'));
+    dirs.push(tmp);
+    const dir = path.join(tmp, 'wt');
+    const r = sh('git', ['worktree', 'add', '--detach', '-q', dir, mb], root, 300000);
+    if (r.status !== 0) return `git worktree add ${mb.slice(0, 8)} failed: ${(r.stderr || '').trim().slice(0, 200)}`;
+    wt = dir;
+    // untracked inputs of the tsconfig: the editor's temp/ (the extended config names the checkout root in
+    // its paths, so it is rewritten for this directory), node_modules, extensions
+    const cfg = path.join(root, 'temp', 'tsconfig.cocos.json');
+    if (fs.existsSync(cfg)) {
+      fs.mkdirSync(path.join(dir, 'temp'), { recursive: true });
+      const roots = [root, fs.realpathSync(root)];
+      let txt = fs.readFileSync(cfg, 'utf8');
+      for (const x of roots) txt = txt.split(x.replace(/\/$/, '')).join(dir);
+      fs.writeFileSync(path.join(dir, 'temp', 'tsconfig.cocos.json'), txt);
+      if (fs.existsSync(path.join(root, 'temp', 'declarations'))) fs.symlinkSync(path.join(root, 'temp', 'declarations'), path.join(dir, 'temp', 'declarations'));
+    }
+    for (const n of ['node_modules', 'extensions']) if (fs.existsSync(path.join(root, n)) && !fs.existsSync(path.join(dir, n))) fs.symlinkSync(path.join(root, n), path.join(dir, n));
+    return null;
+  };
+  const runs = new Map();
+  const lines = (extra) => {
+    const key = extra.join(' ');
+    if (runs.has(key)) return runs.get(key);
+    let res;
+    try {
+      res = { problem: prep() };
+      if (!res.problem) {
+        const cfgStat = fs.existsSync(path.join(root, 'temp', 'tsconfig.cocos.json')) ? fs.statSync(path.join(root, 'temp', 'tsconfig.cocos.json')).mtimeMs : 0;
+        const id = crypto.createHash('sha1').update(`${fs.realpathSync(root)}|${mb}|${cfgStat}|${key}`).digest('hex').slice(0, 20);
+        const cache = path.join(os.tmpdir(), 'check-slice-baseline', `${id}.json`);
+        let cached = null;
+        try { cached = JSON.parse(fs.readFileSync(cache, 'utf8')); } catch { /* none */ }
+        if (cached) res = { lines: cached };
+        else {
+          res.problem = wt ? null : build();
+          if (!res.problem) {
+            const t = runTsc(root, extra, wt);
+            const strip = (l) => l.split(fs.realpathSync(wt)).join('<root>').split(wt).join('<root>'); // the longer spelling first (/private/var vs /var)
+            if (!t.errors.length && t.status !== 0) res.problem = `tsc failed at ${mb.slice(0, 8)} without error lines`;
+            else {
+              res = { lines: t.errors.map(strip) };
+              try { fs.mkdirSync(path.dirname(cache), { recursive: true }); fs.writeFileSync(cache, JSON.stringify(res.lines)); } catch { /* cache is optional */ }
+            }
+          }
+        }
+      }
+    } catch (e) { res = { problem: e.message }; }
+    runs.set(key, res);
+    return res;
+  };
+  const dispose = () => {
+    if (wt) sh('git', ['worktree', 'remove', '--force', wt], root);
+    for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
+    if (wt) sh('git', ['worktree', 'prune'], root);
+  };
+  return { root, lines, dispose };
+}
+
+function tscResult(r, changed, what, fix, baseline, extra) {
   if (r.status === 0) return { status: 'PASS' };
   if (!r.errors.length) return { status: 'FAIL', note: 'tsc failed without error lines', lines: [r.raw.slice(0, 2000)] };
   const c = classifyErrors(r.errors, changed);
   const ignored = c.ignored ? `; ${c.ignored} outside project code ignored` : '';
-  if (c.own.length) return { status: 'FAIL', note: `${c.own.length} ${what} in files this slice changed${fix}${ignored}`, lines: [...c.own.slice(0, 40), ...(c.old.length ? [`(${c.old.length} more in unchanged files)`] : [])] };
+  let own = c.own;
+  let pre = [];
+  let why = '';
+  if (own.length && baseline) {
+    const b = baseline.lines(extra);
+    if (b.problem) why = ` (no baseline: ${b.problem}; every error in a changed file counts)`;
+    else {
+      const roots = [baseline.root, fs.realpathSync(baseline.root)];
+      const baseLines = extra.includes('es5') ? es5Errors(b.lines) : b.lines;
+      // a config error names no file: never pre-existing noise
+      const split = splitAgainstBaseline(own.filter((l) => /\(\d+,\d+\)/.test(l)), baseLines, roots);
+      own = [...own.filter((l) => !/\(\d+,\d+\)/.test(l)), ...split.fresh];
+      pre = split.pre;
+    }
+  }
+  const preNote = pre.length ? `; ${pre.length} pre-existing in touched files not counted` : '';
+  if (own.length) return { status: 'FAIL', note: `${own.length} ${pre.length ? 'new ' : ''}${what} in files this slice changed${fix}${preNote}${ignored}${why}`, lines: [...own.slice(0, 40), ...(c.old.length ? [`(${c.old.length} more in unchanged files)`] : [])] };
+  if (pre.length) return { status: 'WARN', note: `${pre.length} pre-existing ${what} in touched files, 0 new${c.old.length ? `; ${c.old.length} more in files this slice did not change` : ''}${ignored}`, lines: pre.slice(0, 20) };
   if (c.old.length) return { status: 'WARN', note: `${c.old.length} pre-existing ${what} in files this slice did not change — not this slice's, file a followup${ignored}`, lines: c.old.slice(0, 20) };
   return { status: 'PASS', note: ignored.slice(2) };
 }
 
-function checkTsc(root, changed) {
+function checkTsc(root, changed, baseline) {
   const p = tsconfigProblem(root);
   if (p) return { status: 'SKIP', note: p };
-  return tscResult(runTsc(root, []), changed, 'error(s)', '');
+  return tscResult(runTsc(root, []), changed, 'error(s)', '', baseline, []);
 }
 
 export const es5Errors = (lines) => lines.filter((l) => /error TS2802/.test(l) && /^assets\//.test(l.trim()));
 
-function checkEs5(root, changed) {
+function checkEs5(root, changed, baseline) {
   const p = tsconfigProblem(root);
   if (p) return { status: 'SKIP', note: p };
   const r = runTsc(root, ['--target', 'es5']);
   const bad = es5Errors(r.errors);
-  return tscResult({ status: bad.length ? 1 : 0, errors: bad, raw: '' }, changed, 'iteration(s) the ES5 web build breaks', ' (use Array.from / forEach)');
+  return tscResult({ status: bad.length ? 1 : 0, errors: bad, raw: '' }, changed, 'iteration(s) the ES5 web build breaks', ' (use Array.from / forEach)', baseline, ['--target', 'es5']);
 }
 
 /** The commands of a spec's `Run:` header: one per comment line that starts with tsc / node / npx / python3. */
@@ -414,9 +535,10 @@ export function main(argv) {
   const root = path.resolve(o.root || git(process.cwd(), 'rev-parse', '--show-toplevel').trim() || process.cwd());
   const base = o.base || defaultBase(root);
   const changed = changedFiles(root, base);
+  const baseline = makeBaseline(root, base);
   const run = {
-    tsc: () => checkTsc(root, changed),
-    es5: () => checkEs5(root, changed),
+    tsc: () => checkTsc(root, changed, baseline),
+    es5: () => checkEs5(root, changed, baseline),
     specs: () => checkSpecs(root, changed),
     scope: () => checkScope(root, o.slice, changed),
     'smoke-lint': () => checkSmokeLint(root, changed, o.allChecks),
@@ -426,13 +548,15 @@ export function main(argv) {
   };
   const out = [`check-slice ${path.basename(root)} slice=${o.slice || '-'} base=${base || '-'} at ${new Date().toISOString()}`];
   const worst = { FAIL: [], WARN: [] };
-  for (const name of CHECKS.filter((c) => o.only.includes(c))) {
-    const t0 = Date.now();
-    const r = run[name]();
-    out.push(`${r.status} ${name}${r.note ? `: ${r.note}` : ''} (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
-    for (const l of r.lines || []) out.push(`  ${l}`);
-    if (worst[r.status]) worst[r.status].push(name);
-  }
+  try {
+    for (const name of CHECKS.filter((c) => o.only.includes(c))) {
+      const t0 = Date.now();
+      const r = run[name]();
+      out.push(`${r.status} ${name}${r.note ? `: ${r.note}` : ''} (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
+      for (const l of r.lines || []) out.push(`  ${l}`);
+      if (worst[r.status]) worst[r.status].push(name);
+    }
+  } finally { baseline.dispose(); }
   const result = worst.FAIL.length ? 'FAIL' : worst.WARN.length ? 'WARN' : 'PASS';
   out.push(`RESULT ${result}${worst.FAIL.length || worst.WARN.length ? ` (${[...worst.FAIL, ...worst.WARN].join(', ')})` : ''}`);
   const text = `${out.join('\n')}\n`;

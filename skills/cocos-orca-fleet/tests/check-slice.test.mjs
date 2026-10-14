@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { specCommands, slicePaths, outOfScope, nanUnsafe, es5Errors, sliceFacts, evidenceRe, section, classifyErrors, assumptionNotes } from '../scripts/check-slice.mjs';
+import { specCommands, slicePaths, outOfScope, nanUnsafe, es5Errors, sliceFacts, evidenceRe, section, classifyErrors, assumptionNotes, errorKey, splitAgainstBaseline } from '../scripts/check-slice.mjs';
 
 const SCRIPT = new URL('../scripts/check-slice.mjs', import.meta.url).pathname;
 
@@ -207,4 +207,77 @@ test('assumptions: a "tune on the preview" note in a changed source file is a WA
   assert.equal(r.status, 0, r.stdout);
   assert.match(r.stdout, /WARN assumptions: 1 value\(s\)[^\n]*\n  src\/ServiceConfig\.ts:1:/);
   assert.match(r.stdout, /RESULT WARN \(assumptions\)/);
+});
+
+test('errorKey / splitAgainstBaseline: line numbers, the checkout root and quoted object types ignored; a duplicate is new', () => {
+  const roots = ['/p/proj'];
+  const a = "assets/A.ts(10,3): error TS2339: Property 'X' does not exist on type '{ a: string; }'.";
+  const b = "assets/A.ts(99,7): error TS2339: Property 'X' does not exist on type '{ a: string; b: number; }'.";
+  assert.equal(errorKey(a, roots), errorKey(b, roots));
+  assert.equal(errorKey("assets/A.ts(1,1): error TS2719: Type 'import(\"/p/proj/assets/m\").T' is not assignable", roots),
+    errorKey("assets/A.ts(2,1): error TS2719: Type 'import(\"/q/wt/assets/m\").T' is not assignable".replace('/q/wt', '/p/proj'), roots));
+  assert.notEqual(errorKey(a, roots), errorKey(a.replace('TS2339', 'TS2322'), roots));
+  assert.notEqual(errorKey(a, roots), errorKey(a.replace('assets/A.ts', 'assets/B.ts'), roots));
+  assert.equal(errorKey('error TS5023: Unknown compiler option', roots), null);
+  const s = splitAgainstBaseline([a, b, 'assets/A.ts(5,1): error TS2322: other'], [a], roots);
+  assert.deepEqual([s.pre, s.fresh], [[a], [b, 'assets/A.ts(5,1): error TS2322: other']]);
+});
+
+// a stand-in tsc: `// ERR TSnnnn message` lines in assets/*.ts become errors, `// ES5 message` ones (TS2802) only with --target es5;
+// ROOT in a message is the cwd; a missing extended config is TS5083 like the real one
+const FAKE_TSC = `#!/usr/bin/env node
+const fs = require('fs'); const path = require('path');
+const cfg = JSON.parse(fs.readFileSync('tsconfig.json', 'utf8'));
+if (cfg.extends && !fs.existsSync(cfg.extends)) { console.log('error TS5083: Cannot read file ' + cfg.extends); process.exit(1); }
+const es5 = process.argv.includes('es5');
+let n = 0;
+for (const f of fs.readdirSync('assets').sort()) {
+  fs.readFileSync(path.join('assets', f), 'utf8').split('\\n').forEach((l, i) => {
+    const m = l.match(/\\/\\/ (ERR (TS\\d+)|ES5) (.*)$/);
+    if (!m || (m[1] === 'ES5' && !es5)) return;
+    n++; console.log('assets/' + f + '(' + (i + 1) + ',1): error ' + (m[2] || 'TS2802') + ': ' + m[3].split('ROOT').join(process.cwd()));
+  });
+}
+process.exit(n ? 2 : 0);
+`;
+
+test('end to end: tsc / es5 FAIL only for errors new against the slice base; pre-existing ones in touched files are WARN', () => {
+  const { d, g } = repo();
+  const w = (f, txt) => fs.writeFileSync(path.join(d, f), txt);
+  fs.mkdirSync(path.join(d, 'assets')); fs.mkdirSync(path.join(d, 'temp')); fs.mkdirSync(path.join(d, 'node_modules/.bin'), { recursive: true });
+  w('.gitignore', 'temp/\nnode_modules/\n');
+  w('tsconfig.json', '{ "extends": "./temp/tsconfig.cocos.json" }\n');
+  w('temp/tsconfig.cocos.json', JSON.stringify({ compilerOptions: { paths: { 'db://assets/*': [`${d}/assets/*`] } } }));
+  w('node_modules/.bin/tsc', FAKE_TSC); fs.chmodSync(path.join(d, 'node_modules/.bin/tsc'), 0o755);
+  const HOTKEY = "Property 'HOTKEY' does not exist on type '{ A: string; }'.";
+  w('assets/a.ts', `export {};\n// ERR TS2339 ${HOTKEY}\n// ERR TS2719 Two types named T: import("ROOT/assets/m").T\n// ES5 Type 'Set<string>' can only be iterated\n`);
+  w('assets/b.ts', 'export {};\n// ERR TS2322 elsewhere, never touched\n');
+  g('add', '-A'); g('commit', '-qm', 'legacy code with errors');
+  g('checkout', '-qb', 'slice');
+  // the slice edits a.ts: lines move, the object type in a message grows, the other errors stay
+  w('assets/a.ts', `export {};\nexport const x = 1;\n\n// ERR TS2339 Property 'HOTKEY' does not exist on type '{ A: string; GUEST_ID: string; }'.\n// ERR TS2719 Two types named T: import("ROOT/assets/m").T\n// ES5 Type 'Set<string>' can only be iterated\n`);
+  g('commit', '-qam', 'slice work');
+  const live = () => spawnSync('git', ['worktree', 'list'], { cwd: d, encoding: 'utf8' }).stdout.trim().split('\n').length;
+
+  let r = exec(d, '--only', 'tsc,es5');
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, /WARN tsc: 2 pre-existing error\(s\) in touched files, 0 new; 1 more in files this slice did not change/);
+  assert.match(r.stdout, /WARN es5: 1 pre-existing iteration\(s\) the ES5 web build breaks in touched files, 0 new/);
+  assert.match(r.stdout, /RESULT WARN \(tsc, es5\)/);
+  assert.equal(live(), 1, 'the baseline worktree is removed');
+
+  // a new error in the touched file, a duplicate of an old one, a new iteration
+  w('assets/a.ts', `${fs.readFileSync(path.join(d, 'assets/a.ts'), 'utf8')}// ERR TS2339 Property 'NEW' does not exist on type 'Foo'.\n// ERR TS2719 Two types named T: import("ROOT/assets/m").T\n// ES5 Type 'Map<string>' can only be iterated\n`);
+  r = exec(d, '--only', 'tsc,es5');
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /FAIL tsc: 2 new error\(s\) in files this slice changed; 2 pre-existing in touched files not counted/);
+  assert.match(r.stdout, /assets\/a\.ts\(7,1\): error TS2339: Property 'NEW'/);
+  assert.match(r.stdout, /assets\/a\.ts\(8,1\): error TS2719/);
+  assert.match(r.stdout, /FAIL es5: 1 new iteration\(s\)[^\n]*\(use Array\.from \/ forEach\)/);
+  assert.equal(live(), 1);
+
+  // no usable base: the old rule (every error in a changed file) applies, and the note says so
+  r = exec(d, '--only', 'tsc', '--base', 'no-such-ref');
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /FAIL tsc: 4 error\(s\) in files this slice changed \(no baseline: no merge-base of no-such-ref and HEAD; every error in a changed file counts\)/);
 });
