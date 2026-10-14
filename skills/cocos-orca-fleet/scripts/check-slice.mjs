@@ -148,7 +148,7 @@ export function splitAgainstBaseline(lines, baseLines, roots) {
 
 /**
  * tsc errors at the slice base, from a detached worktree of the merge-base (cached by project + sha + flags).
- * Lines come back with the worktree path as <root>. `problem` instead of `lines` when it cannot be built.
+ * Cached in os.tmpdir() (CHECK_SLICE_CACHE_DIR overrides). Lines come back with the worktree path as <root>. `problem` instead of `lines` when it cannot be built.
  */
 function makeBaseline(root, base) {
   const dirs = [];
@@ -189,9 +189,9 @@ function makeBaseline(root, base) {
     try {
       res = { problem: prep() };
       if (!res.problem) {
-        const cfgStat = fs.existsSync(path.join(root, 'temp', 'tsconfig.cocos.json')) ? fs.statSync(path.join(root, 'temp', 'tsconfig.cocos.json')).mtimeMs : 0;
-        const id = crypto.createHash('sha1').update(`${fs.realpathSync(root)}|${mb}|${cfgStat}|${key}`).digest('hex').slice(0, 20);
-        const cache = path.join(os.tmpdir(), 'check-slice-baseline', `${id}.json`);
+        const mtime = (f) => (fs.existsSync(path.join(root, f)) ? fs.statSync(path.join(root, f)).mtimeMs : 0);
+        const id = crypto.createHash('sha1').update(`v1|${fs.realpathSync(root)}|${mb}|${mtime('temp/tsconfig.cocos.json')}|${mtime('temp/declarations')}|${key}`).digest('hex').slice(0, 20);
+        const cache = path.join(process.env.CHECK_SLICE_CACHE_DIR || path.join(os.tmpdir(), 'check-slice-baseline'), `${id}.json`);
         let cached = null;
         try { cached = JSON.parse(fs.readFileSync(cache, 'utf8')); } catch { /* none */ }
         if (cached) res = { lines: cached };
@@ -201,6 +201,7 @@ function makeBaseline(root, base) {
             const t = runTsc(root, extra, wt);
             const strip = (l) => l.split(fs.realpathSync(wt)).join('<root>').split(wt).join('<root>'); // the longer spelling first (/private/var vs /var)
             if (!t.errors.length && t.status !== 0) res.problem = `tsc failed at ${mb.slice(0, 8)} without error lines`;
+            else if (t.errors.some((l) => !/\(\d+,\d+\)/.test(l))) res.problem = `tsc at ${mb.slice(0, 8)} reported a config error (${t.errors.find((l) => !/\(\d+,\d+\)/.test(l)).trim().slice(0, 100)})`;
             else {
               res = { lines: t.errors.map(strip) };
               try { fs.mkdirSync(path.dirname(cache), { recursive: true }); fs.writeFileSync(cache, JSON.stringify(res.lines)); } catch { /* cache is optional */ }
@@ -213,9 +214,9 @@ function makeBaseline(root, base) {
     return res;
   };
   const dispose = () => {
-    if (wt) sh('git', ['worktree', 'remove', '--force', wt], root);
+    const removed = wt ? sh('git', ['worktree', 'remove', '--force', wt], root).status === 0 : true;
     for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
-    if (wt) sh('git', ['worktree', 'prune'], root);
+    if (!removed) sh('git', ['worktree', 'prune'], root); // only when remove failed: other tools' worktrees stay alone
   };
   return { root, lines, dispose };
 }

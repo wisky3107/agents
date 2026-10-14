@@ -85,7 +85,7 @@ function repo() {
   g('add', '-A'); g('commit', '-qm', 'base');
   return { d, g };
 }
-const exec = (d, ...a) => spawnSync(process.execPath, [SCRIPT, '--root', d, ...a], { encoding: 'utf8' });
+const exec = (d, ...a) => spawnSync(process.execPath, [SCRIPT, '--root', d, ...a], { encoding: 'utf8', env: { ...process.env, CHECK_SLICE_CACHE_DIR: path.join(d, '.cache-baseline') } });
 
 test('end to end: an old spec gone red fails, out-of-slice paths warn, NaN-unsafe changed checks fail', () => {
   const { d } = repo();
@@ -245,7 +245,7 @@ test('end to end: tsc / es5 FAIL only for errors new against the slice base; pre
   const { d, g } = repo();
   const w = (f, txt) => fs.writeFileSync(path.join(d, f), txt);
   fs.mkdirSync(path.join(d, 'assets')); fs.mkdirSync(path.join(d, 'temp')); fs.mkdirSync(path.join(d, 'node_modules/.bin'), { recursive: true });
-  w('.gitignore', 'temp/\nnode_modules/\n');
+  w('.gitignore', 'temp/\nnode_modules/\n.cache-baseline/\n');
   w('tsconfig.json', '{ "extends": "./temp/tsconfig.cocos.json" }\n');
   w('temp/tsconfig.cocos.json', JSON.stringify({ compilerOptions: { paths: { 'db://assets/*': [`${d}/assets/*`] } } }));
   w('node_modules/.bin/tsc', FAKE_TSC); fs.chmodSync(path.join(d, 'node_modules/.bin/tsc'), 0o755);
@@ -280,4 +280,21 @@ test('end to end: tsc / es5 FAIL only for errors new against the slice base; pre
   r = exec(d, '--only', 'tsc', '--base', 'no-such-ref');
   assert.equal(r.status, 1, r.stdout);
   assert.match(r.stdout, /FAIL tsc: 4 error\(s\) in files this slice changed \(no baseline: no merge-base of no-such-ref and HEAD; every error in a changed file counts\)/);
+});
+
+test('baseline: a config error at the base is no baseline (old rule + note), and nothing is left behind', () => {
+  const { d, g } = repo();
+  const w = (f, txt) => fs.writeFileSync(path.join(d, f), txt);
+  fs.mkdirSync(path.join(d, 'assets')); fs.mkdirSync(path.join(d, 'node_modules/.bin'), { recursive: true });
+  w('.gitignore', 'node_modules/\n.cache-baseline/\n');
+  w('tsconfig.json', '{ "extends": "./tsconfig.base.json" }\n');
+  w('node_modules/.bin/tsc', FAKE_TSC); fs.chmodSync(path.join(d, 'node_modules/.bin/tsc'), 0o755);
+  w('assets/a.ts', 'export {};\n// ERR TS2339 old\n');
+  g('add', '-A'); g('commit', '-qm', 'legacy; tsconfig.base.json does not exist at the base'); g('checkout', '-qb', 'slice');
+  w('tsconfig.base.json', '{}\n'); // the extended config exists in the checkout only, so tsc at the base fails with TS5083
+  w('assets/a.ts', 'export {};\nexport const x = 1;\n// ERR TS2339 old\n');
+  const r = exec(d, '--only', 'tsc');
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /FAIL tsc: 1 error\(s\) in files this slice changed \(no baseline: tsc at \w+ reported a config error \(error TS5083/);
+  assert.equal(spawnSync('git', ['worktree', 'list'], { cwd: d, encoding: 'utf8' }).stdout.trim().split('\n').length, 1);
 });
