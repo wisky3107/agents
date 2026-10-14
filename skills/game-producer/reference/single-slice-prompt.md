@@ -78,7 +78,9 @@ Build:
    scene-tool / Funplay per .cursor/skills/cocos-editor/SKILL.md, refresh + reopen, no MissingScript.
 4. Preview: reuse the healthy URL or run_project_preview({mode:"browser"}) once; verify title;
    write <EVIDENCE_DIR>/preview-startup.json (projectPath, previewUrl, status, checkedAt).
-5. Verify: node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT> --channel auto > <EVIDENCE_DIR>/smoke.json must be green;
+5. Verify: node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT> --channel auto, plus the flags in
+   scripts/smoke/run-args.json when it exists, > <EVIDENCE_DIR>/smoke.json must be green; your last full run
+   after your last code change is the one that file keeps (check-slice reuses it);
    play the feel rows once; batch state reads into one eval. Screenshots: ONE preview.png total.
    A frozen Orca tab falls back to Chrome headless by itself (`channel` in the JSON;
    ~/.agents/skills/cocos-orca-fleet/reference/orca/frozen-tab.md); play the feel rows there too.

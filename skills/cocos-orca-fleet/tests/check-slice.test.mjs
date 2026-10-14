@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { specCommands, slicePaths, outOfScope, nanUnsafe, es5Errors, sliceFacts, evidenceRe, section, classifyErrors, assumptionNotes, errorKey, splitAgainstBaseline, renameMap, defaultBase, smokeVerdict, smokePort, parseKnownRed, reusableSmoke } from '../scripts/check-slice.mjs';
+import { specCommands, slicePaths, outOfScope, nanUnsafe, es5Errors, sliceFacts, evidenceRe, section, classifyErrors, assumptionNotes, errorKey, splitAgainstBaseline, renameMap, defaultBase, smokeVerdict, smokePort, parseKnownRed, reusableSmoke, smokeArgs, smokeEstimateMs, smokeGroups } from '../scripts/check-slice.mjs';
 
 const SCRIPT = new URL('../scripts/check-slice.mjs', import.meta.url).pathname;
 
@@ -387,7 +387,7 @@ test('smokeVerdict: an unlisted red FAILs, a listed one is known; ledger rows ad
   const known = { 'S02-b': { since: 'S10', followup: 'F-3' }, 'S03-c.check.js': { since: 'S11', followup: 'F-4' } };
   r = smokeVerdict(full, [], known, known);
   assert.equal(r.status, 'PASS', JSON.stringify(r));
-  assert.match(r.note, /4 checks, 2 red \(2 known\), 0 new\/changed run alone/);
+  assert.match(r.note, /4 checks, 2 red \(2 known\), 0 new\/changed run on a fresh page/);
 
   const now = { ...known, 'S04-d': { reason: 'flaky' }, 'gone-check': { followup: 'F-9' } };
   r = smokeVerdict(full, [], now, known);
@@ -401,16 +401,16 @@ test('smokeVerdict: an unlisted red FAILs, a listed one is known; ledger rows ad
   ]);
 });
 
-test('smokeVerdict: a check red alone but green in the full run FAILs; infra is a WARN, never a block', () => {
+test('smokeVerdict: a check red on a fresh page but green in the full run FAILs; infra is a WARN, never a block', () => {
   const full = { checks: [pass('S12-a'), pass('S12-b')] };
   const cold = [{ file: 'S12-a.check.js', report: { checks: [fail('S12-a', { found: false })] } },
     { file: 'S12-b.check.js', report: { checks: [pass('S12-b')] } }];
   let r = smokeVerdict(full, cold, {}, {});
   assert.equal(r.status, 'FAIL');
-  assert.match(r.lines[0], /red alone on a fresh page, green in the full run[^\n]*S12-a FAIL/);
+  assert.match(r.lines[0], /red on a fresh page with its slice's earlier checks, green in the full run[^\n]*S12-a FAIL/);
   r = smokeVerdict(full, [{ file: 'S12-a.check.js', report: { ok: false, infra_error: 'page never ready' } }], {}, {});
   assert.equal(r.status, 'WARN');
-  assert.match(r.lines[0], /S12-a\.check\.js alone did not run: page never ready/);
+  assert.match(r.lines[0], /S12-a\.check\.js on a fresh page did not run: page never ready/);
   r = smokeVerdict({ ok: false, infra_error: 'page never ready' }, [], {}, {});
   assert.equal(r.status, 'WARN');
   assert.match(r.note, /smoke did not run: page never ready/);
@@ -432,17 +432,19 @@ test('smokePort / parseKnownRed: --port wins, else previewUrl of the slice evide
 
 test('end to end: smoke runs the corpus and each changed check alone through the runner; ledger rows at the base are not "added"', () => {
   const { d, g } = repo();
-  // fake run-smoke: a file with RED is red; a file with COLD is red when it runs alone
+  // fake run-smoke: RED is red; COLD is red without S01-old in the run (another slice's state); NEEDS:<f> is red without <f>
   const fake = path.join(d, 'fake-smoke.mjs');
   fs.writeFileSync(fake, `import fs from 'node:fs';
 const a = process.argv.slice(2); const dir = a[a.indexOf('--checks') + 1];
 if (a[a.indexOf('--port') + 1] !== '7458') { console.log(JSON.stringify({ ok: false, infra_error: 'wrong port' })); process.exit(2); }
 const files = fs.readdirSync(dir).filter((f) => f.endsWith('.check.js')).sort();
 const checks = files.map((f) => { const t = fs.readFileSync(dir + '/' + f, 'utf8');
-  const bad = t.includes('RED') || (t.includes('COLD') && files.length === 1);
+  const need = (t.match(/NEEDS:(\\S+)/) || [])[1];
+  const bad = t.includes('RED') || (t.includes('COLD') && !files.includes('S01-old.check.js')) || (need && !files.includes(need));
   return { id: f.replace('.check.js', ''), file: f, status: bad ? 'FAIL' : 'PASS' }; });
+fs.appendFileSync(process.env.FAKE_LOG, a.filter((x) => !x.startsWith('/')).join(' ') + ' | ' + files.join(',') + '\\n');
 console.log(JSON.stringify({ ok: checks.every((c) => c.status === 'PASS'), checks }));`);
-  const env = { ...process.env, CHECK_SLICE_SMOKE_RUNNER: fake, CHECK_SLICE_CACHE_DIR: path.join(d, '.cache-baseline') };
+  const env = { ...process.env, CHECK_SLICE_SMOKE_RUNNER: fake, CHECK_SLICE_CACHE_DIR: path.join(d, '.cache-baseline'), FAKE_LOG: path.join(d, 'fake.log') };
   const run = (...a) => spawnSync(process.execPath, [SCRIPT, '--root', d, '--only', 'smoke', ...a], { encoding: 'utf8', env });
   fs.mkdirSync(path.join(d, 'scripts/smoke/checks'), { recursive: true });
   fs.writeFileSync(path.join(d, 'scripts/smoke/checks/S01-old.check.js'), '// RED since S05\n');
@@ -454,12 +456,18 @@ console.log(JSON.stringify({ ok: checks.every((c) => c.status === 'PASS'), check
   assert.equal(r.status, 0);
 
   fs.writeFileSync(path.join(d, 'scripts/smoke/checks/S12-new.check.js'), '// COLD: reads what S01 left\n');
-  fs.writeFileSync(path.join(d, 'scripts/smoke/checks/S12-two.check.js'), '// fine\n');
+  fs.writeFileSync(path.join(d, 'scripts/smoke/checks/S12-two.check.js'), '// step 2 of 2 NEEDS:S12-new.check.js\n');
+  fs.writeFileSync(path.join(d, 'scripts/smoke/run-args.json'), JSON.stringify(['--delay', '50', '--viewport', '1080x1920', '--port', '9999']));
   const out = '.cursor/evidence/tasks/T-S12/evidence/static-check.txt';
   r = run('--slice', 'slices/S12-x.md', '--port', '7458', '--out', out);
   assert.equal(r.status, 1, r.stdout);
-  assert.match(r.stdout, /FAIL smoke: 3 checks, 1 red \(1 known\), 2 new\/changed run alone/);
-  assert.match(r.stdout, /red alone on a fresh page[^\n]*S12-new FAIL/);
+  assert.match(r.stdout, /FAIL smoke: 3 checks, 1 red \(1 known\), 2 new\/changed run on a fresh page/);
+  assert.match(r.stdout, /red on a fresh page with its slice's earlier checks[^\n]*S12-new FAIL/);
+  assert.doesNotMatch(r.stdout, /S12-two FAIL/);  // step 2 ran with step 1 on its page
+  const log = fs.readFileSync(path.join(d, 'fake.log'), 'utf8').trim().split('\n');
+  assert.equal(log.length, 2);  // the corpus, then one page for the S12 group
+  assert.match(log[0], /--port 7458 --channel chrome --quiet --checks --delay 50 --viewport 1080x1920 \| S01-old/);  // the project's flags, never its --port
+  assert.match(log[1], /\| S12-new\.check\.js,S12-two\.check\.js$/);
   assert.doesNotMatch(r.stdout, /added to/);
   assert.equal(JSON.parse(fs.readFileSync(path.join(d, path.dirname(out), 'static-smoke.json'), 'utf8')).checks.length, 3);
 
@@ -477,9 +485,54 @@ test('reusableSmoke: the newest full-corpus report written after the last change
   put('smoke-only-a.json', { checks: [{ file: 'a.check.js', status: 'PASS' }] }, 10);
   put('review-smoke.json', { ok: false, infra_error: 'page never ready' }, 5);
   put('static-smoke.json', { checks: [{ file: 'a.check.js' }, { file: 'b.check.js' }] }, 1);  // our own output never counts
+  fs.mkdirSync(path.join(ev, 'negative'));
+  put('negative/smoke-run1.json', { checks: [{ file: 'a.check.js', status: 'FAIL' }, { file: 'b.check.js', status: 'FAIL' }] }, 0);  // red on purpose
+  put('smoke-negative.json', { checks: [{ file: 'a.check.js', status: 'FAIL' }, { file: 'b.check.js', status: 'FAIL' }] }, 0);
   const changedAt = Date.now() - 200 * 1000;
   assert.equal(reusableSmoke(ev, corpus, changedAt)?.file, 'smoke.json');
   assert.equal(reusableSmoke(ev, corpus, Date.now() - 50 * 1000), null);  // code changed after the full run
   assert.equal(reusableSmoke(ev, [...corpus, 'c.check.js'], changedAt), null);  // a check the run never saw
   assert.equal(reusableSmoke(path.join(ev, 'nope'), corpus, 0), null);
+});
+
+test('smokeArgs / smokeEstimateMs / smokeGroups: project flags minus the gate\'s own, a delay-based estimate, slice chains', () => {
+  assert.deepEqual(smokeArgs('["--delay", "12000", "--viewport", "1080x1920", "--channel", "orca", "--quiet", "--port", "1"]'), ['--delay', '12000', '--viewport', '1080x1920']);
+  assert.deepEqual(smokeArgs('{"args": ["--delay", "500"]}'), ['--delay', '500']);
+  assert.deepEqual(smokeArgs('nope'), []);
+  assert.deepEqual(smokeArgs(null), []);
+  assert.equal(smokeEstimateMs(61, ['--delay', '12000']), 25000 + 61 * 13000);  // cc-capytal-war: ~13.6 min
+  assert.equal(smokeEstimateMs(60, []), 25000 + 60 * 1300);
+  const corpus = ['S01-a.check.js', 'S13-05-x.check.js', 'S13-06-y.check.js', 'S13-07-z.check.js', 'S17-00-a.check.js', 'S17-01-b.check.js', 'S17-02-c.check.js', 'misc.check.js'];
+  assert.deepEqual(smokeGroups(corpus, ['S17-01-b.check.js', 'S17-02-c.check.js', 'S13-06-y.check.js', 'misc.check.js']), [
+    { files: ['S17-00-a.check.js', 'S17-01-b.check.js', 'S17-02-c.check.js'], judge: ['S17-01-b.check.js', 'S17-02-c.check.js'] },
+    { files: ['S13-05-x.check.js', 'S13-06-y.check.js'], judge: ['S13-06-y.check.js'] },
+    { files: ['misc.check.js'], judge: ['misc.check.js'] },
+  ]);
+});
+
+test('end to end: a quoted slice id finds its evidence; no fresh report and a run over budget is a WARN, not a run', () => {
+  const { d, g } = repo();
+  fs.writeFileSync(path.join(d, 'slices/S12-x.md'), 'id: "S12"\npaths:\n  code: [src/a.js]\n  art: []\n');
+  assert.equal(sliceFacts(fs.readFileSync(path.join(d, 'slices/S12-x.md'), 'utf8')).id, 'S12');
+  const fake = path.join(d, 'fake-smoke.mjs');
+  fs.writeFileSync(fake, "import fs from 'node:fs'; fs.writeFileSync(process.env.FAKE_LOG, 'ran'); console.log(JSON.stringify({ checks: [] }));");
+  const env = { ...process.env, CHECK_SLICE_SMOKE_RUNNER: fake, CHECK_SLICE_CACHE_DIR: path.join(d, '.cache-baseline'), FAKE_LOG: path.join(d, 'fake.log') };
+  fs.mkdirSync(path.join(d, 'scripts/smoke/checks'), { recursive: true });
+  for (let i = 0; i < 30; i++) fs.writeFileSync(path.join(d, `scripts/smoke/checks/S0${i % 9 + 1}-${i}.check.js`), '//\n');
+  fs.writeFileSync(path.join(d, 'scripts/smoke/run-args.json'), '["--delay", "12000"]');
+  g('add', '-A'); g('commit', '-qm', 'corpus');
+  const ev = path.join(d, '.cursor/evidence/tasks/T-S12/evidence');
+  fs.mkdirSync(path.join(ev, 'run3'), { recursive: true });
+  fs.writeFileSync(path.join(ev, 'preview-startup.json'), JSON.stringify({ previewUrl: 'http://localhost:7458/' }));
+  fs.mkdirSync(path.join(d, 'src')); fs.writeFileSync(path.join(d, 'src/a.js'), '1');
+  const run = () => spawnSync(process.execPath, [SCRIPT, '--root', d, '--only', 'smoke', '--slice', 'slices/S12-x.md'], { encoding: 'utf8', env });
+  let r = run();
+  assert.match(r.stdout, /WARN smoke: smoke did not run: no full-corpus \*smoke\*\.json in \.cursor\/evidence\/tasks\/T-S12\/evidence newer than the last code change, and a run \(30 checks with --delay 12000, ~7 min\) does not fit the \d+ s budget/);
+  assert.equal(fs.existsSync(path.join(d, 'fake.log')), false);
+  // the writer's last full run, in a subfolder, after the last code change (a later notes edit does not count)
+  const checks = fs.readdirSync(path.join(d, 'scripts/smoke/checks')).map((f) => ({ id: f.replace('.check.js', ''), file: f, status: 'PASS' }));
+  fs.writeFileSync(path.join(ev, 'run3/smoke-run3.json'), JSON.stringify({ checks }));
+  fs.writeFileSync(path.join(d, 'notes.md'), 'after the run');
+  r = run();
+  assert.match(r.stdout, /PASS smoke: 30 checks, 0 red \(0 known\), 0 new\/changed run on a fresh page; full run reused from evidence\/run3\/smoke-run3\.json/);
 });
