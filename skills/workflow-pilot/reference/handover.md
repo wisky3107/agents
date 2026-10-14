@@ -15,12 +15,16 @@ keeps running.
    - the authority, with the director's words quoted verbatim;
    - every suspicion, finding or workaround not yet in results.md, with its evidence path;
    - the commands in flight, if any;
-   - this session's name, so the new session can message it.
+   - this session's name (`pilot-<N>-<slug>-<Sxx>`, see SKILL §3 step 6), so the new session
+     can message it.
    Put the findings that belong in results.md into results.md first, and commit only that file.
 3. Delete the watch cron (CronDelete) and stop the background `pilot-wait` (TaskStop). Then
    `producer-runner.mjs pilot --project <p>` shows `waiter_alive: false`.
 4. Start the new session in `~/.agents`, with the same permission mode as this one:
-   `orca terminal create --worktree path:/Users/wikz/.agents --title "pilot-<N>" --command 'claude --permission-mode bypassPermissions "Read ~/.agents/skills/workflow-pilot/reference/handover.md, section New session, and take over pilot <N> for <project path>."' --json`
+   `orca terminal create --worktree path:/Users/wikz/.agents --title "pilot-<N>-<slug>-<Sxx>" --command 'claude --name pilot-<N>-<slug>-<Sxx> --permission-mode bypassPermissions "Read ~/.agents/skills/workflow-pilot/reference/handover.md, section New session, and take over pilot <N> for <project path>."' --json`
+   `<slug>` is the project folder name and `<Sxx>` the live slice
+   (`pilot-24-cc-capytal-war-S15`): `--name` sets the peer name the old session messages and the
+   tab title.
 5. Wait until the new session confirms with a cross-session message (`taken over: cron <id>,
    waiter running`). Then write the user one line (who took over, its cron id), record
    `handed over to <name>` under the Handover entry, and close this session's own terminal:
@@ -43,5 +47,6 @@ keeps running.
    `7 */2 * * *`, keeping the authority sentence verbatim. Start
    `pilot-wait --once` with Bash `run_in_background`.
 4. Act at once on any handed question that is already open.
-5. Send the old session one cross-session line: `taken over: cron <id>, waiter running`. The
+5. If the slice changed since the launch, `/rename pilot-<N>-<slug>-<Sxx>` (SKILL §3 step 6).
+6. Send the old session one cross-session line: `taken over: cron <id>, waiter running`. The
    name is in the handover note. Then continue the pilot.

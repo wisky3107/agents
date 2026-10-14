@@ -113,7 +113,14 @@ smoke-check edit the slice needs is pre-declared.
    pilot, and the director is not called (no bell, notification or dialog). See "Handed
    questions" below. A runner started before the registration picks up `--auto` only after a
    restart.
-6. Append `### Pilot N — <slice> (lane), từ <UTC>` to results.md (purpose, config: runner
+6. Name the pilot session `pilot-<N>-<slug>-<Sxx>` (`<slug>` = project folder, `<Sxx>` = the
+   live slice), e.g. `pilot-24-cc-capytal-war-S15`: send `/rename <name>` to your own terminal
+   (`orca terminal send --terminal $ORCA_TERMINAL_HANDLE --text '/rename <name>' --enter`; it
+   is queued if you are busy). The name is the session's peer name for cross-session messages
+   and its Orca tab title; the default (`agents-2d`) says neither project nor slice. Rename it
+   the same way on every `slice_changed`, and launch a handover session with
+   `claude --name <name>`.
+7. Append `### Pilot N — <slice> (lane), từ <UTC>` to results.md (purpose, config: runner
    pid + terminal, coordinator, agents, judge/autopilot, memory mode and pack); commit
    only that file.
 

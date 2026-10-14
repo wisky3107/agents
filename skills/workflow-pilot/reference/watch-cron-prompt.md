@@ -35,7 +35,7 @@ Each run:
    - If no option is safe, give it back with `producer-runner.mjs pilot --project <project> --return qN --note "<why + recommendation>"` (the runner then calls the director); for a question nobody handed me, send a PushNotification with a recommendation and leave it open.
 3. Runner. Relaunch the runner only if its lock is dead after a crash. If the control file says stop or pause, do not relaunch; send a PushNotification.
 4. Never start Step 3, deploy, tag or push.
-5. On merge (release.slices.<Sxx>: merged), follow workflow-pilot step 6 (Close):
+5. On merge (release.slices.<Sxx>: merged), follow workflow-pilot step 6 (Close). When another slice of this pilot follows, only rename the session to the new slice (`orca terminal send --terminal $ORCA_TERMINAL_HANDLE --text '/rename pilot-<N>-<slug>-<next Sxx>' --enter`) and keep the cron. Otherwise:
    - Run token-report since <launch UTC>.
    - Read stats.json, producer-log.md and the questions.
    - Run the memory-trial greps.
