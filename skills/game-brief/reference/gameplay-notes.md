@@ -10,7 +10,7 @@ Save supplied chat text or file contents verbatim under **Source text** in
 `reference/<slug>-brief/GAMEPLAY_NOTES.md`. Record the source filename or chat origin and
 date. Reuse `brief.gameplay_notes_path` when an existing project configured another path.
 For a new store clone before bootstrap, stage it in
-`/Users/wikz/orca-global/<slug>-brief/GAMEPLAY_NOTES.md`; Step 3 copies it into the project.
+`/Users/wikz/orca-global/games/<slug>/GAMEPLAY_NOTES.md`; Step 3 copies it into the project.
 Once a project exists, its copy is authoritative; do not overwrite later amendments with
 the staged copy. Preserve supplied attachments beside the notes and link their paths.
 

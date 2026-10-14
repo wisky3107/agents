@@ -4,7 +4,8 @@
  *
  * Usage:
  *   node merge-rip-pack.mjs --rip /path/to/<game>/output --slug <slug>
- *     [--assets-root /Users/wikz/orca-global/assets]
+ *     [--assets-root <dir>]   # default: /Users/wikz/orca-global/games/<slug>/assets (pack root);
+ *                              # when given, the pack root is <dir>/<slug>
  *     [--models-priority P0|P1|none]   # which catalog priorities to copy into models/ (default P0)
  *     [--include-full-images]          # also copy images/ (full Texture2D dump; default: skipped when images_ingame/ exists)
  *     [--force]                        # overwrite models/*.glb that already exist
@@ -32,7 +33,7 @@ function die(msg, code = 1) {
 
 function parseArgs(argv) {
   const out = {
-    assetsRoot: '/Users/wikz/orca-global/assets',
+    assetsRoot: null, // null → /Users/wikz/orca-global/games/<slug>/assets
     modelsPriority: 'P0',
     includeFullImages: false,
     force: false,
@@ -147,7 +148,9 @@ function main() {
     process.exit(args.help ? 0 : 2);
   }
   const rip = path.resolve(args.rip);
-  const packRoot = path.join(args.assetsRoot, args.slug);
+  const packRoot = args.assetsRoot
+    ? path.join(args.assetsRoot, args.slug)
+    : path.join('/Users/wikz/orca-global/games', args.slug, 'assets');
   const ripDest = path.join(packRoot, 'rip');
   const modelsDest = path.join(packRoot, 'models');
 

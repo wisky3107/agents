@@ -2,7 +2,7 @@
 name: store-game-clone
 description: >-
   Clone any Apple App Store game into a Cocos Creator project: crawl store
-  metadata/screenshots/trailer into orca-global assets, optionally merge a
+  metadata/screenshots/trailer into orca-global games/<slug>/assets, optionally merge a
   unity-apk-rip output pack (ripped PNG/GLB/levels + rip briefs/guides) into the
   same reference pack, automatically use rip-port-analysis for a rip-backed port,
   accept director gameplay notes, bootstrap a Cocos project via
@@ -33,14 +33,15 @@ explicitly limited coverage. User-requested crawl-only stops at collection as be
 
 | Key | Value |
 |-----|-------|
-| Assets root | `/Users/wikz/orca-global/assets/<slug>/` |
-| Research brief (optional) | `/Users/wikz/orca-global/<slug>-brief/` |
+| Game folder | `/Users/wikz/orca-global/games/<slug>/` (brief docs at its root, `assets/` inside) |
+| Assets root | `/Users/wikz/orca-global/games/<slug>/assets/` |
+| Research brief (optional) | `/Users/wikz/orca-global/games/<slug>/` (the `*.md` files at the folder root, not `assets/`) |
 | Games root | `/Users/wikz/Works/games/CocosCreator` |
 | Project slug | `cc-<slug>` |
 | Bootstrap | `~/.agents/skills/new-cocos-game` (`bootstrap.mjs`) |
 | Crawl script | `scripts/crawl-app-store.mjs` (this skill) |
 | Rip pack (optional) | any `unity-apk-rip` `output/` dir, e.g. `/Users/wikz/Works/agent/assets-ripper/<game>/output` |
-| Rip merge script | `scripts/merge-rip-pack.mjs` (this skill) → `assets/<slug>/rip/` + P0 GLBs into `assets/<slug>/models/` |
+| Rip merge script | `scripts/merge-rip-pack.mjs` (this skill) → `games/<slug>/assets/rip/` + P0 GLBs into `games/<slug>/assets/models/` |
 | Brief author | `~/.agents/skills/game-brief` (explicit launch spec → saved `brief.brief_agent` → Fable 5.1) |
 | Producer | `<project>/.cursor/skills/game-producer` (default handoff; runs slices per `AGENT_NOTES.md` `release.goal`) |
 | Fleet | `<project>/.cursor/skills/cocos-orca-fleet` (one slice only, when the user asks for just that) |
@@ -54,8 +55,8 @@ explicitly limited coverage. User-requested crawl-only stops at collection as be
 ```
 Store Game Clone:
 - [ ] 0. Intake (store URL, slug, orientation?, design res?, implement?, goal=end_to_end|playable, art backend?, fleet workers?, rip pack?, gameplay notes?, gameplay video?)
-- [ ] 1. Crawl App Store → assets/<slug>/ (+ optional <slug>-brief/STORE_DATA.md)
-- [ ] 1b. Rip pack given → merge-rip-pack.mjs → assets/<slug>/rip/ + models/ (skip when none)
+- [ ] 1. Crawl App Store → games/<slug>/assets/ (+ optional games/<slug>/STORE_DATA.md)
+- [ ] 1b. Rip pack given → merge-rip-pack.mjs → games/<slug>/assets/rip/ + models/ (skip when none)
 - [ ] 1c. Agent combo: pre-noted → use it; else agent-status + store pack → 5 combos → wait for the director's pick (+ notes)
 - [ ] 2. Bootstrap cc-<slug> via new-cocos-game (MCP gate = projectName match)
 - [ ] 3. Seed reference/<slug>/ into the project; fill AGENT_NOTES.md; initial commit if not done
@@ -108,7 +109,7 @@ Agent items 5–7 and the analyst in item 8 are never asked: a value the user na
    `--include-full-images` (they want the 200 MB+ `images/` dump too), `--models-priority P1`
    (obstacle/booster meshes as well), `--models-priority none` (2D-only game, skip GLB import).
    A folder that has media but neither rip metadata nor a recovered Unity tree is extra
-   media: rsync into `assets/<slug>/extra/` and tell Fable about it in Step 4; do not fake catalogs.
+   media: rsync into `games/<slug>/assets/extra/` and tell Fable about it in Step 4; do not fake catalogs.
    Multiple rip projects: retain separate source IDs and version identity; merge the canonical
    output through Step 1b and stage other outputs under `reference/<slug>/rip-sources/<id>/`.
    Never flatten competing versions into the same `rip/` or `models/` files. Pass all sources
@@ -116,16 +117,16 @@ Agent items 5–7 and the analyst in item 8 are never asked: a value the user na
 9. **Gameplay notes** — accept supplied chat text or files describing firsthand play,
    mechanics, edge cases, or desired changes. Optional; never ask for them when absent.
    Follow [gameplay-notes.md](../game-brief/reference/gameplay-notes.md) for capture and IDs;
-   stage `GAMEPLAY_NOTES.md` in `<slug>-brief/` before Step 3. Keep source mode `store`.
+   stage `GAMEPLAY_NOTES.md` in `orca-global/games/<slug>/` before Step 3. Keep source mode `store`.
    For amendments to an existing project's contracts, route directly to `game-brief`'s
    late-notes flow in that reference, without re-running crawl/bootstrap.
 10. **Gameplay video** — a video file or URL (YouTube, TikTok, a direct .mp4) of real play.
    Optional; never ask when absent. Store trailers are edited marketing cuts, so a gameplay
-   recording is the better feel source. Fetch a URL in Step 1 into `assets/<slug>/video/`;
+   recording is the better feel source. Fetch a URL in Step 1 into `games/<slug>/assets/video/`;
    `game-brief` probes every video there with the `gameplay-video` skill.
    Keep source mode `store`.
 
-Optional: existing models at `assets/<slug>/models/` (GLB + Blender script) — prefer import over regen.
+Optional: existing models at `games/<slug>/assets/models/` (GLB + Blender script) — prefer import over regen.
 Step 1b fills `models/` from the rip catalog when a rip pack is given.
 
 ---
@@ -139,18 +140,18 @@ node ~/.agents/skills/store-game-clone/scripts/crawl-app-store.mjs \
 # or: --id <numericId> --country us
 ```
 
-**Done when:** `assets/<slug>/manifest.json` exists, `icon-1024.png` present, ≥1 screenshot, trailer `video/preview.mp4` if store has one.
+**Done when:** `games/<slug>/assets/manifest.json` exists, `icon-1024.png` present, ≥1 screenshot, trailer `video/preview.mp4` if store has one.
 
 Then write a short research pack (can be agent-authored, not required for implement):
 
-- `/Users/wikz/orca-global/<slug>-brief/STORE_DATA.md` — identity, IAP, full description, release notes
+- `/Users/wikz/orca-global/games/<slug>/STORE_DATA.md` — identity, IAP, full description, release notes
 - Optional shallow `GAME_BRIEF.md` seed — Fable will rewrite at project root
 
 Gameplay video URL from intake item 10:
 
 ```bash
 node ~/.agents/skills/gameplay-video/scripts/video-probe.mjs fetch "<VIDEO_URL>" \
-  --out /Users/wikz/orca-global/assets/<slug>/video --name gameplay
+  --out /Users/wikz/orca-global/games/<slug>/assets/video --name gameplay
 ```
 
 Read screenshots (and key trailer frames) with the Read tool before claiming feel/HUD facts.
@@ -172,7 +173,7 @@ node ~/.agents/skills/store-game-clone/scripts/merge-rip-pack.mjs \
 
 What it does (deterministic — do not redo by hand):
 
-| Source (rip `output/`) | Destination in `assets/<slug>/` | Rule |
+| Source (rip `output/`) | Destination in `games/<slug>/assets/` | Rule |
 |------------------------|----------------------------------|------|
 | `README.md`, `manifest.json`, `*_GUIDE.md`, `*_catalog.json`, `images_ingame_manifest.json`, `de_atlas_*.json` | `rip/` | always |
 | `images_ingame/`, `meshes/`, `levels/`, `briefs/`, `fonts/` | `rip/…` | always |
@@ -250,11 +251,11 @@ Proceed only when wait-mcp JSON has `mcp.ok: true`.
 PROJECT=/Users/wikz/Works/games/CocosCreator/cc-<slug>
 mkdir -p "$PROJECT/reference/<slug>"
 rsync -a --exclude '.DS_Store' \
-  /Users/wikz/orca-global/assets/<slug>/ \
+  /Users/wikz/orca-global/games/<slug>/assets/ \
   "$PROJECT/reference/<slug>/"
 # if research brief exists:
 mkdir -p "$PROJECT/reference/<slug>-brief"
-rsync -a /Users/wikz/orca-global/<slug>-brief/ "$PROJECT/reference/<slug>-brief/" || true
+rsync -a --exclude 'assets/' --exclude '.DS_Store' /Users/wikz/orca-global/games/<slug>/ "$PROJECT/reference/<slug>-brief/" || true
 ```
 
 When notes were supplied, verify `reference/<slug>-brief/GAMEPLAY_NOTES.md` contains their
@@ -432,7 +433,7 @@ Name `slices/S01-*.md` in the prompt so the fleet copies its PLAN from it.
 | User ask | Stop after |
 |----------|------------|
 | Crawl / screenshots / trailer only | Step 1 (+ 1b if a rip pack was given); no Step 1c |
-| Brief docs only (no Cocos) | Step 1 (+ 1b), Step 1c with `brief` (+ `analyst`) only, run rip-port-analysis in the research workspace when rip exists, then write docs into `<slug>-brief/`; no editor/bootstrap |
+| Brief docs only (no Cocos) | Step 1 (+ 1b), Step 1c with `brief` (+ `analyst`) only, run rip-port-analysis in the research workspace when rip exists, then write docs into `orca-global/games/<slug>/`; no editor/bootstrap |
 | Rip pack/project only, no store URL | Bootstrap through new-cocos-game if needed, then game-brief mode `media` with its mandatory rip-port-analysis gate |
 | Project + contracts, no implement | Through Step 5 |
 | Playable first | Through Step 6 with `release.goal: playable` (producer stops after `v1_slice`) |

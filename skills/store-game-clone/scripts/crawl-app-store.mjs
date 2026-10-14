@@ -5,7 +5,7 @@
  * Usage:
  *   node crawl-app-store.mjs --url https://apps.apple.com/us/app/NAME/idNNNN
  *   node crawl-app-store.mjs --id 6790147739 --slug nitelore [--country us]
- *   node crawl-app-store.mjs --url ... --out /Users/wikz/orca-global/assets/nitelore
+ *   node crawl-app-store.mjs --url ... --out /Users/wikz/orca-global/games/nitelore/assets
  *
  * Writes:
  *   <out>/manifest.json
@@ -144,7 +144,7 @@ async function main() {
   const slug = args.slug || slugify(res.trackCensoredName || res.trackName);
   const outRoot =
     args.out ||
-    path.join('/Users/wikz/orca-global/assets', slug);
+    path.join('/Users/wikz/orca-global/games', slug, 'assets');
 
   const storeUrl =
     args.url ||
