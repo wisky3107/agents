@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { specCommands, slicePaths, outOfScope, nanUnsafe, es5Errors, sliceFacts, evidenceRe, section, classifyErrors, assumptionNotes, errorKey, splitAgainstBaseline, renameMap, defaultBase, smokeVerdict, smokePort, parseKnownRed, reusableSmoke, smokeArgs, smokeEstimateMs, smokeGroups } from '../scripts/check-slice.mjs';
+import { specCommands, slicePaths, outOfScope, nanUnsafe, es5Errors, sliceFacts, evidenceRe, section, classifyErrors, assumptionNotes, errorKey, splitAgainstBaseline, renameMap, defaultBase, smokeVerdict, smokePort, parseKnownRed, reusableSmoke, smokeArgs, smokeEstimateMs, smokeGroups, sceneFindings, textWidth } from '../scripts/check-slice.mjs';
 
 const SCRIPT = new URL('../scripts/check-slice.mjs', import.meta.url).pathname;
 
@@ -537,4 +537,74 @@ test('end to end: a quoted slice id finds its evidence; no fresh report and a ru
   fs.writeFileSync(path.join(d, 'scripts/smoke/known-red.json'), '{}');
   r = run();
   assert.match(r.stdout, /PASS smoke: 30 checks, 0 red \(0 known\), 0 new\/changed run on a fresh page; full run reused from evidence\/run3\/smoke-run3\.json/);
+});
+
+// a minimal Cocos 3.x serialized scene: nodes, then components pointing back with node.__id__
+function sceneDoc({ projection = 0, canvasFlags = 45, dimFlags = 45, labels = [] } = {}) {
+  const d = [
+    { __type__: 'cc.SceneAsset', _name: 'game' },
+    { __type__: 'cc.Scene', _name: 'game', _parent: null },
+    { __type__: 'cc.Node', _name: 'Canvas', _parent: { __id__: 1 } },
+    { __type__: 'cc.Node', _name: 'Camera', _parent: { __id__: 2 } },
+    { __type__: 'cc.Camera', node: { __id__: 3 }, _projection: projection },
+    { __type__: 'cc.Canvas', node: { __id__: 2 }, _cameraComponent: { __id__: 4 } },
+    { __type__: 'cc.Widget', node: { __id__: 2 }, _alignFlags: canvasFlags },
+    { __type__: 'cc.Node', _name: 'Sprite - Dim', _parent: { __id__: 2 } },
+    { __type__: 'cc.Sprite', node: { __id__: 7 } },
+    { __type__: 'cc.Widget', node: { __id__: 7 }, _alignFlags: dimFlags },
+    { __type__: 'cc.Node', _name: 'Panel', _parent: { __id__: 2 } },
+    { __type__: 'cc.Node', _name: 'Sprite - Dim', _parent: { __id__: 10 } },  // a panel's own dim: local art
+    { __type__: 'cc.Sprite', node: { __id__: 11 } },
+  ];
+  for (const l of labels) {
+    const n = d.push({ __type__: 'cc.Node', _name: l.name, _parent: { __id__: 10 } }) - 1;
+    d.push({ __type__: 'cc.UITransform', node: { __id__: n }, _contentSize: { width: l.w, height: l.h } });
+    d.push({ __type__: 'cc.Label', node: { __id__: n }, _string: l.text, _fontSize: l.size, _overflow: l.ov, _enableWrapText: !!l.wrap, _actualFontSize: l.actual });
+  }
+  return d;
+}
+
+test('sceneFindings: a clean scene, then each class reviewers raised as a blocker (camera, Canvas widget, screen dim, label boxes)', () => {
+  assert.deepEqual(sceneFindings(sceneDoc()), []);
+  const lines = sceneFindings(sceneDoc({ projection: 1, canvasFlags: 0, dimFlags: 5 }));
+  assert.equal(lines.length, 3, lines.join('\n'));
+  assert.match(lines[0], /^game\/Canvas: Canvas camera is PERSPECTIVE \(_projection 1\)/);
+  assert.match(lines[1], /^game\/Canvas: Canvas has no Widget on all four edges \(_alignFlags 0\)/);
+  assert.match(lines[2], /^game\/Canvas\/Sprite - Dim: dim\/overlay sprite without a Widget/);  // the panel's dim is not reported
+  const labels = sceneFindings(sceneDoc({ labels: [
+    { name: 'Label - Saved', text: 'Dầu nhớt', size: 28, ov: 2, w: 90, h: 50, actual: 18 },            // SHRINK saved at 64%
+    { name: 'Label - Caption', text: '?', size: 72, ov: 2, w: 160, h: 40 },                            // box shorter than the font
+    { name: 'Label - Bubble', text: 'Wash the car first!', size: 40, ov: 1, w: 200, h: 60 },           // CLAMP, ~430 px on one line
+    { name: 'Label - Tip', text: 'Water puts out fires', size: 32, ov: 3, w: 40, h: 300, wrap: true },  // one character per line
+    { name: 'Label - Fits', text: 'GO', size: 40, ov: 2, w: 120, h: 60, actual: 40 },
+    { name: 'Label - Runtime', text: 'Label', size: 40, ov: 2, w: 60, h: 60, actual: 20 },             // placeholder text: not judged
+    { name: 'Label - Wraps', text: 'a long tip that wraps on purpose', size: 30, ov: 2, w: 300, h: 200, wrap: true },
+  ] }));
+  assert.equal(labels.length, 4, labels.join('\n'));
+  assert.match(labels[0], /Label - Saved: Label "Dầu nhớt" SHRINK 28px in 90x50: saved at 18px \(64% of the authored size\)/);
+  assert.match(labels[1], /Label - Caption: [^\n]*the box is shorter than the font, every string shrinks/);
+  assert.match(labels[2], /Label - Bubble: [^\n]*needs ~\d+px on one line — clipped/);
+  assert.match(labels[3], /Label - Tip: [^\n]*RESIZE_HEIGHT box narrower than two glyphs/);
+  assert.deepEqual(sceneFindings({ not: 'an array' }), []);
+});
+
+test('textWidth: wide glyphs count more than latin, capitals more than lower case', () => {
+  assert.ok(textWidth('漢字', 20) > textWidth('ab', 20));
+  assert.ok(textWidth('ABC', 20) > textWidth('abc', 20));
+  assert.equal(Math.round(textWidth('a b', 10)), Math.round((0.55 + 0.28 + 0.55) * 10));
+});
+
+test('end to end: scene WARNs only for changed .scene/.prefab files, every file with --all-checks', () => {
+  const { d, g } = repo();
+  fs.mkdirSync(path.join(d, 'assets/scenes'), { recursive: true });
+  fs.writeFileSync(path.join(d, 'assets/scenes/old.scene'), JSON.stringify(sceneDoc({ projection: 1 })));
+  g('add', '-A'); g('commit', '-qm', 'legacy scene');
+  let r = exec(d, '--only', 'scene');
+  assert.match(r.stdout, /SKIP scene: no changed \.scene\/\.prefab/);
+  fs.writeFileSync(path.join(d, 'assets/scenes/game.scene'), JSON.stringify(sceneDoc({ canvasFlags: 0 })));
+  r = exec(d, '--only', 'scene');
+  assert.equal(r.status, 0);  // WARN, never a block
+  assert.match(r.stdout, /WARN scene: 1 scene\/text problem\(s\) in 1 file\(s\)[^\n]*\n  assets\/scenes\/game\.scene: game\/Canvas: Canvas has no Widget/);
+  r = exec(d, '--only', 'scene', '--all-checks');
+  assert.match(r.stdout, /WARN scene: 2 scene\/text problem\(s\) in 2 file\(s\)/);
 });

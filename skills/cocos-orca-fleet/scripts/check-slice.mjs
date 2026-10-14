@@ -56,6 +56,16 @@
  *   assumptions a changed .ts/.js/.mjs/.json file still holds a "tune on the preview" note: numbers authored as a
  *               guess and never tuned shipped wheels 8-26 px off their arches (cc-car-service-kids S02-S09).
  *               WARN: measure the value, or file a followup.
+ *   scene       changed .scene / .prefab files (all of them with --all-checks), the scene defects reviewers
+ *               kept raising as blockers (12 of 19 review blockers since 2026-10-05 were scene or text):
+ *               a Canvas camera that is not ORTHO (the UI renders 0.87x-2.3x: cat-dash, firefighter,
+ *               love-train, car-service S01); a Canvas without a Widget on all four edges (HUD tied to the
+ *               design frame: love-train S01 F2); a dim / overlay / backdrop sprite without one (undimmed
+ *               bands: firefighter S08, monster-truck S01); a Label whose box cannot hold its text — SHRINK
+ *               saved below 80% of the authored size, a box shorter than the font, text estimated wider
+ *               than a no-wrap SHRINK/CLAMP box, a RESIZE_HEIGHT box narrower than two glyphs (car-service
+ *               S01/S03, monster-truck S03-S05, firefighter S01). WARN: fix it, or declare the node in
+ *               integration-notes.md when it is laid out by code; the reviewer rules on each line.
  *   smoke       the whole scripts/smoke/checks corpus through the smoke-test skill's run-smoke.mjs on the
  *               chrome channel (a fresh page), with the project's own run-smoke flags from
  *               scripts/smoke/run-args.json (`["--delay", "12000", "--viewport", "1080x1920"]`), then every
@@ -85,7 +95,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 
-const CHECKS = ['tsc', 'es5', 'specs', 'scope', 'smoke-lint', 'evidence', 'notes', 'assumptions', 'smoke'];
+const CHECKS = ['tsc', 'es5', 'specs', 'scope', 'smoke-lint', 'evidence', 'notes', 'assumptions', 'scene', 'smoke'];
 // always inside a slice: tests, evidence, producer state, docs
 const ALWAYS = ['tests/**', 'scripts/smoke/checks/**', 'scripts/smoke/known-red.json', '.cursor/evidence/**', '.cursor/producer*', 'docs/**', 'slices/**',
   '*.md', 'producer-state.json', 'producer-log.md'];
@@ -609,6 +619,95 @@ function checkAssumptions(root, changed) {
     : { status: 'PASS', note: `${files.length} changed file(s)` };
 }
 
+const ALL_EDGES = 1 | 4 | 8 | 32; // Widget top | bottom | left | right
+const OVERFLOW = { 0: 'NONE', 1: 'CLAMP', 2: 'SHRINK', 3: 'RESIZE_HEIGHT' };
+const OVERLAY_NAME = /(^|[^a-z])(dim|overlay|backdrop|scrim|shade)([^a-z]|$)/i;
+const PLACEHOLDER_TEXT = /^(|label|new label|\?|0|-|text)$/i;
+
+/** Rough rendered width of a one-line string: per-glyph factors of the font size (CJK/Hangul 1.0, capitals and digits 0.62, others 0.55, space 0.28, punctuation 0.35). */
+export function textWidth(str, size, bold = false) {
+  let w = 0;
+  for (const ch of str) {
+    if (/[\u3000-\u9fff\uac00-\ud7af\uff00-\uffef]/.test(ch)) w += 1;
+    else if (ch === ' ') w += 0.28;
+    else if (/[A-Z0-9ĐƠƯÂÊÔĂ]/.test(ch)) w += 0.62;
+    else if (/[.,:;!'"()\-|]/.test(ch)) w += 0.35;
+    else w += 0.55;
+  }
+  return w * size * (bold ? 1.05 : 1);
+}
+
+/**
+ * The scene-check lines for one parsed .scene/.prefab (Cocos 3.x serialized array): `<node path>: <problem>`.
+ * Components are matched to their node by `node.__id__`; the path walks `_parent` (5 levels at most).
+ */
+export function sceneFindings(doc) {
+  if (!Array.isArray(doc)) return [];
+  const comps = new Map();
+  doc.forEach((o) => {
+    const n = o && typeof o === 'object' && o.node && o.node.__id__;
+    if (n !== undefined && n !== null && String(o.__type__ || '').startsWith('cc.')) (comps.get(n) || comps.set(n, []).get(n)).push(o);
+  });
+  const name = (i) => {
+    const parts = [];
+    for (let k = i, depth = 0; k !== undefined && k !== null && doc[k] && depth < 5; k = doc[k]._parent?.__id__, depth++) parts.unshift(doc[k]._name || `#${k}`);
+    return parts.join('/');
+  };
+  const of = (i, t) => (comps.get(i) || []).filter((c) => c.__type__ === t);
+  const fullWidget = (i) => of(i, 'cc.Widget').some((w) => ((w._alignFlags || 0) & ALL_EDGES) === ALL_EDGES);
+  const out = [];
+  doc.forEach((o, i) => {
+    if (!o || o.__type__ !== 'cc.Node') return;
+    for (const c of of(i, 'cc.Canvas')) {
+      const cam = doc[c._cameraComponent?.__id__];
+      if (cam && cam._projection !== 0) out.push(`${name(i)}: Canvas camera is PERSPECTIVE (_projection ${cam._projection}); the UI renders scaled — set it to ORTHO (0)`);
+      if (!fullWidget(i)) out.push(`${name(i)}: Canvas has no Widget on all four edges (_alignFlags ${of(i, 'cc.Widget').map((w) => w._alignFlags).join(',') || 'none'}); the HUD stays on the design frame at other aspects — align top/bottom/left/right (45)`);
+    }
+    // a screen-level overlay: a child of the prefab/scene root or of the Canvas (a dim inside a panel is local art)
+    const parent = o._parent?.__id__;
+    const top = parent === undefined || parent === null || !doc[parent]?._parent || of(parent, 'cc.Canvas').length > 0;
+    if (OVERLAY_NAME.test(o._name || '') && top && of(i, 'cc.Sprite').length && !fullWidget(i)) {
+      out.push(`${name(i)}: dim/overlay sprite without a Widget on all four edges; it leaves undimmed bands at other aspects`);
+    }
+    for (const l of of(i, 'cc.Label')) {
+      const box = of(i, 'cc.UITransform')[0]?._contentSize;
+      if (!box) continue;
+      const size = l._fontSize || 0;
+      const ov = l._overflow ?? 0;
+      const text = String(l._string ?? '');
+      const where = `${name(i)}: Label "${text.slice(0, 24)}" ${OVERFLOW[ov]} ${size}px in ${Math.round(box.width)}x${Math.round(box.height)}`;
+      if (!size) continue;
+      if (ov === 2 && l._actualFontSize && text && !PLACEHOLDER_TEXT.test(text.trim()) && l._actualFontSize < 0.8 * size) {
+        out.push(`${where}: saved at ${Math.round(l._actualFontSize)}px (${Math.round((100 * l._actualFontSize) / size)}% of the authored size) — give it the box the text needs`);
+      } else if ((ov === 1 || ov === 2) && box.height < 0.9 * size) {
+        out.push(`${where}: the box is shorter than the font, every string ${ov === 2 ? 'shrinks' : 'is clipped'} — make the box at least the line height`);
+      } else if ((ov === 1 || ov === 2) && !l._enableWrapText && text && !PLACEHOLDER_TEXT.test(text.trim())) {
+        const est = textWidth(text, size, l._isBold);
+        if (est > 1.15 * box.width) out.push(`${where}: "${text.slice(0, 24)}" needs ~${Math.round(est)}px on one line — ${ov === 2 ? `shrinks to ~${Math.round((size * box.width) / est)}px` : 'clipped'}`);
+      }
+      if (ov === 3 && box.width < 2 * size && [...text].length > 2 && !PLACEHOLDER_TEXT.test(text.trim())) {
+        out.push(`${where}: RESIZE_HEIGHT box narrower than two glyphs, it wraps about one character per line — give it the design width`);
+      }
+    }
+  });
+  return out;
+}
+
+function checkScene(root, changed, all) {
+  const isScene = (f) => /^assets\/.*\.(scene|prefab)$/.test(f);
+  const files = (all ? filesUnder(root, 'assets').filter(isScene) : changed.filter(isScene)).filter((f) => fs.existsSync(path.join(root, f)));
+  if (!files.length) return { status: 'SKIP', note: all ? 'no .scene/.prefab under assets/' : 'no changed .scene/.prefab' };
+  const lines = [];
+  for (const f of files) {
+    let doc;
+    try { doc = JSON.parse(fs.readFileSync(path.join(root, f), 'utf8')); } catch { continue; }
+    for (const l of sceneFindings(doc)) lines.push(`${f}: ${l}`);
+  }
+  return lines.length
+    ? { status: 'WARN', note: `${lines.length} scene/text problem(s) in ${files.length} file(s) — fix each, or declare it in integration-notes.md (laid out by code)`, lines }
+    : { status: 'PASS', note: `${files.length} scene/prefab file(s)` };
+}
+
 /** Preview port: --port, else the slice's evidence/preview-startup.json (previewUrl). */
 export function smokePort(root, o, id) {
   if (o.port) return String(o.port);
@@ -805,6 +904,7 @@ export function main(argv) {
     evidence: () => checkEvidence(root, o, changed),
     notes: () => checkNotes(root, o, changed),
     assumptions: () => checkAssumptions(root, changed),
+    scene: () => checkScene(root, changed, o.allChecks),
     smoke: () => checkSmoke(root, o, changed, base),
   };
   const out = [`check-slice ${path.basename(root)} slice=${o.slice || '-'} base=${base || '-'}${dflt?.note ? ` (${dflt.note})` : ''} at ${new Date().toISOString()}`];

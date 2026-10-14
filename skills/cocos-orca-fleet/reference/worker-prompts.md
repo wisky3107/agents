@@ -242,7 +242,7 @@ Do:
 6. `tsc` clean; no console.log left behind. Before worker_done, `node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice <PLAN's plan_source slice file> --skip evidence --out evidence/static-check.txt`
    must not end RESULT FAIL (tsc, the ES5 web build, EVERY spec in tests/, scope, smoke-guard
    lint, the integration-notes sections); declare each WARN scope line in integration-notes.md; measure each WARN assumptions value
-   from the art or list it under `## gaps`. docs/evidence/ is the integrator's. Budget: run
+   from the art or list it under `## gaps`; fix each WARN scene line or declare the node in integration-notes.md as laid out by code. docs/evidence/ is the integrator's. Budget: run
    `bash .cursor/skills/setup-pre-commit/check-change-budget.sh --report` (stage, report, unstage)
    and paste the line into integration-notes.md — that number is the only one anyone quotes.
    Over budget → add `budget_bump: <from>→<to>` + one-line reason. PLAN `budget_mode: advisory`
@@ -413,7 +413,8 @@ Static (commit-guard gates 1–4, read-only):
 - STATIC: tsc + lint clean (read the tool output, do not assume). Run check-slice yourself
   (`node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice <plan_source> --out evidence/static-check.txt`):
   each FAIL line is a finding (owner code; `evidence` lines owner scene), and so is each WARN
-  scope line integration-notes.md does not declare and each WARN assumptions line (a "tune on the
+  scope line integration-notes.md does not declare, each WARN scene line it does not declare (owner
+  scene; check the node on the preview), and each WARN assumptions line (a "tune on the
   preview" note left in code; minor, major if it positions art). Rule on each row this slice added to
   scripts/smoke/known-red.json: the cause is outside the slice, or it is a finding. static-smoke.json
   beside static-check.txt is the full smoke run: read it, do not rerun the corpus. Redo one `## negative controls` line: a check
