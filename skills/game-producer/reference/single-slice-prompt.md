@@ -78,14 +78,17 @@ Build:
    scene-tool / Funplay per .cursor/skills/cocos-editor/SKILL.md, refresh + reopen, no MissingScript.
 4. Preview: reuse the healthy URL or run_project_preview({mode:"browser"}) once; verify title;
    write <EVIDENCE_DIR>/preview-startup.json (projectPath, previewUrl, status, checkedAt).
-5. Verify: node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT> --channel auto must be green;
+5. Verify: node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT> --channel auto > <EVIDENCE_DIR>/smoke.json must be green;
    play the feel rows once; batch state reads into one eval. Screenshots: ONE preview.png total.
    A frozen Orca tab falls back to Chrome headless by itself (`channel` in the JSON;
    ~/.agents/skills/cocos-orca-fleet/reference/orca/frozen-tab.md); play the feel rows there too.
    Then `node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice <SLICE_FILE> --base <BASE> --out <EVIDENCE_DIR>/static-check.txt` must
    not end RESULT FAIL: it runs tsc, the ES5 web build, EVERY spec in tests/ (old ones too), slice
-   scope, the smoke-guard lint, the docs/evidence/ paths the slice names and the integration-notes
-   sections below. Declare each WARN scope line in integration-notes.md; measure each WARN assumptions value from
+   scope, the smoke-guard lint, the docs/evidence/ paths the slice names, the integration-notes
+   sections below, and the whole smoke corpus (your smoke.json is reused when it is newer than your
+   last change) plus each new or changed check alone on a fresh page. A check red because of work
+   outside this slice goes into scripts/smoke/known-red.json (`"<id>": {"since", "followup", "reason"}`);
+   fix every other red one. Declare each WARN scope line in integration-notes.md; measure each WARN assumptions value from
    the art or list it under `## gaps`. The producer reruns it
    before the reviewer and sends a FAIL back to you.
 6. Budget: stage, `bash .cursor/skills/setup-pre-commit/check-change-budget.sh --report`, unstage;
@@ -166,6 +169,8 @@ not explain it, you may run one stuck lookup: `M=~/.orca-memory/bin/orca-memory;
    check-slice run; rerun it, with the same `--base <BASE>`, if missing or older than the last code change): each FAIL line is a
    finding (owner code), and so is each WARN scope line integration-notes.md does not declare and each
    WARN assumptions line (a "tune on the preview" note left in code; minor, major if it positions art).
+   Rule on each row this slice added to scripts/smoke/known-red.json: the cause is outside the slice,
+   or it is a finding. static-smoke.json beside it is the full smoke run: read it, do not rerun the corpus.
    Visible hierarchy built with `new Node()` + `addComponent` that final-report.md does not list
    under `## code-built nodes` is a finding (owner code; files of a kit the slice installs count
    as declared); new UI nodes off `{Kind} - {label}`

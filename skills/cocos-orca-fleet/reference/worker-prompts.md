@@ -328,7 +328,9 @@ Do:
    (`node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice <plan_source> --out evidence/static-check.txt`):
    an `evidence` FAIL line is yours (produce it, or list it under `## evidence deferred` in
    integration-notes.md with the reason); an `evidence` WARN means a file predates the last
-   code/data change — regenerate it. Other FAIL lines go to the coordinator as code findings.
+   code/data change — regenerate it. Other FAIL lines go to the coordinator as code findings (a
+   `smoke` red check another slice broke goes into scripts/smoke/known-red.json with since,
+   followup and reason instead).
 9. editor-lock.js release --owner integrator, including on startup failure.
 10. Screenshots: at most ONE editor screenshot (hierarchy/refs) and none of the preview — the
     reviewer takes preview shots. Evidence is JSON/text first; PNGs are for visual questions only.
@@ -412,7 +414,9 @@ Static (commit-guard gates 1–4, read-only):
   (`node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice <plan_source> --out evidence/static-check.txt`):
   each FAIL line is a finding (owner code; `evidence` lines owner scene), and so is each WARN
   scope line integration-notes.md does not declare and each WARN assumptions line (a "tune on the
-  preview" note left in code; minor, major if it positions art). Redo one `## negative controls` line: a check
+  preview" note left in code; minor, major if it positions art). Rule on each row this slice added to
+  scripts/smoke/known-red.json: the cause is outside the slice, or it is a finding. static-smoke.json
+  beside static-check.txt is the full smoke run: read it, do not rerun the corpus. Redo one `## negative controls` line: a check
   that stays green on the broken state is a finding (owner code). A `## gaps` disposition that
   leaves an acceptance row broken is a finding (owner code).
 
