@@ -150,7 +150,7 @@ When a tooling step will not run (smoke never ready, preview, editor) and the fr
 not explain it, you may run one stuck lookup: `M=~/.orca-memory/bin/orca-memory; [ -x "$M" ] &&
 "$M" hook recover --task T-<Sxx> --query "<symptom in English>" --out
 <EVIDENCE_DIR>/memory/recover-reviewer`; read the `pack` only on `"inject":true`. It never decides a verdict.
-1. `node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT> --channel auto` — its JSON is the verdict
+1. `node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT> --channel auto`, plus the flags in scripts/smoke/run-args.json when it exists (the gate and the writer ran with them; without them a viewport-pinned check reads red) — its JSON is the verdict
    for every state-answerable acceptance row; do not replay them by hand. A row with no check
    although state could answer it is a minor finding (owner code). A frozen Orca tab falls back to
    Chrome headless by itself; run the feel, pointer and viewport rows in that Chrome too

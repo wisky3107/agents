@@ -237,7 +237,7 @@ Do:
    particle, shake) stay manual. The reviewer runs these first; a missing check for a
    state-answerable row is a finding against you. Write every fail guard so a NaN/undefined
    value fails: `if (!(x <= limit)) fail(...)` or Number.isFinite in the same condition.
-   Run smoke with `--channel auto`: a frozen Orca tab falls back to Chrome headless by itself
+   Run smoke with `--channel auto` and the flags in scripts/smoke/run-args.json when it exists: a frozen Orca tab falls back to Chrome headless by itself
    (~/.agents/skills/cocos-orca-fleet/reference/orca/frozen-tab.md); never infra_blocked for it.
 6. `tsc` clean; no console.log left behind. Before worker_done, `node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice <PLAN's plan_source slice file> --skip evidence --out evidence/static-check.txt`
    must not end RESULT FAIL (tsc, the ES5 web build, EVERY spec in tests/, scope, smoke-guard
@@ -370,7 +370,7 @@ Step 0 — INFRA PREFLIGHT (first 60 seconds, before reading anything else):
   INFRA_BLOCKED is not CHANGES_REQUESTED: it consumes no fix round and routes to the
   integrator (preview) or to the coordinator (swap reviewer agent), never to the writer.
 
-Step 1 — SMOKE FIRST: `node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <port> --channel auto`.
+Step 1 — SMOKE FIRST: `node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <port> --channel auto`, plus the flags in scripts/smoke/run-args.json when it exists (the gate and the writer ran with them; without them a viewport-pinned check reads red).
   Its JSON is the verdict for every state-answerable acceptance row; do not re-play those by
   hand. A row that has no check although state could answer it → finding (owner code, minor).
   `--channel auto` reruns in Chrome headless when the Orca tab is frozen; then play the feel rows,
