@@ -17,11 +17,12 @@
  *               Errors that were already there in a changed file are WARN ("N pre-existing in touched files,
  *               0 new"): a legacy project with non-strict code blocked every slice (cc-capytal-war S14, S15).
  *               A file the slice moved (git rename detection of the base against the checkout as it is, untracked
-               files included) keeps its old errors: they are keyed under the new path.
-               No base or no buildable baseline: every error in a changed file FAILs, and the note says why.
-               Without --base: main / master; in a linked worktree the main checkout's branch; else HEAD (only
-               uncommitted work counts as changed; the header line says so). The runner passes the commit a
-               single-lane slice started from (base_sha).
+ *               files included) keeps its old errors: they are keyed under the new path. git's default similarity
+ *               (50%) and rename limit apply: a moved-and-rewritten file or a mass move falls back to "all new".
+ *               No base or no buildable baseline: every error in a changed file FAILs, and the note says why.
+ *               Without --base: main / master; in a linked worktree the main checkout's branch; else HEAD (only
+ *               uncommitted work counts as changed; the header line says so). The runner passes the commit a
+ *               single-lane slice started from (base_sha).
  *               Errors elsewhere in the project are WARN (pre-existing), and extensions/, temp/ and engine
  *               declarations are ignored.
  *   es5         the same tsconfig with --target es5, TS2802 in assets/ only, same split and baseline. The editor
