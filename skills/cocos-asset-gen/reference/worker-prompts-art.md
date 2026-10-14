@@ -357,6 +357,9 @@ Follow each row's "method" (set by art-manifest; never change it — `ask` if it
   image-gen  → the backend's image-generation tool, never a drawing script
   procedural → one script saved as evidence/art/2d/gen_2d.py (re-runnable)
   acquire    → official source; record URL, commit/version, sha256, licence
+Row has no "method" (older manifest) → pick it by the art-manifest rule (depicts an
+object/character/symbol → image-gen; flat geometric UI → procedural; font/licensed →
+acquire), write it into the row, note `method set by worker — <reason>`; no ask.
 Never: 3D concepts or meshes (those are art-concept / art-mesh Tasks).
 ```
 
@@ -385,7 +388,8 @@ Check, before worker_done:
        relative scale across the set
      readability: PASS|FAIL — silhouette and icon meaning hold at in-game size
      method: PASS|FAIL — every file made the way its row's method says (no script-drawn
-       image-gen row); <tool> is the image tool name, gen_2d.py, or source URL + sha256
+       image-gen row); <tool> is the image tool name, gen_2d.py, or source URL + sha256;
+       list rows whose method the worker set, with the reason
      ART2D: PASS | ART2D: FAIL — <failing files + reason>
 3. ART2D FAIL → regenerate only the failing files and append a new round (max 2 rounds).
    Still FAIL → worker_done --outcome failed listing those files.

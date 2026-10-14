@@ -71,9 +71,12 @@ def main():
 
     concepts = pathlib.Path(a.concepts).resolve()
     render = pathlib.Path(a.render).resolve()
-    views = [concepts / f"concept-{v}.png" for v in ("front", "threequarter", "back")]
+    # a generated or store concept is often one view; judge against whichever views exist
+    views = [p for p in (concepts / f"concept-{v}.png" for v in ("front", "threequarter", "back")) if p.is_file()]
     compare, contact = render / "compare-sheet.png", render / "contact-sheet.png"
-    missing = [str(p) for p in (*views, compare, contact) if not p.is_file()]
+    missing = [str(p) for p in (compare, contact) if not p.is_file()]
+    if not views:
+        missing.append(f"{concepts}/concept-{{front,threequarter,back}}.png (at least one)")
     if missing:
         print(f"[look_check] missing: {', '.join(missing)}", file=sys.stderr)
         return 2

@@ -300,7 +300,9 @@ only; concepts and meshes are never produced here. Every file is reported agains
 (an estimate in advisory mode — never drop a manifest row to fit).
 
 Each 2D row has a `method`, written by `art-manifest`. The art worker does not change it. If a
-row needs a different method, the worker sends an `ask`.
+row needs a different method, the worker sends an `ask`. A row with no `method` (older
+manifests) is not a blocker: the worker picks one by the table and tie rule below, writes it
+into that row, and notes `method set by worker — <reason>` in `2d-check.md`. No `ask`.
 
 | `method` | Use for | How |
 | --- | --- | --- |
@@ -371,6 +373,6 @@ row** (`complexity` if missing, `concepts`, `verify`).
   manifest `expect_dims` (exit 0 agree, 1 WARN, 2 error).
 - [scripts/look_check.py](scripts/look_check.py) — execute; independent advisory look check
   through `claude -p` (exit 0 PASS, 1 FAIL, 2 judge unavailable).
-- `../cocos-orca-fleet/SKILL.md` — Task topology, DAG, and locks that call into this skill.
 - [scripts/render_model_iso.py](scripts/render_model_iso.py) — execute under headless Blender;
   iso views, concept-angle match, compare-sheet, `stats.json`.
+- `../cocos-orca-fleet/SKILL.md` — Task topology, DAG, and locks that call into this skill.
