@@ -82,7 +82,7 @@ import { spawnSync } from 'node:child_process';
 
 const CHECKS = ['tsc', 'es5', 'specs', 'scope', 'smoke-lint', 'evidence', 'notes', 'assumptions', 'smoke'];
 // always inside a slice: tests, evidence, producer state, docs
-const ALWAYS = ['tests/**', 'scripts/smoke/checks/**', '.cursor/evidence/**', '.cursor/producer*', 'docs/**', 'slices/**',
+const ALWAYS = ['tests/**', 'scripts/smoke/checks/**', 'scripts/smoke/known-red.json', '.cursor/evidence/**', '.cursor/producer*', 'docs/**', 'slices/**',
   '*.md', 'producer-state.json', 'producer-log.md'];
 const SPEC_TIMEOUT_MS = 180000;
 const SMOKE_BUDGET_S = 300;
