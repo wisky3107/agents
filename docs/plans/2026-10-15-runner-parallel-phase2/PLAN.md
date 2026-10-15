@@ -43,3 +43,18 @@ Sau M5: thử trên dự án không chạy pilot, rồi bật cho capytal (cặp
 - RAM: 2 Creator (~2–3 GB/cái) + 4–6 agent + 2 tsc + 2 trình duyệt smoke trên 16 GB.
 - Tài nguyên dùng chung một phiên (API test server, tab Figma, profile ChatGPT): khai báo `exclusive`.
 - Kill/restart với hai lane phải khôi phục cả hai, không spawn lần hai.
+
+## Trạng thái
+
+- **M0 xong (2026-10-15):** `laneCheckout(root, id)` (lanes.mjs) = `lane_checkout` trong producer-state, else main;
+  `ctx.checkout` đặt một lần ở `runSlice` / `applyAnswer`. Theo checkout: commitText, promptValues
+  (PROJECT, EVIDENCE_DIR, PORT, BASE), sliceBase (git -C checkout), reviewVerdict, judge evidence, spawnOnce
+  (admit, spawn registry, spawnLane), treeSignature, fixRound, staticGate (--root/cwd), singleStep handoff/evidence,
+  infraBlocked, laneHandoff, commitMarks/commitsSince. Ở lại main: mọi state của runner. treeSignature bỏ qua
+  AGENT_NOTES.md. Không ai ghi `lane_checkout` nên hành vi không đổi (194/194 test, thêm
+  runner-lane-checkout.test.mjs).
+- **Ghi chú cho M1:** cập nhật `ctx.checkout` ngay khi phase `spawn-worktree` ghi `lane_checkout` (ctx đang sống
+  trong vòng `runSlice`); memory pack `planPack` ghi vào EVIDENCE_DIR của lane mà copyEvidence bỏ qua
+  `/evidence/memory/plan/` → giữ pack ở main hoặc cho phép copy; `ensureEditor` / `closeMain` (editors.mjs) vẫn chỉ
+  biết main; `slicePort` chưa kiểm `projectPath` (test giả lập dùng `/p`) — thêm khi lane đầu tiên vào worktree;
+  merge.mjs single-lane path (`commit_not_on_main`) chưa biết worktree.

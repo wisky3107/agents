@@ -38,7 +38,7 @@ export const FLEET_COMMIT_TEXT = 'approved — commit (producer: Step 2d passed)
 // a single-lane writer's prompt says "Do not commit" and never says what the commit request asks for
 // (pilot 2: S02's writer committed, left HANDOFF at approved and exited): the request carries it
 const commitText = (ctx) => (ctx.lane === 'fleet' ? FLEET_COMMIT_TEXT
-  : `${COMMIT_TEXT}: run /commit-guard on this checkout, then write ${handoffMain(ctx.project.root, ctx.id)} with "status": "committed" and "sha": the full sha of that commit.`);
+  : `${COMMIT_TEXT}: run /commit-guard on this checkout, then write ${handoffMain(co(ctx), ctx.id)} with "status": "committed" and "sha": the full sha of that commit.`);
 const gitOut = (root, args) => {
   const r = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' });
   return r.status === 0 ? r.stdout.trim() : '';
@@ -126,10 +126,10 @@ const hasAssets = (front) =>
  * commits), else for a slice selected before base_sha existed the last commit older than selected_at, else the base
  * branch, else HEAD (uncommitted work only). A recorded sha that is no longer behind HEAD is dropped.
  */
-export function sliceBase(root, id) {
+export function sliceBase(root, id, checkout = root) {
   const s = st.readSliceState(root, id);
-  const git = (...a) => spawnSync('git', ['-C', root, ...a], { encoding: 'utf8' });
-  if (s.base_sha && isAncestor(root, s.base_sha)) return s.base_sha;
+  const git = (...a) => spawnSync('git', ['-C', checkout, ...a], { encoding: 'utf8' });
+  if (s.base_sha && isAncestor(checkout, s.base_sha)) return s.base_sha;
   if (s.selected_at) {
     const r = git('rev-list', '-1', '--first-parent', `--before=${s.selected_at}`, 'HEAD');
     if (r.status === 0 && r.stdout.trim()) return r.stdout.trim();
@@ -137,18 +137,18 @@ export function sliceBase(root, id) {
   return s.base_branch || 'HEAD';
 }
 
-export function promptValues(project, id) {
+export function promptValues(project, id, checkout = laneCheckout(project.root, id)) {
   const { file, data } = sliceFront(project, id);
   const f = project.fleet;
   const budget = budgetMode(project);
   const lite = liteWhenNoAssets(project) && !hasAssets(data);
-  const evidence = path.join(st.sliceDir(project.root, id), 'evidence');
-  const port = slicePort(project.root, id);
+  const evidence = path.join(st.sliceDir(checkout, id), 'evidence');
+  const port = slicePort(checkout, id);
   return {
-    PROJECT: project.root,
+    PROJECT: checkout,
     Sxx: id,
     SLICE_FILE: file,
-    BASE: sliceBase(project.root, id),
+    BASE: sliceBase(project.root, id, checkout),
     ENGINE_LINE: isCc4(project)
       ? 'Engine: cc4 — COCOS CLI MCP and `cocos preview` on this checkout\'s pinned ports (cocos-cli-mcp.config.json).'
       : 'Engine: Cocos Creator 3.8 + Funplay MCP on this checkout\'s pinned port (funplay-cocos-mcp.config.json).',
@@ -283,6 +283,15 @@ const slug = (root) => path.basename(root).replace(/^cc4?-/, '');
 const oneLine = (t) => String(t || '').replace(/\s+/g, ' ').trim();
 const evidenceDir = (root, id) => path.join(st.sliceDir(root, id), 'evidence');
 const handoffMain = (root, id) => path.join(evidenceDir(root, id), 'HANDOFF.json');
+
+/**
+ * Phase 2 (docs/plans/2026-10-15-runner-parallel-phase2): the checkout a single lane works in — the worktree it
+ * records as `lane_checkout`, else the main checkout. Runner state (producer-state.json, the log, wait files,
+ * the outbox) always stays in main; the lane's HANDOFF, evidence, editor, git HEAD and check-slice root follow
+ * its checkout. A fleet lane keeps its own worktree handling (fleetHandoff) and never records one.
+ */
+export const laneCheckout = (root, id) => st.readSliceState(root, id).lane_checkout || root;
+const co = (ctx) => ctx.checkout || laneCheckout(ctx.project.root, ctx.id);
 const mtime = (f) => {
   try {
     return fs.statSync(f).mtimeMs;
@@ -475,7 +484,7 @@ function approvalProblems(dir, required, verdictAccepted = false, relayedGates =
  */
 export function reviewVerdict(project, id) {
   const fleet = laneFor(project, id) === 'fleet';
-  const file = reviewFile(fleet ? path.dirname(fleetHandoff(project.root, id).file) : evidenceDir(project.root, id));
+  const file = reviewFile(fleet ? path.dirname(fleetHandoff(project.root, id).file) : evidenceDir(laneCheckout(project.root, id), id));
   const base = fleet ? 0 : st.readSliceState(project.root, id).review_base || 0;
   return { verdict: lastLine(file), thisRound: mtime(file) > base };
 }
@@ -592,7 +601,7 @@ function spawnOnce(ctx, key, opts) {
   if (s[key]) return { handle: s[key] };
   const since = s[`${key}_spawning`];
   if (since) {
-    const reg = io.registeredSpawn({ root, slice: id, role: opts.role, sinceIso: since });
+    const reg = io.registeredSpawn({ root: co(ctx), slice: id, role: opts.role, sinceIso: since });
     if (reg?.handle) {
       // bootstrap may have died with the runner before sending the prompt: one question, not a guess
       st.writeSliceState(root, id, { [key]: reg.handle, [`${key}_spawning`]: null, prompt_missing: key, prompt_unknown: true });
@@ -603,12 +612,12 @@ function spawnOnce(ctx, key, opts) {
       ['no lane terminal exists, spawn it', 'reattach the handle given in --text', 'mark blocked', 'stop'], { ref: key });
   }
   // res-guard admission: a machine short on memory holds the spawn, the step asks again next idle tick
-  if (!admit(ctx, root, `the ${key} spawn`)) return PAUSE;
+  if (!admit(ctx, co(ctx), `the ${key} spawn`)) return PAUSE;
   const intent = st.now();
   st.writeSliceState(root, id, { [`${key}_spawning`]: intent });
   let r;
   try {
-    r = io.spawnLane({ root, slice: id, ...opts });
+    r = io.spawnLane({ root: co(ctx), slice: id, ...opts });
   } catch (err) {
     const reg = io.registeredSpawn({ root, slice: id, role: opts.role, sinceIso: intent });
     if (!reg?.handle) {
@@ -661,7 +670,8 @@ const aliveOption = (w, h) => w.event === 'idle' && h.status !== 'blocked';
 export function treeSignature(root) {
   const r = spawnSync('git', ['-C', root, 'status', '--porcelain=v1', '--untracked-files=all'], { encoding: 'utf8', maxBuffer: 64 << 20 });
   if (r.status !== 0) return null;
-  const OWN = /^\.cursor\/(producer|evidence\/lessons\.jsonl$|evidence\/tasks\/[^/]+\/(producer-|wait-|merge-journal))/;
+  // AGENT_NOTES.md: the runner's release cache, written when another lane is selected or recorded
+  const OWN = /^(?:AGENT_NOTES\.md$|\.cursor\/(producer|evidence\/lessons\.jsonl$|evidence\/tasks\/[^/]+\/(producer-|wait-|merge-journal)))/;
   const rows = r.stdout.split('\n').filter(Boolean).map((l) => l.slice(3).replace(/^.* -> /, '').replace(/^"|"$/g, '')).filter((f) => !OWN.test(f)).sort();
   const h = createHash('sha1');
   for (const f of rows) {
@@ -680,7 +690,7 @@ export function treeSignature(root) {
  */
 function writerStall(ctx, s, w, h) {
   const { root } = ctx.project;
-  const sig = treeSignature(root);
+  const sig = treeSignature(co(ctx));
   const now = Date.now();
   if (sig === null) return null;
   if (sig !== s.progress_sig || !s.progress_at || (h.mtime && h.mtime > s.progress_at)) {
@@ -733,6 +743,7 @@ function badHandoff(root, id, s, file) {
  */
 export function runSlice(ctx) {
   const root = ctx.project.root;
+  ctx.checkout ??= laneCheckout(root, ctx.id);
   for (;;) {
     const c = st.readControl(root);
     if (c?.cmd === 'stop' || c?.cmd === 'pause') return { stopped: c.cmd };
@@ -779,7 +790,7 @@ function resumeWriter(ctx, s, why) {
 
 function fixRound(ctx, s) {
   const rounds = s.fix_rounds || 0;
-  const reviewMd = path.join(evidenceDir(ctx.project.root, ctx.id), 'review.md');
+  const reviewMd = path.join(evidenceDir(co(ctx), ctx.id), 'review.md');
   sendOnce(ctx, `fix:${rounds + 1}`, s.writer,
     `Fix round ${rounds + 1}: apply exactly the rows of the \`## fix_routing\` table in ${reviewMd} (no other changes), re-verify, update the evidence, then set HANDOFF.json ready_for_review. Never restore, revert or stash AGENT_NOTES.md or the runner's files (.cursor/producer*, producer-state.json, producer-log.md), even when cleaning up: they are the producer's.`,
     { phase: 'writer', fix_rounds: rounds + 1, reviewer: null, nudged_writer: false, static_bounces: 0 });
@@ -797,9 +808,10 @@ function staticGate(ctx, s, h) {
   const { project, id } = ctx;
   const root = project.root;
   if (!fs.existsSync(CHECK_SLICE)) return true;
-  const { SLICE_FILE: slice, BASE: base } = promptValues(project, id);
-  const out = path.join(evidenceDir(root, id), 'static-check.txt');
-  const r = spawnSync(process.execPath, [CHECK_SLICE, '--root', root, '--slice', slice, '--base', base, '--out', out], { encoding: 'utf8', timeout: 600000, cwd: root });
+  const checkout = co(ctx);
+  const { SLICE_FILE: slice, BASE: base } = promptValues(project, id, checkout);
+  const out = path.join(evidenceDir(checkout, id), 'static-check.txt');
+  const r = spawnSync(process.execPath, [CHECK_SLICE, '--root', checkout, '--slice', slice, '--base', base, '--out', out], { encoding: 'utf8', timeout: 600000, cwd: checkout });
   const result = ((r.stdout || '').match(/^RESULT (\w+)(.*)$/m) || [])[1] || 'ERROR';
   const which = ((r.stdout || '').match(/^RESULT \w+ \((.*)\)$/m) || [])[1] || '';
   const bounces = s.static_bounces || 0;
@@ -808,7 +820,7 @@ function staticGate(ctx, s, h) {
     st.writeSliceState(root, id, { static_result: result });
     return true;
   }
-  const cmd = `node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice ${slice} --base ${base} --out ${path.relative(root, out)}`;
+  const cmd = `node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice ${slice} --base ${base} --out ${path.relative(checkout, out)}`;
   sendOnce(ctx, `static:${s.fix_rounds || 0}:${bounces + 1}`, s.writer,
     `Static check FAIL before review (${which}), see ${out}. Fix every FAIL line; for each WARN scope line either move the change or declare it in integration-notes.md. Rerun \`${cmd}\` until RESULT is not FAIL, then set HANDOFF.json ready_for_review again. This is not a review round.`,
     { static_bounces: bounces + 1, static_fail_mtime: h.mtime, static_result: result, nudged_writer: false });
@@ -822,8 +834,8 @@ const EDITOR_PHASES = new Set(['spawn-writer', 'respawn-writer', 'spawn-reviewer
 function singleStep(ctx, s, phase) {
   const { project, id } = ctx;
   const root = project.root;
-  const handoff = handoffMain(root, id);
-  const evidence = evidenceDir(root, id);
+  const handoff = handoffMain(co(ctx), id);
+  const evidence = evidenceDir(co(ctx), id);
   if (EDITOR_PHASES.has(phase) && !ensureEditor(ctx, phase)) return PAUSE;
 
   if (phase === 'spawn-writer') {
@@ -991,13 +1003,13 @@ const readText = (f) => {
 
 function infraBlocked(ctx, s) {
   const { root } = ctx.project;
-  const port = slicePort(root, ctx.id);
+  const port = slicePort(co(ctx), ctx.id);
   if (!io.closeTerminal(s.reviewer)) st.log(root, ctx.id, `could not confirm reviewer ${s.reviewer} closed`);
   const code = port ? io.httpStatus(port) : 0;
   // a frozen Orca tab (no frames while its pane is hidden) is not a sandbox that cannot reach
   // localhost: one fresh reviewer, whose prompt runs smoke with --channel auto → Chrome headless
   // (cocos-orca-fleet/reference/orca/frozen-tab.md; cc-firefighter-kids S01 lost 3 rounds to it)
-  if (code === 200 && !s.frozen_retry && isFrozenTab(readText(st.reviewFiles(evidenceDir(root, ctx.id)).verdict))) {
+  if (code === 200 && !s.frozen_retry && isFrozenTab(readText(st.reviewFiles(evidenceDir(co(ctx), ctx.id)).verdict))) {
     st.log(root, ctx.id, `INFRA_BLOCKED for a frozen Orca tab while 127.0.0.1:${port} answers 200: a fresh reviewer with the Chrome headless fallback`);
     setPhase(root, ctx.id, 'spawn-reviewer', { reviewer: null, frozen_retry: 1 });
     return null;
@@ -1083,7 +1095,7 @@ function accept(ctx, s, dir, required, manualOptions) {
   return ask(s, 'approval_evidence', `not APPROVED by Step 2d: ${p.detail} (${dir})`, ['evidence fixed, check again', ...back, 'mark blocked', 'stop'], { obs: evObs });
 }
 
-const laneHandoff = (ctx) => (ctx.lane === 'fleet' ? fleetHandoff(ctx.project.root, ctx.id).file : handoffMain(ctx.project.root, ctx.id));
+const laneHandoff = (ctx) => (ctx.lane === 'fleet' ? fleetHandoff(ctx.project.root, ctx.id).file : handoffMain(co(ctx), ctx.id));
 
 /** The commit request: the lane commits, HANDOFF says committed + sha. Main's HEAD is noted (single lane). */
 function commit(ctx, s, handle) {
@@ -1096,13 +1108,13 @@ function commit(ctx, s, handle) {
 const commitMarks = (ctx) => ({
   commit_base: mtime(laneHandoff(ctx)),
   commit_idles: 0,
-  ...(ctx.lane === 'single' ? { commit_head: gitOut(ctx.project.root, ['rev-parse', 'HEAD']) || null, commit_asked: st.now() } : {}),
+  ...(ctx.lane === 'single' ? { commit_head: gitOut(co(ctx), ['rev-parse', 'HEAD']) || null, commit_asked: st.now() } : {}),
 });
 
 /** Single lane: commits on main since the commit request, oldest first (first parent only). */
 function commitsSince(ctx, s) {
   if (ctx.lane !== 'single' || !s.commit_head) return [];
-  const out = gitOut(ctx.project.root, ['log', '--first-parent', '--reverse', '--format=%H %P|%ct %s', `${s.commit_head}..HEAD`]);
+  const out = gitOut(co(ctx), ['log', '--first-parent', '--reverse', '--format=%H %P|%ct %s', `${s.commit_head}..HEAD`]);
   return out ? out.split('\n').map((l) => {
     const [head, rest] = [l.slice(0, l.indexOf('|')), l.slice(l.indexOf('|') + 1)];
     const [sha, ...parents] = head.trim().split(' ');
@@ -1406,6 +1418,7 @@ function fleetStep(ctx, s, phase) {
 export function applyAnswer(ctx, q) {
   const { project, id } = ctx;
   const root = project.root;
+  ctx.checkout ??= laneCheckout(root, id);
   const s = st.readSliceState(root, id);
   const choice = q.answer.choice;
   const note = q.answer.text ? ` — ${q.answer.text}` : '';

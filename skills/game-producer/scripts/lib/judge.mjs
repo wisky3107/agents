@@ -20,7 +20,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import * as st from './state.mjs';
 import * as io from './orca.mjs';
-import { fleetHandoff } from './lanes.mjs';
+import { fleetHandoff, laneCheckout } from './lanes.mjs';
 
 const PROMPT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'reference', 'judge-prompt.md');
 /** The options each kind may offer the judge (a fleet gate: its own options, never stop). */
@@ -72,13 +72,13 @@ function lastJson(text) {
 const oneLine = (t) => String(t || '').replace(/\s+/g, ' ').trim();
 const norm = (t) => oneLine(t).toLowerCase().replace(/[`*_"“”'’]/g, '');
 
-/** The slice's evidence: the feature worktree's for a fleet lane, the main checkout's otherwise. */
+/** The slice's evidence: the feature worktree's for a fleet lane, the lane's checkout otherwise (main, or its worktree). */
 function evidenceDir(project, slice) {
   if (st.readSliceState(project.root, slice).lane === 'fleet') {
     const { file } = fleetHandoff(project.root, slice);
     return path.dirname(file);
   }
-  return path.join(st.sliceDir(project.root, slice), 'evidence');
+  return path.join(st.sliceDir(laneCheckout(project.root, slice), slice), 'evidence');
 }
 
 /**
