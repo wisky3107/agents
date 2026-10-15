@@ -740,7 +740,14 @@ function cancelSlice(root, raw, note) {
       ...git(root, 'diff', '--name-only', s.base_sha).stdout.split('\n'),
       ...git(root, 'ls-files', '--others', '--exclude-standard').stdout.split('\n'),
     ].filter((f) => f && !f.startsWith('.cursor/') && f !== 'AGENT_NOTES.md'));
-    out.changed_in_main = { since: String(s.base_sha).slice(0, 12), files: [...files].slice(0, 60), note: 'left as they are: revert what is the lane\'s (git restore / rm), keep what is the director\'s' };
+    const list = [...files];
+    // a reverted asset stays imported in the editor's library/ until refreshed (pilot 24: cancel S33 left a stale
+    // texture import that turned S32-02 red in the next slice)
+    const assets = list.filter((f) => f.startsWith('assets/') && !/\.(ts|js|mjs)$/.test(f));
+    out.changed_in_main = {
+      since: String(s.base_sha).slice(0, 12), files: list.slice(0, 60),
+      note: `left as they are: revert what is the lane's (git restore / rm), keep what is the director's${assets.length ? `; after reverting asset files, refresh_assets those paths (Funplay MCP) so the editor's library matches the disk: ${assets.slice(0, 20).join(', ')}${assets.length > 20 ? ', …' : ''}` : ''}`,
+    };
   }
   if (fs.existsSync(dir)) {
     st.log(root, id, `cancelled by the director${note ? `: ${note}` : ''} (producer-runner cancel)`);
@@ -752,7 +759,7 @@ function cancelSlice(root, raw, note) {
   for (const q of st.readRunner(root).questions.filter((x) => x.slice === id && !x.answer)) st.setQuestion(root, q.id, { answer: { choice: '(slice cancelled)', text: note, at, by: 'cancel' }, applied: at });
   const r = st.readRunner(root);
   st.writeRunner(root, { ...(r.slice === id ? { slice: null, step: 'cancelled' } : {}), lanes: (r.lanes || []).filter((l) => l.slice !== id) });
-  out.next = `drop ${id} from MILESTONES.md (slices, dag) and move its slice file if it is gone for good; AGENT_NOTES.md now says ${id}: cancelled (uncommitted); then start the runner`;
+  out.next = `drop ${id} from MILESTONES.md (slices, dag) and move its slice file if it is gone for good; AGENT_NOTES.md now says ${id}: cancelled (uncommitted); then \`producer-runner clear\` (the stop you set) and launch the runner`;
   return out;
 }
 

@@ -13,13 +13,15 @@ const lines = (dir, f) => (fs.existsSync(path.join(dir, f)) ? fs.readFileSync(pa
 test('cancel a main lane: terminals closed, changes listed (never reverted), T-Sxx archived, cache cancelled, questions closed, next slice runs', () => {
   const p = project({ slices: { S01: { needs: false }, S02: { needs: false } }, dag: { S01: [], S02: [] } });
   const f = fakes();
-  f.queue([{ name: 'blocked', write: { 'src/wallet.ts': 'export const w = 1;\n', [evRel('S01', 'HANDOFF.json')]: { role: 'writer', status: 'blocked', detail: 'need a ruling', sha: null } } }]);
+  f.queue([{ name: 'blocked', write: { 'src/wallet.ts': 'export const w = 1;\n', 'assets/art/turn.png': 'png', [evRel('S01', 'HANDOFF.json')]: { role: 'writer', status: 'blocked', detail: 'need a ruling', sha: null } } }]);
   const q = runner(p.root, f, 'start', '--once').out.at(-1);
   assert.equal(q.kind, 'lane_blocked');
   const out = runner(p.root, f, 'cancel', 'S01', '--note', 'director: the request meant another icon').out.at(-1);
   assert.equal(out.cancelled, 'S01');
   assert.deepEqual(out.closed, ['term_1']);
-  assert.deepEqual(out.changed_in_main.files, ['src/wallet.ts']);
+  assert.deepEqual(out.changed_in_main.files.sort(), ['assets/art/turn.png', 'src/wallet.ts']);
+  assert.match(out.changed_in_main.note, /refresh_assets those paths \(Funplay MCP\) so the editor's library matches the disk: assets\/art\/turn\.png$/);
+  assert.match(out.next, /`producer-runner clear` \(the stop you set\) and launch/);
   assert.ok(fs.existsSync(path.join(p.root, 'src/wallet.ts')), 'the change is left for the director');
   assert.match(out.archived, /T-S01\.cancelled-/);
   assert.equal(fs.existsSync(ev(p.root, 'S01')), false);
@@ -31,6 +33,7 @@ test('cancel a main lane: terminals closed, changes listed (never reverted), T-S
   assert.equal(r.questions.find((x) => x.id === q.waiting).answer.by, 'cancel');
   // the runner goes on with S02
   fs.rmSync(path.join(p.root, 'src/wallet.ts'));
+  fs.rmSync(path.join(p.root, 'assets'), { recursive: true });
   clearControl(p.root);
   const dry = runner(p.root, f, 'start', '--dry-run').out.at(-1);
   assert.equal(dry.slice, 'S02');
