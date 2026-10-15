@@ -1,0 +1,45 @@
+# Runner phase 2 — hai lane song song
+
+Yêu cầu: director (2026-10-15, qua pilot 24) — chạy tối đa 2 slice cùng lúc khi hai slice runnable kế tiếp là
+một cặp `parallel_ok` trong MILESTONES. Máy 16 GB M1 Pro chịu được 3 editor Creator. Làm sau việc rút ngắn
+smoke (đã xong: run-args `--settle` + `// DELAY:`).
+
+## Hiện trạng (khảo sát 2026-10-15)
+
+Runner nối tiếp ở 4 chỗ: chọn slice (`nextSlice` project.mjs:320, nhiều slice in_progress = stuck), vòng lặp
+chặn (`runSlice` R:840 chờ tới khi slice hỏi hoặc xong; `waitForAnswer` R:762 chặn mọi lane), merge journal,
+res-guard (`runnerInfo` chỉ đọc một `runner.slice`; `maxEditors: 2`). Không code nào đọc `parallel_ok`.
+Single lane giả định main checkout ở nhiều chỗ trong lanes.mjs (handoff/evidence, PORT/`slicePort` lấy port
+mới nhất của slice bất kỳ, `ensureEditor` chỉ main, `staticGate --root root`, `commitsSince` đọc HEAD main).
+Có sẵn để dùng lại: `orca worktree create --base-branch` + setup hook (rsync `library/`, pin cổng Funplay riêng,
+mở Creator), đường merge của fleet (`doMerge` → copy evidence → `worktree_rm` → verify → record),
+`sliceStatuses` đã coi worktree `Sxx-…` là in_progress, check-slice nhận `--root/--base/--port`.
+
+## Hai quy tắc chống nguy hiểm
+
+1. **Đặt chỗ:** lane chạy ở main chỉ khi không lane nào khác đang sống; ngược lại vào worktree riêng.
+2. **Merge:** worktree lane chỉ merge khi không lane nào đang sống ở main; hàng đợi FIFO, mỗi lần một.
+   → không bao giờ merge dưới chân writer đang làm ở main (không đóng Creator của nó, không dời base của nó).
+
+## Các mốc (mỗi mốc merge riêng, có test; max_parallel=1 giữ nguyên hành vi)
+
+| Mốc | Nội dung | Rủi ro |
+|---|---|---|
+| M0 | Trừu tượng hoá checkout của lane (`laneCtx`: checkout, evidence, handoff, worktree; null ⇒ main). Thay mọi chỗ dùng `root` trong lanes/merge; ctx dựng một chỗ (R:830 và R:413). `slicePort` chỉ lấy port của chính checkout. Refactor thuần, bộ test hiện có giữ nguyên. | thấp |
+| M1 | Single lane trong worktree, vẫn nối tiếp, opt-in: phase `spawn-worktree` (tạo với `--base-branch base_sha`, khôi phục qua `sliceWorktrees`), editor + `wait-mcp` của worktree, writer/reviewer/check-slice trên worktree, merge theo đường fleet (key theo `s.worktree`). Harness: `worktree create`, commit theo cwd. | trung bình |
+| M2 | Hàng đợi merge + gộp file dùng chung trong `doMerge`: whitelist (MILESTONES `shared_append:`), markdown `merge-file --union`, JSON hợp khoá (trùng khoá khác giá trị → hỏi), số FOLLOWUPS trùng → hỏi (hoặc cấp dải số cho lane worktree), từ chối nhánh sửa AGENT_NOTES.md; token `main_git` cho mọi thao tác git trên main. | trung bình |
+| M3 | Câu hỏi mang `lane` + `checkout`; menu/thông báo/pilot-wait hiện chúng; `runner.lanes[]` cạnh `slice`; pilot-wait báo `lane_started`/`lane_done`. | thấp |
+| M4 | res-guard theo `runner.lanes`: giữ editor worktree đang dùng, giữ main khi lane main sống (bỏ luật 241 lúc đó); `maxEditors: 3`; `admit` theo checkout của lane. | trung bình |
+| M5 | Bộ lập lịch (công tắc thật): `preflight` nhận `max_parallel=2`; `nextLanes()` = lane sống + tối đa 1 lane mới khi là cặp `parallel_ok`, cả hai single lane, không chung nhóm `exclusive` (api, figma…); bước từng lane theo hạn riêng (waitMs ~60–90 s khi có 2 lane); câu hỏi chỉ đỗ slice của nó; `stop-after` không mở lane mới. | cao |
+
+Sau M5: thử trên dự án không chạy pilot, rồi bật cho capytal (cặp đầu tiên khả dĩ: S30 + S21; S21 có
+`needs_director_ok`, director_gate của S21 chỉ đỗ S21).
+
+## Rủi ro chính
+
+- M5: các lời gọi chặn lâu (`staticGate` tới 600 s, judge, `wait-mcp` 240 s, harvest 300 s) làm lane kia
+  không được quan sát trong lúc đó — cần tách thành bước hoặc chấp nhận độ trễ có giới hạn.
+- Verify sau merge chạy trên main khi main đã đi tiếp; preview 3.8 không pin được cổng → kiểm `projectPath`.
+- RAM: 2 Creator (~2–3 GB/cái) + 4–6 agent + 2 tsc + 2 trình duyệt smoke trên 16 GB.
+- Tài nguyên dùng chung một phiên (API test server, tab Figma, profile ChatGPT): khai báo `exclusive`.
+- Kill/restart với hai lane phải khôi phục cả hai, không spawn lần hai.
