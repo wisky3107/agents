@@ -98,6 +98,15 @@ export function send(handle, text) {
   }
 }
 
+/** One interrupt-style input (Claude Code: the running turn stops at the prompt). Throws when Orca refuses it. */
+export function interrupt(handle) {
+  const r = orca(['terminal', 'send', '--terminal', handle, '--interrupt']);
+  if (r.status !== 0 || r.parsed?.ok === false) {
+    const e = r.parsed?.error;
+    throw new Error(`terminal interrupt to ${handle} failed: ${e ? [e.code, e.message].filter(Boolean).join(': ') : (r.stderr || r.stdout).trim().slice(-200)}`);
+  }
+}
+
 /** A visible Orca terminal in the project that runs `producer-runner.mjs start`. → handle | null */
 export function launchRunner(root, runner) {
   const title = `producer-runner-${path.basename(root).replace(/^cc4?-/, '')}`;

@@ -27,6 +27,12 @@
  *     counts as idle again ("background_stuck":true), and so does background work seen continuously for
  *     ORCA_WAIT_BG_MAX_MS (4 h), whatever the screen does (a ticking status line).
  *
+ *     A terminal that stays busy is not always working (pilot 24, cc-capytal-war S27): a Claude writer whose context
+ *     grew to ~309k spent 3h46m on "Request timed out · Retrying in 0s · attempt 4/9" while the spinner kept the TUI
+ *     busy. Every timeout result carries "busy_ms" (busy since the last idle / HANDOFF / handle change), and when
+ *     the screen has shown request retries on every look for ORCA_WAIT_RETRY_STALL_MS (10 min),
+ *     "stall":{"reason":"request timeouts","minutes":N,"line":"…"}. The runner decides what to do with it.
+ *
  *     While it waits, coord also rescues lost Enters (pilot 18 F3): `worker-start` can paste the brief into a
  *     Claude Code TUI and lose the Enter, leaving the dispatch `dispatched` with no heartbeat forever. Every
  *     ~30 s it looks at the Run's dispatches; one that is `dispatched`, has `last_heartbeat_at` null and is
@@ -288,11 +294,28 @@ function readHandoff(file) {
 // (killing the monitors) twice. The idle streak is held while such a screen keeps changing; one that stays
 // byte-identical for BG_STUCK_MS counts as idle again, so a truly stuck agent is still caught.
 const BG_STUCK_MS = Number(process.env.ORCA_WAIT_BG_STUCK_MS ?? 45 * 60 * 1000);
+const RETRY_STALL_MS = Number(process.env.ORCA_WAIT_RETRY_STALL_MS ?? 10 * 60 * 1000);
+// a request the agent's client keeps retrying (Claude Code: "Request timed out · Retrying in 0s · attempt 4/9")
+// (not a bare "attempt 2/5": a script the agent runs may print that)
+const RETRY_LINE = /Request timed out|Retrying in \d+\s*s\b|API Error:? \(?(?:Request timed out|Overloaded|5\d\d)|overloaded_error/i;
 const BG_MAX_MS = Number(process.env.ORCA_WAIT_BG_MAX_MS ?? 4 * 60 * 60 * 1000); // ticking status lines can keep the screen "changing": a hard ceiling
 const BG_UNIT = '\\d+ (?:monitors?|shells?|background (?:tasks?|shells?|commands?))';
 const BG_WORK = new RegExp(`(?:[·←]\\s*${BG_UNIT}\\b|^\\s*${BG_UNIT}\\s*(?:[·←↓]|$)|\\b${BG_UNIT} still running)`, 'i'); // footer "· 2 monitors" / "1 shell · ↓ to manage" / status "2 monitors still running", not prose
 // "← 1 agent" is on every Orca worker's footer, idle or not (pilot 23 S10: it held a finished writer for 45 min): never count it
 const BG_AGENTS = /·\s*\d+ (?:local |background )agents?\b/;
+
+/** A request-retry line among a busy terminal's last screen lines → the line | null. A failing probe is null. */
+function retryingScreen(handle) {
+  try {
+    const rd = orcaJson(['terminal', 'read', '--terminal', handle], PROBE_CALL_MS);
+    const term = rd.parsed?.result?.terminal ?? rd.parsed?.result;
+    const lines = textOf(term?.tail).split('\n').filter((l) => l.trim()).slice(-12);
+    const hit = lines.find((l) => RETRY_LINE.test(l));
+    return hit ? hit.trim().slice(0, 160) : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Live background work on an idle terminal's screen (the last lines: status line + footer). → { what, hash } | null */
 function backgroundWork(handle) {
@@ -402,15 +425,23 @@ function lane(v) {
     bgStuck = Date.now() - bgChanged >= BG_STUCK_MS || Date.now() - bgSince >= BG_MAX_MS;
     if (!bgStuck) idleStreak = 0;
   }
+  // busy the whole wait: how long, and whether the screen keeps showing request retries
+  const fresh = handleChanged || handoffChanged;
+  const busySince = event === 'timeout' ? (!fresh && prev.busy_since ? prev.busy_since : started) : null;
+  const retry = event === 'timeout' && handle ? retryingScreen(handle) : null;
+  const retrySince = retry ? (!fresh && prev.retry_since ? prev.retry_since : Date.now()) : null;
+  const stall = retry && Date.now() - retrySince >= RETRY_STALL_MS
+    ? { reason: 'request timeouts', minutes: Math.round((Date.now() - retrySince) / 60000), line: retry } : null;
   const out = {
     event, handle, handle_changed: handleChanged, ...(errorText ? { error: errorText } : {}),
     ...(event === 'terminal-missing' && missingWhy ? { error: missingWhy } : {}),
     ...(staleRechecks ? { stale_rechecks: staleRechecks } : {}),
     status: after.status, detail: after.detail, sha: after.sha, handoff_changed: handoffChanged,
     idle_streak: idleStreak, ...(bg ? { background: bg.what, ...(bgStuck ? { background_stuck: true } : {}) } : {}), pending_gates: pendingGates, unread_to_run: unread, waited_ms: Date.now() - started,
+    ...(busySince ? { busy_ms: Date.now() - busySince } : {}), ...(retry ? { retrying: retry } : {}), ...(stall ? { stall } : {}),
   };
   fs.mkdirSync(path.dirname(path.resolve(v.state)), { recursive: true });
-  const next = { ...prev, handle, last_mtime: after.mtime, last_status: after.status, idle_streak: idleStreak, bg_hash: bg ? bg.hash : null, bg_changed_at: bg ? bgChanged : null, bg_since: bg ? bgSince : event === 'idle' || handleChanged || handoffChanged ? null : prev.bg_since ?? null, last_event: event, updated: new Date().toISOString() };
+  const next = { ...prev, handle, last_mtime: after.mtime, last_status: after.status, idle_streak: idleStreak, bg_hash: bg ? bg.hash : null, bg_changed_at: bg ? bgChanged : null, bg_since: bg ? bgSince : event === 'idle' || handleChanged || handoffChanged ? null : prev.bg_since ?? null, busy_since: busySince, retry_since: retrySince, last_event: event, updated: new Date().toISOString() };
   fs.writeFileSync(`${v.state}.tmp`, JSON.stringify(next, null, 1));
   fs.renameSync(`${v.state}.tmp`, v.state);
   return out;

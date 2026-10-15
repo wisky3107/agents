@@ -136,7 +136,7 @@ if (cmd === 'terminal create') {
 if (cmd === 'terminal send') {
   // --enter = a message to the agent (sends.log); without it, raw keys or text typed into a TUI panel (keys.log).
   // keystream.log keeps both in order. A raw send moves the terminal's screen frame (screens.json).
-  const entry = { to: arg('--terminal'), text: arg('--text') };
+  const entry = { to: arg('--terminal'), text: arg('--text'), ...(a.includes('--interrupt') ? { interrupt: true } : {}) };
   // keys-fail: raw keys / typed text are refused (a message with --enter still goes)
   if (!a.includes('--enter') && fs.existsSync(path.join(D, 'keys-fail'))) out({ ok: false, error: { code: 'input_refused', message: 'keys refused' } }, 1);
   log(a.includes('--enter') ? 'sends.log' : 'keys.log', entry);

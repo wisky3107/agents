@@ -112,6 +112,7 @@ const AUTOPILOT = {
   commit_stalled: 'resend commit',
   reviewer_hung: 'spawn a fresh reviewer',
   lane_hung: 'spawn another resume lane',
+  lane_stalled: 'interrupt and /compact, keep the writer',
   changes_after_rounds: 'one more fix round',
   orca_error: 'retry',
 };
@@ -121,6 +122,8 @@ function autopilotChoice(root, project, q) {
   if ((mode !== 'retry_once' && mode !== 'unattended') || q.answer) return null;
   // a hung lane whose screen shows live background work (monitors, shells) is working: never respawn it blindly (pilot 23 q2)
   if (q.background) return null;
+  // busy with no progress is not proof of a stall (a long foreground job): only request retries on screen let autopilot interrupt
+  if (q.kind === 'lane_stalled' && !q.retrying) return null;
   const used = st.readRunner(root).questions.filter((x) => x.id !== q.id && x.slice === q.slice && x.kind === q.kind && x.answer?.by === 'autopilot').length;
   let pick = null;
   if (mode === 'unattended') {
@@ -249,6 +252,7 @@ function stopFor(root, slice, code, detail, extra = {}) {
   let { question, isNew } = st.ask(root, {
     key, slice, kind: code, text, detail, options, ref: extra.ref || null, obs: extra.obs || null,
     ...(extra.background ? { background: extra.background } : {}),
+    ...(extra.retrying ? { retrying: true } : {}),
     ...(extra.also?.length ? { also: extra.also } : {}),
   });
   // the same question still open from an older runner: it gets this runner's options and wording

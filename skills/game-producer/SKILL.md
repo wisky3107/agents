@@ -59,7 +59,8 @@ node ~/.agents/skills/game-producer/scripts/producer-runner.mjs start --dry-run 
   logged as `autopilot on qN`:
   - `retry_once`: the routine "try again" answers, once per slice and kind — commit_stalled → resend
     commit, reviewer_hung → a fresh reviewer, lane_hung → another resume lane, changes_after_rounds →
-    one more fix round, orca_error → retry (not lane_hung / reviewer_hung when the lane's screen shows
+    one more fix round, orca_error → retry, lane_stalled → interrupt and /compact (only when the screen
+    showed request retries) (not lane_hung / reviewer_hung when the lane's screen shows
     live background work such as "2 monitors still running": those questions also offer "writer is alive,
     keep waiting" / "reviewer is alive, keep waiting", which closes nothing; such a question waits for the director even under `unattended`, and orca-wait counts the lane idle again once that screen sat unchanged 45 min or showed background work 4 h);
   - `unattended`: `retry_once`, plus a director's standing "run every slice, answer for me" — every
@@ -80,6 +81,12 @@ node ~/.agents/skills/game-producer/scripts/producer-runner.mjs start --dry-run 
   outage); before any message to a fleet coordinator the runner puts an open panel away (shift+→).
   `coordinator_question`, `director_pending` and `coordinator_screen` have no judge or autopilot path: an
   unattended run waits for a human on them. The fleet prompt tells coordinators to use gates instead.
+- **Busy but stalled writer (pilot 24, capytal S27: 309k context, 3h46m of "Request timed out ·
+  Retrying"):** a busy TUI never reads idle, so `lane_stalled` is asked when orca-wait saw request retries
+  on the writer's screen for `ORCA_WAIT_RETRY_STALL_MS` (10 min), or the writer was busy for
+  `PRODUCER_RUNNER_STALL_MS` (90 min) with no change in the working tree or HANDOFF. "interrupt and
+  /compact, keep the writer" sends one interrupt and a `/compact` that keeps the slice, changes, plan and
+  open questions; the idle nudge then resumes it.
 - **Single-lane commit (pilot 2):** the commit request says what to do — `/commit-guard` on the
   checkout, then HANDOFF `committed` + the full sha. A writer that commits and says nothing: the only
   new commit on main since the request — not a merge, naming the slice in its subject or a path it

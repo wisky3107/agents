@@ -65,6 +65,8 @@ const rebindText = (run, worktree) => `Orca restarted and this terminal now host
 const COORDINATOR = '@coordinator'; // outbox address resolved through run-show at send time
 // a lane's own question: the director (or the judge, from the contracts) answers it in the lane
 const LANE_BLOCKED_OPTIONS = ['send this answer to the lane', 'answered in the lane, continue', 'mark blocked', 'stop'];
+const COMPACT = 'interrupt and /compact, keep the writer';
+const STALL_MS = () => Number(process.env.PRODUCER_RUNNER_STALL_MS || 90 * 60 * 1000); // busy with no change in the tree or HANDOFF
 
 /** HANDOFF status → one of KNOWN, or null (unknown: never acted on mechanically). */
 export function normalizeStatus(s) {
@@ -651,6 +653,54 @@ const backgroundNote = (w) => (w.background ? ` — its screen shows live backgr
 /** "Keep waiting" only helps while the terminal exists and the lane has not said blocked. */
 const aliveOption = (w, h) => w.event === 'idle' && h.status !== 'blocked';
 
+/**
+ * The working tree as the writer sees it: `git status` (untracked files one by one) and each listed file's
+ * mtime, hashed. The runner's own files (.cursor/producer*, T-<Sxx>/producer-*, wait-*.json) are left out:
+ * they change on every look.
+ */
+export function treeSignature(root) {
+  const r = spawnSync('git', ['-C', root, 'status', '--porcelain=v1', '--untracked-files=all'], { encoding: 'utf8', maxBuffer: 64 << 20 });
+  if (r.status !== 0) return null;
+  const OWN = /^\.cursor\/(producer|evidence\/lessons\.jsonl$|evidence\/tasks\/[^/]+\/(producer-|wait-|merge-journal))/;
+  const rows = r.stdout.split('\n').filter(Boolean).map((l) => l.slice(3).replace(/^.* -> /, '').replace(/^"|"$/g, '')).filter((f) => !OWN.test(f)).sort();
+  const h = createHash('sha1');
+  for (const f of rows) {
+    let m = 0;
+    try { m = fs.statSync(path.join(root, f)).mtimeMs; } catch { /* deleted */ }
+    h.update(`${f}\t${m}\n`);
+  }
+  return h.digest('hex');
+}
+
+/**
+ * Pilot 24 (cc-capytal-war S27): a Claude writer whose context reached ~309k kept the TUI busy for 3h46m on
+ * "Request timed out · Retrying" without writing code; a busy terminal never reads idle, so nothing asked. A busy
+ * writer is stalled when orca-wait saw request retries on its screen for ORCA_WAIT_RETRY_STALL_MS, or when it has
+ * been busy for STALL_MS with no change in the working tree or HANDOFF. → an ask, or null.
+ */
+function writerStall(ctx, s, w, h) {
+  const { root } = ctx.project;
+  const sig = treeSignature(root);
+  const now = Date.now();
+  if (sig === null) return null;
+  if (sig !== s.progress_sig || !s.progress_at || (h.mtime && h.mtime > s.progress_at)) {
+    st.writeSliceState(root, ctx.id, { progress_sig: sig, progress_at: now });
+    return null;
+  }
+  const quiet = now - s.progress_at;
+  const slow = (w.busy_ms || 0) >= STALL_MS() && quiet >= STALL_MS();
+  if (!w.stall && !slow) return null;
+  const min = (ms) => Math.round(ms / 60000);
+  const why = w.stall ? `its screen has shown request retries for ${w.stall.minutes} min ("${w.stall.line}")` : `it has been busy for ${min(w.busy_ms)} min`;
+  return ask(s, 'lane_stalled', `writer ${s.writer} is busy but stalled: ${why}, and nothing changed in the working tree or HANDOFF for ${min(quiet)} min. A context that outgrew the model makes every response time out (capytal S27: 309k tokens, 3h46m without code); an interrupt and /compact let it finish in 90 min`,
+    [COMPACT, 'writer is alive, keep waiting', 'spawn another resume lane', 'mark blocked', 'stop'], { obs: `lane_stalled:${s.writer}@${s.progress_at}`, ...(w.stall ? { retrying: true } : {}) });
+}
+
+const compactText = (ctx) => {
+  const v = promptValues(ctx.project, ctx.id);
+  return `/compact Keep: slice ${ctx.id} (${v.SLICE_FILE}) and its acceptance rows, which files you changed and why, what is verified, the plan for what is left, open questions. Drop file contents and tool output.`;
+};
+
 /** "Keep waiting" on a live terminal: the idle count (and the screen-unchanged clock) start again, nothing is closed. */
 function keepWaiting(ctx, which) {
   const file = path.join(st.sliceDir(ctx.project.root, ctx.id), `wait-${which}.json`);
@@ -660,7 +710,8 @@ function keepWaiting(ctx, which) {
   } catch {
     /* no wait state yet */
   }
-  fs.writeFileSync(`${file}.tmp`, JSON.stringify({ ...cur, idle_streak: 0, bg_changed_at: cur.bg_hash ? Date.now() : null, bg_since: cur.bg_since ? Date.now() : null }, null, 1));
+  fs.writeFileSync(`${file}.tmp`, JSON.stringify({ ...cur, idle_streak: 0, bg_changed_at: cur.bg_hash ? Date.now() : null, bg_since: cur.bg_since ? Date.now() : null,
+    busy_since: cur.busy_since ? Date.now() : null, retry_since: cur.retry_since ? Date.now() : null }, null, 1));
   fs.renameSync(`${file}.tmp`, file);
 }
 
@@ -827,6 +878,10 @@ function singleStep(ctx, s, phase) {
       return ask(s, 'unknown_status', `writer HANDOFF status "${h.raw ?? '(none)'}" is not one the runner knows`, ['treat as working, keep waiting', 'treat as ready_for_review', 'mark blocked', 'stop'], { obs: obs('unknown_status') });
     }
     if (h.status === 'blocked') return ask(s, 'lane_blocked', `writer HANDOFF blocked: ${h.detail || 'no detail'}`, LANE_BLOCKED_OPTIONS, { obs: obs('lane_blocked') });
+    if (w.event === 'timeout') {
+      const stalled = writerStall(ctx, s, w, h);
+      if (stalled) return stalled;
+    }
     if (w.event === 'idle' && w.idle_streak === 2 && !s.nudged_writer) {
       const text = h.status === 'ready_for_review'
         ? `Static check still FAILs (${path.join(evidence, 'static-check.txt')}): fix the FAIL lines, rerun check-slice, then write HANDOFF.json ready_for_review again.`
@@ -1397,6 +1452,25 @@ export function applyAnswer(ctx, q) {
       return sendOnce(ctx, `commit:${q.id}`, laneHandle, commitText(ctx), { commit_idles: 0 });
     case 'lane_hung:spawn another resume lane':
       return resumeWriter(ctx, s, 'stopped (human: another resume lane)');
+    case `lane_stalled:${COMPACT}`:
+      // the interrupt ends the stuck turn at the prompt; /compact shrinks the context; the idle nudge then resumes it
+      try {
+        io.interrupt(s.writer);
+      } catch (e) {
+        st.log(root, id, `interrupt to ${s.writer} failed (${e.message}); /compact is queued anyway`);
+      }
+      ack();
+      st.writeSliceState(root, id, { progress_at: Date.now() });
+      keepWaiting(ctx, 'writer');
+      st.log(root, id, `writer ${s.writer} stalled: interrupted, /compact sent`);
+      return sendOnce(ctx, `compact:${q.id}`, s.writer, compactText(ctx), { nudged_writer: false, compacts: (s.compacts || 0) + 1 });
+    case 'lane_stalled:writer is alive, keep waiting':
+      ack();
+      st.writeSliceState(root, id, { progress_at: Date.now() });
+      st.log(root, id, `writer ${s.writer} is alive (answered): the stall clocks restart, terminal kept`);
+      return keepWaiting(ctx, 'writer');
+    case 'lane_stalled:spawn another resume lane':
+      return resumeWriter(ctx, s, 'stalled (human: another resume lane)');
     case 'lane_hung:writer is alive, keep waiting':
       st.log(root, id, `writer ${s.writer} is alive (answered): idle count restarts, terminal kept`);
       return keepWaiting(ctx, 'writer');
