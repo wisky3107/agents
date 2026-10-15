@@ -95,8 +95,16 @@ if (cmd === 'terminal wait') {
   }
   log('waits.log', { on: arg('--terminal'), step: step.name || null });
   if (step.sleepMs) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, step.sleepMs);
+  // step.wt: 'S01' — the step happens in that slice's lane worktree (phase 2 M1), found the way git lists it
+  const laneWt = (id) => {
+    const out = require('child_process').spawnSync('git', ['-C', P, 'worktree', 'list', '--porcelain'], { encoding: 'utf8' }).stdout;
+    const hit = out.split('\\n').map((l) => (l.match(/^worktree (.+)$/) || [])[1]).find((w) => w && w !== P && path.basename(w).includes(id));
+    if (!hit) throw new Error('no worktree for ' + id);
+    return hit;
+  };
+  const B = step.wt ? laneWt(step.wt) : P;
   for (const [rel, body] of Object.entries(step.write || {})) {
-    const f = path.resolve(P, rel);
+    const f = path.resolve(B, rel);
     fs.mkdirSync(path.dirname(f), { recursive: true });
     fs.writeFileSync(f, typeof body === 'string' ? body : JSON.stringify(body));
   }
@@ -106,10 +114,13 @@ if (cmd === 'terminal wait') {
   if (step.commit) {
     // the lane commits on main for real (single lane), then reports the sha in its HANDOFF
     const cp = require('child_process');
-    cp.spawnSync('git', ['-C', P, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-qm', step.commit.message]);
-    const sha = cp.spawnSync('git', ['-C', P, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+    cp.spawnSync('git', ['-C', B, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-qm', step.commit.message]);
+    const sha = cp.spawnSync('git', ['-C', B, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
     // noHandoff: the writer commits and says nothing (pilot 2)
-    if (!step.commit.noHandoff) fs.writeFileSync(path.resolve(P, step.commit.handoff), JSON.stringify({ role: 'writer', status: 'committed', sha }));
+    if (!step.commit.noHandoff) {
+      fs.mkdirSync(path.dirname(path.resolve(B, step.commit.handoff)), { recursive: true });
+      fs.writeFileSync(path.resolve(B, step.commit.handoff), JSON.stringify({ role: 'writer', status: 'committed', sha }));
+    }
     fs.writeFileSync(path.join(D, 'last-commit'), sha);
   }
   if (step.runs) fs.writeFileSync(path.join(D, 'runs.json'), JSON.stringify(step.runs));
@@ -118,6 +129,15 @@ if (cmd === 'terminal wait') {
   if (step.result === 'missing') out({ ok: false, error: { code: 'terminal_handle_stale' } }, 1);
   if (step.result === 'error') out({ ok: false, error: { code: 'runtime_unreachable', message: 'connect ECONNREFUSED' } }, 1);
   out({ ok: true, result: { wait: { satisfied: false } } });
+}
+if (cmd === 'worktree create') {
+  // the real one runs the repo's setup hook (library/, Funplay port, Creator); here: git worktree add -b <name>
+  const repo = arg('--repo').replace(/^path:/, ''), name = arg('--name'), base = arg('--base-branch') || 'HEAD';
+  log('wtcreate.log', { repo, name, base, setup: arg('--setup') });
+  if (fs.existsSync(path.join(D, 'worktree-create-fail'))) out({ ok: false, error: { code: 'worktree_setup_failed', message: 'setup hook failed' } }, 1);
+  const wt = repo + '-wt-' + name;
+  const r = require('child_process').spawnSync('git', ['-C', repo, 'worktree', 'add', '-q', '-b', name, wt, base], { encoding: 'utf8' });
+  out(r.status === 0 ? { ok: true, result: { worktree: { path: wt, branch: name } } } : { ok: false, error: { code: 'worktree_create_failed', message: r.stderr } }, r.status === 0 ? 0 : 1);
 }
 if (cmd === 'worktree rm') {
   // the real one runs the archive hook and removes the checkout; here: git worktree remove (--force passed on)

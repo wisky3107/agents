@@ -512,7 +512,9 @@ export function mergeStep(ctx, s, kit) {
   let j = readJournal(root, id);
   if (!j) {
     // everything the later steps need, captured while the worktree still exists
-    const wt = ctx.lane === 'fleet' ? s.worktree || kit.worktreeOf(root, id) : null;
+    // a fleet's feature worktree, or a single lane's own (phase 2 M1: lane_checkout); a single lane in main has none
+    const own = s.lane_checkout && path.resolve(s.lane_checkout) !== path.resolve(root) ? s.lane_checkout : null;
+    const wt = ctx.lane === 'fleet' ? s.worktree || kit.worktreeOf(root, id) : own;
     const dir = wt ? path.join(wt, evidenceRel(id)) : path.join(root, evidenceRel(id));
     const handoff = st.readJson(path.join(dir, 'HANDOFF.json'), {});
     const fix = ctx.lane === 'fleet' ? String(handoff.detail || '').match(/fix_rounds=(\d+)/)?.[1] : s.fix_rounds || 0;
@@ -538,7 +540,7 @@ export function mergeStep(ctx, s, kit) {
     return null;
   }
 
-  if (ctx.lane === 'single') {
+  if (ctx.lane === 'single' && !j.wt) {
     // the writer committed in the main checkout: the commit must really be there before it is recorded
     if (!done('record') && !isAncestor(root, j.sha)) {
       return kit.ask(s, 'commit_not_on_main', `the lane reported commit ${short}, but it is not in the main checkout's HEAD`, ['committed by hand, check again', 'mark blocked', 'stop']);

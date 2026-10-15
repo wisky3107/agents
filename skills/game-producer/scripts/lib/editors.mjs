@@ -72,22 +72,31 @@ export function admit(ctx, checkout, what, kind = 'lane') {
 }
 
 /**
- * Main's Creator up before a single-lane step that uses it. true = up (or nothing to do here);
- * false = the gate holds the reopen, pause and ask again. cc4 lanes start their own MCP server.
+ * The lane's Creator up before a single-lane step that uses it — main's, or the lane's own worktree's (phase 2
+ * M1: ctx.checkout). true = up (or nothing to do here); false = the gate holds the reopen, pause and ask again.
+ * cc4 lanes start their own MCP server.
  */
 export function ensureEditor(ctx, why) {
   if (!guard()) return true;
   const { project, id } = ctx;
   const root = project.root;
-  if (isCc4(project) || editorRunning(root)) return true;
-  const script = path.join(root, 'scripts', 'open-editor.sh');
+  const checkout = ctx.checkout || root;
+  const which = checkout === root ? "main's editor" : `the lane's editor (${path.basename(checkout)})`;
+  if (isCc4(project) || editorRunning(checkout)) return true;
+  const script = path.join(checkout, 'scripts', 'open-editor.sh');
   if (!fs.existsSync(script)) return true;
-  if (!admit(ctx, root, `reopening main's editor (${why})`, 'editor')) return false;
+  if (!admit(ctx, checkout, `reopening ${which} (${why})`, 'editor')) return false;
   // open-editor.sh ends in `exec Creator`: run it detached, like merge's reopen step
-  spawn('bash', [script, root], { cwd: root, detached: true, stdio: 'ignore', env: { ...process.env, ORCA_WORKTREE_PATH: root } }).unref();
-  const w = spawnSync(process.execPath, [io.BOOTSTRAP, 'wait-mcp', '--path', root, '--timeout-ms', '180000', '--json'], { encoding: 'utf8', timeout: 240000 });
-  st.log(root, id, `reopened main's editor for ${why} (wait-mcp ${w.status === 0 ? 'ok' : `exit ${w.status}: ${(w.stderr || w.stdout || '').trim().slice(-160)}`})`);
+  spawn('bash', [script, checkout], { cwd: checkout, detached: true, stdio: 'ignore', env: { ...process.env, ORCA_WORKTREE_PATH: checkout } }).unref();
+  const w = waitMcp(checkout);
+  st.log(root, id, `reopened ${which} for ${why} (wait-mcp ${w.ok ? 'ok' : w.error})`);
   return true;
+}
+
+/** bootstrap wait-mcp on a checkout (its Creator's Funplay answers for THAT project). → { ok, error } */
+export function waitMcp(checkout) {
+  const w = spawnSync(process.execPath, [io.BOOTSTRAP, 'wait-mcp', '--path', checkout, '--timeout-ms', '180000', '--json'], { encoding: 'utf8', timeout: 240000 });
+  return w.status === 0 ? { ok: true } : { ok: false, error: `exit ${w.status}: ${(w.stderr || w.stdout || '').trim().slice(-160)}` };
 }
 
 /** A fleet worktree now exists: main's editor (Creator, or the cc4 MCP server) only waits — close it. */

@@ -81,6 +81,12 @@ node ~/.agents/skills/game-producer/scripts/producer-runner.mjs start --dry-run 
   outage); before any message to a fleet coordinator the runner puts an open panel away (shift+→).
   `coordinator_question`, `director_pending` and `coordinator_screen` have no judge or autopilot path: an
   unattended run waits for a human on them. The fleet prompt tells coordinators to use gates instead.
+- **Single lane in its own worktree (`release.lane_worktree: true` or policy token `lane_worktree=true`;
+  default off; phase 2 M1, docs/plans/2026-10-15-runner-parallel-phase2):** before the writer the runner creates
+  `orca worktree create --name <Sxx-slug> --base-branch <slice base> --setup run` (library/, Funplay port, Creator),
+  records it as `lane_checkout`, waits for its MCP, and runs writer, static gate, reviewer and commit there; the
+  merge takes the fleet path (merge --no-ff into the base branch, evidence back to main, worktree removed, main
+  verified). Runner state stays in main. A failed create asks `worktree_failed` (retry / run this slice in main).
 - **Busy but stalled writer (pilot 24, capytal S27: 309k context, 3h46m of "Request timed out ·
   Retrying"):** a busy TUI never reads idle, so `lane_stalled` is asked when orca-wait saw request retries
   on the writer's screen for `ORCA_WAIT_RETRY_STALL_MS` (10 min), or the writer was busy for

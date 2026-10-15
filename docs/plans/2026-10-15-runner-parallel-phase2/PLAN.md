@@ -58,3 +58,14 @@ Sau M5: thử trên dự án không chạy pilot, rồi bật cho capytal (cặp
   `/evidence/memory/plan/` → giữ pack ở main hoặc cho phép copy; `ensureEditor` / `closeMain` (editors.mjs) vẫn chỉ
   biết main; `slicePort` chưa kiểm `projectPath` (test giả lập dùng `/p`) — thêm khi lane đầu tiên vào worktree;
   merge.mjs single-lane path (`commit_not_on_main`) chưa biết worktree.
+- **M1 xong (2026-10-15):** công tắc `release.lane_worktree` / token `lane_worktree=true` (mặc định tắt). Phase
+  `spawn-worktree` (lanes.mjs `spawnWorktree`): `io.createWorktree` (`orca worktree create --base-branch <sliceBase>
+  --setup run --no-parent`), tìm đường dẫn qua `sliceWorktrees`, ghi `lane_checkout` + `handoff_base`, `waitMcp(wt)`;
+  worktree có sẵn (kill sau create) được nhận lại; tạo hỏng → `worktree_failed` (retry / run this slice in main →
+  `lane_in_main`). `ensureEditor` theo checkout; `waitMcp` tách ra editors.mjs. `laneCheckout` rơi về main khi
+  worktree đã xoá. `previewPort` bỏ report có `projectPath` là một checkout khác đang tồn tại. Memory plan pack luôn
+  ở main. merge.mjs: single lane có `lane_checkout` đi đường fleet (journal `wt` = lane_checkout; `commit_not_on_main`
+  chỉ cho single ở main). Harness: `worktree create`, `step.wt`. 198/198 test (+4 runner-lane-worktree.test.mjs).
+- **Chưa kiểm trên máy thật:** hook setup thật (rsync library/, Creator thứ hai, cổng Funplay), preview của worktree,
+  `check-slice --root wt` với node_modules symlink. Nên chạy thử một slice thật với `lane_worktree=true` trước M5.
+

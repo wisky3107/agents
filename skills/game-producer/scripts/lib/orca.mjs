@@ -98,6 +98,20 @@ export function send(handle, text) {
   }
 }
 
+/**
+ * A slice's own Orca worktree (phase 2 M1): `orca worktree create` from the slice's base commit with the repo's setup
+ * hook (seeds library/ and extensions/, pins this checkout's Funplay port, opens its Creator). The caller finds the
+ * path with `git worktree list` (sliceWorktrees), not in this answer. → { ok, error }
+ */
+export function createWorktree({ root, name, base }) {
+  const r = orca(['worktree', 'create', '--repo', `path:${root}`, '--name', name, '--base-branch', base, '--setup', 'run', '--no-parent']);
+  if (r.status !== 0 || r.parsed?.ok === false) {
+    const e = r.parsed?.error;
+    return { ok: false, error: e ? [e.code, e.message].filter(Boolean).join(': ') : (r.stderr || r.stdout || '').trim().slice(-200) };
+  }
+  return { ok: true };
+}
+
 /** One interrupt-style input (Claude Code: the running turn stops at the prompt). Throws when Orca refuses it. */
 export function interrupt(handle) {
   const r = orca(['terminal', 'send', '--terminal', handle, '--interrupt']);

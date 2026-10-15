@@ -20,7 +20,7 @@ import * as st from './state.mjs';
 import * as io from './orca.mjs';
 import { mergeStep, applyMergeAnswer, MERGE_KINDS, isAncestor } from './merge.mjs';
 import * as cq from './coordq.mjs';
-import { admit, ensureEditor, closeMain } from './editors.mjs';
+import { admit, ensureEditor, closeMain, waitMcp } from './editors.mjs';
 import { ready as agentReady, family } from '../../../cocos-orca-fleet/scripts/agent-ready.mjs';
 
 const REF = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'reference');
@@ -95,9 +95,13 @@ export function fill(template, values) {
   return out;
 }
 
-function previewPort(file) {
+/** The port of a preview-startup.json, unless it names another checkout that exists (another lane's Creator). */
+function previewPort(file, checkout) {
   try {
-    return Number(new URL(JSON.parse(fs.readFileSync(file, 'utf8')).previewUrl).port) || null;
+    const j = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const p = j.projectPath && path.resolve(j.projectPath);
+    if (checkout && p && fs.existsSync(p) && p !== path.resolve(checkout)) return null;
+    return Number(new URL(j.previewUrl).port) || null;
   } catch {
     return null;
   }
@@ -105,13 +109,13 @@ function previewPort(file) {
 
 /** This slice's recorded preview port, else the newest one any lane of the project recorded. */
 export function slicePort(root, id) {
-  const own = previewPort(path.join(st.sliceDir(root, id), 'evidence', 'preview-startup.json'));
+  const own = previewPort(path.join(st.sliceDir(root, id), 'evidence', 'preview-startup.json'), root);
   if (own) return own;
   const base = path.join(root, '.cursor', 'evidence', 'tasks');
   let best = null;
   for (const d of fs.existsSync(base) ? fs.readdirSync(base) : []) {
     const f = path.join(base, d, 'evidence', 'preview-startup.json');
-    const port = previewPort(f);
+    const port = previewPort(f, root);
     if (port && (!best || fs.statSync(f).mtimeMs > best.t)) best = { port, t: fs.statSync(f).mtimeMs };
   }
   return best?.port || null;
@@ -290,7 +294,10 @@ const handoffMain = (root, id) => path.join(evidenceDir(root, id), 'HANDOFF.json
  * the outbox) always stays in main; the lane's HANDOFF, evidence, editor, git HEAD and check-slice root follow
  * its checkout. A fleet lane keeps its own worktree handling (fleetHandoff) and never records one.
  */
-export const laneCheckout = (root, id) => st.readSliceState(root, id).lane_checkout || root;
+export const laneCheckout = (root, id) => {
+  const c = st.readSliceState(root, id).lane_checkout;
+  return c && fs.existsSync(c) ? c : root; // a removed worktree (after its merge) is main again
+};
 const co = (ctx) => ctx.checkout || laneCheckout(ctx.project.root, ctx.id);
 const mtime = (f) => {
   try {
@@ -772,7 +779,8 @@ const writerOpts = (ctx) => ({ role: 'worker', agent: agentOrAsk(ctx.project, ct
 function planPack(ctx, s, P) {
   if (s.context_pack) return s.context_pack;
   const root = ctx.project.root;
-  const pack = io.memoryPack('plan', ['--task', `T-${ctx.id}`, '--query-file', path.join(root, P.values.SLICE_FILE), '--out', path.join(P.values.EVIDENCE_DIR, 'memory', 'plan')], root);
+  // producer-owned: in main's evidence for every lane (a worktree's copy-back skips /evidence/memory/plan/)
+  const pack = io.memoryPack('plan', ['--task', `T-${ctx.id}`, '--query-file', path.join(root, P.values.SLICE_FILE), '--out', path.join(evidenceDir(root, ctx.id), 'memory', 'plan')], root);
   st.writeSliceState(root, ctx.id, { context_pack: pack });
   return pack;
 }
@@ -827,6 +835,39 @@ function staticGate(ctx, s, h) {
   return false;
 }
 
+/**
+ * Phase 2 M1: create the lane's worktree from the slice's base commit (setup hook: library/, Funplay port, Creator),
+ * record it as `lane_checkout`, wait for its MCP, then spawn the writer there. The intent is written first; a worktree
+ * named for the slice that already exists (a kill after the create) is adopted, never created twice.
+ */
+function spawnWorktree(ctx, s) {
+  const { project, id } = ctx;
+  const root = project.root;
+  let wt = sliceWorktrees(root)[id];
+  if (!wt) {
+    if (!admit(ctx, root, 'the lane worktree (its Creator)', 'editor')) return PAUSE;
+    const base = sliceBase(root, id);
+    const name = `${id}-${path.basename(sliceFront(project, id).file, '.md').replace(/^S\d+[a-z]?-?/i, '') || 'lane'}`;
+    st.writeSliceState(root, id, { worktree_spawning: st.now() });
+    const r = io.createWorktree({ root, name, base });
+    wt = sliceWorktrees(root)[id];
+    if (!wt) {
+      return ask(s, 'worktree_failed', `could not create the lane worktree ${name} from ${String(base).slice(0, 12)}: ${r.ok ? 'orca created nothing git lists' : r.error}`,
+        ['retry', 'run this slice in main', 'mark blocked', 'stop']);
+    }
+    st.log(root, id, `lane worktree ${wt} created from ${String(base).slice(0, 12)}`);
+  } else {
+    st.log(root, id, `lane worktree ${wt} adopted`);
+  }
+  // the HANDOFF baseline is the worktree's from here on (the writer's file did not exist yet)
+  st.writeSliceState(root, id, { lane_checkout: wt, worktree_spawning: null, handoff_base: mtime(handoffMain(wt, id)) });
+  ctx.checkout = wt;
+  const w = waitMcp(wt);
+  st.log(root, id, `lane worktree MCP ${w.ok ? 'up' : `not confirmed (${w.error}); the writer starts anyway`}`);
+  setPhase(root, id, 'spawn-writer');
+  return null;
+}
+
 // single-lane spawns of an agent that works in main's editor: reopen it first if res-guard closed it.
 // Not the wait phases: a live writer or reviewer runs the editor itself (and res-guard keeps it open).
 const EDITOR_PHASES = new Set(['spawn-writer', 'respawn-writer', 'spawn-reviewer']);
@@ -838,7 +879,14 @@ function singleStep(ctx, s, phase) {
   const evidence = evidenceDir(co(ctx), id);
   if (EDITOR_PHASES.has(phase) && !ensureEditor(ctx, phase)) return PAUSE;
 
+  if (phase === 'spawn-worktree') return spawnWorktree(ctx, s);
+
   if (phase === 'spawn-writer') {
+    // phase 2 M1 (opt-in): the lane gets its own worktree first; a slice that already has one keeps it
+    if (ctx.laneWorktree && !s.lane_checkout && !s.lane_in_main) {
+      setPhase(root, id, 'spawn-worktree');
+      return null;
+    }
     const pack = planPack(ctx, s, prompts(project, id));
     // a HANDOFF left by an older run of this slice is not news: only a write after this mtime counts
     if (s.handoff_base === undefined) st.writeSliceState(root, id, { handoff_base: mtime(handoff) });
@@ -1482,6 +1530,12 @@ export function applyAnswer(ctx, q) {
       st.writeSliceState(root, id, { progress_at: Date.now() });
       st.log(root, id, `writer ${s.writer} is alive (answered): the stall clocks restart, terminal kept`);
       return keepWaiting(ctx, 'writer');
+    case 'worktree_failed:retry':
+      st.writeSliceState(root, id, { worktree_spawning: null });
+      return setPhase(root, id, 'spawn-worktree');
+    case 'worktree_failed:run this slice in main':
+      st.log(root, id, 'the director chose main for this slice (no lane worktree)');
+      return setPhase(root, id, 'spawn-writer', { lane_in_main: true, worktree_spawning: null });
     case 'lane_stalled:spawn another resume lane':
       return resumeWriter(ctx, s, 'stalled (human: another resume lane)');
     case 'lane_hung:writer is alive, keep waiting':
