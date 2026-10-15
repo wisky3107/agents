@@ -38,25 +38,31 @@ test('pilot-wait --once: one lane keeps slice_changed; two lanes tell lane_done 
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(path.join(p.root, '.cursor', 'producer.lock'), JSON.stringify({ pid: process.pid, host: os.hostname(), mode: 'runner' }));
   const setRunner = (o) => fs.writeFileSync(file, JSON.stringify({ questions: [], ...o }));
-  const waitOnce = () => {
+  // resolves once the waiter has read its starting lanes (it records its pid first): no fixed sleep, so a slow
+  // start under load cannot make it read the changed file as its start
+  const waitOnce = async () => {
     const child = spawn(process.execPath, [RUNNER, 'pilot-wait', '--once', '--project', p.root], { env: { ...env(p.root, f), PRODUCER_RUNNER_PILOT_POLL_MS: '30' }, stdio: ['ignore', 'pipe', 'pipe'] });
-    return new Promise((resolve) => { let out = ''; child.stdout.on('data', (d) => (out += d)); child.on('exit', () => resolve(lines(out))); });
+    const done = new Promise((resolve) => { let out = ''; child.stdout.on('data', (d) => (out += d)); child.on('exit', () => resolve(lines(out))); });
+    const waiter = path.join(p.root, '.cursor', 'producer-pilot-wait.json');
+    for (let i = 0; i < 200; i++) {
+      try { if (JSON.parse(fs.readFileSync(waiter, 'utf8')).pid === child.pid) break; } catch { /* not yet */ }
+      await pause(25);
+    }
+    await pause(100); // one poll after the pid: its first look at the lanes is done
+    return { done };
   };
   setRunner({ slice: 'S30', lanes: [{ slice: 'S30' }, { slice: 'S21' }] });
-  let done = waitOnce();
-  await pause(300);
+  let { done } = await waitOnce();
   setRunner({ slice: 'S21', lanes: [{ slice: 'S21' }] });
   assert.deepEqual((await done)[0], { event: 'lane_done', slices: ['S30'], lanes: ['S21'] });
 
   setRunner({ slice: 'S21', lanes: [{ slice: 'S21' }] });
-  done = waitOnce();
-  await pause(300);
+  ({ done } = await waitOnce());
   setRunner({ slice: 'S21', lanes: [{ slice: 'S21' }, { slice: 'S22' }] });
   assert.deepEqual((await done)[0], { event: 'lane_started', slices: ['S22'], lanes: ['S21', 'S22'] });
 
   setRunner({ slice: 'S21', lanes: [{ slice: 'S21' }] });
-  done = waitOnce();
-  await pause(300);
+  ({ done } = await waitOnce());
   setRunner({ slice: 'S22', lanes: [{ slice: 'S22' }] });
   assert.deepEqual((await done)[0], { event: 'slice_changed', from: 'S21', to: 'S22' }, 'one lane at a time: as before');
 });
