@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { specCommands, slicePaths, outOfScope, nanUnsafe, es5Errors, sliceFacts, evidenceRe, section, classifyErrors, assumptionNotes, errorKey, splitAgainstBaseline, renameMap, defaultBase, smokeVerdict, smokePort, parseKnownRed, reusableSmoke, smokeArgs, smokeEstimateMs, smokeGroups, smokeGate, sceneFindings, textWidth, splitScene, headerDelayMs } from '../scripts/check-slice.mjs';
+import { specCommands, slicePaths, outOfScope, nanUnsafe, es5Errors, sliceFacts, evidenceRe, section, classifyErrors, assumptionNotes, errorKey, splitAgainstBaseline, renameMap, defaultBase, smokeVerdict, smokePort, parseKnownRed, reusableSmoke, smokeArgs, smokeEstimateMs, smokeGroups, smokeGate, sceneFindings, textWidth, splitScene, headerDelayMs, measuredSmokeMs } from '../scripts/check-slice.mjs';
 
 const SCRIPT = new URL('../scripts/check-slice.mjs', import.meta.url).pathname;
 
@@ -515,10 +515,10 @@ test('smokeArgs / smokeEstimateMs / smokeGroups: project flags minus the gate\'s
   assert.deepEqual(smokeArgs('{"args": ["--delay", "500"]}'), ['--delay', '500']);
   assert.deepEqual(smokeArgs('nope'), []);
   assert.deepEqual(smokeArgs(null), []);
-  assert.equal(smokeEstimateMs(61, ['--delay', '12000']), 25000 + 61 * 13000);  // cc-capytal-war: ~13.6 min
-  assert.equal(smokeEstimateMs(60, []), 25000 + 60 * 1300);
-  assert.equal(smokeEstimateMs(80, ['--settle', '12000', '--delay', '300']), 25000 + 12000 + 80 * 1300);  // the settle once: ~2.5 min, not 17
-  assert.equal(smokeEstimateMs(10, ['--delay', '0']), 25000 + 10 * 1000);
+  assert.equal(smokeEstimateMs(61, ['--delay', '12000']), 10000 + 61 * 12500);  // cc-capytal-war before --settle: ~13 min
+  assert.equal(smokeEstimateMs(60, []), 10000 + 60 * 800);
+  assert.equal(smokeEstimateMs(80, ['--settle', '12000', '--delay', '300']), 10000 + 12000 + 80 * 800);  // the settle once: ~1.4 min, not 17
+  assert.equal(smokeEstimateMs(10, ['--delay', '0']), 10000 + 10 * 500);
   const corpus = ['S01-a.check.js', 'S13-05-x.check.js', 'S13-06-y.check.js', 'S13-07-z.check.js', 'S17-00-a.check.js', 'S17-01-b.check.js', 'S17-02-c.check.js', 'misc.check.js'];
   assert.deepEqual(smokeGroups(corpus, ['S17-01-b.check.js', 'S17-02-c.check.js', 'S13-06-y.check.js', 'misc.check.js']), [
     { files: ['S17-00-a.check.js', 'S17-01-b.check.js', 'S17-02-c.check.js'], judge: ['S17-01-b.check.js', 'S17-02-c.check.js'] },
@@ -548,7 +548,7 @@ test('end to end: a quoted slice id finds its evidence; no fresh report and a ru
   fs.mkdirSync(path.join(d, 'src')); fs.writeFileSync(path.join(d, 'src/a.js'), '1');
   const run = () => spawnSync(process.execPath, [SCRIPT, '--root', d, '--only', 'smoke', '--slice', 'slices/S12-x.md'], { encoding: 'utf8', env });
   let r = run();
-  assert.match(r.stdout, /WARN smoke: smoke did not run: no full-corpus \*smoke\*\.json in \.cursor\/evidence\/tasks\/T-S12\/evidence newer than the last code change, and a run \(30 checks with --delay 12000, ~7 min\) does not fit the \d+ s budget/);
+  assert.match(r.stdout, /WARN smoke: smoke did not run: no full-corpus \*smoke\*\.json in \.cursor\/evidence\/tasks\/T-S12\/evidence newer than the last code change, and a run \(30 checks with --delay 12000, ~6 min\) does not fit the \d+ s budget/);
   assert.equal(fs.existsSync(path.join(d, 'fake.log')), false);
   // the writer's last full run, in a subfolder, after the last code change (a later notes edit does not count)
   const checks = fs.readdirSync(path.join(d, 'scripts/smoke/checks')).map((f) => ({ id: f.replace('.check.js', ''), file: f, status: 'PASS' }));
@@ -663,4 +663,15 @@ test('headerDelayMs: a check\'s own DELAY header adds its pause over the run\'s 
   assert.equal(headerDelayMs(d, files, ['--delay', '300']), 11700);  // a shorter header never lowers the estimate
   assert.equal(headerDelayMs(d, files, []), 11700);
   assert.equal(headerDelayMs(d, ['S02-02-read.check.js'], ['--delay', '300']), 0);
+});
+
+test('measuredSmokeMs: the newest near-full report\'s wall time, scaled to the corpus +10%; stale is fine, partial and negative runs are not', () => {
+  const ev = fs.mkdtempSync(path.join(os.tmpdir(), 'check-slice-measured-'));
+  const rep = (n, startedAt, finishedAt) => JSON.stringify({ startedAt, finishedAt, checks: Array.from({ length: n }, (_, i) => ({ file: `c${i}.check.js`, status: 'PASS' })) });
+  assert.equal(measuredSmokeMs(ev, 100), null);
+  fs.writeFileSync(path.join(ev, 'smoke.json'), rep(99, '2026-10-15T07:00:00Z', '2026-10-15T07:03:57Z'));  // 237 s
+  fs.writeFileSync(path.join(ev, 'slice-smoke.json'), rep(5, '2026-10-15T08:00:00Z', '2026-10-15T08:00:30Z'));  // a slice subset
+  fs.mkdirSync(path.join(ev, 'negative'));
+  fs.writeFileSync(path.join(ev, 'negative', 'smoke-run.json'), rep(99, '2026-10-15T09:00:00Z', '2026-10-15T09:20:00Z'));
+  assert.equal(measuredSmokeMs(ev, 112), Math.round((237000 * 112) / 99 * 1.1));  // ~295 s: inside the 360 s budget
 });

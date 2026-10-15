@@ -104,7 +104,7 @@ const CHECKS = ['tsc', 'es5', 'specs', 'scope', 'smoke-lint', 'evidence', 'notes
 const ALWAYS = ['tests/**', 'scripts/smoke/checks/**', 'scripts/smoke/known-red.json', '.cursor/evidence/**', '.cursor/producer*', 'docs/**', 'slices/**',
   '*.md', 'producer-state.json', 'producer-log.md'];
 const SPEC_TIMEOUT_MS = 180000;
-const SMOKE_BUDGET_S = 300;
+const SMOKE_BUDGET_S = 360; // the runner gives check-slice 600 s in all; tsc/es5 take seconds, specs up to ~200
 const SMOKE_COLD_MAX = 8; // new/changed checks run alone, each on its own page (~10 s each)
 const KNOWN_RED = 'scripts/smoke/known-red.json';
 const GATE_CONFIG = [KNOWN_RED, 'scripts/smoke/run-args.json'];
@@ -836,13 +836,33 @@ export function smokeGate(text) {
   } catch { return []; }
 }
 
-/** Rough wall time of a run of n checks: page start, --settle once, then --delay (run-smoke default 300 ms) plus ~1 s each. */
+/** Rough wall time of a run of n checks: page start, --settle once, then --delay (run-smoke default 300 ms) plus ~0.5 s each. */
 export function smokeEstimateMs(n, args) {
   const num = (flag, dflt) => {
     const i = args.indexOf(flag);
     return i > -1 && Number.isFinite(Number(args[i + 1])) ? Number(args[i + 1]) : dflt;
   };
-  return 25000 + num('--settle', 0) + n * (num('--delay', 300) + 1000);
+  return 10000 + num('--settle', 0) + n * (num('--delay', 300) + 500);
+}
+
+/**
+ * The wall time a full run really took: the newest report in the slice evidence that covers most of the corpus,
+ * scaled to the corpus size, +10%. Stale reports count (only the duration is used). null when there is none.
+ */
+export function measuredSmokeMs(evDir, corpus) {
+  if (!evDir || !fs.existsSync(evDir)) return null;
+  let best = null;
+  for (const f of fs.readdirSync(evDir, { recursive: true }).map(String)) {
+    if (!/smoke[^/]*\.json$/i.test(f) || /(^|\/)(memory|neg[^/]*)\/|negative/i.test(f)) continue;
+    let j;
+    try { j = JSON.parse(fs.readFileSync(path.join(evDir, f), 'utf8')); } catch { continue; }
+    const n = Array.isArray(j?.checks) ? j.checks.length : 0;
+    const ms = Date.parse(j?.finishedAt) - Date.parse(j?.startedAt);
+    if (n < 0.8 * corpus || !(ms > 0)) continue;
+    const at = Date.parse(j.finishedAt);
+    if (!best || at > best.at) best = { at, ms: Math.round((ms * corpus) / n * 1.1) };
+  }
+  return best?.ms ?? null;
 }
 
 /** Extra wall time from the checks' own `// DELAY: <ms>` headers (run-smoke) over the run's --delay. */
@@ -901,7 +921,7 @@ function checkSmoke(root, o, changed, base) {
     .map((f) => fs.statSync(path.join(root, f)).mtimeMs));
   const extra = smokeArgs(readText(path.join(root, 'scripts', 'smoke', 'run-args.json')));
   const reused = reusableSmoke(evDir, all, newest);
-  const est = smokeEstimateMs(all.length, extra) + headerDelayMs(dir, all, extra);
+  const est = measuredSmokeMs(evDir, all.length) ?? smokeEstimateMs(all.length, extra) + headerDelayMs(dir, all, extra);
   const full = reused ? reused.report
     : est > left() ? { infra_error: `no full-corpus *smoke*.json in ${evDir ? path.relative(root, evDir) : 'the slice evidence'} newer than the last code change, and a run (${all.length} checks${extra.length ? ` with ${extra.join(' ')}` : ''}, ~${Math.round(est / 60000)} min) does not fit the ${Math.round(left() / 1000)} s budget — save your last full run there` }
     : runSmoke(root, port, dir, Math.max(1000, left()), extra);

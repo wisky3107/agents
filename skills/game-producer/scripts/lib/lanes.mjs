@@ -802,11 +802,17 @@ function resumeWriter(ctx, s, why) {
   return null;
 }
 
+/**
+ * The gate reuses the writer's last full smoke run only when it is newer than every change (pilot 24 S31: after fix
+ * round 1 no full run was saved, the corpus did not fit the gate's budget, and the slice merged without one).
+ */
+const fullSmokeLine = (evidence) => `After your last change run the WHOLE smoke corpus once (run-smoke.mjs with the flags in scripts/smoke/run-args.json) > ${path.join(evidence, 'smoke.json')} — check-slice reuses it.`;
+
 function fixRound(ctx, s) {
   const rounds = s.fix_rounds || 0;
   const reviewMd = path.join(evidenceDir(co(ctx), ctx.id), 'review.md');
   sendOnce(ctx, `fix:${rounds + 1}`, s.writer,
-    `Fix round ${rounds + 1}: apply exactly the rows of the \`## fix_routing\` table in ${reviewMd} (no other changes), re-verify, update the evidence, then set HANDOFF.json ready_for_review. Never restore, revert or stash AGENT_NOTES.md or the runner's files (.cursor/producer*, producer-state.json, producer-log.md), even when cleaning up: they are the producer's.`,
+    `Fix round ${rounds + 1}: apply exactly the rows of the \`## fix_routing\` table in ${reviewMd} (no other changes), re-verify, update the evidence, ${fullSmokeLine(path.dirname(reviewMd))} Then set HANDOFF.json ready_for_review. Never restore, revert or stash AGENT_NOTES.md or the runner's files (.cursor/producer*, producer-state.json, producer-log.md), even when cleaning up: they are the producer's.`,
     { phase: 'writer', fix_rounds: rounds + 1, reviewer: null, nudged_writer: false, static_bounces: 0 });
   st.log(ctx.project.root, ctx.id, `fix round ${rounds + 1}`);
 }
@@ -836,7 +842,7 @@ function staticGate(ctx, s, h) {
   }
   const cmd = `node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice ${slice} --base ${base} --out ${path.relative(checkout, out)}`;
   sendOnce(ctx, `static:${s.fix_rounds || 0}:${bounces + 1}`, s.writer,
-    `Static check FAIL before review (${which}), see ${out}. Fix every FAIL line; for each WARN scope line either move the change or declare it in integration-notes.md. Rerun \`${cmd}\` until RESULT is not FAIL, then set HANDOFF.json ready_for_review again. This is not a review round.`,
+    `Static check FAIL before review (${which}), see ${out}. Fix every FAIL line; for each WARN scope line either move the change or declare it in integration-notes.md. ${fullSmokeLine(path.dirname(out))} Rerun \`${cmd}\` until RESULT is not FAIL, then set HANDOFF.json ready_for_review again. This is not a review round.`,
     { static_bounces: bounces + 1, static_fail_mtime: h.mtime, static_result: result, nudged_writer: false });
   return false;
 }
@@ -898,7 +904,8 @@ function singleStep(ctx, s, phase) {
     if (s.handoff_base === undefined) st.writeSliceState(root, id, { handoff_base: mtime(handoff) });
     const r = spawnOnce(ctx, 'writer', { ...writerOpts(ctx), prompt: prompts(project, id, pack).writer() });
     if (r.ask || r.pause) return r;
-    setPhase(root, id, 'writer');
+    // a writer that started in main stays in main: lane_worktree turned on later never moves a slice mid-way
+    setPhase(root, id, 'writer', co(ctx) === root ? { lane_in_main: true } : {});
     return null;
   }
 

@@ -148,3 +148,22 @@ test('M2: main and the lane both appended to FOLLOWUPS.md — the worktree merge
   assert.match(fu, /\| 92 \|/);
   assert.match(log(p.root), /merge: conflicts only in shared file\(s\) FOLLOWUPS\.md: merged both sides/);
 });
+
+test('lane_worktree turned on while a slice already works in main never moves that slice (pilot 24 S21)', () => {
+  const p = project({ slices: { S01: { needs: false } } });
+  const f = fakes();
+  f.queue([]);
+  runner(p.root, f, 'start', '--once');
+  assert.equal(sliceState(p.root, 'S01').lane_in_main, true, 'stamped when its writer started in main');
+  // the director adds the token mid-slice; the runner restarts and resumes S01
+  const notes = path.join(p.root, 'AGENT_NOTES.md');
+  fs.writeFileSync(notes, fs.readFileSync(notes, 'utf8').replace(/^(release:\n)/m, '$1  lane_worktree: true\n'));
+  clearControl(p.root);
+  // even a writer that has to be spawned again (prompt missing) goes back to main
+  const file = ev(p.root, 'S01', 'producer-state.json');
+  fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, 'utf8')), phase: 'spawn-writer', writer: null }));
+  f.queue([]);
+  runner(p.root, f, 'start', '--once');
+  assert.deepEqual(lines(f.dir, 'wtcreate.log'), []);
+  assert.equal(f.spawns().at(-1).path, p.root);
+});
