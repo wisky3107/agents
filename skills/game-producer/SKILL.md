@@ -34,6 +34,7 @@ node ~/.agents/skills/game-producer/scripts/producer-runner.mjs answer --project
 node ~/.agents/skills/game-producer/scripts/producer-runner.mjs answer --project <PROJECT>   # in a terminal: numbered menu
 node ~/.agents/skills/game-producer/scripts/producer-runner.mjs pause|stop|stop-after S05|clear --project <PROJECT>
 node ~/.agents/skills/game-producer/scripts/producer-runner.mjs handoff-reset --project <PROJECT>   # forget a Step 0–1 / Step 3 handoff
+node ~/.agents/skills/game-producer/scripts/producer-runner.mjs cancel S21 --note "<why>" --project <PROJECT>   # runner stopped first: close the lane, list (never revert) its changes, archive T-S21, cache cancelled
 node ~/.agents/skills/game-producer/scripts/producer-runner.mjs start --dry-run --project <PROJECT>   # what it would do; writes nothing
 ```
 

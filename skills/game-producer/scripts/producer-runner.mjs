@@ -36,7 +36,7 @@ import { loadProject, sliceStatuses, nextSlice, preflight, writeRelease, writePo
 import * as st from './lib/state.mjs';
 import { submit, menu, parseReply, textNeed, answerProblem, openQuestions, givenChoice, isGivenChoice, extraChoices, PILOT_CHOICE, pilotOf, handToPilot, returnToDirector } from './lib/answer.mjs';
 import { questionContext } from './lib/context.mjs';
-import { laneFor, laneTag, runSlice, applyAnswer, cursorUndecided, cursorState, resetCursorProbe, agentOrAsk, cursorArtBlocked, CursorUndecided, CURSOR_FALLBACK, manualItems, reviewVerdict, MAX_FIX_ROUNDS } from './lib/lanes.mjs';
+import { laneFor, laneTag, laneCheckout, runSlice, applyAnswer, cursorUndecided, cursorState, resetCursorProbe, agentOrAsk, cursorArtBlocked, CursorUndecided, CURSOR_FALLBACK, manualItems, reviewVerdict, MAX_FIX_ROUNDS } from './lib/lanes.mjs';
 import { currentBranch, headSha, appendLessons, lessonRows, readJournal } from './lib/merge.mjs';
 import { consult, judgeSpec, JUDGE_KINDS, MAX_JUDGED } from './lib/judge.mjs';
 import * as io from './lib/orca.mjs';
@@ -699,6 +699,63 @@ async function pilotWait(root, timeoutMs, once = false) {
   }
 }
 
+/**
+ * `producer-runner cancel <Sxx> [--note "<why>"]` (pilot 24: the director cancelled S21 mid-writer and the pilot did
+ * every step by hand). With no runner running: close the lane's terminals; a lane worktree with no changes is
+ * removed (its gitignored evidence copied first), one with changes is kept and listed; changes in main are LISTED,
+ * never reverted (the director's edits share that checkout); T-<Sxx> is archived as T-<Sxx>.cancelled-<stamp>; the
+ * release cache says cancelled (never dispatched again); the slice's open questions close; runner.slice/lanes
+ * drop it. MILESTONES.md and the slice file are the director's to change. Refused for a slice already merged.
+ */
+function cancelSlice(root, raw, note) {
+  const id = String(raw || '').toUpperCase();
+  if (!/^S\d+[A-Z]?$/.test(id)) return { refused: 'usage: producer-runner cancel <Sxx> [--note "<why>"]' };
+  if (st.lockHolder(root)?.alive) return { refused: `a runner holds the lock: stop it first (producer-runner stop --project ${root}), wait until it exits, then cancel ${id}` };
+  const project = loadProject(root);
+  const status = sliceStatuses(project)[id]?.status;
+  if (status === 'merged' || status === 'shipped') return { refused: `${id} is ${status}: revert its merge instead of cancelling` };
+  const dir = st.sliceDir(root, id);
+  const s = st.readSliceState(root, id);
+  const git = (cwd, ...a) => spawnSync('git', ['-C', cwd, ...a], { encoding: 'utf8' });
+  const closed = ['writer', 'reviewer', 'coordinator', 'verifier'].map((k) => s[k]).filter((h) => h && io.closeTerminal(h));
+  const stamp = st.now().replace(/[:.]/g, '-');
+  const archived = `${dir}.cancelled-${stamp}`;
+  const out = { cancelled: id, closed };
+  // the lane's own worktree (phase 2) or a fleet feature worktree
+  const wt = [laneCheckout(root, id), s.worktree].find((w) => w && fs.existsSync(w) && path.resolve(w) !== path.resolve(root));
+  if (wt) {
+    const changed = git(wt, 'status', '--porcelain', '--untracked-files=all').stdout.split('\n').filter(Boolean)
+      .filter((l) => !/\.cursor\/evidence\//.test(l));
+    const ev = path.join(wt, '.cursor', 'evidence', 'tasks', `T-${id}`);
+    if (changed.length) {
+      out.worktree = { path: wt, kept: true, changed: changed.map((l) => l.slice(3)).slice(0, 40) };
+    } else {
+      if (fs.existsSync(ev)) fs.cpSync(ev, path.join(dir, 'worktree-evidence'), { recursive: true });
+      const r = io.orca(['worktree', 'rm', '--worktree', `path:${wt}`, '--run-hooks', '--force']);
+      out.worktree = { path: wt, removed: r.status === 0 && r.parsed?.ok !== false, branch_kept: true };
+    }
+  } else if (s.base_sha) {
+    // the lane worked in main: what changed there since it started (the writer commits only after approval)
+    const files = new Set([
+      ...git(root, 'diff', '--name-only', s.base_sha).stdout.split('\n'),
+      ...git(root, 'ls-files', '--others', '--exclude-standard').stdout.split('\n'),
+    ].filter((f) => f && !f.startsWith('.cursor/') && f !== 'AGENT_NOTES.md'));
+    out.changed_in_main = { since: String(s.base_sha).slice(0, 12), files: [...files].slice(0, 60), note: 'left as they are: revert what is the lane\'s (git restore / rm), keep what is the director\'s' };
+  }
+  if (fs.existsSync(dir)) {
+    st.log(root, id, `cancelled by the director${note ? `: ${note}` : ''} (producer-runner cancel)`);
+    fs.renameSync(dir, archived);
+    out.archived = archived;
+  }
+  writeRelease(project, { slices: { [id]: 'cancelled' }, ...(project.release.current_slice === id ? { current_slice: '' } : {}) });
+  const at = st.now();
+  for (const q of st.readRunner(root).questions.filter((x) => x.slice === id && !x.answer)) st.setQuestion(root, q.id, { answer: { choice: '(slice cancelled)', text: note, at, by: 'cancel' }, applied: at });
+  const r = st.readRunner(root);
+  st.writeRunner(root, { ...(r.slice === id ? { slice: null, step: 'cancelled' } : {}), lanes: (r.lanes || []).filter((l) => l.slice !== id) });
+  out.next = `drop ${id} from MILESTONES.md (slices, dag) and move its slice file if it is gone for good; AGENT_NOTES.md now says ${id}: cancelled (uncommitted); then start the runner`;
+  return out;
+}
+
 async function dryRun(root) {
   const { project, statuses, next, blockers } = await plan(root);
   const finishing = unfinished(root, statuses);
@@ -885,6 +942,7 @@ async function main() {
     return st.writeControl(root, `stop-after ${v._[0]}`);
   }
   if (cmd === 'clear') return st.writeControl(root, null);
+  if (cmd === 'cancel') return say(cancelSlice(root, v._[0], v.note || ''));
   if (cmd === 'sign-off') return say(signOff(root, v._[0], v.note));
   if (cmd === 'handoff-reset') return say({ forgot: Object.keys(st.readRunner(root).llm || {}), llm: st.writeRunner(root, { llm: {} }).llm });
   if (cmd === 'launch') {

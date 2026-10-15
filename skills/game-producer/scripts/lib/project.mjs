@@ -23,6 +23,8 @@ const DONE = new Set(['merged', 'shipped']);
 /** Cache values that mean "not dispatched yet". Anything else that is not done/blocked is in flight
  * (in_progress, changes_requested, approved, or a value the runner does not know). */
 const NOT_STARTED = new Set(['planned', 'pending', 'todo', '']);
+// never dispatched again by the runner: blocked (the director unblocks it) or cancelled (`producer-runner cancel`)
+const HELD = new Set(['blocked', 'cancelled']);
 
 const statusOf = (v) => (typeof v === 'string' ? v : v && typeof v === 'object' ? v.status : undefined);
 
@@ -286,9 +288,9 @@ export function sliceStatuses(project) {
   for (const id of ids) {
     const cached = statusOf(cache[id]) || 'planned';
     if (merged.has(id) && !DONE.has(cached)) out[id] = { status: 'merged', source: 'git', cached };
-    // a blocked slice keeps its worktree for the director: still blocked, not in progress
-    else if (live[id] && !DONE.has(cached) && cached !== 'blocked') out[id] = { status: 'in_progress', source: 'worktree', cached, worktree: live[id] };
-    else if (!NOT_STARTED.has(cached) && !DONE.has(cached) && cached !== 'blocked') out[id] = { status: 'in_progress', source: 'cache', cached };
+    // a blocked or cancelled slice keeps its worktree for the director: not in progress
+    else if (live[id] && !DONE.has(cached) && !HELD.has(cached)) out[id] = { status: 'in_progress', source: 'worktree', cached, worktree: live[id] };
+    else if (!NOT_STARTED.has(cached) && !DONE.has(cached) && !HELD.has(cached)) out[id] = { status: 'in_progress', source: 'cache', cached };
     else out[id] = { status: cached, source: 'cache', cached };
   }
   return out;
@@ -330,13 +332,17 @@ export function nextSlice(project, statuses = sliceStatuses(project)) {
   if (goal === 'playable' && ms.v1_slice && DONE.has(statuses[ms.v1_slice]?.status)) return { done: true, reason: `goal=playable and ${ms.v1_slice} is merged` };
   for (const id of order) {
     const st = statuses[id]?.status;
-    if (DONE.has(st) || st === 'blocked') continue;
+    if (DONE.has(st) || HELD.has(st)) continue;
     if ((ms.dag?.[id] || []).every((d) => DONE.has(statuses[d]?.status))) return { slice: id, resume: false };
   }
   const rel = ms.release_slice;
   if (rel && DONE.has(statuses[rel]?.status)) return { done: true, reason: `release slice ${rel} is ${statuses[rel].status}` };
   const blocked = order.filter((id) => statuses[id]?.status === 'blocked');
-  return { stuck: true, reason: blocked.length ? `nothing runnable; blocked: ${blocked.join(', ')}` : 'nothing runnable' };
+  // a slice whose dag names a cancelled one waits for the director to drop that dependency
+  const onCancelled = order.filter((id) => !DONE.has(statuses[id]?.status) && !HELD.has(statuses[id]?.status) && (ms.dag?.[id] || []).some((d) => statuses[d]?.status === 'cancelled'))
+    .map((id) => `${id} (needs ${(ms.dag[id] || []).filter((d) => statuses[d]?.status === 'cancelled').join(', ')})`);
+  const why = [blocked.length ? `blocked: ${blocked.join(', ')}` : '', onCancelled.length ? `waiting on a cancelled slice — drop it from their MILESTONES dag: ${onCancelled.join(', ')}` : ''].filter(Boolean);
+  return { stuck: true, reason: why.length ? `nothing runnable; ${why.join('; ')}` : 'nothing runnable' };
 }
 
 /**
