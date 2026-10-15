@@ -167,3 +167,16 @@ test('lane_worktree turned on while a slice already works in main never moves th
   assert.deepEqual(lines(f.dir, 'wtcreate.log'), []);
   assert.equal(f.spawns().at(-1).path, p.root);
 });
+
+test('lane_worktree may name slices: only those get a worktree', () => {
+  const p = project({ notes: NOTES(POLICY, '{}', '  lane_worktree: S02,S03\n'), slices: { S01: { needs: false } } });
+  const f = fakes();
+  f.queue([]);
+  runner(p.root, f, 'start', '--once');
+  assert.deepEqual(lines(f.dir, 'wtcreate.log'), [], 'S01 is not listed');
+  const q = project({ notes: NOTES(POLICY, '{}', '  lane_worktree: S01\n'), slices: { S01: { needs: false } } });
+  const g = fakes();
+  g.queue([]);
+  runner(q.root, g, 'start', '--once');
+  assert.equal(lines(g.dir, 'wtcreate.log').length, 1);
+});

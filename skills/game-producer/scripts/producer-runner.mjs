@@ -845,7 +845,8 @@ async function start(root, { dryRun: dry, once }) {
       project, id, lane,
       autoCommit: String(t.auto_commit ?? project.release.auto_commit ?? 'true') === 'true',
       // phase 2 M1 (opt-in, docs/plans/2026-10-15-runner-parallel-phase2): a single lane in its own worktree
-      laneWorktree: String(t.lane_worktree ?? project.release.lane_worktree ?? 'false') === 'true',
+      // `true` for every slice, or a list of slices (`lane_worktree=S24,S25`) to try it on some
+      laneWorktree: ((v) => v === 'true' || v.split(/[,\s]+/).includes(id))(String(t.lane_worktree ?? project.release.lane_worktree ?? 'false')),
       autoMerge: String(t.auto_merge ?? project.release.auto_merge ?? 'true') === 'true',
       // the director's standing call: merge with only manual checks left, sign them off before ship
       manualDefer: String(t.manual_required ?? project.release.manual_required ?? 'ask') === 'defer',
