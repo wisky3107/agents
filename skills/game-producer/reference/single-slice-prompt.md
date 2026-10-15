@@ -78,9 +78,13 @@ Build:
    scene-tool / Funplay per .cursor/skills/cocos-editor/SKILL.md, refresh + reopen, no MissingScript.
 4. Preview: reuse the healthy URL or run_project_preview({mode:"browser"}) once; verify title;
    write <EVIDENCE_DIR>/preview-startup.json (projectPath, previewUrl, status, checkedAt).
-5. Verify: node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT> --channel auto, plus the flags in
-   scripts/smoke/run-args.json when it exists, > <EVIDENCE_DIR>/smoke.json must be green; your last full run
-   after your last code change is the one that file keeps (check-slice reuses it);
+5. Verify: while you iterate, run only the checks you touch: copy scripts/smoke/checks/S01-00-boot.check.js,
+   the <Sxx>-* checks and any check you are fixing into a temp dir and add `--checks <dir>` (a full run takes
+   ~10 min). Run the whole corpus ONCE, after your last code change:
+   node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT> --channel auto, plus the flags in
+   scripts/smoke/run-args.json when it exists, > <EVIDENCE_DIR>/smoke.json must be green; that last full run
+   is the one that file keeps (check-slice reuses it). A red check in it is fixed or ledgered and rerun
+   alone, not with a second full run;
    play the feel rows once; batch state reads into one eval. Screenshots: ONE preview.png total.
    A frozen Orca tab falls back to Chrome headless by itself (`channel` in the JSON;
    ~/.agents/skills/cocos-orca-fleet/reference/orca/frozen-tab.md); play the feel rows there too.
@@ -150,8 +154,13 @@ When a tooling step will not run (smoke never ready, preview, editor) and the fr
 not explain it, you may run one stuck lookup: `M=~/.orca-memory/bin/orca-memory; [ -x "$M" ] &&
 "$M" hook recover --task T-<Sxx> --query "<symptom in English>" --out
 <EVIDENCE_DIR>/memory/recover-reviewer`; read the `pack` only on `"inject":true`. It never decides a verdict.
-1. `node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT> --channel auto`, plus the flags in scripts/smoke/run-args.json when it exists (the gate and the writer ran with them; without them a viewport-pinned check reads red) — its JSON is the verdict
-   for every state-answerable acceptance row; do not replay them by hand. A row with no check
+1. Smoke: <EVIDENCE_DIR>/static-smoke.json (the producer gate's run: the writer's full smoke.json after
+   the last change plus every new or changed check alone on a fresh page) is the verdict for every
+   state-answerable acceptance row; do not rerun the whole corpus and do not replay rows by hand. Run
+   this slice's checks yourself once: copy scripts/smoke/checks/S01-00-boot.check.js and the <Sxx>-*
+   checks into a temp dir, then `node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT> --channel auto --checks <dir>`, plus the flags in scripts/smoke/run-args.json when it exists (the gate and the writer ran with them; without them a viewport-pinned check reads red).
+   Run the whole corpus only when static-smoke.json is missing, older than the last code change, or
+   its smoke line in static-check.txt is not PASS. A row with no check
    although state could answer it is a minor finding (owner code). A frozen Orca tab falls back to
    Chrome headless by itself; run the feel, pointer and viewport rows in that Chrome too
    (~/.agents/skills/cocos-orca-fleet/reference/orca/frozen-tab.md §3) and name the channel. A
