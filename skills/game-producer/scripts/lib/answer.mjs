@@ -95,8 +95,11 @@ export function returnToDirector(root, id, note) {
 const printable = (t) => String(t || '').replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, '');
 
 /** The question as the director reads it: where the run stands (context lines), header, full text, numbered options. */
+/** " · worktree <name>" for a question from a lane in its own worktree (phase 2 M3), else nothing. */
+export const laneLabel = (q) => (q.lane === 'worktree' && q.checkout ? ` · worktree ${String(q.checkout).split('/').pop()}` : '');
+
 export function menu(q, context = [], extras = []) {
-  const lines = [...context.map(printable), ...(context.length ? [''] : []), `${q.id} · ${q.kind}${q.slice ? ` · ${q.slice}` : ''}`, printable(q.text).trim(), ''];
+  const lines = [...context.map(printable), ...(context.length ? [''] : []), `${q.id} · ${q.kind}${q.slice ? ` · ${q.slice}` : ''}${laneLabel(q)}`, printable(q.text).trim(), ''];
   if (q.pilot_handoff) lines.splice(lines.length - 1, 0, `(handed to the pilot agent ${q.pilot_handoff.at}; an answer here still wins)`);
   if (q.pilot_returned) lines.splice(lines.length - 1, 0, `The pilot agent gave this back to you: ${printable(q.pilot_returned.note)}`);
   [...q.options, ...extras].forEach((o, i) => lines.push(`  ${i + 1}) ${printable(o)}${textNeed(q, o) === 'required' ? '  (needs a note)' : ''}`));

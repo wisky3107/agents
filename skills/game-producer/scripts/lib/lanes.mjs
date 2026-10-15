@@ -299,6 +299,12 @@ export const laneCheckout = (root, id) => {
   return c && fs.existsSync(c) ? c : root; // a removed worktree (after its merge) is main again
 };
 const co = (ctx) => ctx.checkout || laneCheckout(ctx.project.root, ctx.id);
+
+/** Where a slice's lane works, for questions and status (phase 2 M3): { lane: 'main' | 'worktree', checkout }. */
+export function laneTag(root, id) {
+  const checkout = laneCheckout(root, id);
+  return { lane: path.resolve(checkout) === path.resolve(root) ? 'main' : 'worktree', checkout };
+}
 const mtime = (f) => {
   try {
     return fs.statSync(f).mtimeMs;

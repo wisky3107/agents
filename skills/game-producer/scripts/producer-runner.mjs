@@ -36,7 +36,7 @@ import { loadProject, sliceStatuses, nextSlice, preflight, writeRelease, writePo
 import * as st from './lib/state.mjs';
 import { submit, menu, parseReply, textNeed, answerProblem, openQuestions, givenChoice, isGivenChoice, extraChoices, PILOT_CHOICE, pilotOf, handToPilot, returnToDirector } from './lib/answer.mjs';
 import { questionContext } from './lib/context.mjs';
-import { laneFor, runSlice, applyAnswer, cursorUndecided, cursorState, resetCursorProbe, agentOrAsk, cursorArtBlocked, CursorUndecided, CURSOR_FALLBACK, manualItems, reviewVerdict, MAX_FIX_ROUNDS } from './lib/lanes.mjs';
+import { laneFor, laneTag, runSlice, applyAnswer, cursorUndecided, cursorState, resetCursorProbe, agentOrAsk, cursorArtBlocked, CursorUndecided, CURSOR_FALLBACK, manualItems, reviewVerdict, MAX_FIX_ROUNDS } from './lib/lanes.mjs';
 import { currentBranch, headSha, appendLessons, lessonRows, readJournal } from './lib/merge.mjs';
 import { consult, judgeSpec, JUDGE_KINDS, MAX_JUDGED } from './lib/judge.mjs';
 import * as io from './lib/orca.mjs';
@@ -237,6 +237,8 @@ async function status(root) {
   say({
     lock: st.lockHolder(root), control: st.readControl(root), runner, next, blockers,
     lane: runner.slice ? st.readSliceState(root, runner.slice) : null,
+    // phase 2 M3: every live lane, where it works and its phase
+    lanes: (runner.lanes || []).map((l) => ({ ...l, ...laneTag(root, l.slice), phase: st.readSliceState(root, l.slice).phase || null })),
     slices: Object.fromEntries(Object.entries(statuses).map(([k, v]) => [k, v.source === 'cache' ? v.status : `${v.status} (${v.source})`])),
     ...(Object.keys(manual).length ? { manual_deferred: manual } : {}),
   });
@@ -249,15 +251,17 @@ function stopFor(root, slice, code, detail, extra = {}) {
   const options = extra.options || (code === 'director_gate' && slice ? [givenChoice(slice), ...q.options] : q.options) || QUESTION.stuck.options;
   const key = `${slice || '-'}:${code}${extra.ref ? `:${extra.ref}` : ''}`;
   const text = `${(q.text || '').replace(/<Sxx>/g, slice || 'Sxx')} ${detail}`.trim();
+  // phase 2 M3: which lane (main or its own worktree) the question comes from
+  const where = slice ? laneTag(root, slice) : {};
   let { question, isNew } = st.ask(root, {
-    key, slice, kind: code, text, detail, options, ref: extra.ref || null, obs: extra.obs || null,
+    key, slice, kind: code, text, detail, options, ref: extra.ref || null, obs: extra.obs || null, ...where,
     ...(extra.background ? { background: extra.background } : {}),
     ...(extra.retrying ? { retrying: true } : {}),
     ...(extra.also?.length ? { also: extra.also } : {}),
   });
   // the same question still open from an older runner: it gets this runner's options and wording
-  if (!isNew && !question.answer && (JSON.stringify(question.options) !== JSON.stringify(options) || question.text !== text || (extra.background && question.background !== extra.background))) {
-    question = st.setQuestion(root, question.id, { options, text, ...(extra.background ? { background: extra.background } : {}) });
+  if (!isNew && !question.answer && (JSON.stringify(question.options) !== JSON.stringify(options) || question.text !== text || (extra.background && question.background !== extra.background) || (where.checkout && question.checkout !== where.checkout))) {
+    question = st.setQuestion(root, question.id, { options, text, ...where, ...(extra.background ? { background: extra.background } : {}) });
   }
   if (slice) st.log(root, slice, `blocked ${code}: ${detail}${isNew ? ` (question ${question.id})` : ''}`);
   st.writeRunner(root, { slice, step: `blocked:${code}` });
@@ -433,7 +437,8 @@ function notify(root, q) {
     const title = `producer-runner · ${path.basename(root)}`;
     const where = questionContext(root, q)[0].replace(`${path.basename(root)} · `, '');
     // the question's own detail (the fixed head of a runner question is long and the same each time)
-    const body = `${q.id} ${q.kind} · ${q.slice ? where : 'run'}: ${String(q.detail || q.text).replace(/\s+/g, ' ')}`.slice(0, 220);
+    const wt = q.lane === 'worktree' && q.checkout ? ` [worktree ${path.basename(q.checkout)}]` : '';
+    const body = `${q.id} ${q.kind} · ${q.slice ? where : 'run'}${wt}: ${String(q.detail || q.text).replace(/\s+/g, ' ')}`.slice(0, 220);
     try {
       if (process.env.PRODUCER_RUNNER_NOTIFY_CMD) spawnSync(process.env.PRODUCER_RUNNER_NOTIFY_CMD, [title, body], { timeout: 10000 });
       else if (process.platform === 'darwin') spawnSync('osascript', ['-e', `display notification ${JSON.stringify(body)} with title ${JSON.stringify(title)} sound name "Glass"`], { timeout: 10000 });
@@ -660,6 +665,8 @@ async function pilotWait(root, timeoutMs, once = false) {
   const told = new Set();
   const end = once && !timeoutMs ? Infinity : Date.now() + (timeoutMs || PILOT_WAIT_MS);
   const startSlice = st.readRunner(root).slice;
+  const lanesOf = (r) => (r.lanes || []).map((l) => l.slice);
+  const startLanes = lanesOf(st.readRunner(root));
   // `pilot` shows whether a waiter is alive: the pilot's safety-net tick restarts one only when not
   if (once) st.writeJson(waiterFile(root), { pid: process.pid, since: st.now() });
   for (;;) {
@@ -667,7 +674,7 @@ async function pilotWait(root, timeoutMs, once = false) {
     for (const q of r.questions.filter((x) => x.pilot_handoff && !x.answer && !told.has(x.id))) {
       told.add(q.id);
       say({
-        handed: q.id, kind: q.kind, slice: q.slice, at: q.pilot_handoff.at, auto: q.pilot_handoff.via === 'auto', note: q.pilot_handoff.text || null,
+        handed: q.id, kind: q.kind, slice: q.slice, ...(q.lane ? { lane: q.lane, checkout: q.checkout } : {}), at: q.pilot_handoff.at, auto: q.pilot_handoff.via === 'auto', note: q.pilot_handoff.text || null,
         text: String(q.text).replace(/\s+/g, ' ').slice(0, 400), options: q.options,
         answer: `producer-runner.mjs answer --project ${root} --id ${q.id} --choice "<option>" --by pilot`,
         give_back: `producer-runner.mjs pilot --project ${root} --return ${q.id} --note "<why the director decides>"`,
@@ -678,7 +685,14 @@ async function pilotWait(root, timeoutMs, once = false) {
       const control = st.readControl(root)?.cmd;
       if (control === 'stop' || control === 'pause') return say({ event: 'runner_halting', control });
       if (!st.lockHolder(root)?.alive) return say({ event: 'runner_gone', slice: r.slice, step: r.step });
-      if (r.slice !== startSlice) return say({ event: 'slice_changed', from: startSlice, to: r.slice });
+      // one lane at a time: slice_changed, as before; with two lanes, which one started or finished (phase 2 M3)
+      const nowLanes = lanesOf(r);
+      if (startLanes.length > 1 || nowLanes.length > 1) {
+        const started = nowLanes.filter((x) => !startLanes.includes(x));
+        const done = startLanes.filter((x) => !nowLanes.includes(x));
+        if (started.length) return say({ event: 'lane_started', slices: started, lanes: nowLanes });
+        if (done.length) return say({ event: 'lane_done', slices: done, lanes: nowLanes });
+      } else if (r.slice !== startSlice) return say({ event: 'slice_changed', from: startSlice, to: r.slice });
     }
     if (Date.now() >= end) return say(once ? { event: 'timeout' } : { pilot_wait: 'timeout', next: 're-arm pilot-wait now' });
     await new Promise((r) => setTimeout(r, PILOT_POLL_MS));
@@ -824,7 +838,7 @@ async function start(root, { dryRun: dry, once }) {
       stopFor(root, id, 'cursor_art', cursorState(project).reason);
       continue;
     }
-    st.writeRunner(root, { slice: id, step: 'lane' });
+    st.writeRunner(root, { slice: id, step: 'lane', lanes: [{ slice: id, since: st.now() }] });
 
     const t = project.policy?.tokens || {};
     const ctx = {
@@ -852,7 +866,7 @@ async function start(root, { dryRun: dry, once }) {
       continue;
     }
     if (r.phase === 'done') {
-      st.writeRunner(root, { slice: id, step: 'done' });
+      st.writeRunner(root, { slice: id, step: 'done', lanes: [] });
       say({ merged: id, commit: st.readSliceState(root, id).commit_sha });
     }
     // done → the next pass picks the next slice; blocked (marked by an answer) → the yaml says blocked

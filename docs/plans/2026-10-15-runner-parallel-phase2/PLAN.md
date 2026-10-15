@@ -75,4 +75,9 @@ Sau M5: thử trên dự án không chạy pilot, rồi bật cho capytal (cặp
   Conflict ở file khác (kể cả AGENT_NOTES.md) vẫn hủy merge và hỏi như cũ. Harness: `step.mainCommit`,
   `commit.add`. 203/203 test (+4 merge-shared.test.mjs, +1 end-to-end trong runner-lane-worktree.test.mjs).
 - **Dời sang M5:** token `main_git` (tuần tự hoá thao tác git trên main giữa hai lane) — chỉ cần khi hai lane cùng sống.
+- **M3 xong (2026-10-15):** `laneTag(root, id)` (lanes.mjs) → `{ lane: main|worktree, checkout }`; mọi câu hỏi có slice
+  mang hai trường đó (stopFor, kể cả khi câu hỏi cũ được cập nhật); menu, hộp thoại và thông báo ghi
+  ` · worktree <tên>`; `producer-runner.json` có `lanes: [{slice, since}]` cạnh `slice`; `status` liệt kê lane
+  (lane, checkout, phase); `pilot-wait` in `lane`/`checkout` cho câu hỏi được giao; `--once` giữ `slice_changed` khi
+  chỉ một lane, báo `lane_started` / `lane_done` khi có hai. 205/205 test (+2 runner-lane-questions.test.mjs).
 

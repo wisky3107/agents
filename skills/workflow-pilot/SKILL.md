@@ -135,8 +135,10 @@ every authority level the pilot waits with a background shell (Bash `run_in_back
 Monitor — a Monitor expires every 30 min and each expiry is a wake):
 `node ~/.agents/skills/game-producer/scripts/producer-runner.mjs pilot-wait --once --project <p>`.
 It has no time limit and exits, waking you once, on the first of: a handed question (its JSON
-line with the `answer` / `give_back` commands), `slice_changed` (the slice merged: Close it),
-`runner_gone` (done or crashed), `runner_halting` (stop/pause). Act on it, then start it again.
+line with the `answer` / `give_back` commands, plus `lane` and `checkout` when the slice works in its own
+worktree), `slice_changed` (the slice merged: Close it), `lane_started` / `lane_done` instead of it while two
+lanes run (runner phase 2), `runner_gone` (done or crashed), `runner_halting` (stop/pause). Act on it, then
+start it again.
 Never start a second one: `producer-runner.mjs pilot --project <p>` shows `waiter_alive`.
 `pilot --clear` hands any still-handed question back to the director. Keep one pilot session
 per slice or batch: a session that grows past a few hundred k makes every wake expensive.

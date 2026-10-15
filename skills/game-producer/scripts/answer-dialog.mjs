@@ -113,7 +113,7 @@ if (!open() || halted()) process.exit(0);
 q = question();
 // rewritten during the translation: its rows would map to the wrong options
 if (tr && tr.key !== questionKey(tr.lang, q)) tr = null;
-const head = `${context.join('\n')}\n\n${q.id} · ${q.kind}${q.slice ? ` · ${q.slice}` : ''}\n`;
+const head = `${context.join('\n')}\n\n${q.id} · ${q.kind}${q.slice ? ` · ${q.slice}` : ''}${q.lane === 'worktree' && q.checkout ? ` · worktree ${String(q.checkout).split('/').pop()}` : ''}\n`;
 const body = String(q.text || '').trim();
 const whyEn = [q.judge?.defer ? String(q.judge.defer).trim() : '', q.pilot_returned ? `The pilot agent gave this back to you: ${q.pilot_returned.note}` : ''].filter(Boolean).join('\n\n');
 /** Cut to n characters (code points, never half an emoji), with "…" when cut. */
