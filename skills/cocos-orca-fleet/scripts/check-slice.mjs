@@ -105,7 +105,7 @@ const ALWAYS = ['tests/**', 'scripts/smoke/checks/**', 'scripts/smoke/known-red.
   '*.md', 'producer-state.json', 'producer-log.md'];
 const SPEC_TIMEOUT_MS = 180000;
 const SMOKE_BUDGET_S = 360; // the runner gives check-slice 600 s in all; tsc/es5 take seconds, specs up to ~200
-const SMOKE_COLD_MAX = 8; // new/changed checks run alone, each on its own page (~10 s each)
+const SMOKE_GROUP_MAX = 16; // fresh pages per run (one per slice chain of new/changed checks); the budget decides the rest
 const KNOWN_RED = 'scripts/smoke/known-red.json';
 const GATE_CONFIG = [KNOWN_RED, 'scripts/smoke/run-args.json'];
 
@@ -926,13 +926,17 @@ function checkSmoke(root, o, changed, base) {
     : est > left() ? { infra_error: `no full-corpus *smoke*.json in ${evDir ? path.relative(root, evDir) : 'the slice evidence'} newer than the last code change, and a run (${all.length} checks${extra.length ? ` with ${extra.join(' ')}` : ''}, ~${Math.round(est / 60000)} min) does not fit the ${Math.round(left() / 1000)} s budget — save your last full run there` }
     : runSmoke(root, port, dir, Math.max(1000, left()), extra);
   const touched = changed.filter((f) => /^scripts\/smoke\/checks\/[^/]+\.check\.js$/.test(f) && fs.existsSync(path.join(root, f))).map((f) => path.basename(f));
-  const cold = [], runs = [];
+  const cold = [], runs = [], skipped = [];
   if (full && Array.isArray(full.checks)) {
     const gateText = readText(path.join(root, 'scripts', 'smoke', 'run-args.json'));
     const gate = smokeGate(gateText).length ? smokeGate(gateText) : full.checks[0]?.file ? [full.checks[0].file] : [];
-    for (const g of smokeGroups(all, touched.slice(0, SMOKE_COLD_MAX), gate)) {
+    // this slice's own chain first (its new checks matter most), then the others in corpus order; a group that does
+    // not fit the budget left (or past SMOKE_GROUP_MAX) is skipped, never cut off mid-run (capytal S23: 13 changed checks)
+    const own = (g) => (id && g.judge.some((f) => f.toUpperCase().startsWith(`${id.toUpperCase()}-`)) ? 0 : 1);
+    const groups = smokeGroups(all, touched, gate).map((g, i) => ({ ...g, i })).sort((a, b) => own(a) - own(b) || a.i - b.i);
+    for (const [n, g] of groups.entries()) {
       const need = smokeEstimateMs(g.files.length, extra) + headerDelayMs(dir, g.files, extra);
-      if (need > left()) { for (const file of g.judge) cold.push({ file, report: { infra_error: `smoke budget used up (${g.files.length} checks need ~${Math.round(need / 1000)} s, ${Math.max(0, Math.round(left() / 1000))} s left)` } }); continue; }
+      if (n >= SMOKE_GROUP_MAX || need > left()) { skipped.push(...g.judge); continue; }
       const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'check-slice-smoke-'));
       try {
         // run-smoke sorts the folder by name: a numbered copy keeps the gate first; names map back after
@@ -951,8 +955,9 @@ function checkSmoke(root, o, changed, base) {
   }
   const r = smokeVerdict(full, cold, known, knownBase);
   if (reused) r.note = `${r.note}; full run reused from evidence/${reused.file}`;
-  if (touched.length > SMOKE_COLD_MAX) {
-    r.lines = [...(r.lines || []), `${touched.length - SMOKE_COLD_MAX} more new/changed checks not run on a fresh page: ${touched.slice(SMOKE_COLD_MAX).join(', ')}`];
+  if (skipped.length) {
+    const list = skipped.map((f) => f.replace(/\.check\.js$/, ''));
+    r.lines = [...(r.lines || []), `${skipped.length} new/changed check(s) not run on a fresh page (the smoke budget or ${SMOKE_GROUP_MAX} pages ran out): ${list.slice(0, 12).join(', ')}${list.length > 12 ? `, … (${list.length - 12} more)` : ''}`];
     if (r.status === 'PASS') r.status = 'WARN';
   }
   return r;

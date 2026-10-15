@@ -675,3 +675,31 @@ test('measuredSmokeMs: the newest near-full report\'s wall time, scaled to the c
   fs.writeFileSync(path.join(ev, 'negative', 'smoke-run.json'), rep(99, '2026-10-15T09:00:00Z', '2026-10-15T09:20:00Z'));
   assert.equal(measuredSmokeMs(ev, 112), Math.round((237000 * 112) / 99 * 1.1));  // ~295 s: inside the 360 s budget
 });
+
+test('fresh-page groups: this slice\'s chain first, the rest while the budget lasts, skipped ones on one WARN line', () => {
+  const { d, g } = repo();
+  const fake = path.join(d, 'fake-smoke.mjs');
+  fs.writeFileSync(fake, `import fs from 'node:fs';
+const a = process.argv.slice(2); const dir = a[a.indexOf('--checks') + 1];
+const files = fs.readdirSync(dir).filter((f) => f.endsWith('.check.js')).sort();
+fs.appendFileSync(process.env.FAKE_LOG, files.join(',') + '\\n');
+Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 4500); // a page takes real time
+console.log(JSON.stringify({ checks: files.map((f) => ({ id: f.replace(/^\\d{3}~/, '').replace('.check.js', ''), file: f, status: 'PASS' })) }));`);
+  const env = { ...process.env, CHECK_SLICE_SMOKE_RUNNER: fake, CHECK_SLICE_CACHE_DIR: path.join(d, '.cache-baseline'), FAKE_LOG: path.join(d, 'fake.log') };
+  fs.mkdirSync(path.join(d, 'scripts/smoke/checks'), { recursive: true });
+  for (const f of ['S01-boot', 'S05-a', 'S06-a', 'S12-a']) fs.writeFileSync(path.join(d, `scripts/smoke/checks/${f}.check.js`), '// v1\n');
+  fs.writeFileSync(path.join(d, 'scripts/smoke/run-args.json'), '["--delay", "0"]');
+  g('add', '-A'); g('commit', '-qm', 'corpus');
+  for (const f of ['S05-a', 'S06-a', 'S12-a']) fs.writeFileSync(path.join(d, `scripts/smoke/checks/${f}.check.js`), '// v2\n');
+  // the writer's full run, after the edits: reused, so the whole budget is left for the fresh pages
+  const ev = path.join(d, '.cursor/evidence/tasks/T-S12/evidence');
+  fs.mkdirSync(ev, { recursive: true });
+  const all = ['S01-boot', 'S05-a', 'S06-a', 'S12-a'].map((id) => ({ id, file: `${id}.check.js`, status: 'PASS' }));
+  fs.writeFileSync(path.join(ev, 'smoke.json'), JSON.stringify({ checks: all }));
+  // one page (boot + one check) is estimated at 10 s + 2 × 0.5 s = 11 s: after one 4.5 s page a 15 s budget has too little left
+  const r = spawnSync(process.execPath, [SCRIPT, '--root', d, '--only', 'smoke', '--slice', 'slices/S12-x.md', '--port', '7458', '--smoke-budget', '15'], { encoding: 'utf8', env });
+  const pages = fs.readFileSync(path.join(d, 'fake.log'), 'utf8').trim().split('\n');
+  assert.deepEqual(pages, ['000~S01-boot.check.js,001~S12-a.check.js'], 'this slice\'s chain ran first');
+  assert.match(r.stdout, /WARN smoke: 4 checks, 0 red \(0 known\), 1 new\/changed run on a fresh page/);
+  assert.match(r.stdout, /\n  2 new\/changed check\(s\) not run on a fresh page \(the smoke budget or 16 pages ran out\): S05-a, S06-a\n/);
+});
