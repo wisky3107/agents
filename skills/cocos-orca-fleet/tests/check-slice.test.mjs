@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { specCommands, slicePaths, outOfScope, nanUnsafe, es5Errors, sliceFacts, evidenceRe, section, classifyErrors, assumptionNotes, errorKey, splitAgainstBaseline, renameMap, defaultBase, smokeVerdict, smokePort, parseKnownRed, reusableSmoke, smokeArgs, smokeEstimateMs, smokeGroups, smokeGate, sceneFindings, textWidth, splitScene } from '../scripts/check-slice.mjs';
+import { specCommands, slicePaths, outOfScope, nanUnsafe, es5Errors, sliceFacts, evidenceRe, section, classifyErrors, assumptionNotes, errorKey, splitAgainstBaseline, renameMap, defaultBase, smokeVerdict, smokePort, parseKnownRed, reusableSmoke, smokeArgs, smokeEstimateMs, smokeGroups, smokeGate, sceneFindings, textWidth, splitScene, headerDelayMs } from '../scripts/check-slice.mjs';
 
 const SCRIPT = new URL('../scripts/check-slice.mjs', import.meta.url).pathname;
 
@@ -652,4 +652,15 @@ test('end to end: a touched prefab keeps its old layout debt as pre-existing; a 
 test('splitScene: a line counts as pre-existing as often as the base had it', () => {
   assert.deepEqual(splitScene(['a', 'a', 'b'], ['a', 'c']), [['a', 'b'], ['a']]);
   assert.deepEqual(splitScene(['a'], []), [['a'], []]);
+});
+
+test('headerDelayMs: a check\'s own DELAY header adds its pause over the run\'s --delay', () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'check-slice-delay-'));
+  fs.writeFileSync(path.join(d, 'S02-01-open.check.js'), '// CHECK: S02-01\n// DELAY: 12000\n(() => 1)()\n');
+  fs.writeFileSync(path.join(d, 'S02-02-read.check.js'), '// CHECK: S02-02\n(() => 1)()\n');
+  fs.writeFileSync(path.join(d, 'S02-03-short.check.js'), '// CHECK: S02-03\n// DELAY: 100\n(() => 1)()\n');
+  const files = ['S02-01-open.check.js', 'S02-02-read.check.js', 'S02-03-short.check.js'];
+  assert.equal(headerDelayMs(d, files, ['--delay', '300']), 11700);  // a shorter header never lowers the estimate
+  assert.equal(headerDelayMs(d, files, []), 11700);
+  assert.equal(headerDelayMs(d, ['S02-02-read.check.js'], ['--delay', '300']), 0);
 });

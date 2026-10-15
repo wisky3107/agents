@@ -80,7 +80,8 @@ Build:
    write <EVIDENCE_DIR>/preview-startup.json (projectPath, previewUrl, status, checkedAt).
 5. Verify: while you iterate, run only the checks you touch: copy scripts/smoke/checks/S01-00-boot.check.js,
    the <Sxx>-* checks and any check you are fixing into a temp dir and add `--checks <dir>` (a full run takes
-   ~10 min). Run the whole corpus ONCE, after your last code change:
+   minutes, a slice's checks seconds). A check that opens a popup or calls the server the next check reads
+   carries its own `// DELAY: <ms>` header (the pause after it; the run's --delay may be 300 ms). Run the whole corpus ONCE, after your last code change:
    node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT> --channel auto, plus the flags in
    scripts/smoke/run-args.json when it exists, > <EVIDENCE_DIR>/smoke.json must be green; that last full run
    is the one that file keeps (check-slice reuses it). A red check in it is fixed or ledgered and rerun

@@ -845,6 +845,18 @@ export function smokeEstimateMs(n, args) {
   return 25000 + num('--settle', 0) + n * (num('--delay', 300) + 1000);
 }
 
+/** Extra wall time from the checks' own `// DELAY: <ms>` headers (run-smoke) over the run's --delay. */
+export function headerDelayMs(dir, files, args) {
+  const i = args.indexOf('--delay');
+  const base = i > -1 && Number.isFinite(Number(args[i + 1])) ? Number(args[i + 1]) : 300;
+  let extra = 0;
+  for (const f of files) {
+    const m = (readText(path.join(dir, f)) || '').match(/^\/\/ *DELAY: *(\d+)\s*$/m);
+    if (m) extra += Math.max(0, Number(m[1]) - base);
+  }
+  return extra;
+}
+
 /** A changed check and the earlier checks of its slice (same `Sxx-` prefix), in corpus order; others alone. */
 export function smokeGroups(corpus, touched, gate = []) {
   const sorted = [...corpus].sort();
@@ -889,7 +901,7 @@ function checkSmoke(root, o, changed, base) {
     .map((f) => fs.statSync(path.join(root, f)).mtimeMs));
   const extra = smokeArgs(readText(path.join(root, 'scripts', 'smoke', 'run-args.json')));
   const reused = reusableSmoke(evDir, all, newest);
-  const est = smokeEstimateMs(all.length, extra);
+  const est = smokeEstimateMs(all.length, extra) + headerDelayMs(dir, all, extra);
   const full = reused ? reused.report
     : est > left() ? { infra_error: `no full-corpus *smoke*.json in ${evDir ? path.relative(root, evDir) : 'the slice evidence'} newer than the last code change, and a run (${all.length} checks${extra.length ? ` with ${extra.join(' ')}` : ''}, ~${Math.round(est / 60000)} min) does not fit the ${Math.round(left() / 1000)} s budget — save your last full run there` }
     : runSmoke(root, port, dir, Math.max(1000, left()), extra);
@@ -899,7 +911,7 @@ function checkSmoke(root, o, changed, base) {
     const gateText = readText(path.join(root, 'scripts', 'smoke', 'run-args.json'));
     const gate = smokeGate(gateText).length ? smokeGate(gateText) : full.checks[0]?.file ? [full.checks[0].file] : [];
     for (const g of smokeGroups(all, touched.slice(0, SMOKE_COLD_MAX), gate)) {
-      const need = smokeEstimateMs(g.files.length, extra);
+      const need = smokeEstimateMs(g.files.length, extra) + headerDelayMs(dir, g.files, extra);
       if (need > left()) { for (const file of g.judge) cold.push({ file, report: { infra_error: `smoke budget used up (${g.files.length} checks need ~${Math.round(need / 1000)} s, ${Math.max(0, Math.round(left() / 1000))} s left)` } }); continue; }
       const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'check-slice-smoke-'));
       try {
