@@ -517,6 +517,8 @@ test('smokeArgs / smokeEstimateMs / smokeGroups: project flags minus the gate\'s
   assert.deepEqual(smokeArgs(null), []);
   assert.equal(smokeEstimateMs(61, ['--delay', '12000']), 25000 + 61 * 13000);  // cc-capytal-war: ~13.6 min
   assert.equal(smokeEstimateMs(60, []), 25000 + 60 * 1300);
+  assert.equal(smokeEstimateMs(80, ['--settle', '12000', '--delay', '300']), 25000 + 12000 + 80 * 1300);  // the settle once: ~2.5 min, not 17
+  assert.equal(smokeEstimateMs(10, ['--delay', '0']), 25000 + 10 * 1000);
   const corpus = ['S01-a.check.js', 'S13-05-x.check.js', 'S13-06-y.check.js', 'S13-07-z.check.js', 'S17-00-a.check.js', 'S17-01-b.check.js', 'S17-02-c.check.js', 'misc.check.js'];
   assert.deepEqual(smokeGroups(corpus, ['S17-01-b.check.js', 'S17-02-c.check.js', 'S13-06-y.check.js', 'misc.check.js']), [
     { files: ['S17-00-a.check.js', 'S17-01-b.check.js', 'S17-02-c.check.js'], judge: ['S17-01-b.check.js', 'S17-02-c.check.js'] },

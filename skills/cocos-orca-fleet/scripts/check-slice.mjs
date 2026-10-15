@@ -836,11 +836,13 @@ export function smokeGate(text) {
   } catch { return []; }
 }
 
-/** Rough wall time of a run of n checks: --delay (run-smoke default 300 ms) plus ~1 s each, plus page start. */
+/** Rough wall time of a run of n checks: page start, --settle once, then --delay (run-smoke default 300 ms) plus ~1 s each. */
 export function smokeEstimateMs(n, args) {
-  const i = args.indexOf('--delay');
-  const delay = i > -1 ? Number(args[i + 1]) || 300 : 300;
-  return 25000 + n * (delay + 1000);
+  const num = (flag, dflt) => {
+    const i = args.indexOf(flag);
+    return i > -1 && Number.isFinite(Number(args[i + 1])) ? Number(args[i + 1]) : dflt;
+  };
+  return 25000 + num('--settle', 0) + n * (num('--delay', 300) + 1000);
 }
 
 /** A changed check and the earlier checks of its slice (same `Sxx-` prefix), in corpus order; others alone. */
