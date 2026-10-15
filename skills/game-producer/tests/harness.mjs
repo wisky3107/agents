@@ -114,6 +114,7 @@ if (cmd === 'terminal wait') {
   if (step.commit) {
     // the lane commits on main for real (single lane), then reports the sha in its HANDOFF
     const cp = require('child_process');
+    if (step.commit.add) cp.spawnSync('git', ['-C', B, 'add', '-A']);
     cp.spawnSync('git', ['-C', B, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-qm', step.commit.message]);
     const sha = cp.spawnSync('git', ['-C', B, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
     // noHandoff: the writer commits and says nothing (pilot 2)
@@ -122,6 +123,16 @@ if (cmd === 'terminal wait') {
       fs.writeFileSync(path.resolve(B, step.commit.handoff), JSON.stringify({ role: 'writer', status: 'committed', sha }));
     }
     fs.writeFileSync(path.join(D, 'last-commit'), sha);
+  }
+  // step.mainCommit: { files: {rel: text}, message } — someone commits on main meanwhile (phase 2 M2 tests)
+  if (step.mainCommit) {
+    const cp = require('child_process');
+    for (const [rel, body] of Object.entries(step.mainCommit.files)) {
+      fs.mkdirSync(path.dirname(path.resolve(P, rel)), { recursive: true });
+      fs.writeFileSync(path.resolve(P, rel), body);
+      cp.spawnSync('git', ['-C', P, 'add', '--', rel]);
+    }
+    cp.spawnSync('git', ['-C', P, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', step.mainCommit.message]);
   }
   if (step.runs) fs.writeFileSync(path.join(D, 'runs.json'), JSON.stringify(step.runs));
   if (step.workers) fs.writeFileSync(path.join(D, 'workers.json'), JSON.stringify(step.workers));

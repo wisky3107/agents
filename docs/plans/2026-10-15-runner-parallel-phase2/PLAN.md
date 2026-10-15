@@ -68,4 +68,11 @@ Sau M5: thử trên dự án không chạy pilot, rồi bật cho capytal (cặp
   chỉ cho single ở main). Harness: `worktree create`, `step.wt`. 198/198 test (+4 runner-lane-worktree.test.mjs).
 - **Chưa kiểm trên máy thật:** hook setup thật (rsync library/, Creator thứ hai, cổng Funplay), preview của worktree,
   `check-slice --root wt` với node_modules symlink. Nên chạy thử một slice thật với `lane_worktree=true` trước M5.
+- **M2 xong (2026-10-15, phần gộp file dùng chung):** merge.mjs `resolveShared` — khi mọi file conflict đều thuộc danh sách
+  dùng chung (`FOLLOWUPS.md`, `PLAYTEST.md`, `scripts/smoke/known-red.json`, `docs/cleanup/*.md` + MILESTONES
+  `shared_append:`), markdown gộp `git merge-file --union`, JSON gộp theo khoá so với base (`unionJson`); hai bên cùng
+  thêm một số dòng (`clashingRows`, ví dụ cùng #93) hoặc cùng sửa một khoá → không đoán, `merge_conflict` kèm lý do.
+  Conflict ở file khác (kể cả AGENT_NOTES.md) vẫn hủy merge và hỏi như cũ. Harness: `step.mainCommit`,
+  `commit.add`. 203/203 test (+4 merge-shared.test.mjs, +1 end-to-end trong runner-lane-worktree.test.mjs).
+- **Dời sang M5:** token `main_git` (tuần tự hoá thao tác git trên main giữa hai lane) — chỉ cần khi hai lane cùng sống.
 

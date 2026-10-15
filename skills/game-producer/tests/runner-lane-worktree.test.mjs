@@ -124,3 +124,27 @@ test('a worktree left by a killed runner is adopted, never created twice', () =>
   assert.equal(sliceState(p.root, 'S01').lane_checkout, wt);
   assert.match(log(p.root), /lane worktree .*S01-x adopted/);
 });
+
+test('M2: main and the lane both appended to FOLLOWUPS.md — the worktree merge unions it, no question', () => {
+  const FU = (rows) => `# FOLLOWUPS\n\n| # | item |\n|---|---|\n${rows.map((r) => `| ${r} | item ${r} |`).join('\n')}\n`;
+  const p = laneProject();
+  fs.writeFileSync(path.join(p.root, 'FOLLOWUPS.md'), FU([90]));
+  git(p.root, '-c', 'user.email=t@t', '-c', 'user.name=t', 'add', 'FOLLOWUPS.md');
+  git(p.root, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'followups');
+  const f = fakes();
+  const wtPath = `${p.root}-wt-S01-x`;
+  const preview = { [evRel('S01', 'preview-startup.json')]: { projectPath: wtPath, previewUrl: 'http://127.0.0.1:7466/', status: 'ready' } };
+  f.queue([
+    { name: 'main moves', mainCommit: { files: { 'FOLLOWUPS.md': FU([90, 91]) }, message: 'chore: followup 91 from another lane' } },
+    { name: 'ready', wt: 'S01', write: { ...W('ready_for_review'), ...preview, 'FOLLOWUPS.md': FU([90, 92]) } },
+    { name: 'approved', wt: 'S01', write: R('approved', 'APPROVED') },
+    { ...commitStep('S01'), wt: 'S01', commit: { ...commitStep('S01').commit, add: true } },
+    VERIFIED,
+  ]);
+  const out = runner(p.root, f, 'start', '--once').out;
+  assert.ok(out.find((o) => o.merged), JSON.stringify(out.slice(-2)));
+  const fu = fs.readFileSync(path.join(p.root, 'FOLLOWUPS.md'), 'utf8');
+  assert.match(fu, /\| 91 \|/);
+  assert.match(fu, /\| 92 \|/);
+  assert.match(log(p.root), /merge: conflicts only in shared file\(s\) FOLLOWUPS\.md: merged both sides/);
+});

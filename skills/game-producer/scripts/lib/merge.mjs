@@ -11,6 +11,7 @@
  * main is verified (unless the human overrides). Everything else is a question.
  */
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { withSystem } from './attribution.mjs';
@@ -247,6 +248,98 @@ function pendingMerge(ctx, j, kit, s) {
 }
 
 /** git merge --no-ff of the slice branch. → { ok } | { ask }; never leaves a half merge behind. */
+// ------------------------------------------------------------------ shared files (phase 2 M2)
+
+/**
+ * Files every lane appends to: a numbered followups table, the playtest log, the smoke known-red ledger, cleanup
+ * logs — plus MILESTONES `shared_append:` globs. A merge whose conflicts are ALL in these is resolved here (markdown:
+ * union of both sides; JSON objects: union of keys) instead of a merge_conflict question. Anything else, and
+ * AGENT_NOTES.md (the runner's own), still aborts and asks.
+ */
+const SHARED_DEFAULT = ['FOLLOWUPS.md', 'PLAYTEST.md', 'scripts/smoke/known-red.json', 'docs/cleanup/*.md'];
+export const sharedFiles = (project) => [...SHARED_DEFAULT, ...(Array.isArray(project?.milestones?.shared_append) ? project.milestones.shared_append.map(String) : [])];
+const globRe = (g) => new RegExp(`^${g.split('*').map((x) => x.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*')}$`);
+const stageText = (root, n, f) => {
+  const r = git(root, ['show', `:${n}:${f}`]);
+  return r.status === 0 ? r.stdout : null;
+};
+const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+/** A JSON object merged key by key against its base (a side that left a key as it was takes the other's). → { text } | { error } */
+export function unionJson(baseText, oursText, theirsText) {
+  let base, ours, theirs;
+  try {
+    base = baseText ? JSON.parse(baseText) : {};
+    ours = JSON.parse(oursText);
+    theirs = JSON.parse(theirsText);
+  } catch (e) {
+    return { error: `not valid JSON (${e.message})` };
+  }
+  if (![base, ours, theirs].every(isObj)) return { error: 'not a JSON object on every side' };
+  const out = { ...ours };
+  for (const k of new Set([...Object.keys(theirs), ...Object.keys(base)])) {
+    const inO = Object.hasOwn(ours, k), inT = Object.hasOwn(theirs, k), inB = Object.hasOwn(base, k);
+    if (inT && !inO) {
+      if (inB && same(base[k], theirs[k])) continue; // ours removed it, theirs left it alone
+      if (inB) return { error: `"${k}" removed on one side and changed on the other` };
+      out[k] = theirs[k];
+    } else if (inO && inT && !same(ours[k], theirs[k])) {
+      if (inB && same(base[k], ours[k])) out[k] = theirs[k];
+      else if (!(inB && same(base[k], theirs[k]))) return { error: `both sides changed "${k}"` };
+    } else if (inO && !inT && inB) {
+      if (same(base[k], ours[k])) delete out[k]; // theirs removed it, ours left it alone
+      else return { error: `"${k}" removed on one side and changed on the other` };
+    }
+  }
+  return { text: `${JSON.stringify(out, null, 2)}\n` };
+}
+
+/** Numbered table rows (`| 93 | …`, `| #93 | …`) that the union holds twice but ours held once → the ids. */
+export function clashingRows(merged, ours) {
+  const ids = (t) => [...String(t).matchAll(/^\|\s*#?(\d+)\s*\|/gm)].map((m) => m[1]);
+  const count = (list) => list.reduce((m, x) => m.set(x, (m.get(x) || 0) + 1), new Map());
+  const m = count(ids(merged)), o = count(ids(ours));
+  return [...m].filter(([id, n]) => n > 1 && (o.get(id) || 0) < n).map(([id]) => id);
+}
+
+/** Resolve the merge in progress in `root` when every conflicted file is shared. → { ok: true, files } | { ok: false, reason } */
+export function resolveShared(root, globs) {
+  const files = git(root, ['diff', '--name-only', '--diff-filter=U']).stdout.split('\n').filter(Boolean);
+  if (!files.length) return { ok: false, reason: 'git lists no conflicted file' };
+  const res = globs.map(globRe);
+  const other = files.filter((f) => !res.some((r) => r.test(f)));
+  if (other.length) return { ok: false, reason: `conflicts outside the shared files: ${other.join(', ')}` };
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'merge-shared-'));
+  try {
+    for (const f of files) {
+      const base = stageText(root, 1, f) ?? '', ours = stageText(root, 2, f), theirs = stageText(root, 3, f);
+      if (ours === null || theirs === null) return { ok: false, reason: `${f} was deleted on one side` };
+      let text;
+      if (f.endsWith('.json')) {
+        const u = unionJson(base, ours, theirs);
+        if (u.error) return { ok: false, reason: `${f}: ${u.error}` };
+        text = u.text;
+      } else {
+        const [o, b, t] = ['ours', 'base', 'theirs'].map((n) => path.join(tmp, n));
+        fs.writeFileSync(o, ours);
+        fs.writeFileSync(b, base);
+        fs.writeFileSync(t, theirs);
+        const r = spawnSync('git', ['merge-file', '--union', '-p', o, b, t], { encoding: 'utf8' });
+        if (r.status < 0 || r.error) return { ok: false, reason: `${f}: git merge-file failed` };
+        text = r.stdout;
+        const clash = clashingRows(text, ours);
+        if (clash.length) return { ok: false, reason: `${f}: both sides added numbered row(s) ${clash.map((x) => `#${x}`).join(', ')} — renumber one side` };
+      }
+      fs.writeFileSync(path.join(root, f), text);
+      git(root, ['add', '--', f]);
+    }
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+  return { ok: true, files };
+}
+
 function doMerge(ctx, j, kit, s) {
   const { root } = ctx.project;
   const id = ctx.id;
@@ -265,12 +358,27 @@ function doMerge(ctx, j, kit, s) {
   }
   if (r.status === 0) return { ok: true };
   const conflict = /CONFLICT|Automatic merge failed/.test(out);
+  let unresolved = '';
+  if (conflict) {
+    // conflicts only in the shared append files: union them and finish the merge commit (phase 2 M2)
+    const solved = resolveShared(root, sharedFiles(ctx.project));
+    if (solved.ok) {
+      const c = git(root, ['commit', '--no-edit']);
+      if (c.status === 0) {
+        st.log(root, id, `merge: conflicts only in shared file(s) ${solved.files.join(', ')}: merged both sides`);
+        return { ok: true, resolved: solved.files };
+      }
+      unresolved = `; the merge commit after resolving ${solved.files.join(', ')} failed: ${(c.stderr || c.stdout).trim().slice(-160)}`;
+    } else {
+      unresolved = `; not resolved automatically: ${solved.reason}`;
+    }
+  }
   // MERGE_HEAD was absent before this attempt (pendingMerge), so any now is this attempt's own
   const abortErr = abortHalfMerge(root);
   const restored = restoreStash(root, id);
   const tail = `${restored.length ? `; stray files put back: ${restored.join(', ')}` : ''}${abortErr ? `; ${abortErr}` : ''}${EDITORS_NOTE}`;
   if (conflict) {
-    return kit.ask(s, 'merge_conflict', `merging ${j.branch} into main conflicts (merge aborted): ${out.match(/CONFLICT[^\n]*/g)?.slice(0, 3).join('; ') || 'see git'}${tail}`,
+    return kit.ask(s, 'merge_conflict', `merging ${j.branch} into main conflicts (merge aborted): ${out.match(/CONFLICT[^\n]*/g)?.slice(0, 3).join('; ') || 'see git'}${unresolved}${tail}`,
       ['resolved by hand, continue', 'mark blocked', 'stop']);
   }
   const dirty = listAfter(out, 'Your local changes to the following files would be overwritten by merge:');
