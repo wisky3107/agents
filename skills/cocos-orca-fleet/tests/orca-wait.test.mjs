@@ -283,3 +283,34 @@ test('lane (single): an idle screen with live background work (monitors, shells)
   assert.equal(run(bin, args).out.idle_streak, 3);
   fs.rmSync(bin, { recursive: true });
 });
+
+test('lane: an idle answer over a screen that is still mid-turn is overruled (pilot 24 S30 q17); a finished turn is idle', () => {
+  const screen = (...tail) => ({ ok: true, result: { terminal: { handle: 'term_w1', tail } } });
+  const bin = fakeOrca({
+    wait: { ok: true, result: { wait: { handle: 'term_w1', condition: 'tui-idle', satisfied: true } } },
+    read: screen('⏺ Running mkdir -p /tmp/s30/neg2 && cp a b · 6s', '  ⎿ $ mkdir -p /tmp/s30/neg2', '(ctrl+b to run in background)', '',
+      '· Bloviating… (28m 36s · ↓ 183.9k tokens)', '', '❯ ', '  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← 1 agent'),
+  });
+  const handoff = path.join(bin, 'HANDOFF.json');
+  fs.writeFileSync(handoff, JSON.stringify({ status: 'working', detail: 'neg controls', sha: null }));
+  const state = path.join(bin, 'producer-state.json');
+  fs.writeFileSync(state, JSON.stringify({ handle: 'term_w1', last_mtime: fs.statSync(handoff).mtimeMs, idle_streak: 1 }));
+  const args = ['lane', '--handle', 'term_w1', '--handoff', handoff, '--state', state, '--max-ms', '1500'];
+  const a = run(bin, args).out;
+  assert.equal(a.event, 'timeout', 'not idle while the spinner runs');
+  assert.ok(a.idle_overruled >= 1);
+  assert.match(a.overruled_line, /^\(ctrl\+b to run in background\)$|Bloviating/);
+  assert.equal(a.idle_streak, 0);
+  for (const busy of [['✶ Thinking… (12s · ↑ 2k tokens)'], ['  ⎿ running… esc to interrupt'], ['* Pondering... (1m 3s)']]) {
+    fs.writeFileSync(path.join(bin, 'read.json'), JSON.stringify(screen(...busy, '  ⏵⏵ bypass permissions on')));
+    assert.equal(run(bin, args).out.event, 'timeout', busy[0]);
+  }
+  // a finished turn (past tense, no running clock) is idle, and so is a done line with live monitors
+  for (const done of [['✻ Baked for 3s · done 7:52 AM'], ['✻ Cogitated for 1m 29s', '❯ '], ['● Done for now.']]) {
+    fs.writeFileSync(path.join(bin, 'read.json'), JSON.stringify(screen(...done, '  ⏵⏵ bypass permissions on · ← 1 agent')));
+    const r = run(bin, args).out;
+    assert.equal(r.event, 'idle', done[0]);
+    assert.equal(r.idle_overruled, undefined);
+  }
+  fs.rmSync(bin, { recursive: true });
+});

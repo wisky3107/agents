@@ -27,6 +27,12 @@
  *     counts as idle again ("background_stuck":true), and so does background work seen continuously for
  *     ORCA_WAIT_BG_MAX_MS (4 h), whatever the screen does (a ticking status line).
  *
+ *     Orca's tui-idle can also fire while the agent is mid-turn (pilot 24: S03 q1, S17 q13, S30 q17 — Claude Code
+ *     showing "· Bloviating… (28m 36s · ↓ 183.9k tokens)" over a foreground Bash "(ctrl+b to run in background)"):
+ *     the runner then nudged a busy writer and Orca refused the send. An idle answer whose screen still shows a
+ *     running spinner, a foreground tool or "esc to interrupt" is overruled: the wait goes on, and the result
+ *     counts it as "idle_overruled".
+ *
  *     A terminal that stays busy is not always working (pilot 24, cc-capytal-war S27): a Claude writer whose context
  *     grew to ~309k spent 3h46m on "Request timed out · Retrying in 0s · attempt 4/9" while the spinner kept the TUI
  *     busy. Every timeout result carries "busy_ms" (busy since the last idle / HANDOFF / handle change), and when
@@ -304,6 +310,23 @@ const BG_WORK = new RegExp(`(?:[·←]\\s*${BG_UNIT}\\b|^\\s*${BG_UNIT}\\s*(?:[�
 // "← 1 agent" is on every Orca worker's footer, idle or not (pilot 23 S10: it held a finished writer for 45 min): never count it
 const BG_AGENTS = /·\s*\d+ (?:local |background )agents?\b/;
 
+// a turn in progress (Claude Code): a spinner verb with "…" and a running clock, a foreground tool, the interrupt hint.
+// A finished turn reads "✻ Baked for 3s" (no ellipsis, no clock in parentheses).
+const BUSY_LINE = /^\s*\S\s+[A-Z][\w-]*(?:…|\.\.\.)\s*\((?:\d+h\s*)?(?:\d+m\s*)?\d+s\b|\(ctrl\+b to run in background\)|\besc to interrupt\b/;
+
+/** A busy line among the last screen lines of a terminal Orca just called idle → the line | null. A failing probe is null. */
+function busyScreen(handle) {
+  try {
+    const rd = orcaJson(['terminal', 'read', '--terminal', handle], PROBE_CALL_MS);
+    const term = rd.parsed?.result?.terminal ?? rd.parsed?.result;
+    const lines = textOf(term?.tail).split('\n').filter((l) => l.trim()).slice(-12);
+    const hit = lines.find((l) => BUSY_LINE.test(l));
+    return hit ? hit.trim().slice(0, 160) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** A request-retry line among a busy terminal's last screen lines → the line | null. A failing probe is null. */
 function retryingScreen(handle) {
   try {
@@ -351,6 +374,8 @@ function lane(v) {
   let errorText = null;
   let staleRechecks = 0; // `terminal wait` said stale / not found but `terminal show` still found the terminal
   let missingWhy = null;
+  let overruled = 0;
+  let overruledLine = null;
   const before = readHandoff(v.handoff);
   // a HANDOFF written while the caller was busy elsewhere is news already: report it at once
   const baseMtime = prev.last_mtime !== undefined ? prev.last_mtime : before.mtime;
@@ -376,8 +401,17 @@ function lane(v) {
     }
     const w = orcaJson(['terminal', 'wait', '--terminal', handle, '--for', 'tui-idle', '--timeout-ms', String(Math.max(1000, Math.min(chunk, deadline - Date.now())))], chunk + 30000);
     if (w.parsed?.result?.wait?.satisfied) {
-      event = 'idle';
-      break;
+      const busy = handle ? busyScreen(handle) : null;
+      if (!busy) {
+        event = 'idle';
+        break;
+      }
+      // Orca called it idle, the screen says mid-turn: wait on (a short pause so a tight idle answer is not a hot loop)
+      overruled += 1;
+      overruledLine = busy;
+      const pause = Math.min(5000, Math.max(0, deadline - Date.now()));
+      if (pause) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, pause);
+      continue;
     }
     if (w.status !== 0 && !/timed? ?out/i.test(JSON.stringify(w.parsed) + w.stderr)) {
       const why = JSON.stringify(w.parsed?.error || w.parsed || '') + w.stderr;
@@ -438,6 +472,7 @@ function lane(v) {
     ...(staleRechecks ? { stale_rechecks: staleRechecks } : {}),
     status: after.status, detail: after.detail, sha: after.sha, handoff_changed: handoffChanged,
     idle_streak: idleStreak, ...(bg ? { background: bg.what, ...(bgStuck ? { background_stuck: true } : {}) } : {}), pending_gates: pendingGates, unread_to_run: unread, waited_ms: Date.now() - started,
+    ...(overruled ? { idle_overruled: overruled, overruled_line: overruledLine } : {}),
     ...(busySince ? { busy_ms: Date.now() - busySince } : {}), ...(retry ? { retrying: retry } : {}), ...(stall ? { stall } : {}),
   };
   fs.mkdirSync(path.dirname(path.resolve(v.state)), { recursive: true });
