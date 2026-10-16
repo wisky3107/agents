@@ -60,14 +60,60 @@
     h('button', { class: `btn ${cls}`, onclick, title, disabled, type: 'button' }, ic ? icon(ic, 15) : null, label);
   const modeTone = (m) => (m === 'assist' ? 'good' : m === 'shadow' ? 'warn' : m === 'capture-only' ? 'accent' : 'outline');
   const VERDICTS = ['useful', 'redundant', 'irrelevant', 'misleading', 'stale'];
-  const VLABEL = { useful: 'useful', redundant: 'redundant', irrelevant: 'irrelevant', misleading: 'misleading', stale: 'stale' };
-  const VHELP = {
-    useful: 'Có bằng chứng record làm thay đổi kết quả',
-    redundant: 'Đúng nhưng agent đã biết từ PLAN/contract/code',
-    irrelevant: 'Không liên quan tới slice',
-    misleading: 'Làm theo sẽ đi sai',
-    stale: 'Không còn đúng với code hiện tại',
+  // The five verdicts are the orca-memory pilot's own vocabulary (src/pilot.ts); the ledger keeps the English key.
+  const VLABEL = { useful: 'Hữu ích', redundant: 'Thừa', irrelevant: 'Không liên quan', misleading: 'Gây hiểu sai', stale: 'Lỗi thời' };
+  const VINFO = {
+    useful: {
+      what: 'Bài học đúng, liên quan và agent thực sự dùng nó: có bằng chứng nó làm đổi cách làm hoặc kết quả (bắt được một lỗi, tránh được việc làm lại).',
+      pick: 'Ghi chú hoặc review của slice trích dẫn bài học, hoặc một lỗi cụ thể được bắt nhờ nó.',
+      effect: 'Số liệu chính của pilot: càng nhiều "Hữu ích" thì càng đáng bật assist cho dự án.',
+    },
+    redundant: {
+      what: 'Bài học đúng và liên quan, nhưng agent đã biết sẵn từ PLAN, contract hoặc code của slice, nên không thêm giá trị.',
+      pick: 'Ghi chú nói "đã đọc nhưng không cần", hoặc nội dung đã nằm trong PLAN/HOW_TO/code.',
+      effect: 'Không hại, nhưng tốn token của pack. Nhiều "Thừa" nghĩa là nên promote bài học vào contract/template rồi bỏ khỏi memory.',
+    },
+    irrelevant: {
+      what: 'Bài học không liên quan tới slice này (khác công nghệ, khác tính năng, hoặc điều kiện áp dụng không xảy ra).',
+      pick: 'Điều kiện của bài học không khớp slice, hoặc slice không đụng tới phần đó.',
+      effect: 'Pack bị nhiễu và tốn token vô ích: dấu hiệu bộ lọc truy xuất (retrieval) chọn chưa chuẩn.',
+    },
+    misleading: {
+      what: 'Làm theo bài học này sẽ đi sai hướng hoặc gây lỗi.',
+      pick: 'Có bằng chứng agent làm theo rồi phải sửa lại, hoặc nội dung mâu thuẫn với thực tế.',
+      effect: 'Nghiêm trọng nhất. Nên Retract record (mở record → Retract) để nó không bao giờ vào pack nữa.',
+    },
+    stale: {
+      what: 'Bài học từng đúng nhưng không còn đúng với code, engine hoặc workflow hiện tại.',
+      pick: 'Code/template đã đổi, hoặc bài học đã được sửa tận gốc (fix đã merge).',
+      effect: 'Nên Retract hoặc Promote record để nó rời pack ở lần refresh tới.',
+    },
   };
+  const VHELP = Object.fromEntries(Object.entries(VINFO).map(([k, v]) => [k, v.what]));
+  const STAGE_VI = {
+    plan: ['Lập kế hoạch', 'Pack đưa cho agent lúc viết PLAN của slice'],
+    worker: ['Worker làm', 'Pack đưa cho worker (implement/art/integrate…) lúc làm việc'],
+    review: ['Review', 'Pack đưa cho reviewer lúc kiểm tra slice'],
+    check: ['Kiểm tra', 'Pack ở bước check trước review'],
+    recover: ['Phục hồi', 'Pack khi lane bị kẹt và phải phục hồi'],
+    retro: ['Tổng kết', 'Pack ở bước retro sau khi merge'],
+    harvest: ['Thu hoạch', 'Bước thu bài học mới từ slice'],
+  };
+  const LIFE_VI = { promoted: 'đã promote vào contract/template', retracted: 'đã retract (sai)', superseded: 'đã bị thay thế' };
+  const stageVi = (st) => STAGE_VI[String(st).split('-')[0]] ?? [st, ''];
+  const CONF_VI = { high: ['cao', 'Drafter thấy bằng chứng rõ trong ghi chú/evidence của slice'], medium: ['vừa', 'Bằng chứng gián tiếp'], low: ['thấp', 'Drafter đoán hoặc bằng chứng yếu: bạn nên xem kỹ dòng này'] };
+  /** Per-verdict counts as coloured swatch + number; zeros are dimmed. */
+  const vcounts = (v) => h('span', { class: 'vcounts' }, VERDICTS.map((k) => h('span', { class: `vc ${v[k] ? '' : 'zero'}`, title: `${VLABEL[k]}: ${v[k] ?? 0}` }, h('span', { class: 'swatch', style: { background: `var(--v-${k})` } }), v[k] ?? 0)));
+  /** The five verdicts, what each means, when to pick it and what it changes. */
+  function verdictGuide(open = false) {
+    return h('details', { class: 'vguide', open }, h('summary', {}, 'Cách chấm verdict: ý nghĩa từng loại'),
+      h('p', { class: 'small muted', style: { margin: '8px 0' } }, 'Mỗi verdict chấm một bài học (record) memory đã đưa cho agent ở một slice: bài học đó có giúp gì không. Chấm theo bằng chứng trong ghi chú và review của slice, không chấm theo cảm giác.'),
+      h('div', { class: 'vguide-grid' }, VERDICTS.map((k) => h('div', { class: 'vg-card', style: { '--vc': `var(--v-${k})` } },
+        h('div', { class: 'vg-h' }, h('span', { class: 'swatch', style: { background: `var(--v-${k})` } }), h('b', {}, VLABEL[k]), h('span', { class: 'mono small muted' }, k)),
+        h('div', { class: 'small' }, VINFO[k].what),
+        h('div', { class: 'small' }, h('b', {}, 'Chọn khi: '), VINFO[k].pick),
+        h('div', { class: 'small muted' }, h('b', {}, 'Tác động: '), VINFO[k].effect)))));
+  }
 
   // ---------------------------------------------------------------- overlays
   let openOverlay = null;
@@ -505,7 +551,7 @@
       { from: 'refresh', to: 'archive', state: 'done' },
       { from: 'archive', to: 'pack', state: 'done' },
       { from: 'pack', to: 'runner', state: assist ? 'on' : '', label: 'pack cho slice sau' },
-      { from: 'pack', to: 'verdict', state: '', label: 'judge' },
+      { from: 'pack', to: 'verdict', state: '', label: 'chấm' },
       { from: 'verdict', to: 'director', state: c.draft ? 'on' : '' },
     ];
     const flow = panel('Luồng workflow · memory', { icon: 'map', sub: 'Nhấn vào một node để đi tới chỗ xử lý. Đường hồng chạy = đang có việc.' },
@@ -672,22 +718,52 @@
 
   function draftCard(d) {
     const picks = d.rows.map((r) => ({ r, verdict: r.verdict, ok: !!r.confirmed }));
+    const draftVerdict = new Map(d.rows.map((r) => [`${r.stage}|${r.record}`, r.verdict]));
+    let info = null; // /api/draft-info: the lesson text, citations, phase, Vietnamese evidence
+    let poll = null;
     const rowsEl = h('div');
+    const infoEl = h('div');
     const counter = h('span', { class: 'small muted' });
     const applyBtn = btn('Ghi vào ledger', null, { cls: 'primary', ic: 'check' });
+    const infoOf = (p) => info?.rows?.find((x) => x.stage === p.r.stage && x.record === p.r.record) ?? null;
+
     const drawRows = () => {
       rowsEl.replaceChildren(...picks.map((p) => {
+        const x = infoOf(p);
         const pills = h('div', { class: 'row', style: { gap: '5px' } }, VERDICTS.map((v) =>
-          h('button', { class: `vpill ${p.verdict === v ? 'on' : ''}`, type: 'button', title: VHELP[v], style: { '--vc': `var(--v-${v})` },
+          h('button', { class: `vpill ${p.verdict === v ? 'on' : ''}`, type: 'button', title: `${VINFO[v].what}\nChọn khi: ${VINFO[v].pick}`, style: { '--vc': `var(--v-${v})` },
             onclick: () => { p.verdict = v; p.ok = true; drawRows(); } }, h('span', { class: 'swatch', style: { background: `var(--v-${v})` } }), VLABEL[v])));
         const cb = h('input', { type: 'checkbox', checked: p.ok && !!p.verdict, disabled: !p.verdict });
         cb.addEventListener('change', () => { p.ok = cb.checked; drawCount(); });
-        const rec = h('button', { class: 'btn ghost sm mono', type: 'button', style: { justifyContent: 'flex-start', whiteSpace: 'normal', textAlign: 'left', height: 'auto', padding: '2px 6px' }, onclick: () => openRecord(p.r.record) }, p.r.record);
-        return h('div', { class: 'verdict-row' },
-          h('div', {}, rec, h('div', { class: 'row', style: { marginTop: '3px' } }, chip(p.r.stage, 'outline'), p.r.confidence ? chip(`tin cậy ${p.r.confidence}`, p.r.confidence === 'low' ? 'warn' : 'good') : null)),
-          pills,
-          h('div', { class: 'small ink2' }, p.r.evidence ?? ''),
-          h('label', { class: 'check' }, cb, 'xác nhận'));
+        const [stName, stHelp] = stageVi(p.r.stage);
+        const [cfName, cfHelp] = CONF_VI[p.r.confidence] ?? [p.r.confidence, ''];
+        const claim = x?.vi?.claim || x?.claim;
+        const evidence = x?.vi?.evidence || p.r.evidence;
+        const enNote = x?.vi ? '' : info?.vi_state === 'translating' ? 'đang dịch…' : info?.vi_state === 'failed' ? 'dịch lỗi, đang hiện tiếng Anh' : 'tiếng Anh';
+        const recMeta = x ? [
+          x.conditions ? h('div', { class: 'small' }, h('span', { class: 'muted' }, 'Điều kiện áp dụng: '), [].concat(x.conditions).join(' · ')) : null,
+          x.limitations ? h('div', { class: 'small' }, h('span', { class: 'muted' }, 'Giới hạn: '), [].concat(x.limitations).join(' · ')) : null,
+          x.observed_at ? h('div', { class: 'small' }, h('span', { class: 'muted' }, 'Ghi nhận lúc: '), when(x.observed_at)) : null,
+          x.sources?.length ? h('div', { class: 'small' }, h('span', { class: 'muted' }, 'Nguồn: '), h('span', { class: 'mono' }, x.sources.join(' · '))) : null,
+          x.vi && x.claim ? h('div', { class: 'small' }, h('span', { class: 'muted' }, 'Nguyên văn tiếng Anh: '), x.claim) : null,
+          !x.found ? h('div', { class: 'small' }, 'Record không còn trong archive (đã retract hoặc promote).') : null,
+        ].filter(Boolean) : [];
+        const suggested = draftVerdict.get(`${p.r.stage}|${p.r.record}`);
+        return h('div', { class: 'vrow2' },
+          h('div', { class: 'row', style: { gap: '6px' } },
+            h('span', { title: stHelp }, chip(stName, 'outline')),
+            p.r.confidence ? h('span', { title: cfHelp }, chip(`drafter tin cậy ${cfName}`, p.r.confidence === 'low' ? 'warn' : p.r.confidence === 'high' ? 'good' : 'outline')) : null,
+            x?.kind ? chip(x.kind, 'outline') : null,
+            x?.cited ? h('span', { title: 'Ghi chú/review của slice nhắc tới record này: bằng chứng agent đã đọc nó' }, chip('slice có trích dẫn', 'good', 'star')) : null,
+            x && x.found === false ? chip('record đã rời archive', 'bad') : null,
+            x?.lifecycle && x.lifecycle !== 'active' ? h('span', { title: 'Record đã rời pack: bài học đã nằm trong contract/template (promoted) hoặc bị gỡ vì sai (retracted)' }, chip(LIFE_VI[x.lifecycle] ?? x.lifecycle, 'outline')) : null,
+            suggested ? h('span', { class: 'small muted' }, `drafter gợi ý: ${VLABEL[suggested] ?? suggested}`) : null),
+          h('div', { class: 'vclaim' }, claim ?? (info ? '(không có nội dung record)' : 'Đang tải nội dung bài học…')),
+          recMeta.length ? h('details', { class: 'small' }, h('summary', {}, 'Chi tiết bài học'), recMeta) : null,
+          h('div', { class: 'row', style: { gap: '6px' } }, h('span', { class: 'small muted' }, 'Record:'),
+            h('button', { class: 'btn ghost sm mono', type: 'button', style: { justifyContent: 'flex-start', whiteSpace: 'normal', textAlign: 'left', height: 'auto', padding: '2px 6px' }, onclick: () => openRecord(p.r.record) }, p.r.record)),
+          h('div', { class: 'vevid' }, h('b', {}, 'Bằng chứng drafter tìm thấy'), enNote ? h('span', { class: 'small muted' }, ` (${enNote})`) : null, h('div', { class: 'small ink2' }, evidence || '(không có)')),
+          h('div', { class: 'row', style: { justifyContent: 'space-between' } }, pills, h('label', { class: 'check' }, cb, 'xác nhận')));
       }));
       drawCount();
     };
@@ -696,22 +772,48 @@
       counter.textContent = `${n}/${picks.length} dòng sẽ được ghi`;
       applyBtn.disabled = !n;
     };
+    const drawInfo = () => {
+      const sum = {};
+      for (const p of picks) if (p.verdict) sum[p.verdict] = (sum[p.verdict] ?? 0) + 1;
+      const low = picks.filter((p) => p.r.confidence === 'low').length;
+      const shadow = info?.phase === 'shadow';
+      infoEl.replaceChildren(...[
+        h('div', { class: 'row', style: { gap: '8px', margin: '6px 0' } }, h('span', { class: 'small muted' }, 'Drafter gợi ý:'), vcounts(sum), low ? chip(`${low} dòng tin cậy thấp: xem kỹ`, 'warn', 'alert') : null,
+          info?.phase ? chip(`slice chạy ${info.phase}`, info.phase === 'assist' ? 'good' : 'warn') : null,
+          info?.injected_tokens != null ? chip(`${info.injected_tokens} token pack`, 'outline') : null),
+        shadow ? h('div', { class: 'q-context' }, h('div', {}, 'Slice này chạy chế độ shadow: pack chỉ để đo, agent KHÔNG nhìn thấy các bài học này. Hãy chấm theo câu hỏi "nếu agent được đưa bài học này, nó có giúp không?", không phải "agent đã dùng nó chưa".')) : null,
+        info?.vi_state === 'translating' ? chip('đang dịch bằng chứng sang tiếng Việt…', 'warn', 'clock') : null,
+        info?.vi_state === 'failed' ? chip(`dịch lỗi, thử lại sau 10 phút: ${info.vi_error ?? ''}`.slice(0, 160), 'bad', 'alert') : null].filter(Boolean));
+    };
+    const loadInfo = async () => {
+      try { info = await api(`/api/draft-info?project=${encodeURIComponent(d.project)}&slice=${encodeURIComponent(d.slice)}`); } catch (e) { info = null; infoEl.replaceChildren(chip(`không tải được nội dung bài học: ${e.message}`.slice(0, 160), 'bad', 'alert')); return; }
+      drawInfo(); drawRows();
+      if (info.vi_state === 'translating') poll = setTimeout(() => { if (root.isConnected) loadInfo(); }, 8000);
+    };
     applyBtn.addEventListener('click', () => {
       const rows = picks.map((p) => ({ stage: p.r.stage, record: p.r.record, verdict: p.verdict || null, confirmed: p.ok && !!p.verdict }));
       const n = rows.filter((r) => r.confirmed).length;
-      const useful = rows.filter((r) => r.confirmed && r.verdict === 'useful').length;
-      act('draft.apply', { file: d.file, rows }, { title: `Ghi ${n} verdict · ${d.project} ${d.slice}`, body: `${useful} useful. Verdict là số liệu của pilot M08; ghi xong không sửa được qua console.`, ok: 'Ghi vào ledger' });
+      const by = (v) => rows.filter((r) => r.confirmed && r.verdict === v).length;
+      const bad = by('misleading') + by('stale');
+      act('draft.apply', { file: d.file, rows }, {
+        title: `Ghi ${n} verdict · ${d.project} ${d.slice}`,
+        body: `${VERDICTS.map((v) => `${VLABEL[v]} ${by(v)}`).join(' · ')}.${bad ? `\n${bad} dòng "Gây hiểu sai/Lỗi thời": nên vào Memory để Retract hoặc Promote record sau khi ghi.` : ''}\nVerdict là số liệu của pilot M08; ghi xong không sửa được qua console.`,
+        ok: 'Ghi vào ledger',
+      });
     });
     drawRows();
     const bulk = h('div', { class: 'row' },
       btn('Xác nhận các dòng tin cậy cao', () => { picks.forEach((p) => { if (p.verdict && p.r.confidence === 'high') p.ok = true; }); drawRows(); }, { cls: 'sm', ic: 'check' }),
       btn('Xác nhận tất cả có verdict', () => { picks.forEach((p) => { if (p.verdict) p.ok = true; }); drawRows(); }, { cls: 'sm' }),
       btn('Bỏ chọn', () => { picks.forEach((p) => { p.ok = false; }); drawRows(); }, { cls: 'ghost sm' }));
-    return h('div', { class: 'quest q-draft' },
+    const root = h('div', { class: 'quest q-draft' },
       h('div', { class: 'quest-h' }, qtag('flask', 'Bảng nháp verdict'), chip(d.project, 'outline'), chip(d.slice, 'accent'), h('span', { class: 'grow' }), h('span', { class: 'small muted' }, `${d.model} · ${ago(d.created_at)}`)),
-      h('p', { class: 'small muted', style: { margin: '6px 0' } }, 'Drafter đọc record theo nghĩa đen; các dòng useful hoặc tin cậy thấp cần bạn xem kỹ.'),
-      h('div', { class: 'legend' }, VERDICTS.map((v) => h('span', { title: VHELP[v] }, h('span', { class: 'swatch', style: { background: `var(--v-${v})` } }), `${VLABEL[v]}: ${VHELP[v]}`))),
-      bulk, rowsEl, h('div', { class: 'quest-actions', style: { alignItems: 'center' } }, applyBtn, counter));
+      h('p', { class: 'small', style: { margin: '8px 0' } },
+        `Sau khi ${d.slice} merge, drafter (AI) đọc ghi chú và review của slice rồi gợi ý: từng bài học memory đưa cho agent có giúp gì không. Bạn xem lại, sửa nếu cần rồi xác nhận để ghi vào số liệu pilot. Dòng "Hữu ích" hoặc tin cậy thấp cần xem kỹ nhất.`),
+      verdictGuide(), infoEl, bulk, rowsEl, h('div', { class: 'quest-actions', style: { alignItems: 'center' } }, applyBtn, counter));
+    drawInfo();
+    loadInfo();
+    return root;
   }
 
   function triageCard(t) {
@@ -833,8 +935,8 @@
     })) : h('div', { class: 'small muted' }, 'Chưa có merge journal (slice chưa merge hoặc không dùng runner).');
     const memBox = mem ? h('div', {},
       h('div', { class: 'row' }, chip(`memory ${mem.phase ?? '—'}`, modeTone(mem.phase)), chip(`${mem.packs} pack`, 'outline'), chip(`${mem.injected_tokens} token đưa vào`, 'outline'), chip(`${mem.cited.length} trích dẫn`, mem.cited.length ? 'good' : 'outline', 'star'),
-        mem.unjudged ? chip(`${mem.unjudged} chưa judge`, 'warn') : null),
-      h('div', { class: 'small ink2', style: { marginTop: '6px' } }, `verdict u/r/i/m/s: ${VERDICTS.map((v) => mem.verdicts[v]).join('/')}`),
+        mem.unjudged ? chip(`${mem.unjudged} chưa chấm`, 'warn') : null),
+      h('div', { class: 'small ink2', style: { marginTop: '6px' } }, h('span', { class: 'muted' }, 'Verdict: '), vcounts(mem.verdicts)),
       mem.cited.length ? h('div', { style: { marginTop: '6px' } }, mem.cited.map((c) => h('button', { class: 'btn ghost sm mono', type: 'button', onclick: () => openRecord(c), style: { height: 'auto', padding: '2px 6px', whiteSpace: 'normal', textAlign: 'left' } }, c))) : null)
       : h('div', { class: 'small muted' }, 'Slice này không nằm trong pilot memory.');
     return panel(`Slice ${s.slice}`, { icon: 'doc', right: chip(label, tone) },
@@ -964,20 +1066,21 @@
     const phases = ['baseline', 'shadow', 'assist'].map((ph) => [ph, r.slices.filter((s) => s.phase === ph).length]).filter(([, n]) => n);
     const tiles = h('div', { class: 'stats' },
       phases.map(([ph, n]) => h('div', { class: `stat ${ph === 'assist' ? 's-yellow' : ph === 'shadow' ? 's-pink' : 's-blue'}` }, h('div', { class: 'label' }, `slice ${ph}`), h('div', { class: 'value' }, n))),
-      h('div', { class: 'stat s-green' }, h('div', { class: 'label' }, icon('check', 14), 'useful'), h('div', { class: 'value' }, sum('useful')), h('div', { class: 'foot' }, `${sum('redundant')} redundant · ${sum('irrelevant')} irrelevant`)),
+      h('div', { class: 'stat s-green' }, h('div', { class: 'label' }, icon('check', 14), 'hữu ích'), h('div', { class: 'value' }, sum('useful')), h('div', { class: 'foot' }, `${sum('redundant')} thừa · ${sum('irrelevant')} không liên quan · ${sum('misleading') + sum('stale')} sai/lỗi thời`)),
       h('div', { class: 'stat s-lilac' }, h('div', { class: 'label' }, icon('star', 14), 'trích dẫn'), h('div', { class: 'value' }, cited), h('div', { class: 'foot' }, 'record agent khai báo đã dùng')),
-      h('div', { class: `stat ${unjudged ? 's-coral' : 's-green'}` }, h('div', { class: 'label' }, 'chưa judge'), h('div', { class: 'value' }, unjudged), h('div', { class: 'foot' }, unjudged ? 'drafter sẽ soạn nháp' : 'đã judge hết')));
+      h('div', { class: `stat ${unjudged ? 's-coral' : 's-green'}` }, h('div', { class: 'label' }, 'chưa chấm'), h('div', { class: 'value' }, unjudged), h('div', { class: 'foot' }, unjudged ? 'bài học chưa có verdict: drafter sẽ soạn nháp' : 'đã chấm hết')));
     const rows = r.slices.filter((s) => s.phase !== 'baseline').map((s) => ({ slice: s.slice, phase: s.phase, verdicts: s.verdicts, unjudged: s.unjudged_items }));
     const legend = h('div', { class: 'legend' }, VERDICTS.map((v) => h('span', { title: VHELP[v] }, h('span', { class: 'swatch', style: { background: `var(--v-${v})` } }), VLABEL[v])));
-    const chart = panel('Verdict theo slice', { icon: 'chart', sub: 'Mỗi cột là một slice, chồng theo verdict. Số trên cột = tổng verdict; "8?" = 8 item chưa judge. Bảng bên dưới có đủ số liệu.' },
-      rows.length ? [legend, h('div', { class: 'graph-wrap' }, verdictColumns(rows, { order: VERDICTS, label: VLABEL }))] : empty('Chỉ có slice baseline: chưa có pack nào để chấm.'));
+    const guide = verdictGuide();
+    const chart = panel('Verdict theo slice', { icon: 'chart', sub: 'Mỗi cột là một slice (chỉ slice shadow/assist), chồng theo verdict. Số trên cột = tổng bài học đã chấm; "8?" = 8 bài học chưa chấm. Rê chuột lên đoạn màu để xem số lượng.' },
+      rows.length ? [legend, guide, h('div', { class: 'graph-wrap' }, verdictColumns(rows, { order: VERDICTS, label: VLABEL }))] : empty('Chỉ có slice baseline: chưa có pack nào để chấm.'));
     const table = panel('Bảng số liệu', { icon: 'list' }, h('div', { class: 'scroll-x' }, h('table', { class: 't' },
-      h('thead', {}, h('tr', {}, ['Slice', 'Phase', 'Fix', 'Review', 'Lặp lại', 'Hook', 'Token vào', 'u/r/i/m/s', 'Trích dẫn', 'Deviation'].map((x, i) => h('th', { class: i >= 2 && i <= 6 ? 'num' : '' }, x)))),
+      h('thead', {}, h('tr', {}, [['Slice', 'Mã slice'], ['Phase', 'baseline: không memory · shadow: pack chỉ để đo, agent không thấy · assist: agent đọc pack'], ['Fix', 'Số vòng sửa lỗi sau review'], ['Review', 'Số vòng review'], ['Lặp lại', 'Số lỗi tái diễn đã đánh dấu'], ['Hook', 'Số lần gọi hook memory'], ['Token vào', 'Token pack memory đưa cho agent'], ['Verdict (đã chấm)', 'Số bài học theo từng verdict: màu xem chú giải phía trên'], ['Trích dẫn', 'Record mà ghi chú của slice nhắc tới'], ['Lệch kế hoạch', 'Điểm slice làm khác kế hoạch']].map(([x, tip], i) => h('th', { class: i >= 2 && i <= 6 ? 'num' : '', title: tip }, x)))),
       h('tbody', {}, r.slices.map((s) => h('tr', {},
         h('td', {}, h('b', { class: 'hud' }, s.slice)), h('td', {}, chip(s.phase, modeTone(s.phase === 'baseline' ? 'off' : s.phase))),
         h('td', { class: 'num' }, s.fix_rounds ?? '—'), h('td', { class: 'num' }, s.review_rounds ?? '—'), h('td', { class: 'num' }, s.recurring.length),
         h('td', { class: 'num' }, s.memory.hook_calls), h('td', { class: 'num' }, s.memory.injected_tokens),
-        h('td', {}, VERDICTS.map((v) => s.verdicts[v]).join('/'), s.unjudged_items ? h('div', { class: 'small muted' }, `${s.unjudged_items} chưa judge`) : null),
+        h('td', {}, vcounts(s.verdicts), s.unjudged_items ? h('div', { class: 'small muted' }, `${s.unjudged_items} chưa chấm`) : null),
         h('td', {}, s.cited_ids.length ? h('details', {}, h('summary', {}, s.cited_ids.length), s.cited_ids.map((c) => h('button', { class: 'btn ghost sm mono', type: 'button', onclick: () => openRecord(c), style: { height: 'auto', padding: '2px 4px', whiteSpace: 'normal', textAlign: 'left' } }, c))) : '0'),
         h('td', {}, s.deviations.length ? h('details', {}, h('summary', {}, s.deviations.length), s.deviations.map((x) => h('div', { class: 'small', style: { margin: '6px 0', maxWidth: '520px' } }, x))) : '')))))));
     const missing = r.missing_accounting?.length ? panel(`Thiếu số liệu · ${r.missing_accounting.length}`, { icon: 'alert' }, h('details', {}, h('summary', { class: 'small' }, 'Xem danh sách'), h('ul', { class: 'small' }, r.missing_accounting.map((x) => h('li', {}, x))))) : null;

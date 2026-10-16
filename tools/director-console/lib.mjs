@@ -8,7 +8,8 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
+import { spawn, spawnSync } from 'node:child_process';
 
 const HOME = os.homedir();
 const env = process.env;
@@ -405,6 +406,104 @@ export function pilotReport(id) {
   const desc = om.config.loadConfig().projects.find((p) => p.project_id === id);
   if (!desc) throw new Error(`${id} is not registered with orca-memory`);
   return om.pilot.pilotReport(desc);
+}
+
+// ------------------------------------------------------------------ judge draft: what each row means
+
+const VI_RETRY_MS = 10 * 60 * 1000;
+const viJobs = new Map(); // cache key → the translate call in flight
+const viDir = () => env.CONSOLE_VI_CACHE ?? path.join(HOME, '.agents/run/director-console-vi');
+let pilotCache = new Map(); // project → { at, report }
+
+function claudeEnv() {
+  const f = env.PRODUCER_RUNNER_CLAUDE_SETTINGS || path.join(HOME, '.claude', 'settings.json');
+  const e = readJson(f)?.env;
+  return e && typeof e === 'object' ? Object.fromEntries(Object.entries(e).map(([k, v]) => [k, String(v)])) : {};
+}
+
+/** One `claude -p` sonnet call (the runner translator's flags: no tools, no hooks, no project CLAUDE.md) → the parsed structured output or null. */
+function translateRows(items) {
+  const schema = {
+    type: 'object', required: ['rows'],
+    properties: { rows: { type: 'array', items: { type: 'object', required: ['n', 'claim', 'evidence'], properties: { n: { type: 'integer' }, claim: { type: 'string' }, evidence: { type: 'string' } } } } },
+  };
+  const prompt = [
+    'Translate into Vietnamese the rows below for a game-production director who judges whether a memory lesson helped an agent.',
+    'Keep file paths, line refs like "notes.md:92", slice ids (S08), numbers, code, identifiers and the names inside backticks exactly as written. Plain natural sentences; do not add advice or opinions.',
+    `Return JSON { rows } with exactly ${items.length} entries in the given order: { n, claim: the lesson in Vietnamese (at most 400 characters; shorten but keep every condition and number), evidence: the judge's evidence in Vietnamese, whole }. An empty input stays "".`,
+    '', ...items.map((it, i) => `--- ${i + 1}\nLESSON: ${it.claim}\nEVIDENCE: ${it.evidence}`),
+  ].join('\n');
+  const args = ['-p', '--output-format', 'json', '--model', 'sonnet', '--restricted', '--tools', '', '--strict-mcp-config',
+    '--disable-slash-commands', '--permission-prompts', 'none', '--json-schema', JSON.stringify(schema)];
+  return new Promise((resolve) => {
+    let out = ''; let err = ''; let done = false;
+    const finish = (v) => { if (!done) { done = true; clearTimeout(timer); resolve(v); } };
+    let child;
+    try { child = spawn(env.PRODUCER_RUNNER_TRANSLATE_CMD || 'claude', args, { cwd: os.tmpdir(), env: { ...env, ...claudeEnv(), CC_ROLE: 'translate' }, stdio: ['pipe', 'pipe', 'pipe'] }); } catch (e) { resolve({ error: e.code || 'spawn' }); return; }
+    const timer = setTimeout(() => { child.kill(); finish({ error: 'ETIMEDOUT' }); }, 120000);
+    child.stdout.on('data', (d) => (out += d));
+    child.stderr.on('data', (d) => (err += d));
+    child.on('error', (e) => finish({ error: e.code || 'spawn' }));
+    child.on('close', (code) => {
+      let rows = null;
+      try { const j = JSON.parse(out); rows = j.is_error ? null : j.structured_output?.rows; } catch { rows = null; }
+      const ok = Array.isArray(rows) && rows.length === items.length && rows.every((r, i) => Number(r.n) === i + 1 && typeof r.claim === 'string' && typeof r.evidence === 'string');
+      finish(ok ? { rows: rows.map((r) => ({ claim: r.claim.trim(), evidence: r.evidence.trim() })) } : { error: `${code !== 0 ? `exit ${code}` : 'no valid JSON'}${err ? `: ${err.trim().slice(-160)}` : ''}` });
+    });
+    child.stdin.on('error', () => {});
+    child.stdin.end(prompt);
+  });
+}
+
+/** Vietnamese claim + evidence for each row, cached on disk by content; started in the background → { state, rows?, error? }. */
+function draftTranslation(items) {
+  const key = crypto.createHash('sha256').update(JSON.stringify(items)).digest('hex').slice(0, 16);
+  const file = path.join(viDir(), `draft-${key}.json`);
+  const cached = readJson(file);
+  if (cached?.rows?.length === items.length) return { state: 'ok', rows: cached.rows };
+  if (cached?.failed && Date.now() - Date.parse(cached.at) < VI_RETRY_MS) return { state: 'failed', error: cached.failed };
+  if (viJobs.has(key)) return { state: 'translating' };
+  if (env.CONSOLE_TRANSLATE === 'off') return { state: 'off' };
+  viJobs.set(key, translateRows(items).then((r) => {
+    fs.mkdirSync(viDir(), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(r.rows ? { rows: r.rows, at: new Date().toISOString() } : { failed: r.error, at: new Date().toISOString() }));
+  }).catch(() => {}).finally(() => viJobs.delete(key)));
+  return { state: 'translating' };
+}
+
+/**
+ * What a draft's rows mean, from the archive and the pilot report: the lesson itself (claim,
+ * conditions), where it came from, whether the slice's own notes cite it, whether the agent saw it
+ * at all (a shadow pack is measured, never shown), plus the Vietnamese claim and evidence.
+ */
+export function draftInfo(project, slice) {
+  if (!/^[A-Za-z0-9][\w.-]*$/.test(project ?? '') || !/^S\d+[a-z]?$/i.test(slice ?? '')) throw new Error('bad project or slice');
+  const d = readJson(path.join(memHome(), 'reports', 'judge-drafts', project, `${slice}.json`));
+  if (!d) throw new Error(`no draft for ${project} ${slice}`);
+  const byId = new Map(om.archive.loadArchive().map((r) => [r.record_id, r]));
+  let pilot = pilotCache.get(project);
+  if (!pilot || Date.now() - pilot.at > 60000) {
+    pilot = { at: Date.now(), report: safe(() => pilotReport(project)) };
+    pilotCache.set(project, pilot);
+  }
+  const sl = pilot.report?.slices?.find((x) => x.slice === slice) ?? null;
+  const cited = new Set(sl?.cited_ids ?? []);
+  const rows = (d.rows ?? []).map((r) => {
+    const rec = byId.get(r.record);
+    return {
+      stage: r.stage, record: r.record, found: !!rec,
+      claim: rec?.claim ?? null, kind: rec?.kind ?? null, topic: rec?.topic ?? null, lifecycle: rec?.lifecycle ?? null,
+      conditions: rec?.conditions ?? null, limitations: rec?.limitations ?? null, observed_at: rec?.observed_at ?? null,
+      sources: (rec?.source_refs ?? []).map((x) => x.uri).slice(0, 3),
+      cited: cited.has(r.record),
+    };
+  });
+  const tr = draftTranslation(rows.map((x, i) => ({ claim: (x.claim ?? '').slice(0, 800), evidence: String(d.rows[i].evidence ?? '').slice(0, 700) })));
+  return {
+    project, slice, phase: sl?.phase ?? null, merged: sl?.merged ?? null, injected_tokens: sl?.memory?.injected_tokens ?? null,
+    rows: rows.map((x, i) => ({ ...x, vi: tr.rows ? tr.rows[i] : null })),
+    vi_state: tr.state, vi_error: tr.error ?? null,
+  };
 }
 
 export function playbook() {

@@ -64,7 +64,7 @@ before(async () => {
   fs.writeFileSync(orca, '#!/bin/sh\necho \'{"result":{"terminals":[]}}\'\n', { mode: 0o755 });
   // stands in for `claude -p` in the runner's translate.mjs: one Vietnamese entry per option
   const translator = path.join(root, 'translate');
-  fs.writeFileSync(translator, `#!${process.execPath}\nlet s = '';\nprocess.stdin.on('data', (c) => (s += c)).on('end', () => {\n  const n = Number(s.match(/exactly (\\d+) entries/)[1]);\n  console.log(JSON.stringify({ structured_output: { summary: 'Cổng: chọn một hướng', why: 'Đây là quyết định phạm vi', options: Array.from({ length: n }, (_, i) => ({ n: i + 1, text: 'Lựa chọn ' + (i + 1) + ' đầy đủ', label: 'Lựa chọn ' + (i + 1) })) } }));\n});\n`, { mode: 0o755 });
+  fs.writeFileSync(translator, `#!${process.execPath}\nlet s = '';\nprocess.stdin.on('data', (c) => (s += c)).on('end', () => {\n  if (s.includes('Return JSON { rows }')) { const m = Number(s.match(/exactly (\\d+) entries/)[1]); console.log(JSON.stringify({ structured_output: { rows: Array.from({ length: m }, (_, i) => ({ n: i + 1, claim: 'Bài học ' + (i + 1), evidence: 'Bằng chứng ' + (i + 1) })) } })); return; }\n  const n = Number(s.match(/exactly (\\d+) entries/)[1]);\n  console.log(JSON.stringify({ structured_output: { summary: 'Cổng: chọn một hướng', why: 'Đây là quyết định phạm vi', options: Array.from({ length: n }, (_, i) => ({ n: i + 1, text: 'Lựa chọn ' + (i + 1) + ' đầy đủ', label: 'Lựa chọn ' + (i + 1) })) } }));\n});\n`, { mode: 0o755 });
   const playbook = path.join(root, 'playbook');
   fs.mkdirSync(path.join(playbook, 'recipes'), { recursive: true });
   fs.writeFileSync(path.join(playbook, 'registry.json'), JSON.stringify({ recipes: [{ id: 'r1', status: 'candidate', path: 'recipes/r1.md', summary: 'one recipe' }] }));
@@ -73,7 +73,7 @@ before(async () => {
   // res-guard: no watcher state until the resources test writes one; a fake CLI records its argv
   fs.writeFileSync(path.join(root, 'res-guard.mjs'), `import fs from 'node:fs';\nfs.appendFileSync(${JSON.stringify(path.join(root, 'rg-argv.jsonl'))}, JSON.stringify(process.argv.slice(2)) + '\\n');\nconsole.log('closed');\n`);
   port = 17000 + Math.floor(Math.random() * 2000);
-  srv = spawn(process.execPath, [SERVER], { env: { ...process.env, ORCA_MEMORY_HOME: home, CONSOLE_PORT: String(port), CONSOLE_TOKEN: TOKEN, CONSOLE_GAMES_ROOT: games, CONSOLE_RUNNER_DIR: runnerDir, CONSOLE_ORCA_BIN: orca, CONSOLE_PLAYBOOK: playbook, CONSOLE_LOG_DIR: logs, CONSOLE_RES_GUARD_HOME: path.join(root, 'rg'), CONSOLE_RES_GUARD_CLI: path.join(root, 'res-guard.mjs'), PRODUCER_RUNNER_TRANSLATE_CMD: translator, CC_SPAWN_REGISTRY: path.join(root, 'spawns.jsonl'), CONSOLE_TAILNET_HOST: 'mac.tail0.ts.net', CONSOLE_TAILNET_USERS: 'me@example.com', CONSOLE_WORKSPACES: path.join(root, 'ws'), CONSOLE_OMNIROUTE_HOME: path.join(root, 'omr'), CONSOLE_OMNIROUTE_URL: `http://127.0.0.1:${port + 1}`, CONSOLE_OMNIROUTE_TOKEN: 'tok-1', CONSOLE_AGY_ROTATE_STATE: path.join(root, 'agy-rotate-state.json') }, stdio: ['ignore', 'pipe', 'inherit'] });
+  srv = spawn(process.execPath, [SERVER], { env: { ...process.env, ORCA_MEMORY_HOME: home, CONSOLE_PORT: String(port), CONSOLE_TOKEN: TOKEN, CONSOLE_GAMES_ROOT: games, CONSOLE_RUNNER_DIR: runnerDir, CONSOLE_ORCA_BIN: orca, CONSOLE_PLAYBOOK: playbook, CONSOLE_LOG_DIR: logs, CONSOLE_RES_GUARD_HOME: path.join(root, 'rg'), CONSOLE_RES_GUARD_CLI: path.join(root, 'res-guard.mjs'), PRODUCER_RUNNER_TRANSLATE_CMD: translator, CC_SPAWN_REGISTRY: path.join(root, 'spawns.jsonl'), CONSOLE_VI_CACHE: path.join(root, 'vi-cache'), CONSOLE_TAILNET_HOST: 'mac.tail0.ts.net', CONSOLE_TAILNET_USERS: 'me@example.com', CONSOLE_WORKSPACES: path.join(root, 'ws'), CONSOLE_OMNIROUTE_HOME: path.join(root, 'omr'), CONSOLE_OMNIROUTE_URL: `http://127.0.0.1:${port + 1}`, CONSOLE_OMNIROUTE_TOKEN: 'tok-1', CONSOLE_AGY_ROTATE_STATE: path.join(root, 'agy-rotate-state.json') }, stdio: ['ignore', 'pipe', 'inherit'] });
   await new Promise((resolve) => srv.stdout.once('data', resolve));
 });
 
@@ -219,6 +219,23 @@ test('files: a judge draft must live in the drafts dir; a recipe must live in th
   assert.equal(bad.status, 400);
   assert.equal((await call('GET', '/api/recipe?path=recipes/r1.md')).json.text, '# r1\n');
   assert.equal((await call('GET', `/api/recipe?path=${encodeURIComponent('../secret.md')}`)).status, 400);
+});
+
+test('judge draft: /api/draft-info returns each row\'s lesson state and a cached Vietnamese claim and evidence; bad names are refused', async () => {
+  const dir = path.join(home, 'reports', 'judge-drafts', 'cc-a');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'S01.json'), JSON.stringify({ project: 'cc-a', slice: 'S01', created_at: '2026-10-07T00:00:00Z', model: 'sonnet', file: path.join(dir, 'S01.json'),
+    rows: [{ stage: 'plan', record: 'cc-x/T-S01/lesson-1', verdict: 'useful', confidence: 'high', evidence: 'notes.md:9 cites it' }, { stage: 'review', record: 'cc-x/T-S01/lesson-2', verdict: 'redundant', confidence: 'low', evidence: 'already in PLAN' }] }));
+  assert.equal((await call('GET', '/api/draft-info?project=..&slice=S01')).status, 400);
+  assert.equal((await call('GET', '/api/draft-info?project=cc-a&slice=nope')).status, 400);
+  const first = (await call('GET', '/api/draft-info?project=cc-a&slice=S01')).json;
+  assert.equal(first.rows.length, 2);
+  assert.deepEqual([first.rows[0].found, first.rows[0].cited, first.rows[0].claim], [false, false, null]);
+  let r = first;
+  for (let i = 0; i < 40 && r.vi_state === 'translating'; i++) { await new Promise((ok) => setTimeout(ok, 100)); r = (await call('GET', '/api/draft-info?project=cc-a&slice=S01')).json; }
+  assert.equal(r.vi_state, 'ok', JSON.stringify(r));
+  assert.deepEqual(r.rows.map((x) => x.vi), [{ claim: 'Bài học 1', evidence: 'Bằng chứng 1' }, { claim: 'Bài học 2', evidence: 'Bằng chứng 2' }]);
+  fs.rmSync(dir, { recursive: true });
 });
 
 test('agent-written files: deferred checks and round counts in every shape become plain values', async () => {

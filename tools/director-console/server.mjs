@@ -88,6 +88,7 @@ const GET = {
   '/api/records': (q) => lib.searchRecords(q.get('q') ?? '', q.get('project') ?? ''),
   '/api/record': (q) => lib.record(q.get('id')),
   '/api/pilot': (q) => lib.pilotReport(q.get('project')),
+  '/api/draft-info': (q) => lib.draftInfo(q.get('project'), q.get('slice')),
   '/api/playbook': () => lib.playbook(),
   '/api/recipe': (q) => ({ path: q.get('path'), text: lib.recipeText(q.get('path')) }),
   '/api/actions': () => ({ actions: lib.ACTION_NAMES, log: lib.actionLog() }),

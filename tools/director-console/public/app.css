@@ -431,3 +431,17 @@ iframe.score { width: 100%; height: 78vh; border: 2px solid var(--border); borde
   .qrow { grid-template-columns: 56px minmax(0, 1fr) 44px; } .qrow .reset { display: none; }
   .qlegend { grid-template-columns: auto minmax(0, 1fr) auto; } .qlegend .rest { grid-column: 2 / -1; margin-bottom: 4px; }
 }
+
+/* verdict cards: what each row means (draft card, pilot page) */
+.vrow2 { display: flex; flex-direction: column; gap: 8px; padding: 12px 0; border-top: 2px solid var(--border); }
+.vclaim { font-size: 14.5px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; }
+.vevid { font-size: 13px; }
+.vevid > b { font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+.vcounts { display: inline-flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.vc { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; font-size: 13px; }
+.vc.zero { opacity: .4; font-weight: 500; }
+.vguide { margin: 8px 0 12px; }
+.vguide > summary { cursor: pointer; font-weight: 700; font-size: 13.5px; }
+.vguide-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.vg-card { border: 2px solid var(--border); border-left: 8px solid var(--vc); border-radius: 10px; padding: 10px 12px; background: var(--surface); display: flex; flex-direction: column; gap: 6px; }
+.vg-h { display: flex; align-items: center; gap: 8px; font-size: 14px; }
