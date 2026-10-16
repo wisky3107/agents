@@ -510,6 +510,67 @@ test('reusableSmoke: the newest full-corpus report written after the last change
   assert.equal(reusableSmoke(path.join(ev, 'nope'), corpus, 0), null);
 });
 
+test('reusableSmoke: several full runs since the last change → the fewest reds is reused, the others name the flaky checks (pilot 24 S38)', () => {
+  const ev = fs.mkdtempSync(path.join(os.tmpdir(), 'check-slice-flaky-'));
+  const corpus = ['a.check.js', 'b.check.js', 'c.check.js'];
+  const put = (f, j, ageS) => { fs.writeFileSync(path.join(ev, f), typeof j === 'string' ? j : JSON.stringify(j)); const t = Date.now() / 1000 - ageS; fs.utimesSync(path.join(ev, f), t, t); };
+  const run = (...st) => ({ checks: corpus.map((file, i) => ({ file, status: st[i] })) });
+  put('smoke-rerun-1.json', run('PASS', 'PASS', 'FAIL'), 30);  // the quiet run: only the known red
+  put('smoke.json', run('FAIL', 'PASS', 'FAIL'), 10);           // a loaded rerun overwrote smoke.json
+  put('smoke-rerun-2.json', '{"checks": [', 1);                // still being written: skipped
+  const r = reusableSmoke(ev, corpus, Date.now() - 100 * 1000);
+  assert.equal(r.file, 'smoke-rerun-1.json');
+  assert.equal(r.runs, 2);
+  assert.deepEqual(r.flaky, ['a']);
+  assert.deepEqual(reusableSmoke(ev, corpus, Date.now() - 20 * 1000).flaky, [], 'one run after the change: nothing to compare');
+});
+
+test('smokeVerdict: a red the slice did not touch, green when rerun on a fresh page, is a WARN; red again stays a FAIL', () => {
+  const full = { checks: [pass('S01-a'), fail('S13-01'), fail('S17-02'), fail('S03-04')] };
+  const known = { 'S03-04': { since: 'S10', followup: 'F-1' } };
+  const cold = [{ file: 'S13-01.check.js', report: { checks: [pass('S01-a'), pass('S13-01')] } },
+    { file: 'S17-02.check.js', report: { checks: [pass('S01-a'), fail('S17-02', { n: 0 })] } }];
+  const r = smokeVerdict(full, cold, known, known, ['S13-01.check.js', 'S17-02.check.js']);
+  assert.equal(r.status, 'FAIL');
+  assert.deepEqual(r.lines, ['red: S17-02 FAIL — n', 'red in the full run, green on a fresh page with its slice\'s earlier checks (flaky under load or order): S13-01 FAIL — n']);
+  assert.match(r.note, /4 checks, 3 red \(1 known, 1 green on a fresh page\), 0 new\/changed run on a fresh page/);
+  const ok = smokeVerdict({ checks: [pass('S01-a'), fail('S13-01')] }, cold.slice(0, 1), {}, {}, ['S13-01.check.js']);
+  assert.equal(ok.status, 'WARN', JSON.stringify(ok));
+});
+
+test('end to end: an untouched check red in the full run is rerun on a fresh page; green there is a WARN, red again a FAIL (pilot 24 S38)', () => {
+  const { d, g } = repo();
+  // fake run-smoke: FLAKY is red in a run of more than 3 checks (the loaded full corpus), green on a small page; RED is red
+  const fake = path.join(d, 'fake-smoke.mjs');
+  fs.writeFileSync(fake, `import fs from 'node:fs';
+const a = process.argv.slice(2); const dir = a[a.indexOf('--checks') + 1];
+const files = fs.readdirSync(dir).filter((f) => f.endsWith('.check.js')).sort();
+const checks = files.map((f) => { const t = fs.readFileSync(dir + '/' + f, 'utf8'); const id = f.replace(/^\\d{3}~/, '').replace('.check.js', '');
+  return { id, file: f, status: t.includes('RED') || (t.includes('FLAKY') && files.length > 3) ? 'FAIL' : 'PASS' }; });
+fs.appendFileSync(process.env.FAKE_LOG, files.join(',') + '\\n');
+console.log(JSON.stringify({ ok: checks.every((c) => c.status === 'PASS'), checks }));`);
+  const env = { ...process.env, CHECK_SLICE_SMOKE_RUNNER: fake, CHECK_SLICE_CACHE_DIR: path.join(d, '.cache-baseline'), FAKE_LOG: path.join(d, 'fake.log') };
+  const run = (...a) => spawnSync(process.execPath, [SCRIPT, '--root', d, '--only', 'smoke', '--slice', 'slices/S12-x.md', '--port', '7458', ...a], { encoding: 'utf8', env });
+  fs.mkdirSync(path.join(d, 'scripts/smoke/checks'), { recursive: true });
+  fs.writeFileSync(path.join(d, 'scripts/smoke/checks/S01-boot.check.js'), '// suite gate\n');
+  fs.writeFileSync(path.join(d, 'scripts/smoke/checks/S13-01.check.js'), '// FLAKY under load\n');
+  fs.writeFileSync(path.join(d, 'scripts/smoke/checks/S17-02.check.js'), '// RED for real\n');
+  g('add', '-A'); g('commit', '-qm', 'S11');
+  fs.writeFileSync(path.join(d, 'scripts/smoke/checks/S12-new.check.js'), '// the slice\'s check\n');
+  let r = run();
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /FAIL smoke: 4 checks, 2 red \(0 known, 1 green on a fresh page\), 1 new\/changed run on a fresh page/);
+  assert.match(r.stdout, /red: S17-02 FAIL/);
+  assert.match(r.stdout, /red in the full run, green on a fresh page[^\n]*S13-01 FAIL/);
+  const log = fs.readFileSync(path.join(d, 'fake.log'), 'utf8').trim().split('\n');
+  assert.deepEqual(log.slice(1).map((l) => l.replace(/\d{3}~/g, '')), ['S01-boot.check.js,S12-new.check.js', 'S01-boot.check.js,S13-01.check.js', 'S01-boot.check.js,S17-02.check.js'], 'the slice\'s own check first, then the reruns');
+  fs.writeFileSync(path.join(d, 'scripts/smoke/known-red.json'), JSON.stringify({ 'S17-02': { since: 'S11', followup: 'F-7' } }));
+  g('add', '-A'); g('commit', '-qm', 'ledger');
+  r = run();
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, /WARN smoke: 4 checks, 2 red \(1 known, 1 green on a fresh page\)/);
+});
+
 test('smokeArgs / smokeEstimateMs / smokeGroups: project flags minus the gate\'s own, a delay-based estimate, slice chains', () => {
   assert.deepEqual(smokeArgs('["--delay", "12000", "--viewport", "1080x1920", "--channel", "orca", "--quiet", "--port", "1"]'), ['--delay', '12000', '--viewport', '1080x1920']);
   assert.deepEqual(smokeArgs('{"args": ["--delay", "500"]}'), ['--delay', '500']);

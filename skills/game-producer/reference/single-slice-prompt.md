@@ -92,7 +92,8 @@ Build:
    Then `node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice <SLICE_FILE> --base <BASE> --out <EVIDENCE_DIR>/static-check.txt` must
    not end RESULT FAIL: it runs tsc, the ES5 web build, EVERY spec in tests/ (old ones too), slice
    scope, the smoke-guard lint, the docs/evidence/ paths the slice names, the integration-notes
-   sections below, and the whole smoke corpus (your smoke.json is reused when it is newer than your
+   sections below, and the whole smoke corpus (a rerun with no code change goes to smoke-rerun-<n>.json, never
+   over smoke.json; your smoke.json is reused when it is newer than your
    last change) plus each new or changed check alone on a fresh page. A check red because of work
    outside this slice goes into scripts/smoke/known-red.json (`"<id>": {"since", "followup", "reason"}`);
    fix every other red one. Declare each WARN scope line in integration-notes.md; measure each WARN assumptions value from

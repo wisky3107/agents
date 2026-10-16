@@ -823,7 +823,7 @@ function resumeWriter(ctx, s, why) {
  * The gate reuses the writer's last full smoke run only when it is newer than every change (pilot 24 S31: after fix
  * round 1 no full run was saved, the corpus did not fit the gate's budget, and the slice merged without one).
  */
-const fullSmokeLine = (evidence) => `After your last change run the WHOLE smoke corpus once (run-smoke.mjs with the flags in scripts/smoke/run-args.json) > ${path.join(evidence, 'smoke.json')} — check-slice reuses it.`;
+const fullSmokeLine = (evidence) => `After your last change run the WHOLE smoke corpus once (run-smoke.mjs with the flags in scripts/smoke/run-args.json) > ${path.join(evidence, 'smoke.json')} — check-slice reuses it. Another full run without a code change goes to smoke-rerun-<n>.json, never over smoke.json.`;
 
 /**
  * Pilot 24 S38/S39: a review that ends CHANGES_REQUESTED on findings only the director can settle (a contract
