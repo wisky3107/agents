@@ -12,11 +12,14 @@ runtime closed the connection" while an about:blank tab answers at once. The bui
 `orca tab switch --page <id> --focus` only selects the tab inside Orca; it does not make the pane
 visible.
 
-1. **Run smoke with `--channel auto`** (the default command for writers, integrators and
-   reviewers): `node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT> --channel auto`.
-   On an Orca infra error it reruns the same checks in Playwright + real Google Chrome headless on
-   the GPU and reports `channel: "chrome"` with `fallback: { from: "orca", reason }`. A check FAIL on
-   Orca is a real failure, never a reason to switch.
+1. **Run smoke with `--channel chrome`** (writers, integrators, reviewers and the post-merge verifier,
+   slice checks and the whole corpus alike; check-slice's gate always did):
+   `node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT> --channel chrome`.
+   `--channel auto` only falls back on an Orca infra error (page never ready, runtime dead); a tab that
+   was ready and then starves mid-run (another preview became the visible pane, the Editor reopened)
+   makes plain check FAILs, which never switch. Pilot 24 (2026-10-16, two lanes = two previews in one
+   Orca window): S38's full run on orca read 20 reds and the post-merge verify of S39 19, with empty-page
+   reads (sprites 0, requested false); the same code on chrome had only the 7 known reds.
    A report with no `channel` field comes from a project whose run-smoke predates the fallback
    (it ignores the flag): run `/update-skills`, or run the same check files by hand in Chrome with the
    snippet from the template's smoke-test SKILL.md §Chrome headless fallback, and save the JSON.

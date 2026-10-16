@@ -60,7 +60,7 @@ worktree on this project or the feature worktree you create from it.
    Art: obey ASSET_MANIFEST Source=import/generate for all listed stems (2D/font/mesh/VFX).
    Import existing suitable rip assets; generated concepts/meshes are only for generate rows.
 7. Review outcomes: INFRA_BLOCKED for a frozen Orca tab (rAF 0, hasFocus false, "closed the
-   connection") is wrong — re-dispatch the reviewer with run-smoke `--channel auto` and the Chrome
+   connection") is wrong — re-dispatch the reviewer with run-smoke `--channel chrome` and the Chrome
    headless runtime review (cocos-orca-fleet/reference/orca/frozen-tab.md); never ask the director.
    Other INFRA_BLOCKED → not a fix round; curl the port yourself — 200 means the
    reviewer environment cannot reach localhost → same review Task on `cursor --model auto`.

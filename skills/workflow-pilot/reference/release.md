@@ -9,9 +9,9 @@ A pilot never deploys on its own. When the user asks to ship what the pilot merg
    `OG_BASE_URL=<prod url> build/build.sh --clean` and confirm `build-info.json` and the
    absolute og:image.
 3. **Local smoke.** Serve `build/web-mobile` on a free port (check with `lsof` first; never
-   reuse another project's server). Open a fresh Orca tab with `--worktree path:<project>`
-   and run `run-smoke.mjs --port <p> --channel auto --page <id> --expect-title "<title>" --viewport
-   720x1280`. All checks must pass.
+   reuse another project's server) and run `run-smoke.mjs --port <p> --channel chrome --expect-title
+   "<title>" --viewport 720x1280` (Chrome headless: an Orca tab starves behind another preview). All
+   checks must pass.
 4. **Deploy from a temp dir without git.**
    - Copy the build in, delete any `.vercel`, run `npx vercel link --project <name> --scope <team> --yes`, then delete `.env.local` and `.gitignore`.
    - Then `npx vercel deploy --prod --yes --scope <team>`.

@@ -823,7 +823,7 @@ function resumeWriter(ctx, s, why) {
  * The gate reuses the writer's last full smoke run only when it is newer than every change (pilot 24 S31: after fix
  * round 1 no full run was saved, the corpus did not fit the gate's budget, and the slice merged without one).
  */
-const fullSmokeLine = (evidence) => `After your last change run the WHOLE smoke corpus once (run-smoke.mjs with the flags in scripts/smoke/run-args.json) > ${path.join(evidence, 'smoke.json')} — check-slice reuses it. Another full run without a code change goes to smoke-rerun-<n>.json, never over smoke.json.`;
+const fullSmokeLine = (evidence) => `After your last change run the WHOLE smoke corpus once (run-smoke.mjs --channel chrome with the flags in scripts/smoke/run-args.json) > ${path.join(evidence, 'smoke.json')} — check-slice reuses it. Another full run without a code change goes to smoke-rerun-<n>.json, never over smoke.json.`;
 
 /**
  * Pilot 24 S38/S39: a review that ends CHANGES_REQUESTED on findings only the director can settle (a contract
@@ -1130,7 +1130,7 @@ function infraBlocked(ctx, s) {
   if (!io.closeTerminal(s.reviewer)) st.log(root, ctx.id, `could not confirm reviewer ${s.reviewer} closed`);
   const code = port ? io.httpStatus(port) : 0;
   // a frozen Orca tab (no frames while its pane is hidden) is not a sandbox that cannot reach
-  // localhost: one fresh reviewer, whose prompt runs smoke with --channel auto → Chrome headless
+  // localhost: one fresh reviewer, whose prompt runs smoke on --channel chrome (Chrome headless)
   // (cocos-orca-fleet/reference/orca/frozen-tab.md; cc-firefighter-kids S01 lost 3 rounds to it)
   if (code === 200 && !s.frozen_retry && isFrozenTab(readText(st.reviewFiles(evidenceDir(co(ctx), ctx.id)).verdict))) {
     st.log(root, ctx.id, `INFRA_BLOCKED for a frozen Orca tab while 127.0.0.1:${port} answers 200: a fresh reviewer with the Chrome headless fallback`);

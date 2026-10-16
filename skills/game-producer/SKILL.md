@@ -537,8 +537,8 @@ when it was the only blocker/major, the verdict counts as APPROVED. `gate:<pct>`
 `INFRA_BLOCKED` (review.md last line): not a fix round, no notes entry beyond one line. Your own
 `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<port>/` → 200 and the review names a
 frozen Orca tab (rAF 0, hasFocus false, "never became ready", "closed the connection") ⇒ one fresh
-reviewer of the same agent: its prompt runs smoke with `--channel auto`, which falls back to Chrome
-headless (cocos-orca-fleet/reference/orca/frozen-tab.md). Otherwise 200 ⇒ the reviewer agent
+reviewer of the same agent: its prompt runs smoke on `--channel chrome` (Chrome headless, the gate's
+channel; cocos-orca-fleet/reference/orca/frozen-tab.md). Otherwise 200 ⇒ the reviewer agent
 cannot reach localhost: spawn the same review on `cursor --model auto` and lock that for the
 rest of the run. Non-200 ⇒ integrator recovery, then a fresh review. `producer-runner.mjs`
 launches every reviewer with bootstrap's current command, so there is no stale launch to correct

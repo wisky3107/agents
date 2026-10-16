@@ -82,13 +82,14 @@ Build:
    the <Sxx>-* checks and any check you are fixing into a temp dir and add `--checks <dir>` (a full run takes
    minutes, a slice's checks seconds). A check that opens a popup or calls the server the next check reads
    carries its own `// DELAY: <ms>` header (the pause after it; the run's --delay may be 300 ms). Run the whole corpus ONCE, after your last code change:
-   node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT> --channel auto, plus the flags in
-   scripts/smoke/run-args.json when it exists, > <EVIDENCE_DIR>/smoke.json must be green; that last full run
+   node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT> --channel chrome, plus the flags in
+   scripts/smoke/run-args.json when it exists, > <EVIDENCE_DIR>/smoke.json must be green (the gate's channel; an Orca tab starves whenever another preview is the visible pane, also mid-run: pilot 24 S38/S39 read 19-20 false reds on orca, the 7 known on chrome); that last full run
    is the one that file keeps (check-slice reuses it). A red check in it is fixed or ledgered and rerun
    alone, not with a second full run;
    play the feel rows once; batch state reads into one eval. Screenshots: ONE preview.png total.
-   A frozen Orca tab falls back to Chrome headless by itself (`channel` in the JSON;
-   ~/.agents/skills/cocos-orca-fleet/reference/orca/frozen-tab.md); play the feel rows there too.
+   Every smoke run (slice checks and the whole corpus) uses `--channel chrome`; the Orca tab is for the
+   feel rows by eye, and when it is frozen play them in Chrome too
+   (~/.agents/skills/cocos-orca-fleet/reference/orca/frozen-tab.md).
    Then `node .cursor/skills/cocos-orca-fleet/scripts/check-slice.mjs --slice <SLICE_FILE> --base <BASE> --out <EVIDENCE_DIR>/static-check.txt` must
    not end RESULT FAIL: it runs tsc, the ES5 web build, EVERY spec in tests/ (old ones too), slice
    scope, the smoke-guard lint, the docs/evidence/ paths the slice names, the integration-notes
@@ -160,11 +161,11 @@ not explain it, you may run one stuck lookup: `M=~/.orca-memory/bin/orca-memory;
    the last change plus every new or changed check alone on a fresh page) is the verdict for every
    state-answerable acceptance row; do not rerun the whole corpus and do not replay rows by hand. Run
    this slice's checks yourself once: copy scripts/smoke/checks/S01-00-boot.check.js and the <Sxx>-*
-   checks into a temp dir, then `node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT> --channel auto --checks <dir>`, plus the flags in scripts/smoke/run-args.json when it exists (the gate and the writer ran with them; without them a viewport-pinned check reads red).
+   checks into a temp dir, then `node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <PORT> --channel chrome --checks <dir>` (chrome like the gate: a starved Orca tab reads false reds), plus the flags in scripts/smoke/run-args.json when it exists (the gate and the writer ran with them; without them a viewport-pinned check reads red).
    Run the whole corpus only when static-smoke.json is missing, older than the last code change, or
    its smoke line in static-check.txt is not PASS. A row with no check
-   although state could answer it is a minor finding (owner code). A frozen Orca tab falls back to
-   Chrome headless by itself; run the feel, pointer and viewport rows in that Chrome too
+   although state could answer it is a minor finding (owner code). When the Orca tab is frozen, run the
+   feel, pointer and viewport rows in Chrome too
    (~/.agents/skills/cocos-orca-fleet/reference/orca/frozen-tab.md §3) and name the channel. A
    frozen tab is never INFRA_BLOCKED.
 2. Play only the feel rows and the slice `playtest` steps smoke cannot express (Orca browser,
