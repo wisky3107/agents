@@ -32,8 +32,9 @@ const ALLOW = {
   lane_blocked: (o) => o === 'send this answer to the lane',
   unknown_status: (o) => ['treat as working, keep waiting', 'treat as ready_for_review', 'treat as changes_requested', 'treat as offer_commit'].includes(o),
   verdict_mismatch: (o) => ['treat as approved', 'treat as changes_requested'].includes(o),
-  // a fleet-driver worker's own `ask` (fleet.coordinator: script): the answer is text and must quote the contracts
-  worker_question: (o) => o === 'answer with --text',
+  // a fleet-driver worker's own `ask` (fleet.coordinator: script): a text answer or one of the worker's own options
+  // (never a halting one, like a gate's; capytal S44 q42 offered a/b and the judge could pick neither); quote required
+  worker_question: (o) => o === 'answer with --text' || (o !== 'stop' && !/^(?:[A-Z][:.)]\s*)?(?:stop|halt|abandon|skip|mark blocked|give up)\b|\breport\s+fail/i.test(o.trim())),
 };
 // Not here on purpose: coordinator_question (a keystroke relay into the coordinator's codex panel, whose
 // options are screen text, not contract wording) and director_pending (the coordinator itself said the
