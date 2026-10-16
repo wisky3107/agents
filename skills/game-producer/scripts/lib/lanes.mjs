@@ -2272,6 +2272,7 @@ function scriptStep(ctx, s, phase) {
 }
 
 function scriptCommit(ctx, s) {
+  rebindRun(ctx, s);
   driver.commit(driverCtx(ctx, s));
   setPhase(ctx.project.root, ctx.id, 'committing', commitMarks(ctx));
   return null;
@@ -2279,6 +2280,8 @@ function scriptCommit(ctx, s) {
 
 /** An answer to a driver question goes back to the driver; the runner's stop / mark blocked never reach here. */
 function scriptAnswer(ctx, s, q) {
+  // an answer reaches the driver before the lane's next step: bind the Run first (capytal S44 q30: consumer_fenced)
+  rebindRun(ctx, s);
   const text = q.answer.text || '';
   if (q.kind === 'fleet_infra' && q.answer.choice === 'review again on the reviewer given in --text' && text.trim()) st.writeRunner(ctx.project.root, { reviewer_override: text.trim() });
   const choice = q.answer.choice === 'answer with --text' ? text : q.answer.choice;

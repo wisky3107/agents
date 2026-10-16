@@ -198,3 +198,19 @@ test('artDir: the folder the art roles own, from folders, globs or the files a s
   assert.equal(artDir(['assets/art/ui/*.png', 'assets/art/fx/']), 'assets/art');
   assert.equal(artDir([]), 'assets/art');
 });
+
+test('script lane: an answer applied right after a restart in another terminal binds the Run before the driver acts on it', () => {
+  const p = scriptProject();
+  const f = fakes();
+  fs.writeFileSync(path.join(f.dir, 'worker-start-fail'), '');
+  inbox(f, [{}]);
+  run(p.root, f, { ORCA_TERMINAL_HANDLE: 'term_a' });
+  const q = questions(p.root)[0];
+  assert.equal(q.kind, 'fleet_worker_start');
+  runner(p.root, f, 'answer', '--id', q.id, '--choice', 'retry');
+  inbox(f, [{}]);
+  run(p.root, f, { ORCA_TERMINAL_HANDLE: 'term_b' });
+  const log = fleetLog(f);
+  const use = log.findIndex((x) => x.op === 'run-use'), retry = log.findIndex((x) => x.op === 'worker-start');
+  assert.ok(use >= 0 && use < retry, 'run-use before the retried worker-start');
+});
