@@ -170,3 +170,18 @@ test('specFor: fix rows, decisions and memory ride on the spec; findRow searches
   assert.match(spec, /MEMORY: \/m\/pack\.md\nDirector decisions: keep coin/);
   assert.equal(findRow({ a: { b: [{ stem: 'x', v: 1 }] } }, 'x').v, 1);
 });
+
+test('retry when the failed dispatch was lost from fleet-driver.json: Orca still names it (dispatch-show), the replacement retries it', () => {
+  const io = fakeOrca({ failStart: 1 });
+  const { ctx, questions } = context({ io });
+  tick(ctx);
+  // the state an older driver left (capytal S44): failedDispatch dropped, the Task failed in Orca
+  const d = load(ctx);
+  delete d.tasks['implement#1'].failedDispatch;
+  fs.writeFileSync(path.join(ctx.sliceDir, 'fleet-driver.json'), JSON.stringify(d));
+  io.dispatches[d.tasks['implement#1'].task] = { id: 'ctx_failed', status: 'failed', handle: 'term_gone' };
+  answer(ctx, questions[0].ref, 'retry');
+  const last = io.calls.filter(([n]) => n === 'workerStart').at(-1)[1];
+  assert.equal(last.retryOf, 'ctx_failed');
+  assert.ok(load(ctx).tasks['implement#1'].dispatch && !load(ctx).tasks['implement#1'].intent);
+});

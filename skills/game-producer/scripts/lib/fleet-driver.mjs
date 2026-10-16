@@ -174,7 +174,10 @@ function startTask(ctx, d, name) {
   }
   if (rec.intent === 'start') { // killed after worker-start was sent: adopt a live dispatch
     const live = io.dispatchShow(rec.task);
-    if (live && !/failed|abandoned/.test(live.status)) { Object.assign(rec, { dispatch: live.id, handle: live.handle }); delete rec.intent; return; }
+    if (live && !/failed|abandoned|stopped/.test(live.status)) { Object.assign(rec, { dispatch: live.id, handle: live.handle }); delete rec.intent; return; }
+    // a failed or stopped attempt Orca still names is what the replacement retries, even when this file lost it
+    // (capytal S44: an older driver dropped failedDispatch before the retry)
+    if (live && /failed|stopped/.test(live.status) && !rec.failedDispatch) rec.failedDispatch = live.id;
   }
   rec.intent = 'start'; save(ctx, d);
   const terminal = t.reuse ? d.tasks[key(d, t.reuse)]?.handle : null;
