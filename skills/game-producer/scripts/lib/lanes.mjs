@@ -105,7 +105,9 @@ function previewPort(file, checkout) {
     const j = JSON.parse(fs.readFileSync(file, 'utf8'));
     const p = j.projectPath && path.resolve(j.projectPath);
     if (checkout && p && fs.existsSync(p) && p !== path.resolve(checkout)) return null;
-    return Number(new URL(j.previewUrl).port) || null;
+    // `previewUrl` is the prompt's key; a writer may save run_project_preview's `url` (pilot 24 S39)
+    const url = j.previewUrl || j.url || j.preview_url || j.preview?.url;
+    return (url && Number(new URL(url).port)) || Number(j.port) || null;
   } catch {
     return null;
   }

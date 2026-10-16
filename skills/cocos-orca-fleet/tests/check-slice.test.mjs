@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { specCommands, slicePaths, outOfScope, nanUnsafe, es5Errors, sliceFacts, evidenceRe, section, classifyErrors, assumptionNotes, errorKey, splitAgainstBaseline, renameMap, defaultBase, smokeVerdict, smokePort, parseKnownRed, reusableSmoke, smokeArgs, smokeEstimateMs, smokeGroups, smokeGate, sceneFindings, textWidth, splitScene, headerDelayMs, measuredSmokeMs } from '../scripts/check-slice.mjs';
+import { specCommands, slicePaths, outOfScope, nanUnsafe, es5Errors, sliceFacts, evidenceRe, section, classifyErrors, assumptionNotes, errorKey, splitAgainstBaseline, renameMap, defaultBase, smokeVerdict, smokePort, previewUrlPort, parseKnownRed, reusableSmoke, smokeArgs, smokeEstimateMs, smokeGroups, smokeGate, sceneFindings, textWidth, splitScene, headerDelayMs, measuredSmokeMs } from '../scripts/check-slice.mjs';
 
 const SCRIPT = new URL('../scripts/check-slice.mjs', import.meta.url).pathname;
 
@@ -424,6 +424,12 @@ test('smokePort / parseKnownRed: --port wins, else previewUrl of the slice evide
   fs.mkdirSync(ev, { recursive: true });
   fs.writeFileSync(path.join(ev, 'preview-startup.json'), JSON.stringify({ previewUrl: 'http://localhost:7458/', status: 'ready' }));
   assert.equal(smokePort(d, {}, 'S12'), '7458');
+  // run_project_preview's own shape (pilot 24 S39: the gate skipped smoke four times on it)
+  fs.writeFileSync(path.join(ev, 'preview-startup.json'), JSON.stringify({ url: 'http://localhost:7457/', mode: 'browser', project: 'S39-x', source: 'funplay run_project_preview' }));
+  assert.equal(smokePort(d, {}, 'S12'), '7457');
+  assert.equal(previewUrlPort({ preview: { url: 'http://127.0.0.1:7460/' } }), '7460');
+  assert.equal(previewUrlPort({ port: 7461 }), '7461');
+  assert.equal(previewUrlPort({ status: 'ready' }), null);
   assert.deepEqual(parseKnownRed('{"a": {"followup": "F-1"}}'), { a: { followup: 'F-1' } });
   assert.deepEqual(parseKnownRed('[1]'), {});
   assert.deepEqual(parseKnownRed('not json'), {});
@@ -457,7 +463,7 @@ console.log(JSON.stringify({ ok: checks.every((c) => c.status === 'PASS'), check
   g('add', '-A'); g('commit', '-qm', 'S05');
 
   let r = run('--slice', 'slices/S12-x.md');
-  assert.match(r.stdout, /SKIP smoke: no preview port/);  // no --port, no preview-startup.json
+  assert.match(r.stdout, /WARN smoke: smoke not run: no preview port/);  // no --port, no preview-startup.json: never a silent SKIP
   assert.equal(r.status, 0);
 
   fs.writeFileSync(path.join(d, 'scripts/smoke/checks/S12-new.check.js'), '// COLD: reads what S05-mid left\n');

@@ -729,15 +729,23 @@ function checkScene(root, changed, all, base) {
   return { status: 'WARN', note, lines: [...fresh, ...old] };
 }
 
-/** Preview port: --port, else the slice's evidence/preview-startup.json (previewUrl). */
+/**
+ * The preview port a preview-startup.json names: `previewUrl` (the prompt's key), else `url` / `preview_url` /
+ * `preview.url` (pilot 24 S39 wrote `url` from run_project_preview and the smoke gate SKIPPED four times), else `port`.
+ */
+export function previewUrlPort(j) {
+  const url = j?.previewUrl || j?.url || j?.preview_url || j?.preview?.url || '';
+  const m = String(url).match(/:(\d+)/);
+  return m ? m[1] : j?.port ? String(j.port) : null;
+}
+
+/** Preview port: --port, else the slice's evidence/preview-startup.json. */
 export function smokePort(root, o, id) {
   if (o.port) return String(o.port);
   if (!id) return null;
   const f = path.join(root, '.cursor', 'evidence', 'tasks', `T-${id}`, 'evidence', 'preview-startup.json');
   try {
-    const j = JSON.parse(fs.readFileSync(f, 'utf8'));
-    const m = String(j.previewUrl || '').match(/:(\d+)/);
-    return m ? m[1] : j.port ? String(j.port) : null;
+    return previewUrlPort(JSON.parse(fs.readFileSync(f, 'utf8')));
   } catch { return null; }
 }
 
@@ -928,7 +936,8 @@ function checkSmoke(root, o, changed, base) {
   const src = readSlice(root, o.slice);
   const id = (src && sliceFacts(src).id) || (path.basename(o.slice || '').match(/^(S\d+[a-z]?)/i) || [])[1] || null;
   const port = smokePort(root, o, id);
-  if (!port) return { status: 'SKIP', note: `no preview port — pass --port or write .cursor/evidence/tasks/T-${id || '<Sxx>'}/evidence/preview-startup.json` };
+  // a corpus that never ran is not a pass: WARN, so the runner log and the reviewer see it (pilot 24 S39: SKIP ×4, unseen)
+  if (!port) return { status: 'WARN', note: `smoke not run: no preview port — pass --port or write .cursor/evidence/tasks/T-${id || '<Sxx>'}/evidence/preview-startup.json with "previewUrl"` };
   const known = parseKnownRed(readText(path.join(root, KNOWN_RED)));
   const knownBase = base ? parseKnownRed(git(root, 'show', `${base}:${KNOWN_RED}`)) : known;
   const deadline = Date.now() + (o.smokeBudget > 0 ? o.smokeBudget : SMOKE_BUDGET_S) * 1000;

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { project } from './harness.mjs';
 import { loadProject } from '../scripts/lib/project.mjs';
-import { laneCheckout, promptValues, sliceBase, reviewVerdict } from '../scripts/lib/lanes.mjs';
+import { laneCheckout, promptValues, sliceBase, reviewVerdict, slicePort } from '../scripts/lib/lanes.mjs';
 import * as st from '../scripts/lib/state.mjs';
 
 // Phase 2 M0 (docs/plans/2026-10-15-runner-parallel-phase2): a single lane's checkout is main unless it records
@@ -41,4 +41,14 @@ test('laneCheckout: main by default; a recorded worktree moves PROJECT, EVIDENCE
   assert.ok(fs.existsSync(path.join(p.root, '.cursor', 'evidence', 'tasks', 'T-S01', 'producer-state.json')));
   assert.equal(promptValues(proj, 'S02').PROJECT, p.root);
   spawnSync('git', ['-C', p.root, 'worktree', 'remove', '--force', wt]);
+});
+
+test('slicePort reads run_project_preview\'s `url` as well as `previewUrl` (pilot 24 S39)', () => {
+  const p = project({ slices: { S01: { needs: false } } });
+  const ev = path.join(p.root, '.cursor', 'evidence', 'tasks', 'T-S01', 'evidence');
+  fs.mkdirSync(ev, { recursive: true });
+  fs.writeFileSync(path.join(ev, 'preview-startup.json'), JSON.stringify({ url: 'http://localhost:7457/', mode: 'browser', source: 'funplay run_project_preview' }));
+  assert.equal(slicePort(p.root, 'S01'), 7457);
+  fs.writeFileSync(path.join(ev, 'preview-startup.json'), JSON.stringify({ previewUrl: 'http://localhost:7456/', projectPath: p.root }));
+  assert.equal(slicePort(p.root, 'S01'), 7456);
 });
