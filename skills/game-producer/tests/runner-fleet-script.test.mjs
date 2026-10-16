@@ -119,6 +119,8 @@ test('script lane: a failed worker-start asks (never relaunched blind); retry st
   run(p.root, f);
   const log = fleetLog(f);
   assert.deepEqual(log.filter((x) => x.op.startsWith('worker-start')).map((x) => x.op), ['worker-start-failed', 'worker-start']);
+  assert.equal(log.find((x) => x.op === 'worker-start').retryOf, 'ctx_failed', 'the replacement names the failed dispatch (else task_not_startable)');
+  assert.ok(log.some((x) => x.op === 'release' && x.dispatch === 'ctx_failed'));
 });
 
 test('script lane: a restart resumes from fleet-driver.json — nothing created or started twice', () => {

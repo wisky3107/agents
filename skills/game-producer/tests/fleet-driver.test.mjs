@@ -15,7 +15,8 @@ function fakeOrca({ failStart = 0, crashStartOnce = false } = {}) {
     dispatchShow: (task) => o.dispatches[task] ?? null,
     workerStart: (a) => {
       log('workerStart', a);
-      if (o.failStart > 0) { o.failStart--; return { ok: false, error: 'agent_not_ready', receipt: { failedStage: 'launch' }, dispatch: 'ctx_failed' }; }
+      if (o.failed?.[a.task] && a.retryOf !== o.failed[a.task]) return { ok: false, error: `task_not_startable: Task ${a.task} is failed` };
+      if (o.failStart > 0) { o.failStart--; (o.failed ??= {})[a.task] = 'ctx_failed'; return { ok: false, error: 'agent_not_ready', receipt: { failedStage: 'launch' }, dispatch: 'ctx_failed' }; }
       const id = `ctx_${++o.n}`, handle = a.terminal ?? `term_${o.n}`;
       o.dispatches[a.task] = { id, status: 'dispatched', handle };
       if (o.crashStartOnce) { o.crashStartOnce = false; throw new Error('killed after worker-start'); }
@@ -130,8 +131,9 @@ test('worker question → runner question → reply; a failed worker-start asks 
   assert.ok(!io.calls.some(([n]) => n === 'workerRelease'), 'the failed start keeps its terminal until the answer');
   answer(ctx, questions[0].ref, 'retry');
   assert.equal(io.calls.filter(([n]) => n === 'workerStart').length, 2);
+  assert.equal(io.calls.filter(([n]) => n === 'workerStart').at(-1)[1].retryOf, 'ctx_failed', 'the replacement names the failed dispatch');
   const i = io.calls.findIndex(([n, x]) => n === 'workerRelease' && x === 'ctx_failed');
-  assert.ok(i >= 0 && i < io.calls.findLastIndex(([n]) => n === 'workerStart'), 'released right before the retry');
+  assert.ok(i > io.calls.findLastIndex(([n]) => n === 'workerStart'), 'released once the replacement runs');
   io.inbox.push({ id: 'msg_q', type: 'question', dispatch: dispatchOf(io, 'implement'), question: 'Which fruit?', options: [] });
   tick(ctx);
   assert.deepEqual(questions.at(-1), { kind: 'worker_question', ref: 'msg:msg_q', text: 'implement: Which fruit?', options: null });

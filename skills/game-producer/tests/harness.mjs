@@ -240,8 +240,11 @@ if (cmd === 'orchestration dispatch-show') {
 if (cmd === 'orchestration worker-start') {
   const x = FS(), task = x.tasks.find((t) => t.id === arg('--task'));
   // worker-start-fail: one failed receipt (codex update menu, 2026-10-16 spike 2)
+  if (task.status === 'failed' && arg('--retry-of') !== task.failedDispatch) out({ ok: false, error: { code: 'task_not_startable', message: 'Task ' + task.id + ' is failed; only a ready Task can start.' } }, 1);
   if (fs.existsSync(path.join(D, 'worker-start-fail'))) {
     fs.unlinkSync(path.join(D, 'worker-start-fail'));
+    Object.assign(task, { status: 'failed', failedDispatch: 'ctx_failed' });
+    saveFS(x);
     log('fleet.log', { op: 'worker-start-failed', title: task.task_title });
     out({ ok: false, result: { failedStage: 'agent_readiness', lastError: 'Agent startup blocked: agent-update-prompt', dispatchId: 'ctx_failed' } }, 1);
   }
@@ -249,7 +252,8 @@ if (cmd === 'orchestration worker-start') {
   const id = 'ctx_f' + (++x.n), handle = reuse || 'term_fw_' + x.n;
   x.dispatches.push({ id, task: task.id, title: task.task_title, handle, status: 'dispatched' });
   saveFS(x);
-  log('fleet.log', { op: 'worker-start', title: task.task_title, agent: a.includes('--agent') ? arg('--agent') : null, model: a.includes('--model') ? arg('--model') : null, terminal: reuse, worktree: arg('--worktree') });
+  if (a.includes('--retry-of')) task.status = 'ready';
+  log('fleet.log', { op: 'worker-start', retryOf: a.includes('--retry-of') ? arg('--retry-of') : null, title: task.task_title, agent: a.includes('--agent') ? arg('--agent') : null, model: a.includes('--model') ? arg('--model') : null, terminal: reuse, worktree: arg('--worktree') });
   out({ ok: true, result: { dispatchId: id, taskId: task.id, effects: a.includes('--terminal') ? [] : [{ kind: 'terminal', role: 'agent', id: handle }] } });
 }
 if (cmd === 'orchestration check') {
