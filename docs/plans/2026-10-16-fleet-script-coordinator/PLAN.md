@@ -232,6 +232,14 @@ Mỗi mốc merge riêng và có test. Chế độ `agent` không đổi hành v
 - Test `runner-m4b.test.mjs:219` (runner không gọi `task-create|dispatch|gate-resolve`) vẫn đúng cho chế độ
   `agent`. Thêm assertion ngược cho chế độ `script`: không có `gate-create`.
 
+### Sự cố ở pilot M5 (capytal S44, 2026-10-16)
+
+| Giờ (Z) | Sự cố | Nguyên nhân | Sửa |
+|---|---|---|---|
+| 15:45 | q28 `worker_escalation` thừa từ art-manifest | card art bảo worker gửi status tới handle; driver không đưa handle nào → worker báo lên Run | `e97f12d`: không có handle thì bỏ bước gửi |
+| 15:46 | q29 `fleet_worker_start` art-2d: codex `agent-update-prompt` | codex 0.161 hiện menu cập nhật (dự đoán trước) | pilot chọn "Skip until next version" rồi `retry` |
+| 15:47 | q30 `task_not_startable` khi retry | start lỗi để Task ở trạng thái failed; retry phải có `--retry-of`; driver 194d434 còn xoá `failedDispatch` trước khi start | `1f74497` (retry có `--retry-of`, release sau khi start lại) + `77a48d0` (mất record → lấy dispatch failed từ `dispatch-show`) |
+
 ### Phát hiện ở M3 (spike 2, 2026-10-16, Orca 1.4.218)
 
 - `task-create` → `result.task.id`; `task-list` trả `task_title`, nên reconcile sau kill dùng title
