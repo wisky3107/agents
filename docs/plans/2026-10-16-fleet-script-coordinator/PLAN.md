@@ -219,7 +219,7 @@ Mỗi mốc merge riêng và có test. Chế độ `agent` không đổi hành v
 | **M2** Hợp đồng reviewer ✅ | Cột owner của `## fix_routing` là một từ cố định: code / scene / asset / concept / mesh / anim / infra / director / unclear / followup, có thể kèm `(lý do)`. `review-check.mjs` kiểm dòng verdict, ids, owner, scope nằm trong slice paths; gom nhóm theo owner, báo `infra_only`. Reviewer tự chạy trước `worker_done`. Coordinator LLM dùng `fix_groups`. Trên 127 review thật: 108 đạt hợp đồng mới. | **có**: coordinator chép bảng thay vì đọc văn xuôi | thấp |
 | **M3** Lõi DAG + IO ✅ | `game-producer/scripts/lib/fleet-dag.mjs` (thuần, 9 test kịch bản) + `fleet-driver.mjs` (intent → act → record, reconcile sau kill, 7 test với io giả) + wrapper trong `orca.mjs`; card `commit` trong WP; owner concept/mesh/anim phải ghi `(stem)`. Đã kiểm wrapper với Orca thật (spike 2). Harness end-to-end của runner (fake orca thêm lệnh) chuyển sang M4. | — | trung bình |
 | **M4** Nối vào runner ✅ (nhánh `feat/fleet-script-m4`) | `fleet.coordinator: script` → `fleet_mode` ghim theo slice (slice có rip study vẫn chạy agent). `scriptStep` trong lanes.mjs: setup (worktree, pointer PLAN qua plan-check, `run-create`) → `fleet` (driver tick, câu hỏi driver = câu hỏi runner với ref `drv:`) → accept (FLEET_EVIDENCE do driver viết: stats.json, final-report.md) → commit (Task `commit` trên terminal implement) → committedTo → merge của fleet. `run-use` khi runner đổi terminal. INFRA: tự curl và đổi reviewer như single lane, không được thì hỏi `fleet_infra`. Judge được trả lời `worker_question` (phải trích contracts). Scanner rẻ (cursor) → Sonnet vì phải viết work order. Harness: fake orca thêm run-create/task-create/task-list/dispatch-show/worker-start/check/reply/worker-release/worker-stop + `fleet-queue.json`. 8 test runner (lite trọn tới merge+verify, full có art-2d, fix round, câu hỏi worker, worker-start lỗi, restart không trùng, run-use, chế độ agent giữ nguyên). Runner 244/244. Chưa có: `status`/pilot-wait hiện DAG; check-slice trước commit (commit-guard của Task commit thay). | — | **cao** |
-| **M5** Pilot | 2 slice L trên một project director chọn: (1) một slice `lite`, (2) một slice có art 3D. `workflow-pilot` watch như thường. So với 5 slice fleet gần nhất: tiêu chí §1, wall time, câu hỏi, sự cố. Ghi vào `results.md`. **Gate:** đạt §1.1, 1.3–1.6, không có sự cố mới do driver → M6. Ngược lại sửa rồi pilot lại, tối đa 2 vòng, sau đó báo director. | — | trung bình |
+| **M5** Pilot (#1 xong: capytal S44) | 2 slice L trên một project director chọn: (1) một slice `lite`, (2) một slice có art 3D. `workflow-pilot` watch như thường. So với 5 slice fleet gần nhất: tiêu chí §1, wall time, câu hỏi, sự cố. Ghi vào `results.md`. **Gate:** đạt §1.1, 1.3–1.6, không có sự cố mới do driver → M6. Ngược lại sửa rồi pilot lại, tối đa 2 vòng, sau đó báo director. | — | trung bình |
 | **M6** Rollout | Mặc định `fleet.coordinator: script` trong 4 template + các project đang chạy (director duyệt từng project). S / WP: ghi coordinator LLM chỉ còn cho standalone và branch C. Cập nhật `failure-signatures.md`, `docs/workflow-map/`, memory. | — | thấp |
 
 **Thứ tự và xung đột với phase 2:**
@@ -231,6 +231,37 @@ Mỗi mốc merge riêng và có test. Chế độ `agent` không đổi hành v
 - Không đụng `startLanes` (`producer-runner.mjs:802–1038`) hay `fleetStep`.
 - Test `runner-m4b.test.mjs:219` (runner không gọi `task-create|dispatch|gate-resolve`) vẫn đúng cho chế độ
   `agent`. Thêm assertion ngược cho chế độ `script`: không có `gate-create`.
+
+### Kết quả pilot M5 #1 — capytal S44 island-view-fit (2026-10-16, fleet đầy đủ, `fleet.coordinator: script`)
+
+| Đo | S44 (script) | Baseline |
+|---|---|---|
+| Kết quả | merged `2ab86b26` (merge `8e33d835`), verified, done 18:20Z; `retained: []` | — |
+| Wall (chọn → merge) | **2h28m** (15:40:12 → 18:07:49Z), trong đó khoảng 25 phút mất vì lỗi driver và 4 lần restart | S38–S43 single M: 1h34m–4h06m (trung vị khoảng 3h15m) |
+| Token coordinator (fleet-orch) | **0** | coordinator agent: 6–28M/slice (cat-dash, monster-truck) |
+| Token worker | claude 48.9M (4 phiên) + codex 3.7M + cursor (không đo được) ≈ **52.6M** | single S38–S43: 22.0–49.6M (TB khoảng 34M); fleet agent trước đây: khoảng 85M/slice (car-service), 95–300M (cat-dash) |
+| Task | 11: scan, art-manifest, implement, art-2d, integrate, review, fix1-code, fix1-scene, review-r2, commit (+1 retry art-2d) | — |
+| Review / fix | 2 vòng review, 1 vòng fix (F1 tách scene+code, chép từ `fix_routing`, không có câu hỏi) | — |
+| Câu hỏi | 15 = 2 thật (q38, q42) + 1 môi trường (q29, menu codex) + **12 do lỗi driver** | — |
+| Lỗi driver | 7, đã sửa hết: e97f12d, 1f74497+77a48d0, 100559d, 6875811, d301a4a, 9d38e2d, 26b231f (judge) | — |
+
+**Kết luận:**
+- **Luồng chính đúng thiết kế:**
+  - setup khoảng 30 s;
+  - scan viết work order có trích nguồn;
+  - DAG fan-out (art-manifest ∥ implement → art-2d);
+  - chuỗi terminal implement → integrate → fix → commit;
+  - reviewer mới mỗi vòng;
+  - `fix_routing` được chép máy móc;
+  - accept, commit Task, merge và verify của fleet;
+  - release hết terminal.
+- **Token:** coordinator biến mất (−6…28M so với fleet agent). Cả slice fleet đầy đủ chỉ khoảng 52.6M, nằm trong dải của slice single cùng dự án, thấp hơn nhiều so với fleet agent trước đây. So sánh chỉ mang tính tham khảo vì khác loại slice.
+- **Độ tin cậy:** 7 lỗi, tất cả ở các đường chỉ test trong harness: restart / `run-use` / retry / nội dung Delivery / card art. Sau các bản sửa, các câu hỏi nhiễu không còn xuất hiện.
+- **Trước M6 (đổi mặc định):**
+  1. pilot #2 trên một slice L chạy trọn trên code đã sửa, không restart giữa chừng;
+  2. spike live cho restart giữa lane và retry start lỗi;
+  3. `status` hiện DAG;
+  4. thử với dự án có art 3D (concept/mesh).
 
 ### Sự cố ở pilot M5 (capytal S44, 2026-10-16)
 
