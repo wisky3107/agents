@@ -64,6 +64,7 @@ test('lane_worktree: the single lane works in its own worktree and merges like a
   const spawns = f.spawns();
   assert.equal(spawns[0].path, wtPath, 'the writer works in the worktree');
   assert.equal(spawns[1].path, wtPath, 'and so does the reviewer');
+  assert.equal(spawns.at(-1).path, p.root, 'the verifier runs in main once the worktree is gone (pilot 24 S24)');
   assert.ok(fs.readFileSync(path.join(f.dir, 'wait-mcp.log'), 'utf8').includes(wtPath), 'its MCP awaited before the writer');
   // the slice commit came from the worktree branch and is in main now; the worktree is gone, the branch kept
   assert.equal(git(p.root, 'merge-base', '--is-ancestor', fs.readFileSync(path.join(f.dir, 'last-commit'), 'utf8').trim(), 'HEAD').status, 0);

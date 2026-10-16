@@ -298,7 +298,9 @@ export const laneCheckout = (root, id) => {
   const c = st.readSliceState(root, id).lane_checkout;
   return c && fs.existsSync(c) ? c : root; // a removed worktree (after its merge) is main again
 };
-const co = (ctx) => ctx.checkout || laneCheckout(ctx.project.root, ctx.id);
+// a checkout that is gone (the lane worktree after its merge's worktree_rm: pilot 24 S24, the verifier spawned
+// into the removed path) is main again — laneCheckout falls back the same way
+const co = (ctx) => (ctx.checkout && fs.existsSync(ctx.checkout) ? ctx.checkout : laneCheckout(ctx.project.root, ctx.id));
 
 /** Where a slice's lane works, for questions and status (phase 2 M3): { lane: 'main' | 'worktree', checkout }. */
 export function laneTag(root, id) {

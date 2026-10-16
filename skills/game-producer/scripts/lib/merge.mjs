@@ -756,6 +756,7 @@ export function mergeStep(ctx, s, kit) {
         const r = io.orca(['worktree', 'rm', '--worktree', `path:${j.wt}`, '--run-hooks', ...(force ? ['--force'] : [])]);
         if (r.status !== 0 || r.parsed?.ok === false) kept = `rm failed: ${r.parsed?.error?.code || r.parsed?.error?.message || r.status}`;
       }
+      if (!kept) ctx.checkout = root; // the lane's checkout is gone: reopen, verify and record work in main
       stepDone(root, id, 'worktree_rm', kept ? { kept, note: `worktree kept (${kept})` }
         : { note: force ? `removed: only its evidence files had changed, copied to main first${captures.length ? ` (${captures.length} capture(s) → .cursor/evidence/tasks/T-${id}/captures/)` : ''} (branch kept)` : 'removed (branch kept)', ...(captures.length ? { captures: captures.length } : {}) });
       return null;

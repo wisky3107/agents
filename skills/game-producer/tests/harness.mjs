@@ -220,6 +220,8 @@ if (a[0] === 'wait-mcp' && a.includes('--json')) {
   process.exit(code);
 }
 if (a[0] !== 'agent-session' || !a.includes('--json')) { console.error('fake bootstrap: unexpected ' + a.join(' ')); process.exit(2); }
+// like new-cocos-game: a session in a checkout that does not exist fails (pilot 24 S24: the verifier into a removed worktree)
+if (arg('--path') && !fs.existsSync(arg('--path'))) { console.error('new-cocos-game: path does not exist: ' + arg('--path')); process.exit(1); }
 fs.writeFileSync(path.join(D, 'bootstrap-started'), String(process.pid));
 if (mode('bootstrap-fail')) { console.error('boom'); process.exit(1); }
 if (mode('bootstrap-sleep-before')) sleep(mode('bootstrap-sleep-before'));
