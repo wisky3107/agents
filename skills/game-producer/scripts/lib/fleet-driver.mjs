@@ -34,7 +34,15 @@ export function tick(ctx) {
   const d = load(ctx);
   if (!d.dag) { d.dag = initial(); save(ctx, d); feed(ctx, d, { type: 'start' }); return { waited: false, phase: d.dag.phase }; }
   resume(ctx, d);
-  const r = (ctx.io ?? orca).runCheck({ run: ctx.run, ack: d.delivery, waitMs: ctx.waitMs ?? 60000 });
+  let r = (ctx.io ?? orca).runCheck({ run: ctx.run, ack: d.delivery, waitMs: ctx.waitMs ?? 60000 });
+  if (!r.ok && d.delivery && /consumer_fenced/.test(r.error || '')) {
+    // the Delivery to ack belongs to the consumer generation before a run-use (runner restarted in another
+    // terminal, capytal S44): drop it; its messages come again to this generation and `seen` keeps them once
+    ctx.log?.(`fleet-driver: dropped the ack of ${d.delivery} (fenced generation), waiting again`);
+    d.delivery = null;
+    save(ctx, d);
+    r = (ctx.io ?? orca).runCheck({ run: ctx.run, ack: null, waitMs: ctx.waitMs ?? 60000 });
+  }
   if (!r.ok) { ctx.log?.(`fleet-driver: check failed: ${r.error}`); return { waited: true, phase: d.dag.phase, error: r.error }; }
   d.delivery = null;
   for (const m of r.messages) {

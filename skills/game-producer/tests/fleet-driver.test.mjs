@@ -185,3 +185,19 @@ test('retry when the failed dispatch was lost from fleet-driver.json: Orca still
   assert.equal(last.retryOf, 'ctx_failed');
   assert.ok(load(ctx).tasks['implement#1'].dispatch && !load(ctx).tasks['implement#1'].intent);
 });
+
+test('a Delivery of a fenced consumer generation (after run-use) is dropped, not acked again forever', () => {
+  const { ctx, io } = context();
+  tick(ctx);
+  const d = load(ctx);
+  d.delivery = 'del_old_generation';
+  fs.writeFileSync(path.join(ctx.sliceDir, 'fleet-driver.json'), JSON.stringify(d));
+  const check = io.runCheck;
+  io.runCheck = (a) => (a.ack === 'del_old_generation' ? (io.calls.push(['runCheck', a]), { ok: false, error: 'consumer_fenced: This mailbox Delivery belongs to a fenced consumer generation.', messages: [] }) : check(a));
+  done(io, 'implement');
+  const r = tick(ctx);
+  assert.equal(r.error, undefined);
+  const checks = io.calls.filter(([n]) => n === 'runCheck').map(([, a]) => a.ack);
+  assert.deepEqual(checks.slice(-2), ['del_old_generation', null]);
+  assert.equal(load(ctx).dag.tasks.integrate.status, 'started', 'the batch after the drop was handled');
+});
