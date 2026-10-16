@@ -74,7 +74,9 @@ export function runnerInfo(primary) {
   const wt = lane === 'fleet' ? norm(s.worktree) || sliceWorktree(primary, runner.slice) : null;
   const lanes = Array.isArray(runner.lanes) ? runner.lanes.map((l) => {
     const ls = l.slice === runner.slice ? s : readJson(path.join(dir, 'evidence', 'tasks', `T-${l.slice}`, 'producer-state.json')) || {};
-    const own = ls.lane_checkout && fs.existsSync(ls.lane_checkout) ? norm(ls.lane_checkout) : norm(primary);
+    // merged (its journal's merge step done): the lane verifies and records in main, even if its worktree was kept
+    const merged = readJson(path.join(dir, 'evidence', 'tasks', `T-${l.slice}`, 'merge-journal.json'))?.steps?.merge;
+    const own = !merged && ls.lane_checkout && fs.existsSync(ls.lane_checkout) ? norm(ls.lane_checkout) : norm(primary);
     return { slice: l.slice, phase: ls.phase || null, checkout: own };
   }) : null;
   return {
@@ -245,7 +247,10 @@ export function lifecyclePlan(s, cfg, facts, { seen = {}, now = Date.now() } = {
     if (!f.exists) v('gone', 'checkout no longer exists (the reaper kills it)');
     else if (keepList.includes(dir)) v('keep', 'listed in config editors.keep');
     else if (!ed.agentOwned) v('keep', 'opened by hand (no --nologin)');
-    else if (R.live && R.phase === 'merge' && !f.isWorktree) used(`runner ${R.slice} merge step manages main's editor`);
+    // any lane's merge journal closes, reopens and verifies main itself (with two lanes R.phase is runner.slice's only)
+    else if (R.live && !f.isWorktree && (R.phase === 'merge' || (R.lanes || []).some((l) => l.phase === 'merge'))) {
+      used(`runner ${R.phase === 'merge' ? R.slice : (R.lanes || []).filter((l) => l.phase === 'merge').map((l) => l.slice).join(', ')} merge step manages main's editor`);
+    }
     else if (fleetWt && fleetWt === dir) used(`runner ${R.slice} fleet works in this worktree`);
     else if (f.laneUsers.length) used(`in use: ${f.laneUsers.map(who).join(', ')}`);
     else if (f.isWorktree && lanesHere.length) used(`runner lane ${lanesHere.map((l) => `${l.slice} (${l.phase})`).join(', ')} works in this worktree`);

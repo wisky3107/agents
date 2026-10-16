@@ -181,3 +181,24 @@ test('lane_worktree may name slices: only those get a worktree', () => {
   runner(q.root, g, 'start', '--once');
   assert.equal(lines(g.dir, 'wtcreate.log').length, 1);
 });
+
+test('a worktree kept after the merge (dirty) still verifies in main: the verifier never runs in the kept worktree (pilot 24 S43)', () => {
+  const p = laneProject();
+  const f = fakes();
+  const wtPath = `${p.root}-wt-S01-x`;
+  const preview = { [evRel('S01', 'preview-startup.json')]: { projectPath: wtPath, previewUrl: 'http://127.0.0.1:7466/', status: 'ready' } };
+  f.queue([
+    // an untracked file left in the worktree (a Creator-made .meta): worktree_rm keeps it, dirty
+    { name: 'ready', wt: 'S01', write: { ...W('ready_for_review'), ...preview, 'assets/stray.png.meta': '{"uuid":"x"}' } },
+    { name: 'approved', wt: 'S01', write: R('approved', 'APPROVED') },
+    { ...commitStep('S01'), wt: 'S01' },
+    VERIFIED,
+  ]);
+  const out = runner(p.root, f, 'start', '--once').out;
+  assert.ok(out.find((o) => o.merged), JSON.stringify(out.slice(-3)));
+  assert.equal(fs.existsSync(wtPath), true, 'kept');
+  assert.match(log(p.root), /merge: worktree_rm done \(worktree kept \(dirty\)\)/);
+  const verifier = f.spawns().at(-1);
+  assert.match(verifier.title, /^verify-/);
+  assert.equal(verifier.path, p.root, 'the verifier works in main, where res-guard counts it as main\'s user');
+});

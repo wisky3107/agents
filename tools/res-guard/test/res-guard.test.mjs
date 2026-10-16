@@ -321,6 +321,21 @@ test('lifecyclePlan with runner lanes (phase 2): a lane in main stops "primary w
   assert.match(by[4], /^close: idle 60 min/, 'a lane that is done no longer keeps its worktree editor');
 });
 
+test('lifecyclePlan, two lanes: a lane in its merge keeps main\'s editor although runner.slice is the other lane (pilot 24 S43)', () => {
+  const t = Date.parse('2026-10-16T14:20:02Z');
+  const E = (pid, project) => ({ pid, project, etimeSec: 620, agentOwned: true, footMB: 3000 });
+  const s = { editors: [E(1, '/m')] };
+  // S42 writes in its worktree; S43 merged and verifies main, its verifier (wrongly) launched in its kept worktree
+  const runner = { live: true, reopens: true, slice: 'S42', phase: 'writer', lane: 'single', lanes: [
+    { slice: 'S42', phase: 'writer', checkout: '/m-wt-s42' }, { slice: 'S43', phase: 'merge', checkout: '/m' }] };
+  const facts = new Map([[1, { isWorktree: false, worktreeLanes: [{ pid: 56, role: 'worker', slice: 'S42', project: '/m-wt-s42' }, { pid: 58, role: 'worker', slice: 'S43', project: '/m-wt-s43' }], runner }]]);
+  const { verdicts } = lifecyclePlan(s, mergeConfig(DEFAULTS, {}), facts, { now: t });
+  assert.match(`${verdicts[0].verdict}: ${verdicts[0].why}`, /^keep: runner S43 merge step manages main's editor/);
+  const before = { ...runner, lanes: [runner.lanes[0], { slice: 'S43', phase: 'writer', checkout: '/m-wt-s43' }] };
+  const { verdicts: v2 } = lifecyclePlan(s, mergeConfig(DEFAULTS, {}), new Map([[1, { ...facts.get(1), runner: before }]]), { now: t });
+  assert.match(`${v2[0].verdict}: ${v2[0].why}`, /^close: primary waits/, 'both lanes still in their worktrees: main waits as before');
+});
+
 test('runnerInfo: runner.lanes with each lane\'s checkout (its lane_checkout while it exists, else main) and phase', () => {
   const root = fs.realpathSync(tmp('rg-lanes-'));
   const cur = path.join(root, '.cursor');
@@ -333,4 +348,8 @@ test('runnerInfo: runner.lanes with each lane\'s checkout (its lane_checkout whi
   fs.writeFileSync(path.join(cur, 'producer.lock'), JSON.stringify({ pid: process.pid, host: os.hostname(), reopens_editor: true }));
   assert.deepEqual(runnerInfo(root).lanes, [
     { slice: 'S30', phase: 'review', checkout: root }, { slice: 'S21', phase: 'writer', checkout: wt }, { slice: 'S22', phase: 'writer', checkout: root }]);
+  // S21 merged (journal step done) with its worktree kept: it now works in main
+  fs.writeFileSync(path.join(cur, 'evidence', 'tasks', 'T-S21', 'producer-state.json'), JSON.stringify({ phase: 'merge', writer: 'term_2', lane_checkout: wt }));
+  fs.writeFileSync(path.join(cur, 'evidence', 'tasks', 'T-S21', 'merge-journal.json'), JSON.stringify({ steps: { merge: { done_at: 'x' }, worktree_rm: { kept: 'dirty' } } }));
+  assert.deepEqual(runnerInfo(root).lanes[1], { slice: 'S21', phase: 'merge', checkout: root });
 });

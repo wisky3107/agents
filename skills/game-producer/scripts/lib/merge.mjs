@@ -635,6 +635,10 @@ export function mergeStep(ctx, s, kit) {
   const done = (step) => Boolean(j.steps?.[step]);
   const cc4 = isCc4(ctx.project);
   const short = String(j.sha).slice(0, 7);
+  // merged: the lane's work lives in main, so reopen, verify and record work there — also when its worktree is kept
+  // (dirty) or after a restart (pilot 24 S43: the verifier spawned into the kept worktree and res-guard, seeing a
+  // worktree agent and no lane in main, closed main's Editor mid-verify)
+  if (done('merge')) ctx.checkout = root;
 
   if (ctx.lane === 'fleet' && !done('memory_review')) {
     stepDone(root, id, 'memory_review', fleetMemoryReview(ctx, j));
