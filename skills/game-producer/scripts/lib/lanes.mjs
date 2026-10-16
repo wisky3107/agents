@@ -67,6 +67,8 @@ const rebindText = (run, worktree) => `Orca restarted and this terminal now host
 const COORDINATOR = '@coordinator'; // outbox address resolved through run-show at send time
 // a lane's own question: the director (or the judge, from the contracts) answers it in the lane
 const LANE_BLOCKED_OPTIONS = ['send this answer to the lane', 'answered in the lane, continue', 'mark blocked', 'stop'];
+export const RULED_REVIEW = 'ruling given, re-review';
+export const RULED_FIX = 'ruling given, send the fix round';
 const COMPACT = 'interrupt and /compact, keep the writer';
 const STALL_MS = () => Number(process.env.PRODUCER_RUNNER_STALL_MS || 90 * 60 * 1000); // busy with no change in the tree or HANDOFF
 
@@ -823,11 +825,47 @@ function resumeWriter(ctx, s, why) {
  */
 const fullSmokeLine = (evidence) => `After your last change run the WHOLE smoke corpus once (run-smoke.mjs with the flags in scripts/smoke/run-args.json) > ${path.join(evidence, 'smoke.json')} — check-slice reuses it.`;
 
+/**
+ * Pilot 24 S38/S39: a review that ends CHANGES_REQUESTED on findings only the director can settle (a contract
+ * row the slice cannot meet as written, a choice between options) went back to the writer as fix rounds that
+ * changed nothing (70 min each), then autopilot answered "one more fix round". The reviewer lists such findings
+ * under `## director decisions` (`- D-<n>: …`) and routes their fix_routing rows to the director; the runner
+ * asks the director instead. → { decisions: [text], directorRows: [cells], writerRows: [cells] }
+ */
+export function directorFindings(text) {
+  const decisions = [];
+  const rows = [];
+  let section = null;
+  for (const line of String(text || '').split('\n')) {
+    const h = line.match(/^#{2,}\s+(.*)$/);
+    if (h) {
+      section = /^director decisions?\b/i.test(h[1].trim()) ? 'decisions' : /fix_routing/i.test(h[1]) ? 'routing' : null;
+      continue;
+    }
+    if (section === 'decisions' && /^\s*[-*]\s+\S/.test(line)) decisions.push(line.replace(/^\s*[-*]\s+/, '').trim());
+    if (section === 'routing' && /^\s*\|/.test(line) && !/^\s*\|[\s:|-]+\|\s*$/.test(line)) rows.push(line.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim()));
+  }
+  // the header row names its columns (`| # | route | action |`): no D-n, no finding id
+  const body = rows.filter((c) => !/^(#|finding|id|f#?)$/i.test(c[0] || ''));
+  const ids = new Set(decisions.map((d) => d.match(/\bD-\d+\b/)?.[0]).filter(Boolean));
+  const toDirector = (c) => /director/i.test(c[1] || '') || [...c.join(' ').matchAll(/\bD-\d+\b/g)].some((m) => ids.has(m[0]));
+  return { decisions, directorRows: body.filter(toDirector), writerRows: body.filter((c) => !toDirector(c)) };
+}
+
+/** The director's ruling on a review_director question, kept beside the evidence for the next reviewer and writer. */
+function recordRuling(ctx, q) {
+  const file = path.join(evidenceDir(co(ctx), ctx.id), 'director-rulings.md');
+  const head = fs.existsSync(file) ? '' : '# Director rulings (GIVEN for this slice)\n';
+  fs.appendFileSync(file, `${head}\n## ${q.answer.at || st.now()} ${q.id}\nAsked: ${q.detail}\nRuling: ${q.answer.text || q.answer.choice}\n`);
+  st.log(ctx.project.root, ctx.id, `director ruling ${q.id} recorded in director-rulings.md`);
+}
+
 function fixRound(ctx, s) {
   const rounds = s.fix_rounds || 0;
   const reviewMd = path.join(evidenceDir(co(ctx), ctx.id), 'review.md');
+  const rulings = path.join(path.dirname(reviewMd), 'director-rulings.md');
   sendOnce(ctx, `fix:${rounds + 1}`, s.writer,
-    `Fix round ${rounds + 1}: apply exactly the rows of the \`## fix_routing\` table in ${reviewMd} (no other changes), re-verify, update the evidence, ${fullSmokeLine(path.dirname(reviewMd))} Then set HANDOFF.json ready_for_review. Never restore, revert or stash AGENT_NOTES.md or the runner's files (.cursor/producer*, producer-state.json, producer-log.md), even when cleaning up: they are the producer's.`,
+    `Fix round ${rounds + 1}: apply exactly the rows of the \`## fix_routing\` table in ${reviewMd} (no other changes)${fs.existsSync(rulings) ? `, as the director's rulings in ${rulings} settle them (GIVEN)` : ''}, re-verify, update the evidence, ${fullSmokeLine(path.dirname(reviewMd))} Then set HANDOFF.json ready_for_review. Never restore, revert or stash AGENT_NOTES.md or the runner's files (.cursor/producer*, producer-state.json, producer-log.md), even when cleaning up: they are the producer's.`,
     { phase: 'writer', fix_rounds: rounds + 1, reviewer: null, nudged_writer: false, static_bounces: 0 });
   st.log(ctx.project.root, ctx.id, `fix round ${rounds + 1}`);
 }
@@ -1031,6 +1069,15 @@ function singleStep(ctx, s, phase) {
       if (h.status === 'approved') {
         setPhase(root, id, 'accept', { bad_handoff: 0 });
         return null;
+      }
+      // findings only the director can settle: the director rules, before any fix round or the round cap
+      const df = directorFindings(fs.existsSync(verdictFile) ? fs.readFileSync(verdictFile, 'utf8') : '');
+      if (df.decisions.length || df.directorRows.length) {
+        const asked = df.decisions.length ? df.decisions : df.directorRows.map((c) => c.join(' — '));
+        const rest = df.writerRows.length ? ` (plus ${df.writerRows.length} fix_routing row(s) for the writer)` : '';
+        // a lane question (no runner QUESTION entry): its answer comes back to applyAnswer below
+        return ask(s, 'review_director', `${path.basename(verdictFile)} needs the director on: ${asked.join(' | ')}${rest}. Give the ruling as the note: it goes to director-rulings.md, GIVEN for the next reviewer and writer`,
+          [...(df.writerRows.length ? [] : [RULED_REVIEW]), RULED_FIX, 'mark blocked', 'stop'], { obs: obs('review_director') });
       }
       const rounds = s.fix_rounds || 0;
       if (rounds >= (s.max_fix_rounds || MAX_FIX_ROUNDS)) {
@@ -1514,6 +1561,13 @@ export function applyAnswer(ctx, q) {
     case 'unknown_status:treat as changes_requested':
     case 'verdict_mismatch:treat as changes_requested':
       if (s.reviewer) io.closeTerminal(s.reviewer);
+      return fixRound(ctx, s);
+    case `review_director:${RULED_REVIEW}`:
+      // settled by the ruling alone: a fresh reviewer re-checks with director-rulings.md, no fix round counted
+      recordRuling(ctx, q);
+      return setPhase(root, id, 'spawn-reviewer', { reviewer: null });
+    case `review_director:${RULED_FIX}`:
+      recordRuling(ctx, q);
       return fixRound(ctx, s);
     case 'changes_after_rounds:one more fix round':
       st.writeSliceState(root, id, { max_fix_rounds: (s.fix_rounds || 0) + 1 });

@@ -27,6 +27,7 @@ export function textNeed(q, choice) {
   if (q?.kind === 'spawn_unconfirmed' && choice.startsWith('reattach')) return 'required';
   if (q?.kind === 'coordinator_missing' && choice.startsWith('rebind')) return 'required'; // the resumed coordinator's handle
   if (q?.kind === 'director_gate' && isGivenChoice(choice)) return 'optional'; // the note goes on the policy line
+  if (q?.kind === 'review_director' && choice.startsWith('ruling given')) return 'required'; // the ruling, written to director-rulings.md
   return null;
 }
 

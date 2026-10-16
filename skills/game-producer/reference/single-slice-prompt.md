@@ -195,6 +195,11 @@ not explain it, you may run one stuck lookup: `M=~/.orca-memory/bin/orca-memory;
    is a finding (owner code). A `## gaps` disposition that leaves an acceptance row broken is a
    finding (owner code).
 4. Screenshots: one final preview.png plus at most one per blocker/major finding.
+Director rulings already given for this slice: <EVIDENCE_DIR>/director-rulings.md when it exists (GIVEN:
+a finding a ruling settles is no finding). A finding only the director can settle (a contract row the
+slice cannot meet as written, a choice between options the contract leaves open) goes under
+`## director decisions` as `- D-<n>: <the choice and its options>`, and its fix_routing row's owner is
+`director`: the producer asks the director instead of sending the writer a fix round.
 Write <EVIDENCE_DIR>/review.md (findings F1…, owner code|scene, `## fix_routing` table when
 CHANGES_REQUESTED, then `## escaped`: one line `F<n> ← S<nn>` per finding whose fault an earlier
 slice committed — `git blame` the faulty lines, the commit subject names its slice, `pre-slice`

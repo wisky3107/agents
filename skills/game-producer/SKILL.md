@@ -70,6 +70,12 @@ node ~/.agents/skills/game-producer/scripts/producer-runner.mjs start --dry-run 
     CHANGES_REQUESTED), a second extra fix round. Only for a director who pre-approves every slice.
   Never stop, mark blocked or skip; anything else, or past its limit, waits for the director (or the
   judge).
+- **Director findings in a single-lane review (`review_director`):** a CHANGES_REQUESTED review whose
+  `## director decisions` (`- D-<n>: …`) or fix_routing rows owned by `director` (or citing a listed D-n)
+  need the director is a question, never a fix round and never autopilot's: the ruling (the note) goes to
+  `evidence/director-rulings.md`, GIVEN for the next reviewer and writer; `ruling given, re-review` (only
+  director rows: a fresh reviewer, no fix round counted) or `ruling given, send the fix round` (writer rows
+  too). Pilot 24 S38/S39: such rows cost a 70-min fix round that changed nothing.
 - **Coordinator questions the runner would miss (2026-10-04/05, codex coordinator):** after each fleet
   wait the runner reads the coordinator's screen. A codex question panel ("? N question … shift+←
   to answer") becomes `coordinator_question` (the whole text, the panel's options, `answer with
