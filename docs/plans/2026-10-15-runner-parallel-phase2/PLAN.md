@@ -90,3 +90,23 @@ Sau M5: thử trên dự án không chạy pilot, rồi bật cho capytal (cặp
   main (rơi về luật idle). `~/.agents/run/res-guard/config.json` `maxEditors: 3` (director duyệt; backup
   config.json.bak-20261016). 14/14 test res-guard.
 
+## M5 chi tiết (2026-10-16)
+
+Hiện trạng: vòng `start` (producer-runner.mjs) nối tiếp tuyệt đối — câu hỏi chưa trả lời đầu tiên của cả project chặn mọi
+thứ (`waitForAnswer`), `runSlice` lặp tới khi slice hỏi hoặc xong, mỗi `wait()` là một orca-wait tới 540 s; `nextSlice`
+coi hai slice in_progress là stuck; `preflight` chặn `max_parallel` ≠ 1.
+
+Chia nhỏ, mỗi bước merge riêng, `max_parallel=1` giữ nguyên hành vi (log và runner-file như cũ):
+
+| Bước | Nội dung |
+|---|---|
+| M5a | Harness: hàng đợi theo terminal (`queue.json` = mảng như cũ, hoặc `{handle: [...]}`; dừng khi mọi hàng đợi rỗng). `stepLane(ctx)`: đúng một vòng của thân `runSlice` (control, outbox, một bước phase) → `{progress}` / `PAUSE` / `{ask}` / `{phase}`; `runSlice` = lặp `stepLane` (không đổi hành vi). |
+| M5b | Chọn lane: `nextLanes(project, statuses, live)` — lane đang sống + tối đa một lane mới khi `max_parallel=2` (policy token / release) VÀ: là slice runnable đầu tiên theo thứ tự, nằm trong `parallel_ok` cùng lane đang sống, cả hai single lane, không chung nhóm `exclusive` (MILESTONES `exclusive: {api: [...], figma: [...]}` hoặc front matter `exclusive: [api]`). Lane mới luôn vào worktree khi đã có lane sống (quy tắc đặt chỗ). `preflight` nhận `max_parallel=2`. Khởi động lại với hai lane in_progress hợp lệ → tiếp tục cả hai thay vì stuck. |
+| M5c | Vòng lặp nhiều lane: map `ctx` theo slice; xoay vòng các lane chưa đỗ, mỗi lane một `stepLane`, `waitMs` 75 s khi có hai lane (timeout chỉ là checkpoint). Câu hỏi có slice chỉ đỗ slice đó; câu hỏi không slice (stuck, needs_policy, cursor_off) đỗ tất cả. Judge / autopilot / giao pilot chạy cho MỌI câu hỏi mở, không chỉ câu đầu; `waitForAnswer` chỉ khi mọi lane đều đỗ. `runner.slice` = lane ở main, else lane sớm nhất; `runner.lanes` cập nhật mỗi lượt. `stop-after` không mở lane mới, để lane sống chạy xong. |
+| M5d | Merge: lane worktree vào phase `merge` chỉ khi không còn lane nào sống ở main (đứng ở `merge_wait`, log một lần); hai lane worktree merge lần lượt (`merge_owner` trong runner-file, FIFO theo thời điểm tới `merge`). Lane main tới `commit` khi lane worktree đang merge → chờ (token `main_git` thu gọn về `merge_owner`). |
+| M5e | Thử: harness kịch bản hai lane (cặp chạy S01 main + S02 worktree; không phải cặp → nối tiếp, log như cũ; nhóm exclusive → nối tiếp; câu hỏi lane A trong lúc lane B tới merge; B chờ A commit rồi mới merge; A xong trước → C vào worktree; kill + restart với hai lane → tiếp tục cả hai, không spawn lần hai). Rồi một dự án ít rủi ro / capytal với một cặp có director theo dõi. |
+
+Rủi ro đã biết, chấp nhận ở bản đầu: một bước chặn lâu của lane này (staticGate ≤ 600 s, wait-mcp ≤ 240 s, harvest ≤ 300 s,
+judge ~1 phút) làm lane kia trễ phản ứng đúng chừng đó — không mất việc, chỉ chậm. RAM: 2 editor đo được footprint
+~6,7 GB + swap ~6,7 GB; 3 editor (khi main mở lại để verify) sẽ swap nặng — res-guard `admit` giữ spawn tối đa 30 phút.
+
