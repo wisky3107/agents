@@ -663,6 +663,7 @@ function orcaError(root, id, s, w) {
 
 function wait(ctx, s, which, opts) {
   const w = io.waitLane({ ...opts, state: path.join(st.sliceDir(ctx.project.root, ctx.id), `wait-${which}.json`), maxMs: ctx.waitMs });
+  ctx.waited = true; // phase 2 M5c: one orca-wait is a lane's turn; the scheduler moves to the other lane
   if (w.event !== 'orca-error' && s.orca_errors) st.writeSliceState(ctx.project.root, ctx.id, { orca_errors: 0 });
   return w;
 }

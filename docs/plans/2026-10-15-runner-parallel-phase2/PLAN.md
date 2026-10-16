@@ -106,6 +106,28 @@ Chia nhỏ, mỗi bước merge riêng, `max_parallel=1` giữ nguyên hành vi 
 | M5d | Merge: lane worktree vào phase `merge` chỉ khi không còn lane nào sống ở main (đứng ở `merge_wait`, log một lần); hai lane worktree merge lần lượt (`merge_owner` trong runner-file, FIFO theo thời điểm tới `merge`). Lane main tới `commit` khi lane worktree đang merge → chờ (token `main_git` thu gọn về `merge_owner`). |
 | M5e | Thử: harness kịch bản hai lane (cặp chạy S01 main + S02 worktree; không phải cặp → nối tiếp, log như cũ; nhóm exclusive → nối tiếp; câu hỏi lane A trong lúc lane B tới merge; B chờ A commit rồi mới merge; A xong trước → C vào worktree; kill + restart với hai lane → tiếp tục cả hai, không spawn lần hai). Rồi một dự án ít rủi ro / capytal với một cặp có director theo dõi. |
 
+- **M5a xong (0a17e9f)**, **M5b xong (1058b75)** như bảng trên.
+- **M5c + M5d xong (2026-10-16):** `startLanes` (producer-runner.mjs) khi `maxParallel = 2`; vòng một lane giữ nguyên.
+  Mỗi lượt: judge / autopilot / giao pilot cho mọi câu hỏi mở, báo director ngay (`asked` + thông báo + hộp thoại, một lần
+  mỗi câu, lại một lần khi pilot `--auto` trả về); câu hỏi có slice đỗ slice đó, câu không slice đỗ tất cả.
+  Lane = `runner.lanes` còn phase ∪ `nextLanes().live`; lane mới (luôn kèm `pairProblem` với lane đang sống) không mở khi
+  một lane đang `merge`/`committing` hoặc khi có `stop-after`; chọn xong lane đầu thì nhìn lại ngay để lane cặp vào trước
+  lượt chờ dài. Lane bên cạnh: `force_worktree` trong producer-state. Lượt của một lane = các bước tới hết MỘT orca-wait
+  (`ctx.waited` đặt trong `wait()`), `waitMs` = min(WAIT_MS, `PRODUCER_RUNNER_LANES_WAIT_MS` 75 s) khi hai lane.
+  Quy tắc đặt chỗ lúc chạy: lane ở main (`lane_in_main`, hoặc main mà không có / sắp có worktree) chỉ chạy khi lane
+  sớm hơn không ở main — lane bị trả về main (`worktree_failed` → main) chờ, kiểm cả giữa các bước trong lượt.
+  M5d: lane worktree ở phase `merge` chờ khi còn lane sống ở main, hoặc khi `merge_owner` là lane khác (FIFO, xoá khi
+  xong); lý do chờ ghi `lane_wait` (log một lần, `status` hiện `waits`). "Lane main tới commit khi lane worktree đang
+  merge" không xảy ra: worktree chỉ merge khi không còn lane ở main và không lane mới nào mở trong lúc merge.
+  `waitForAnswer` / `--once` trả về chỉ khi không lane nào bước được. Cache release mất lane của runner → ghi lại
+  in_progress (như một lane). Xong một lane còn lại một → `current_slice` theo lane còn lại.
+  220/220 test (+6 runner-m5c.test.mjs: cặp main + worktree với merge chờ main; không phải cặp → nối tiếp ở main;
+  câu hỏi chỉ đỗ lane của nó; kill + restart tiếp tục cả hai không spawn lại; lane trả về main chờ lane main;
+  hai lane worktree merge FIFO). Harness: bước `sleepMs` dài hơn một lượt = một lượt bận (orca-wait gọi fake nhiều lần).
+- **Còn lại (M5e):** chạy thật với một cặp có director theo dõi; pilot 24 không còn cặp độc lập (S22 phụ thuộc mọi slice).
+- Lỗi nhỏ thấy khi làm M5c: `cancel` gửi `current_slice: ''` cho `writeRelease` (khoá đúng là `currentSlice`) nên
+  không xoá `current_slice` — vô hại (lần chọn sau ghi đè).
+
 Rủi ro đã biết, chấp nhận ở bản đầu: một bước chặn lâu của lane này (staticGate ≤ 600 s, wait-mcp ≤ 240 s, harvest ≤ 300 s,
 judge ~1 phút) làm lane kia trễ phản ứng đúng chừng đó — không mất việc, chỉ chậm. RAM: 2 editor đo được footprint
 ~6,7 GB + swap ~6,7 GB; 3 editor (khi main mở lại để verify) sẽ swap nặng — res-guard `admit` giữ spawn tối đa 30 phút.

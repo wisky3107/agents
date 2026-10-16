@@ -32,11 +32,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { spawn, spawnSync } from 'node:child_process';
-import { loadProject, sliceStatuses, nextSlice, preflight, writeRelease, writePolicyDecision } from './lib/project.mjs';
+import { loadProject, sliceStatuses, nextSlice, nextLanes, maxParallel, pairProblem, preflight, writeRelease, writePolicyDecision } from './lib/project.mjs';
 import * as st from './lib/state.mjs';
 import { submit, menu, parseReply, textNeed, answerProblem, openQuestions, givenChoice, isGivenChoice, extraChoices, PILOT_CHOICE, pilotOf, handToPilot, returnToDirector } from './lib/answer.mjs';
 import { questionContext } from './lib/context.mjs';
-import { laneFor, laneTag, laneCheckout, runSlice, applyAnswer, cursorUndecided, cursorState, resetCursorProbe, agentOrAsk, cursorArtBlocked, CursorUndecided, CURSOR_FALLBACK, manualItems, reviewVerdict, MAX_FIX_ROUNDS } from './lib/lanes.mjs';
+import { laneFor, laneTag, laneCheckout, runSlice, stepLane, applyAnswer, cursorUndecided, cursorState, resetCursorProbe, agentOrAsk, cursorArtBlocked, CursorUndecided, CURSOR_FALLBACK, manualItems, reviewVerdict, MAX_FIX_ROUNDS } from './lib/lanes.mjs';
 import { currentBranch, headSha, appendLessons, lessonRows, readJournal } from './lib/merge.mjs';
 import { consult, judgeSpec, JUDGE_KINDS, MAX_JUDGED } from './lib/judge.mjs';
 import * as io from './lib/orca.mjs';
@@ -49,6 +49,7 @@ const REF = new URL('../reference/', import.meta.url);
 const msEnv = (k, d) => Number(process.env[k]) || d;
 const WAIT_MS = msEnv('PRODUCER_RUNNER_WAIT_MS', 540000); // one orca-wait call (its own cap is 570000)
 const IDLE_MS = msEnv('PRODUCER_RUNNER_IDLE_MS', 60000); // pause before re-checking an idle lane
+const LANES_WAIT_MS = msEnv('PRODUCER_RUNNER_LANES_WAIT_MS', 75000); // one orca-wait while two lanes take turns
 const POLL_MS = msEnv('PRODUCER_RUNNER_POLL_MS', 5000); // answer polling
 const PILOT_POLL_MS = msEnv('PRODUCER_RUNNER_PILOT_POLL_MS', 2000); // pilot-wait polling
 const PILOT_WAIT_MS = 1740000; // pilot-wait's default life: under a Claude Code Monitor's 30-minute cap
@@ -238,7 +239,7 @@ async function status(root) {
     lock: st.lockHolder(root), control: st.readControl(root), runner, next, blockers,
     lane: runner.slice ? st.readSliceState(root, runner.slice) : null,
     // phase 2 M3: every live lane, where it works and its phase
-    lanes: (runner.lanes || []).map((l) => ({ ...l, ...laneTag(root, l.slice), phase: st.readSliceState(root, l.slice).phase || null })),
+    lanes: (runner.lanes || []).map((l) => ({ ...l, ...laneTag(root, l.slice), phase: st.readSliceState(root, l.slice).phase || null, ...(st.readSliceState(root, l.slice).lane_wait ? { waits: st.readSliceState(root, l.slice).lane_wait } : {}) })),
     slices: Object.fromEntries(Object.entries(statuses).map(([k, v]) => [k, v.source === 'cache' ? v.status : `${v.status} (${v.source})`])),
     ...(Object.keys(manual).length ? { manual_deferred: manual } : {}),
   });
@@ -763,6 +764,274 @@ function cancelSlice(root, raw, note) {
   return out;
 }
 
+/** One lane's ctx (both loops build it the same way). */
+function laneContext(project, id, lane) {
+  const t = project.policy?.tokens || {};
+  return {
+    project, id, lane,
+    autoCommit: String(t.auto_commit ?? project.release.auto_commit ?? 'true') === 'true',
+    laneWorktree: ((v) => v === 'true' || v.split(/[,\s]+/).includes(id))(String(t.lane_worktree ?? project.release.lane_worktree ?? 'false')),
+    autoMerge: String(t.auto_merge ?? project.release.auto_merge ?? 'true') === 'true',
+    manualDefer: String(t.manual_required ?? project.release.manual_required ?? 'ask') === 'defer',
+    waitMs: WAIT_MS, idleMs: IDLE_MS, sleep,
+  };
+}
+
+/** A lane that waits its turn (merge or main): logged once per reason, kept in its state for `status`. */
+function waitTurn(root, id, why) {
+  if (st.readSliceState(root, id).lane_wait === why) return;
+  st.writeSliceState(root, id, { lane_wait: why });
+  st.log(root, id, why);
+}
+
+/**
+ * Phase 2 M5c/M5d (max_parallel=2; docs/plans/2026-10-15-runner-parallel-phase2 §M5): two lanes in one runner.
+ * - Every open question gets the judge / autopilot / the pilot and a notification now, whatever the other lane
+ *   does; a question with a slice parks only that slice, one without parks everything.
+ * - A new lane starts when nextLanes pairs it with the one live lane, never while a lane is merging, never under
+ *   stop-after; it always gets its own worktree (placement: main only for a lane that is alone).
+ * - Lanes take turns: each runs stepLane until it waits; orca-wait waits LANES_WAIT_MS while two lanes live.
+ * - A worktree lane merges only when no lane works in main, and one worktree merge at a time (merge_owner).
+ * - The runner waits for an answer only when no lane can move.
+ */
+async function startLanes(root, { once }) {
+  const ctxs = new Map();
+  const told = new Set();
+  const isDone = (id) => ['done', 'blocked'].includes(st.readSliceState(root, id).phase);
+  for (;;) {
+    const control = st.readControl(root);
+    if (control?.cmd === 'stop' || control?.cmd === 'pause') return say({ stopped: `control file says ${control.cmd}`, resume: 'producer-runner clear, then start' });
+    const applied = applyAnswers(root);
+    if (applied.stop) return say({ stopped: 'the human chose stop', resume: 'producer-runner clear, then start' });
+    if (applied.exit) return say(applied.exit);
+
+    let acted = false;
+    for (const waiting of st.readRunner(root).questions.filter((q) => !q.answer)) {
+      const open = refreshQuestion(root, waiting);
+      if (open.answer) continue;
+      const project = loadProject(root);
+      if (!open.judge && JUDGE_KINDS.has(open.kind) && judgeSpec(project)) {
+        const v = judgeOnce(root, project, open);
+        st.judgeVerdict(root, open.id, v);
+        if (open.slice) st.log(root, open.slice, `judge on ${open.id} (${open.kind}): ${v.choice ? `${v.choice} — ${v.reason}` : v.defer}`);
+        say({ judge: open.id, ...(v.choice ? { choice: v.choice, reason: v.reason } : { deferred: v.defer }) });
+        acted = true;
+        break;
+      }
+      const pick = autopilotChoice(root, project, open);
+      if (pick) {
+        try {
+          st.answer(root, open.id, pick.choice, pick.text, { by: 'autopilot' });
+          if (open.slice) st.log(root, open.slice, `autopilot on ${open.id} (${open.kind}): ${pick.choice} — within its limit for this slice; past it, the director decides`);
+          say({ autopilot: open.id, kind: open.kind, choice: pick.choice });
+        } catch {
+          /* answered meanwhile */
+        }
+        acted = true;
+        break;
+      }
+      if (!open.pilot_handoff && !open.pilot_returned && pilotOf(root)?.auto) {
+        try {
+          handToPilot(root, open.id, '', 'auto');
+          if (open.slice) st.log(root, open.slice, `${open.id} (${open.kind}) handed to the pilot agent (pilot --auto)`);
+          say({ handed_to_pilot: open.id, kind: open.kind, via: 'auto' });
+        } catch {
+          /* answered or handed meanwhile */
+        }
+        acted = true;
+        break;
+      }
+      // the director hears of it now, though the other lane goes on (again when an --auto pilot gives it back)
+      const quiet = open.pilot_handoff?.via === 'auto';
+      const key = `${open.id}:${quiet ? 'pilot' : 'director'}`;
+      if (!told.has(key)) {
+        told.add(key);
+        say({ asked: open.id, kind: open.kind, slice: open.slice, ...(open.lane ? { lane: open.lane } : {}), options: open.options, ...(quiet ? { handed_to_pilot: true } : {}) });
+        if (!quiet) {
+          notify(root, open);
+          openDialog(root, open);
+        }
+      }
+    }
+    if (acted) continue;
+    const openQs = st.readRunner(root).questions.filter((q) => !q.answer);
+    const parked = new Set(openQs.map((q) => q.slice).filter(Boolean));
+    const globalQ = openQs.find((q) => !q.slice);
+    if (globalQ) {
+      if (once) return say({ waiting: globalQ.id, kind: globalQ.kind, slice: null, options: globalQ.options });
+      await waitForAnswer(root, globalQ);
+      continue;
+    }
+
+    const project = loadProject(root);
+    const statuses = sliceStatuses(project);
+    const nl = nextLanes(project, statuses);
+    // lanes this runner runs, though git may show one merged already (its journal still records); a slice the
+    // yaml says in_progress and the runner never ran is adopted below, one the runner marked blocked is asked
+    const own = (st.readRunner(root).lanes || []).map((l) => l.slice).filter((id) => st.readSliceState(root, id).phase && !isDone(id));
+    const live = [...new Set([...own, ...(nl.live || [])])].filter((id) => st.readSliceState(root, id).phase !== 'done');
+    // the release cache lost an own lane (AGENT_NOTES.md put back by a lane?): in_progress again, as one lane does
+    const lost = own.filter((id) => !['in_progress', 'merged', 'shipped'].includes(statuses[id]?.status));
+    if (lost.length) {
+      writeRelease(project, { slices: Object.fromEntries(lost.map((id) => [id, 'in_progress'])) });
+      for (const id of lost) st.log(root, id, `release cache said ${statuses[id]?.status || '?'} while the runner is at ${st.readSliceState(root, id).phase}: rewritten in_progress, resuming`);
+      continue;
+    }
+    if (nl.stuck && !live.length) {
+      stopFor(root, null, 'stuck', nl.reason);
+      continue;
+    }
+    if (!live.length && nl.done) {
+      if (project.release.producer_mode !== 'runner') return say({ done: nl.reason, next_step: 'Step 3 (ship / retro): run game-producer Step 3, or set release.producer_mode: runner' });
+      try {
+        return say(handoffReport('step3', handToLlm(root, 'step3'), { done: nl.reason }));
+      } catch (err) {
+        if (!(err instanceof CursorUndecided)) throw err;
+        stopFor(root, null, 'cursor_off', `${cursorState(project).reason} — Cursor roles: producer (Step 3)`);
+        continue;
+      }
+    }
+    if (control?.cmd === 'stop-after' && control.arg && !live.length && ['merged', 'shipped', 'blocked'].includes(statuses[control.arg]?.status)) {
+      return say({ stopped: `stop-after ${control.arg}: ${control.arg} is ${statuses[control.arg].status}; starting nothing new` });
+    }
+
+    // a new lane (alone, or paired by nextLanes with the one live lane)
+    const merging = live.some((id) => ['merge', 'committing'].includes(st.readSliceState(root, id).phase));
+    let next = live.length < 2 && !merging && control?.cmd !== 'stop-after' ? nl.next || null : null;
+    // nextLanes pairs with the yaml's in_progress slice; an own lane it does not see (merged by git, journal open) holds too
+    if (next && live.length === 1 && (live[0] === next || pairProblem(project, live[0], next))) next = null;
+    if (next && !parked.has(next)) {
+      const initial = Object.values(statuses).every((v) => NOT_STARTED.has(v.status));
+      const blockers = preflight(project, next, { initial });
+      if (blockers.length) {
+        stopFor(root, next, blockers[0].code, blockers[0].detail);
+        continue;
+      }
+      const { lane, moved } = freshLane(root, next, project);
+      const beside = live.length > 0;
+      writeRelease(project, { ...(beside ? {} : { currentSlice: next }), slices: { [next]: 'in_progress' } });
+      if (beside) st.writeSliceState(root, next, { force_worktree: true });
+      st.log(root, next, `selected (${lane} lane${beside ? `, beside ${live.join(', ')}: in its own worktree` : ''}); slice in_progress${moved.length ? `; earlier state kept as ${moved.join(', ')}` : ''}`);
+      // a lane alone: look again at once, a partner may pair with it before the first lane's long wait
+      if (!beside) continue;
+      live.push(next);
+    }
+    if (!live.length) {
+      stopFor(root, null, 'stuck', nl.held || 'nothing runnable');
+      continue;
+    }
+    const prev = Object.fromEntries((st.readRunner(root).lanes || []).map((l) => [l.slice, l.since]));
+    const inMain = live.find((id) => laneCheckout(root, id) === root);
+    st.writeRunner(root, { slice: inMain || live[0], step: 'lanes', lanes: live.map((id) => ({ slice: id, since: prev[id] || st.now() })) });
+    // where a lane works: main, unless it has (or is to get) its own worktree; "run this slice in main" stamps main
+    const worksInMain = (id) => {
+      const s = st.readSliceState(root, id);
+      if (s.lane_in_main) return true;
+      return laneCheckout(root, id) === root && !s.force_worktree && !laneContext(project, id, s.lane).laneWorktree;
+    };
+    // main only for a lane alone: a lane sent back to main (worktree_failed → main) waits for the one already there
+    const mainTaken = (id) => worksInMain(id) && live.find((o) => o !== id && !isDone(o) && worksInMain(o) && live.indexOf(o) < live.indexOf(id));
+
+    let moved = false;
+    let stepped = 0;
+    let paused = 0;
+    for (const id of live) {
+      if (parked.has(id)) continue;
+      const s = st.readSliceState(root, id);
+      if (!s.phase) {
+        stopFor(root, id, 'adopt', `${id} is ${statuses[id]?.cached || 'in_progress'} with no runner state (started by an LLM producer or by hand)`);
+        moved = true;
+        continue;
+      }
+      if (s.phase === 'blocked') {
+        stopFor(root, id, 'blocked_resume', `${id}: ${s.blocked_reason || 'blocked'}`);
+        moved = true;
+        continue;
+      }
+      const lane = s.lane || laneFor(project, id);
+      const undecided = cursorUndecided(project, lane);
+      if (undecided.length) {
+        stopFor(root, id, 'cursor_off', `${cursorState(project).reason} — Cursor roles: ${undecided.join(', ')}`);
+        moved = true;
+        continue;
+      }
+      if (lane === 'fleet' && cursorArtBlocked(project, id)) {
+        stopFor(root, id, 'cursor_art', cursorState(project).reason);
+        moved = true;
+        continue;
+      }
+      const taken = mainTaken(id);
+      if (taken) {
+        waitTurn(root, id, `${taken} works in main; this lane runs in main after it`);
+        continue;
+      }
+      // M5d: a worktree lane merges only when no other lane works in main; worktree merges one at a time (merge_owner)
+      if (s.phase === 'merge' && !worksInMain(id)) {
+        const inMain = live.find((o) => o !== id && !isDone(o) && worksInMain(o));
+        const owner = st.readRunner(root).merge_owner;
+        const busy = owner && owner !== id && live.includes(owner) && !isDone(owner);
+        if (inMain || busy) {
+          waitTurn(root, id, inMain ? `merge waits: ${inMain} works in main` : `merge waits: ${owner} is merging`);
+          continue;
+        }
+        if (owner !== id) st.writeRunner(root, { merge_owner: id });
+      }
+      if (s.lane_wait) st.writeSliceState(root, id, { lane_wait: null });
+      const ctx = ctxs.get(id) || laneContext(project, id, lane);
+      ctxs.set(id, ctx);
+      ctx.project = project;
+      if (s.force_worktree) ctx.laneWorktree = true;
+      ctx.waitMs = live.length > 1 ? Math.min(WAIT_MS, LANES_WAIT_MS) : WAIT_MS;
+      stepped += 1;
+      let r;
+      try {
+        // steps until the lane waits: one orca-wait (or a pause) is its turn
+        ctx.waited = false;
+        do r = stepLane(ctx); while (r === null && !ctx.waited && !mainTaken(id));
+      } catch (err) {
+        if (err instanceof CursorUndecided) stopFor(root, id, 'cursor_off', `${cursorState(project).reason} — Cursor roles: ${err.roles.join(', ')}`);
+        else stopFor(root, id, 'runner_error', err.message);
+        moved = true;
+        continue;
+      }
+      if (r === null) continue; // its turn ended in a wait (or it turned to main, taken): the other lane now
+      if (r.stopped) return say({ stopped: `control file says ${r.stopped}`, slice: id });
+      if (r.ask) {
+        stopFor(root, id, r.ask.code, r.ask.detail, r.ask);
+        moved = true;
+        continue;
+      }
+      if (r.phase === 'done') {
+        ctxs.delete(id);
+        if (st.readRunner(root).merge_owner === id) st.writeRunner(root, { merge_owner: null });
+        const left = (st.readRunner(root).lanes || []).filter((l) => l.slice !== id);
+        st.writeRunner(root, { lanes: left, ...(left.length ? {} : { slice: id, step: 'done' }) });
+        if (left.length === 1 && loadProject(root).release.current_slice === id) writeRelease(loadProject(root), { currentSlice: left[0].slice });
+        say({ merged: id, commit: st.readSliceState(root, id).commit_sha });
+        moved = true;
+        continue;
+      }
+      if (r.phase === 'blocked') {
+        ctxs.delete(id);
+        moved = true;
+        continue;
+      }
+      if (r.pause) paused += 1; // the lane waits for its terminal
+    }
+    if (moved) continue;
+    // nothing can move but an answer: every live lane parked or waiting for its merge turn
+    if (!stepped) {
+      const q = st.readRunner(root).questions.find((x) => !x.answer);
+      if (q) {
+        if (once) return say({ waiting: q.id, kind: q.kind, slice: q.slice, options: q.options });
+        await waitForAnswer(root, q);
+        continue;
+      }
+    }
+    if (paused === stepped) sleep(IDLE_MS); // every lane paused (or waits its turn): look again later, as one lane does
+  }
+}
+
 async function dryRun(root) {
   const { project, statuses, next, blockers } = await plan(root);
   const finishing = unfinished(root, statuses);
@@ -790,6 +1059,8 @@ async function start(root, { dryRun: dry, once }) {
   st.ensureExcluded(root);
   process.on('exit', () => st.releaseLock(root));
   if (lock.takenOver) say({ note: `took over the lock of dead pid ${lock.takenOver.pid}` });
+  // phase 2 M5: max_parallel=2 has its own loop; one lane keeps this one, unchanged
+  if (maxParallel(loadProject(root)) === 2) return startLanes(root, { once });
 
   for (;;) {
     const control = st.readControl(root);

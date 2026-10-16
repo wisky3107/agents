@@ -166,7 +166,11 @@ node ~/.agents/skills/game-producer/scripts/producer-runner.mjs start --dry-run 
   `launch` is refused). An LLM producer does not take that lock: never run an LLM slice loop while
   `producer-runner.mjs status` shows a live runner; the Step 0–1 / Step 3 producers never dispatch
   slices. `handoff-reset` forgets a Step 0–1 / Step 3 handoff so the runner may spawn a new one.
-- **Phase 1 limits:** `max_parallel=1`; a port slice without a reviewed slice study stops
+- **Two lanes (phase 2, `max_parallel=2`):** the runner pairs two single (S/M) lanes from a MILESTONES
+  `parallel_ok` pair with no shared `exclusive` group: the first works in main, the one beside it in its own
+  worktree (`lane_worktree` placement); a question parks only its lane; a worktree lane merges once no lane
+  works in main, one worktree merge at a time; no new lane starts while one merges. `status` lists both lanes.
+- **Phase 1 limits:** `max_parallel=1` unless the director asks for two lanes; a port slice without a reviewed slice study stops
   (`needs_slice_study`: run the study with an LLM producer); verifying main after a fleet merge needs
   3.8 + Funplay — cc4 or no Funplay → the director verifies; a single lane gets the preview port from
   the newest `preview-startup.json` or records it itself.
@@ -230,8 +234,8 @@ Precedence: director prompt > `AGENT_NOTES.md` > defaults (`end_to_end`, `true`,
 Pass the result to lanes as `<BUDGET_MODE>` (`advisory` or `gate:<pct>`).
 A legacy policy line with only `budget_auto_bump=<pct>%` (no `budget=`) resolves to `advisory` unless
 SCOPE.md says `budget_mode: gate`; rewrite the token as `budget=advisory` when you next touch it.
-`max_parallel=2` only when the director asks **and** the pair is in `parallel_ok` (each fleet
-opens its own Creator + Funplay port; RAM is the limit).
+`max_parallel=2` only when the director asks **and** the pair is in `parallel_ok` (the runner pairs single
+lanes only; the lane beside opens its own Creator + Funplay port in its worktree; RAM is the limit).
 `reviewer_agent` must reach `127.0.0.1`. Keep the locked provider, including Codex:
 its corrected launcher bypasses approvals and sandbox as configured in Orca. Check actual
 preview connectivity; do not infer failure from provider identity. Before a provider fallback,
