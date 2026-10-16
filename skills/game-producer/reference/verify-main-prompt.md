@@ -20,15 +20,17 @@ do not open .cursor/skills/** unless a step names the file.
    active config's includeModules lists both the parent feature and its selected backend (for
    example physics + physics-ammo).
 4. Preview: reuse the healthy browser preview or run run_project_preview({mode:"browser"}) once,
-   then `node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <port of that preview> --channel chrome` must be
-   green (chrome like the gate: an Orca tab right after the Editor reopened, or behind another preview, reads
-   false reds — pilot 24 S39 verify: 19 on orca, the 7 known on chrome). Do not replay feel rows; the slice review already did. A big suite takes minutes: run it
-   with a Bash timeout of 600000 (or in the background) and stdout to a file, e.g.
-   `> <EVIDENCE_DIR>/verify-smoke.json`, then read that file. When
-   `grep -q -- '--viewport' .cursor/skills/smoke-test/scripts/run-smoke.mjs` succeeds, also pass
-   `--page <browserPageId from orca tab current --json, after checking its URL is the preview port> --viewport <the portrait V1 size in
-   EXPECT_GAMEPLAY_VISUAL.md, else the design resolution>`: an editor preview tab is landscape and
-   unfocused, which stalled cc-lego-stack S11's verify on 2026-10-05.
+   then `node .cursor/skills/smoke-test/scripts/run-smoke.mjs --port <port of that preview> --channel chrome`, plus the
+   flags in scripts/smoke/run-args.json when it exists, must be green. Chrome like the gate: an Orca tab right after
+   the Editor reopened, or behind another preview, reads false reds (pilot 24 S39 verify: 19 on orca, the 7 known on
+   chrome). The run-args flags are the ones the gate, the writer and the reviewer ran with (`--settle` waits for the
+   first scene, `--viewport` pins the size): without them a start-up or viewport-pinned check reads red (pilot 24 S41
+   verify: S01-02-layout-baseline red without --settle, green with it). Do not replay feel rows; the slice review
+   already did. A big suite takes minutes: run it with a Bash timeout of 600000 (or in the background) and stdout to
+   a file, e.g. `> <EVIDENCE_DIR>/verify-smoke.json`, then read that file. When run-args.json has no `--viewport`
+   and `grep -q -- '--viewport' .cursor/skills/smoke-test/scripts/run-smoke.mjs` succeeds, also pass
+   `--viewport <the portrait V1 size in EXPECT_GAMEPLAY_VISUAL.md, else the design resolution>` (a landscape page
+   stalled cc-lego-stack S11's verify on 2026-10-05).
 5. Write <EVIDENCE_DIR>/verify-main.json:
    {"status":"verified|manual_required|failed","checks":{"funplay":"…","missing_script":"…","include_modules":"…","smoke":"…"},"detail":"<one line>","updatedAt":"<ISO>"}
    manual_required only with the real reason (the preview cannot start, a device is needed). Then stop.
