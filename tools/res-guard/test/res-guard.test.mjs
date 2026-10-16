@@ -298,3 +298,39 @@ setTimeout(() => process.exit(0), 20000);
   assert.equal(rows[2].attempt, 2);
   try { process.kill(rows[2].pid); } catch { /* gone */ }
 });
+
+test('lifecyclePlan with runner lanes (phase 2): a lane in main stops "primary waits"; a live lane keeps its own worktree editor', () => {
+  const t = Date.parse('2026-10-16T03:00:00Z');
+  const E = (pid, project) => ({ pid, project, etimeSec: 3600, agentOwned: true, footMB: 3000 });
+  const s = { editors: [E(1, '/m'), E(2, '/m-wt-s21'), E(3, '/n'), E(4, '/n-wt-s24')] };
+  const two = { live: true, reopens: true, slice: 'S30', phase: 'review', lane: 'single', lanes: [
+    { slice: 'S30', phase: 'review', checkout: '/m' }, { slice: 'S21', phase: 'writer', checkout: '/m-wt-s21' }] };
+  const one = { live: true, reopens: true, slice: 'S24', phase: 'writer', lane: 'single', lanes: [{ slice: 'S24', phase: 'writer', checkout: '/n-wt-s24' }] };
+  const facts = new Map([
+    // main of a two-lane run: S21's writer agent works in the worktree; S30 sits between its agents in main
+    [1, { isWorktree: false, worktreeLanes: [{ pid: 60, role: 'worker', slice: 'S21', project: '/m-wt-s21' }], runner: two }],
+    [2, { isWorktree: true, runner: two }],  // no agent attached right now, but its lane is live
+    [3, { isWorktree: false, worktreeLanes: [{ pid: 61, role: 'worker', slice: 'S24', project: '/n-wt-s24' }], runner: one }],
+    [4, { isWorktree: true, runner: { ...one, lanes: [{ slice: 'S24', phase: 'done', checkout: '/n-wt-s24' }] } }],
+  ]);
+  const { verdicts } = lifecyclePlan(s, mergeConfig(DEFAULTS, {}), facts, { seen: { 1: new Date(t - 5 * 60000).toISOString() }, now: t });
+  const by = Object.fromEntries(verdicts.map((v) => [v.pid, `${v.verdict}: ${v.why}`]));
+  assert.match(by[1], /^keep: idle 5 min \(closes at 20\)/, 'not "primary waits": S30 still works in main');
+  assert.match(by[2], /^keep: runner lane S21 \(writer\) works in this worktree/);
+  assert.match(by[3], /^close: primary waits: worker S24 \(pid 61\) works in n-wt-s24/, 'one lane, in its worktree: main waits as before');
+  assert.match(by[4], /^close: idle 60 min/, 'a lane that is done no longer keeps its worktree editor');
+});
+
+test('runnerInfo: runner.lanes with each lane\'s checkout (its lane_checkout while it exists, else main) and phase', () => {
+  const root = fs.realpathSync(tmp('rg-lanes-'));
+  const cur = path.join(root, '.cursor');
+  const wt = fs.realpathSync(tmp('rg-lane-wt-'));
+  for (const [id, st] of [['S30', { phase: 'review', writer: 'term_1' }], ['S21', { phase: 'writer', writer: 'term_2', lane_checkout: wt }], ['S22', { phase: 'writer', lane_checkout: '/gone/wt' }]]) {
+    fs.mkdirSync(path.join(cur, 'evidence', 'tasks', `T-${id}`), { recursive: true });
+    fs.writeFileSync(path.join(cur, 'evidence', 'tasks', `T-${id}`, 'producer-state.json'), JSON.stringify(st));
+  }
+  fs.writeFileSync(path.join(cur, 'producer-runner.json'), JSON.stringify({ slice: 'S30', step: 'lane', lanes: [{ slice: 'S30' }, { slice: 'S21' }, { slice: 'S22' }], questions: [] }));
+  fs.writeFileSync(path.join(cur, 'producer.lock'), JSON.stringify({ pid: process.pid, host: os.hostname(), reopens_editor: true }));
+  assert.deepEqual(runnerInfo(root).lanes, [
+    { slice: 'S30', phase: 'review', checkout: root }, { slice: 'S21', phase: 'writer', checkout: wt }, { slice: 'S22', phase: 'writer', checkout: root }]);
+});

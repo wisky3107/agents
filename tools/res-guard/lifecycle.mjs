@@ -20,6 +20,7 @@ const AGENT = /(^|\/)(codex|agy|cursor-agent|gemini|opencode)$/;
 // roles that never drive the editor: the fleet coordinator validates, the producer and judge decide
 const NO_EDITOR_ROLES = new Set(['coordinator', 'producer', 'judge']);
 const FLEET_ACTIVE = new Set(['fleet', 'accept', 'commit', 'committing']);
+const LANE_DONE = new Set(['done', 'blocked', 'cancelled', null, undefined]);
 const norm = (p) => (p ? path.resolve(p) : p);
 const within = (p, dir) => !!p && !!dir && (p === dir || p.startsWith(`${dir}/`));
 const readJson = (file) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } };
@@ -56,7 +57,9 @@ function sliceWorktree(primary, slice) {
 }
 
 /**
- * What the producer runner of `primary` is doing: { live, reopens, slice, step, phase, lane, worktree }.
+ * What the producer runner of `primary` is doing: { live, reopens, slice, step, phase, lane, worktree, lanes }.
+ * `lanes` (runner phase 2, M3+ runners only): every live lane with its phase and checkout — main, or the lane's own
+ * worktree (`lane_checkout` in its producer-state while that dir exists).
  * `reopens`: the live runner reopens main's editor itself before a single lane needs it (its lock
  * says so); an older runner does not, so main's editor must stay open while it runs.
  */
@@ -69,9 +72,14 @@ export function runnerInfo(primary) {
   const s = readJson(path.join(dir, 'evidence', 'tasks', `T-${runner.slice}`, 'producer-state.json')) || {};
   const lane = s.coordinator || s.coordinator_spawning || s.phase === 'fleet' ? 'fleet' : s.writer || s.writer_spawning ? 'single' : null;
   const wt = lane === 'fleet' ? norm(s.worktree) || sliceWorktree(primary, runner.slice) : null;
+  const lanes = Array.isArray(runner.lanes) ? runner.lanes.map((l) => {
+    const ls = l.slice === runner.slice ? s : readJson(path.join(dir, 'evidence', 'tasks', `T-${l.slice}`, 'producer-state.json')) || {};
+    const own = ls.lane_checkout && fs.existsSync(ls.lane_checkout) ? norm(ls.lane_checkout) : norm(primary);
+    return { slice: l.slice, phase: ls.phase || null, checkout: own };
+  }) : null;
   return {
     live, reopens: live && lock.reopens_editor === true, slice: runner.slice, step: runner.step,
-    phase: s.phase || null, lane, worktree: wt && fs.existsSync(wt) ? wt : null,
+    phase: s.phase || null, lane, worktree: wt && fs.existsSync(wt) ? wt : null, ...(lanes ? { lanes } : {}),
   };
 }
 
@@ -230,15 +238,20 @@ export function lifecyclePlan(s, cfg, facts, { seen = {}, now = Date.now() } = {
     const v = (verdict, why) => verdicts.push({ pid: ed.pid, project: ed.project, footMB: ed.footMB, verdict, why });
     const used = (why) => { lastUsed = now; v('keep', why); };
     const fleetWt = R.live && R.lane === 'fleet' && FLEET_ACTIVE.has(R.phase) && R.worktree;
+    // runner phase 2: a live lane that works in this checkout — its own worktree keeps its editor; a lane in main
+    // stops "primary waits" (the other lane's worktree must not close main between this lane's agents)
+    const lanesHere = R.live ? (R.lanes || []).filter((l) => !LANE_DONE.has(l.phase) && l.checkout === dir) : [];
+    const mainLane = !f.isWorktree && lanesHere.length > 0;
     if (!f.exists) v('gone', 'checkout no longer exists (the reaper kills it)');
     else if (keepList.includes(dir)) v('keep', 'listed in config editors.keep');
     else if (!ed.agentOwned) v('keep', 'opened by hand (no --nologin)');
     else if (R.live && R.phase === 'merge' && !f.isWorktree) used(`runner ${R.slice} merge step manages main's editor`);
     else if (fleetWt && fleetWt === dir) used(`runner ${R.slice} fleet works in this worktree`);
     else if (f.laneUsers.length) used(`in use: ${f.laneUsers.map(who).join(', ')}`);
+    else if (f.isWorktree && lanesHere.length) used(`runner lane ${lanesHere.map((l) => `${l.slice} (${l.phase})`).join(', ')} works in this worktree`);
     else if (ed.etimeSec < cfg.editors.graceMin * 60) v('keep', `opened ${Math.round(ed.etimeSec / 60)} min ago (grace ${cfg.editors.graceMin} min)`);
-    else if (!f.isWorktree && fleetWt) v('close', `primary waits: runner ${R.slice} fleet works in ${path.basename(fleetWt)}`);
-    else if (!f.isWorktree && f.worktreeLanes.length) v('close', `primary waits: ${f.worktreeLanes.map((l) => `${who(l)} works in ${path.basename(l.project)}`).join(', ')}`);
+    else if (!f.isWorktree && fleetWt && !mainLane) v('close', `primary waits: runner ${R.slice} fleet works in ${path.basename(fleetWt)}`);
+    else if (!f.isWorktree && f.worktreeLanes.length && !mainLane) v('close', `primary waits: ${f.worktreeLanes.map((l) => `${who(l)} works in ${path.basename(l.project)}`).join(', ')}`);
     else if (!f.isWorktree && R.live && !R.reopens) used('the live runner (older code) uses main next and does not reopen it; restart the runner to let idle close apply');
     else if (f.clients > 0) used(`${f.clients} agent client connection(s) into its MCP/preview ports`);
     else {

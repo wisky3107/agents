@@ -46,8 +46,11 @@ node res-guard.mjs install-launchd        # com.agents.res-guard, `tick` every 6
      - the runner's merge step on main;
      - the worktree a live fleet works in;
      - used by a lane agent (`CC_ROLE=worker` with `CC_PROJECT` = this checkout);
+     - the worktree a live runner lane works in (`runner.lanes` + its `lane_checkout`; runner phase 2), even
+       between that lane's agents;
      - opened less than 10 min ago.
-   - Close: **main while a slice runs in one of its worktrees**.
+   - Close: **main while a slice runs in one of its worktrees** — unless another live runner lane works in
+     main (two lanes: main must not close between that lane's agents; it falls to the idle rule).
    - Keep: main while a live runner of older code runs (it would not reopen it).
    - Keep: an agent client connected to its MCP or preview port (an MCP client, a Playwright smoke).
      A preview viewer never keeps an editor (director, 2026-10-08): a desktop browser with no
