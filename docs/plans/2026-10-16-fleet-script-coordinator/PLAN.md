@@ -239,6 +239,11 @@ Mỗi mốc merge riêng và có test. Chế độ `agent` không đổi hành v
 | 15:45 | q28 `worker_escalation` thừa từ art-manifest | card art bảo worker gửi status tới handle; driver không đưa handle nào → worker báo lên Run | `e97f12d`: không có handle thì bỏ bước gửi |
 | 15:46 | q29 `fleet_worker_start` art-2d: codex `agent-update-prompt` | codex 0.161 hiện menu cập nhật (dự đoán trước) | pilot chọn "Skip until next version" rồi `retry` |
 | 15:47 | q30 `task_not_startable` khi retry | start lỗi để Task ở trạng thái failed; retry phải có `--retry-of`; driver 194d434 còn xoá `failedDispatch` trước khi start | `1f74497` (retry có `--retry-of`, release sau khi start lại) + `77a48d0` (mất record → lấy dispatch failed từ `dispatch-show`) |
+| 15:58 | q31 `consumer_fenced` ở worker-start | sau khi restart sang terminal mới, câu trả lời được áp dụng trước bước `run-use` của lane | `100559d`: `rebindRun` trước khi câu trả lời hay commit tới driver. Retry sau đó chạy được với `--retry-of` dù dispatch cũ đã release |
+| 16:00 | q32/q33 `orca_error`: mọi `check` đều `consumer_fenced` | driver vẫn ack Delivery của thế hệ consumer trước `run-use` | `6875811`: bỏ ack cũ, chờ lại không ack; `seen` lọc message trùng |
+
+Bài học: các đường restart / `run-use` / retry chỉ test trong harness, chưa thử với Orca thật. Mỗi lỗi trên đều lộ ra ở
+lần chạy thật đầu tiên. Trước khi đổi mặc định (M6), cần một spike live: restart runner giữa lane, retry một start lỗi.
 
 ### Phát hiện ở M3 (spike 2, 2026-10-16, Orca 1.4.218)
 
