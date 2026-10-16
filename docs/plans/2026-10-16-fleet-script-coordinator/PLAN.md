@@ -237,12 +237,12 @@ Mỗi mốc merge riêng và có test. Chế độ `agent` không đổi hành v
 | Đo | S44 (script) | Baseline |
 |---|---|---|
 | Kết quả | merged `2ab86b26` (merge `8e33d835`), verified, done 18:20Z; `retained: []` | — |
-| Wall (chọn → merge) | **2h28m** (15:40:12 → 18:07:49Z), trong đó khoảng 25 phút mất vì lỗi driver và 4 lần restart | S38–S43 single M: 1h34m–4h06m (trung vị khoảng 3h15m) |
+| Wall | **2h28m** tới merge (15:40:12 → 18:07:49Z), **2h40m** tới done (verify trên main 12 phút); trong đó khoảng 25 phút mất vì lỗi driver và các lần restart | S38–S43 single M: 1h34m–4h06m (trung vị khoảng 3h15m) |
 | Token coordinator (fleet-orch) | **0** | coordinator agent: 6–28M/slice (cat-dash, monster-truck) |
 | Token worker | claude 48.9M (4 phiên) + codex 3.7M + cursor (không đo được) ≈ **52.6M** | single S38–S43: 22.0–49.6M (TB khoảng 34M); fleet agent trước đây: khoảng 85M/slice (car-service), 95–300M (cat-dash) |
 | Task | 11: scan, art-manifest, implement, art-2d, integrate, review, fix1-code, fix1-scene, review-r2, commit (+1 retry art-2d) | — |
 | Review / fix | 2 vòng review, 1 vòng fix (F1 tách scene+code, chép từ `fix_routing`, không có câu hỏi) | — |
-| Câu hỏi | 15 = 2 thật (q38, q42) + 1 môi trường (q29, menu codex) + **12 do lỗi driver** | — |
+| Câu hỏi | 15 = 2 thật (q38, q42) + 1 môi trường (q29, menu codex) + **12 do lỗi driver**. Reply cho q38 (msg_e938…, phát lại sau khi mailbox thông) thất bại với `dispatch_inactive`; với 9d38e2d, câu này sẽ chỉ được ghi log. Runner của pilot (16:08Z) chưa có d301a4a/9d38e2d/26b231f | — |
 | Lỗi driver | 7, đã sửa hết: e97f12d, 1f74497+77a48d0, 100559d, 6875811, d301a4a, 9d38e2d, 26b231f (judge) | — |
 
 **Kết luận:**
