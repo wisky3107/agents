@@ -757,21 +757,29 @@ function badHandoff(root, id, s, file) {
  * ctx: { project, id, lane: 'single'|'fleet', autoCommit, autoMerge, waitMs, idleMs, sleep }
  */
 export function runSlice(ctx) {
-  const root = ctx.project.root;
-  ctx.checkout ??= laneCheckout(root, ctx.id);
   for (;;) {
-    const c = st.readControl(root);
-    if (c?.cmd === 'stop' || c?.cmd === 'pause') return { stopped: c.cmd };
-    const blocked = flushOutbox(ctx);
-    if (blocked) return blocked;
-    const s = st.readSliceState(root, ctx.id);
-    const phase = s.phase || (ctx.lane === 'fleet' ? 'spawn-coordinator' : 'spawn-writer');
-    if (phase === 'done' || phase === 'blocked') return { phase };
-    if (s.prompt_missing) return promptMissing(s);
-    const r = phase === 'merge' ? mergeStep(ctx, s, mergeKit) : ctx.lane === 'fleet' ? fleetStep(ctx, s, phase) : singleStep(ctx, s, phase);
+    const r = stepLane(ctx);
     if (r?.pause) ctx.sleep(ctx.idleMs);
     else if (r) return r;
   }
+}
+
+/**
+ * One step of a lane (phase 2 M5a, so a scheduler can take turns between two lanes): → null (progress: step again
+ * now) | PAUSE (nothing to do until the next look) | { stopped } | { phase: done|blocked } | an ask.
+ */
+export function stepLane(ctx) {
+  const root = ctx.project.root;
+  ctx.checkout ??= laneCheckout(root, ctx.id);
+  const c = st.readControl(root);
+  if (c?.cmd === 'stop' || c?.cmd === 'pause') return { stopped: c.cmd };
+  const blocked = flushOutbox(ctx);
+  if (blocked) return blocked;
+  const s = st.readSliceState(root, ctx.id);
+  const phase = s.phase || (ctx.lane === 'fleet' ? 'spawn-coordinator' : 'spawn-writer');
+  if (phase === 'done' || phase === 'blocked') return { phase };
+  if (s.prompt_missing) return promptMissing(s);
+  return phase === 'merge' ? mergeStep(ctx, s, mergeKit) : ctx.lane === 'fleet' ? fleetStep(ctx, s, phase) : singleStep(ctx, s, phase);
 }
 
 /** What the merge journal borrows from the lanes (spawn, wait and question rules stay in one place). */

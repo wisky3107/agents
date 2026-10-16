@@ -84,9 +84,16 @@ if (a[0] === '--version') { console.log('1.4.218'); process.exit(0); }
 // handles listed in dead.json are closed terminals: send / close / wait fail like a stale handle
 if (a[0] === 'terminal' && read('dead.json', []).includes(arg('--terminal')) && cmd !== 'terminal wait') out({ ok: false, error: { code: 'terminal_handle_stale', message: 'terminal not found' } }, 1);
 if (cmd === 'terminal wait') {
+  // queue.json: one list every terminal plays in turn, or { handle: [...] } (two lanes: each terminal its own list;
+  // a terminal whose list is empty stays busy while another still has steps)
   const q = read('queue.json', []);
-  const step = q.shift();
+  const mine = Array.isArray(q) ? q : (q[arg('--terminal')] || []);
+  const step = mine.shift();
   fs.writeFileSync(path.join(D, 'queue.json'), JSON.stringify(q));
+  if (!step && !Array.isArray(q) && Object.values(q).some((l) => l.length)) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+    out({ ok: true, result: { wait: { satisfied: false } } });
+  }
   if (!step) {
     fs.mkdirSync(path.join(P, '.cursor'), { recursive: true });
     fs.writeFileSync(path.join(P, '.cursor', 'producer.control'), 'stop\\n');
