@@ -241,6 +241,8 @@ Mỗi mốc merge riêng và có test. Chế độ `agent` không đổi hành v
 | 15:47 | q30 `task_not_startable` khi retry | start lỗi để Task ở trạng thái failed; retry phải có `--retry-of`; driver 194d434 còn xoá `failedDispatch` trước khi start | `1f74497` (retry có `--retry-of`, release sau khi start lại) + `77a48d0` (mất record → lấy dispatch failed từ `dispatch-show`) |
 | 15:58 | q31 `consumer_fenced` ở worker-start | sau khi restart sang terminal mới, câu trả lời được áp dụng trước bước `run-use` của lane | `100559d`: `rebindRun` trước khi câu trả lời hay commit tới driver. Retry sau đó chạy được với `--retry-of` dù dispatch cũ đã release |
 | 16:00 | q32/q33 `orca_error`: mọi `check` đều `consumer_fenced` | driver vẫn ack Delivery của thế hệ consumer trước `run-use` | `6875811`: bỏ ack cũ, chờ lại không ack; `seen` lọc message trùng |
+| 16:09 | q34–q37 `worker_escalation` liên tục từ art-2d | Delivery chứa cả lô FIFO, gồm heartbeat và status; driver coi mọi type khác `worker_done`/`question` là escalation | `d301a4a`: chỉ xử lý `worker_done`, `question`, `escalation`; status ghi log, heartbeat bỏ qua |
+| 16:09 | message cũ phát lại sau khi mailbox thông | câu hỏi từ worker đã xong vẫn thành câu hỏi | `9d38e2d`: task đã `done` → chỉ ghi log |
 
 Bài học: các đường restart / `run-use` / retry chỉ test trong harness, chưa thử với Orca thật. Mỗi lỗi trên đều lộ ra ở
 lần chạy thật đầu tiên. Trước khi đổi mặc định (M6), cần một spike live: restart runner giữa lane, retry một start lỗi.
