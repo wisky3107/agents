@@ -7,7 +7,8 @@
  * ctx: { sliceDir, checkout, evidenceRoot (abs), run, worktree (orca selector of the feature worktree),
  *        cfg (fleet-dag cfg), values (base spec values), sliceAssets ({2d,3d,vfx,audio}), manifestPath,
  *        slicePaths ({code, scene}), slug, memory ({ role: path }), waitMs, io, ask(q), log(msg) }
- * A question is { kind, ref, text, options } — the runner asks it and calls answer(ctx, ref, choice, text).
+ * A question is { kind, ref, text, options }: kept in `pending` (so a kill cannot lose it) and passed to ctx.ask
+ * when given; the runner asks it and calls answer(ctx, ref, choice, text), which drops it from `pending`.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -17,7 +18,7 @@ import { render } from '../../../cocos-orca-fleet/scripts/spec-templates.mjs';
 import { checkReview } from '../../../cocos-orca-fleet/scripts/review-check.mjs';
 
 const FILE = 'fleet-driver.json';
-const fresh = () => ({ dag: null, tasks: {}, seen: [], delivery: null, starts: {}, retained: [], chainLast: null });
+const fresh = () => ({ dag: null, tasks: {}, seen: [], delivery: null, starts: {}, retained: [], chainLast: null, pending: [] });
 
 export function load(ctx) {
   try { return { ...fresh(), ...JSON.parse(fs.readFileSync(path.join(ctx.sliceDir, FILE), 'utf8')) }; } catch { return fresh(); }
@@ -56,12 +57,13 @@ export function tick(ctx) {
  */
 export function answer(ctx, ref, choice, text = '') {
   const d = load(ctx);
+  d.pending = d.pending.filter((q) => q.ref !== ref);
   const [kind, k] = [ref.split(':')[0], ref.slice(ref.indexOf(':') + 1)];
   if (/^stop$/i.test(choice) && ['spec', 'create', 'reuse', 'start', 'manifest', 'infra'].includes(kind)) {
     d.dag.phase = 'stopped';
     writeHandoff(ctx, { status: 'blocked', detail: `stopped at ${ref}` });
   } else if (['spec', 'create', 'reuse', 'start'].includes(kind)) startTask(ctx, d, k.split('#')[0]);
-  else if (kind === 'manifest') { const e = manifestEvent(ctx); if (e) feed(ctx, d, e); }
+  else if (kind === 'manifest') { const e = manifestEvent(ctx, d); if (e) feed(ctx, d, e); }
   else if (kind === 'infra') feed(ctx, d, { type: 'infra_resolved', reviewer: text.trim() || null });
   else feed(ctx, d, { type: 'answer', ref, choice, text });
   save(ctx, d);
@@ -102,6 +104,14 @@ function resume(ctx, d) {
   for (const [key, rec] of Object.entries(d.tasks)) if (rec.intent && !rec.dispatch) startTask(ctx, d, key.split('#')[0]);
 }
 
+/** A question for the runner: recorded first, then handed over (once per ref). */
+function raise(ctx, d, q) {
+  if (d.pending.some((x) => x.ref === q.ref)) return;
+  d.pending.push(q);
+  save(ctx, d);
+  ctx.ask?.(q);
+}
+
 function act(ctx, d, a) {
   const io = ctx.io ?? orca;
   switch (a.do) {
@@ -113,15 +123,15 @@ function act(ctx, d, a) {
       if (r.ok && r.state !== 'released') d.retained.push({ task: a.task, handle: rec.handle, state: r.state, reason: r.reason });
       return null;
     }
-    case 'read_manifest': return manifestEvent(ctx);
+    case 'read_manifest': return manifestEvent(ctx, d);
     case 'check_review': return reviewEvent(ctx, a.task);
-    case 'infra': ctx.ask({ kind: 'fleet_infra', ref: `infra:${a.task}`, text: `${a.task}: preview / runtime environment blocked the review`, options: null }); return null;
+    case 'infra': raise(ctx, d, { kind: 'fleet_infra', ref: `infra:${a.task}`, text: `${a.task}: preview / runtime environment blocked the review`, options: null }); return null;
     case 'reply': {
       const r = io.reply(a.msgId, a.text);
       if (!r.ok) ctx.log?.(`fleet-driver: reply ${a.msgId} failed: ${r.error}`);
       return null;
     }
-    case 'ask': ctx.ask({ kind: a.kind, ref: a.ref, text: a.text, options: a.options }); return null;
+    case 'ask': raise(ctx, d, { kind: a.kind, ref: a.ref, text: a.text, options: a.options }); return null;
     case 'handoff': writeHandoff(ctx, a); return null;
     case 'close_chain': {
       // Orca hands a reused terminal to each new dispatch: only the last one's release closes it
@@ -149,7 +159,7 @@ function startTask(ctx, d, name) {
     let spec;
     try { spec = specFor(ctx, d, t); } catch (e) {
       delete rec.intent;
-      ctx.ask({ kind: 'fleet_spec', ref: `spec:${k}`, text: `${name}: spec cannot be filled: ${e.message}`, options: null });
+      raise(ctx, d, { kind: 'fleet_spec', ref: `spec:${k}`, text: `${name}: spec cannot be filled: ${e.message}`, options: null });
       return;
     }
     if (found) rec.task = found.id;
@@ -157,7 +167,7 @@ function startTask(ctx, d, name) {
       fs.mkdirSync(path.join(ctx.evidenceRoot, 'specs'), { recursive: true });
       fs.writeFileSync(path.join(ctx.evidenceRoot, 'specs', `${k.replace('#', '-')}.md`), spec);
       const r = io.taskCreate({ run: ctx.run, title, spec });
-      if (!r.ok) { delete rec.intent; ctx.ask({ kind: 'fleet_orca', ref: `create:${k}`, text: `${name}: task-create failed: ${r.error}`, options: null }); return; }
+      if (!r.ok) { delete rec.intent; raise(ctx, d, { kind: 'fleet_orca', ref: `create:${k}`, text: `${name}: task-create failed: ${r.error}`, options: null }); return; }
       rec.task = r.task;
     }
     save(ctx, d);
@@ -168,14 +178,14 @@ function startTask(ctx, d, name) {
   }
   rec.intent = 'start'; save(ctx, d);
   const terminal = t.reuse ? d.tasks[key(d, t.reuse)]?.handle : null;
-  if (t.reuse && !terminal) { ctx.ask({ kind: 'fleet_orca', ref: `reuse:${k}`, text: `${name}: no terminal to reuse from ${t.reuse}`, options: null }); return; }
+  if (t.reuse && !terminal) { raise(ctx, d, { kind: 'fleet_orca', ref: `reuse:${k}`, text: `${name}: no terminal to reuse from ${t.reuse}`, options: null }); return; }
   // a worker sends worker_done before its turn ends: a brief pasted into a busy TUI is lost (monster-truck S02)
   if (terminal && io.terminalWaitIdle && !io.terminalWaitIdle(terminal)) ctx.log?.(`fleet-driver: ${terminal} not tui-idle after 90 s, starting ${name} anyway`);
   const prev = t.retry ? d.tasks[`${name}#${(t.attempt ?? 2) - 1}`]?.dispatch : null;
   const r = io.workerStart({ run: ctx.run, task: rec.task, agent: t.agent, terminal, worktree: ctx.worktree, retryOf: prev });
   if (!r.ok) {
     // never relaunch blind: the receipt says what is left (failedStage, residualResources)
-    ctx.ask({ kind: 'fleet_worker_start', ref: `start:${k}`, text: `${name}: worker-start failed: ${r.error}; receipt ${JSON.stringify(r.receipt ?? {}).slice(0, 400)}`, options: null });
+    raise(ctx, d, { kind: 'fleet_worker_start', ref: `start:${k}`, text: `${name}: worker-start failed: ${r.error}; receipt ${JSON.stringify(r.receipt ?? {}).slice(0, 400)}`, options: null });
     return;
   }
   Object.assign(rec, { dispatch: r.dispatch, handle: r.handle });
@@ -225,11 +235,11 @@ export function manifestRows(json, sliceAssets) {
   return { rows, missing };
 }
 
-function manifestEvent(ctx) {
+function manifestEvent(ctx, d) {
   const json = readJson(ctx.manifestPath);
   const { rows, missing } = manifestRows(json, ctx.sliceAssets);
   if (!json || missing.length) {
-    ctx.ask({ kind: 'fleet_manifest', ref: 'manifest', text: `art-manifest: ${json ? `no row for ${missing.join(', ')}` : `cannot read ${ctx.manifestPath}`}`, options: null });
+    raise(ctx, d, { kind: 'fleet_manifest', ref: 'manifest', text: `art-manifest: ${json ? `no row for ${missing.join(', ')}` : `cannot read ${ctx.manifestPath}`}`, options: null });
     return null;
   }
   return { type: 'manifest', rows };

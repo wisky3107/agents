@@ -82,6 +82,17 @@ node ~/.agents/skills/game-producer/scripts/producer-runner.mjs start --dry-run 
   outage); before any message to a fleet coordinator the runner puts an open panel away (shift+→).
   `coordinator_question`, `director_pending` and `coordinator_screen` have no judge or autopilot path: an
   unattended run waits for a human on them. The fleet prompt tells coordinators to use gates instead.
+- **Fleet lane without a coordinator LLM (`fleet.coordinator: script`; default `agent`; runner only;
+  docs/plans/2026-10-16-fleet-script-coordinator):** the runner's own terminal is the Run's coordinator and
+  `lib/fleet-driver.mjs` runs the Task DAG (`lib/fleet-dag.mjs`): feature worktree, pointer PLAN through
+  `plan-check.mjs`, `run-create`, worker specs filled from the role cards (`spec-templates.mjs`), managed
+  `worker-start` per locked agent (integrate, code/scene fixes and the `commit` Task reuse the implement terminal),
+  `review-check.mjs` on every review, fix Tasks copied from `fix_routing` by owner. Every judgment is a runner
+  question (`worker_question` — judge-able with a contract quote —, `worker_escalation`, `review_director`,
+  `fix_routing_unclear`, `changes_after_rounds`, `worker_failed`, `fleet_worker_start`, `fleet_manifest`,
+  `fleet_infra`, …); no Orca gates. State in `T-<Sxx>/fleet-driver.json` (intent → act → record; a restart
+  reconciles from Orca and `run-use`s the Run from a new terminal). Pinned per slice (`fleet_mode`); a slice with a
+  rip study stays on the agent coordinator. Accept, commit sha and merge are the fleet lane's.
 - **Single lane in its own worktree (`release.lane_worktree: true` or policy token `lane_worktree=true`, or a
   slice list such as `lane_worktree=S24,S25`; default off; phase 2 M1, docs/plans/2026-10-15-runner-parallel-phase2):** before the writer the runner creates
   `orca worktree create --name <Sxx-slug> --base-branch <slice base> --setup run` (library/, Funplay port, Creator),

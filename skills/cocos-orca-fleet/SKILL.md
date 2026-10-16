@@ -15,6 +15,9 @@ disable-model-invocation: true
 
 # Cocos Orca Fleet
 
+Under the producer runner with `fleet.coordinator: script` there is no coordinator agent: the runner drives the same
+DAG from this skill's rules (game-producer `lib/fleet-driver.mjs`). Everything below is for the agent coordinator.
+
 You are the **coordinator**: a mechanical role (create Run/Tasks, wire the DAG, poll, transfer
 terminals, gate) that is normally launched on a cheap agent (`fleet.orchestrator_agent`,
 default `cursor --model auto`). The **planner** hat — deciding scope, paths, acceptance, budget

@@ -32,6 +32,8 @@ const ALLOW = {
   lane_blocked: (o) => o === 'send this answer to the lane',
   unknown_status: (o) => ['treat as working, keep waiting', 'treat as ready_for_review', 'treat as changes_requested', 'treat as offer_commit'].includes(o),
   verdict_mismatch: (o) => ['treat as approved', 'treat as changes_requested'].includes(o),
+  // a fleet-driver worker's own `ask` (fleet.coordinator: script): the answer is text and must quote the contracts
+  worker_question: (o) => o === 'answer with --text',
 };
 // Not here on purpose: coordinator_question (a keystroke relay into the coordinator's codex panel, whose
 // options are screen text, not contract wording) and director_pending (the coordinator itself said the
@@ -39,7 +41,7 @@ const ALLOW = {
 export const JUDGE_KINDS = new Set(Object.keys(ALLOW));
 /** The options of `kind` the judge may pick from (empty when the judge may not answer that kind). */
 export const judgeOptions = (kind, options) => (ALLOW[kind] ? options.filter(ALLOW[kind]) : []);
-const FROM_CONTRACTS = new Set(['fleet_gate', 'lane_blocked']); // these answers must quote a contract line
+const FROM_CONTRACTS = new Set(['fleet_gate', 'lane_blocked', 'worker_question']); // these answers must quote a contract line
 const NEEDS_TEXT = new Set(['send this answer to the lane', 'answer with --text']);
 // money, budget and plan sign-off are the director's (SKILL Step 2c / 2d), whatever the contracts say
 const DIRECTORS = /PLAN approval|open questions|budget|credits?\b|tripo|bump|cut_to|\bcosts?\b|\bprice|deadline|priorit/i;

@@ -46,7 +46,7 @@ ${policy}
 `;
 export const POLICY = '- policy: goal=end_to_end auto_commit=true auto_merge=true deploy=preview budget=advisory max_parallel=1 (director gate: S02 GIVEN)';
 
-/** slices: { S01: { needs, size, study, assets } } */
+/** slices: { S01: { needs, size, study, assets, front (extra front-matter lines) } } */
 export function project({ notes = NOTES(POLICY), slices = { S01: { needs: false }, S02: { needs: true }, S03: { needs: false } }, dag, prefix = 'runner-proj-', files = {}, parallelOk = [], exclusive } = {}) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
   for (const [rel, body] of Object.entries(files)) {
@@ -61,7 +61,7 @@ export function project({ notes = NOTES(POLICY), slices = { S01: { needs: false 
   for (const [id, o] of Object.entries(slices)) {
     const assets = o.assets ? `assets:\n  2d:\n    - ${o.assets}\n  3d: []\n` : 'assets:\n  2d: []\n  3d: []\n';
     fs.writeFileSync(path.join(root, 'slices', `${id}-x.md`),
-      `---\nid: ${id}\nsize: ${o.size || 'M'}             # S | M | L\nneeds_director_ok: ${o.needs}\n${o.study ? 'rip_study:\n  - a\n' : ''}${o.exclusive ? `exclusive: [${o.exclusive.join(', ')}]\n` : ''}${assets}---\n# ${id}\n${o.body || ''}`);
+      `---\nid: ${id}\nsize: ${o.size || 'M'}             # S | M | L\nneeds_director_ok: ${o.needs}\n${o.study ? 'rip_study:\n  - a\n' : ''}${o.exclusive ? `exclusive: [${o.exclusive.join(', ')}]\n` : ''}${assets}${o.front || ''}---\n# ${id}\n${o.body || ''}`);
   }
   const g = (...a) => spawnSync('git', ['-C', root, ...a], { encoding: 'utf8' });
   g('init', '-q');
@@ -83,6 +83,8 @@ const cmd = a[0] + ' ' + a[1];
 if (a[0] === '--version') { console.log('1.4.218'); process.exit(0); }
 // handles listed in dead.json are closed terminals: send / close / wait fail like a stale handle
 if (a[0] === 'terminal' && read('dead.json', []).includes(arg('--terminal')) && cmd !== 'terminal wait') out({ ok: false, error: { code: 'terminal_handle_stale', message: 'terminal not found' } }, 1);
+// a fleet-driver worker terminal (fake worker-start below) is idle whenever the driver reuses it
+if (cmd === 'terminal wait' && /^term_fw_/.test(arg('--terminal') || '')) out({ ok: true, result: { wait: { handle: arg('--terminal'), satisfied: true } } });
 if (cmd === 'terminal wait') {
   // queue.json: one list every terminal plays in turn, or { handle: [...] } (two lanes: each terminal its own list;
   // a terminal whose list is empty stays busy while another still has steps)
@@ -207,6 +209,89 @@ if (cmd === 'orchestration run-show') out({ ok: true, result: { run: read('runs.
 if (cmd === 'orchestration worker-list') out({ ok: true, result: { workers: read('workers.json', []) } });
 if (cmd === 'orchestration gate-list') out({ ok: true, result: { gates: read('gates.json', []) } });
 if (cmd === 'orchestration inbox') out({ ok: true, result: { messages: [] } });
+// ---- fleet driver (fleet.coordinator: script). fleet.json = the Run's tasks and dispatches; fleet-queue.json = what the
+// Run inbox delivers, one step per \`check\`: { wt, write, done: '<task name>', outcome, body, commit: { message },
+// question: { task, text, options } }. An empty queue stops the runner, like queue.json.
+const FS = () => read('fleet.json', { n: 0, tasks: [], dispatches: [] });
+const saveFS = (x) => fs.writeFileSync(path.join(D, 'fleet.json'), JSON.stringify(x));
+const sliceWt = (id) => {
+  const o = require('child_process').spawnSync('git', ['-C', P, 'worktree', 'list', '--porcelain'], { encoding: 'utf8' }).stdout;
+  const hit = o.split('\\n').map((l) => (l.match(/^worktree (.+)$/) || [])[1]).find((w) => w && w !== P && path.basename(w).includes(id));
+  if (!hit) throw new Error('no worktree for ' + id);
+  return hit;
+};
+if (cmd === 'orchestration run-create') {
+  log('fleet.log', { op: 'run-create', objective: arg('--objective') });
+  out({ ok: true, result: { run: { id: 'run_f1', coordinator_handle: process.env.ORCA_TERMINAL_HANDLE || 'term_runner' } } });
+}
+if (cmd === 'orchestration run-use') { log('fleet.log', { op: 'run-use', id: arg('--id') }); out({ ok: true, result: { run: { id: arg('--id') } } }); }
+if (cmd === 'orchestration task-create') {
+  const x = FS(), id = 'task_f' + (++x.n);
+  x.tasks.push({ id, task_title: arg('--task-title'), status: 'ready', spec: arg('--spec') });
+  saveFS(x);
+  log('fleet.log', { op: 'task-create', title: arg('--task-title') });
+  out({ ok: true, result: { task: { id } } });
+}
+if (cmd === 'orchestration task-list') out({ ok: true, result: { tasks: FS().tasks.map(({ spec, ...t }) => t) } });
+if (cmd === 'orchestration dispatch-show') {
+  const d = FS().dispatches.filter((y) => y.task === arg('--task')).pop();
+  out({ ok: true, result: { dispatch: d ? { id: d.id, status: d.status, assignee_handle: d.handle } : null } });
+}
+if (cmd === 'orchestration worker-start') {
+  const x = FS(), task = x.tasks.find((t) => t.id === arg('--task'));
+  // worker-start-fail: one failed receipt (codex update menu, 2026-10-16 spike 2)
+  if (fs.existsSync(path.join(D, 'worker-start-fail'))) {
+    fs.unlinkSync(path.join(D, 'worker-start-fail'));
+    log('fleet.log', { op: 'worker-start-failed', title: task.task_title });
+    out({ ok: false, result: { failedStage: 'agent_readiness', lastError: 'Agent startup blocked: agent-update-prompt', dispatchId: 'ctx_failed' } }, 1);
+  }
+  const reuse = a.includes('--terminal') ? arg('--terminal') : null;
+  const id = 'ctx_f' + (++x.n), handle = reuse || 'term_fw_' + x.n;
+  x.dispatches.push({ id, task: task.id, title: task.task_title, handle, status: 'dispatched' });
+  saveFS(x);
+  log('fleet.log', { op: 'worker-start', title: task.task_title, agent: a.includes('--agent') ? arg('--agent') : null, model: a.includes('--model') ? arg('--model') : null, terminal: reuse, worktree: arg('--worktree') });
+  out({ ok: true, result: { dispatchId: id, taskId: task.id, effects: a.includes('--terminal') ? [] : [{ kind: 'terminal', role: 'agent', id: handle }] } });
+}
+if (cmd === 'orchestration check') {
+  if (a.includes('--ack')) log('fleet.log', { op: 'ack', id: arg('--ack') });
+  const q = read('fleet-queue.json', []), step = q.shift();
+  fs.writeFileSync(path.join(D, 'fleet-queue.json'), JSON.stringify(q));
+  if (!step) {
+    fs.mkdirSync(path.join(P, '.cursor'), { recursive: true });
+    fs.writeFileSync(path.join(P, '.cursor', 'producer.control'), 'stop\\n');
+    out({ ok: true, result: { deliveryId: null, messages: [] } });
+  }
+  const B = step.wt ? sliceWt(step.wt) : P;
+  for (const [rel, body] of Object.entries(step.write || {})) {
+    const f = path.resolve(B, rel);
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    fs.writeFileSync(f, typeof body === 'string' ? body : JSON.stringify(body));
+  }
+  let body = step.body || 'ok';
+  if (step.commit) {
+    const cp = require('child_process');
+    cp.spawnSync('git', ['-C', B, 'add', '-A']);
+    cp.spawnSync('git', ['-C', B, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-qm', step.commit.message]);
+    body = 'committed ' + cp.spawnSync('git', ['-C', B, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+  }
+  const x = FS(), msgs = [];
+  const disp = (name) => x.dispatches.filter((y) => y.title.includes(':' + name + '#')).pop();
+  if (step.done) {
+    const d = disp(step.done);
+    d.status = 'completed';
+    msgs.push({ id: 'msg_f' + (++x.n), type: 'worker_done', body, payload: JSON.stringify({ taskId: d.task, dispatchId: d.id, outcome: step.outcome || 'succeeded' }) });
+  }
+  if (step.question) {
+    const d = disp(step.question.task);
+    msgs.push({ id: 'msg_f' + (++x.n), type: 'question', body: step.question.text, payload: JSON.stringify({ taskId: d.task, dispatchId: d.id, question: step.question.text, options: step.question.options || [] }) });
+  }
+  saveFS(x);
+  log('fleet.log', { op: 'check', got: msgs.map((m) => m.type) });
+  out({ ok: true, result: { deliveryId: msgs.length ? 'del_f' + x.n : null, messages: msgs } });
+}
+if (cmd === 'orchestration reply') { log('fleet.log', { op: 'reply', id: arg('--id'), body: arg('--body') }); out({ ok: true, result: {} }); }
+if (cmd === 'orchestration worker-release') { log('fleet.log', { op: 'release', dispatch: arg('--dispatch') }); out({ ok: true, result: { state: 'released' } }); }
+if (cmd === 'orchestration worker-stop') { log('fleet.log', { op: 'stop', dispatch: arg('--dispatch') }); out({ ok: true, result: {} }); }
 out({ ok: false, error: { code: 'unknown_command', message: cmd } }, 1);
 `;
 

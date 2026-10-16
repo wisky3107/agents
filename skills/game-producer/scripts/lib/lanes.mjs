@@ -22,6 +22,8 @@ import { mergeStep, applyMergeAnswer, MERGE_KINDS, isAncestor } from './merge.mj
 import * as cq from './coordq.mjs';
 import { admit, ensureEditor, closeMain, waitMcp } from './editors.mjs';
 import { ready as agentReady, family } from '../../../cocos-orca-fleet/scripts/agent-ready.mjs';
+import { pointerPlan, validatePlan } from '../../../cocos-orca-fleet/scripts/plan-check.mjs';
+import * as driver from './fleet-driver.mjs';
 
 const REF = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'reference');
 const KNOWN = new Set(['working', 'blocked', 'ready_for_review', 'infra_blocked', 'approved', 'changes_requested', 'offer_commit', 'committed']);
@@ -780,7 +782,9 @@ export function stepLane(ctx) {
   const phase = s.phase || (ctx.lane === 'fleet' ? 'spawn-coordinator' : 'spawn-writer');
   if (phase === 'done' || phase === 'blocked') return { phase };
   if (s.prompt_missing) return promptMissing(s);
-  return phase === 'merge' ? mergeStep(ctx, s, mergeKit) : ctx.lane === 'fleet' ? fleetStep(ctx, s, phase) : singleStep(ctx, s, phase);
+  if (phase === 'merge') return mergeStep(ctx, s, mergeKit);
+  if (ctx.lane !== 'fleet') return singleStep(ctx, s, phase);
+  return fleetMode(ctx, s) === 'script' ? scriptStep(ctx, s, phase) : fleetStep(ctx, s, phase);
 }
 
 /** What the merge journal borrows from the lanes (spawn, wait and question rules stay in one place). */
@@ -1497,6 +1501,8 @@ export function applyAnswer(ctx, q) {
   const laneHandle = ctx.lane === 'fleet' ? COORDINATOR : s.writer;
   const ack = () => st.writeSliceState(root, id, { acked: [...(s.acked || []), q.obs].filter(Boolean) });
   st.log(root, id, `answer ${q.id} (${q.kind}): ${choice}${note}`);
+  if (String(q.ref || '').startsWith(DRV)) return scriptAnswer(ctx, s, q);
+  if (q.kind === 'commit_approval' && choice === 'commit' && s.fleet_mode === 'script') return scriptCommit(ctx, s);
   switch (`${q.kind}:${choice}`) {
     case 'unknown_status:treat as ready_for_review':
       return setPhase(root, id, 'spawn-reviewer', { reviewer: null });
@@ -1973,4 +1979,229 @@ function directorPending(ctx, s, h, w) {
   const q = ask(s, 'director_pending', `fleet HANDOFF ${h.raw} says it waits for the director, but no gate is open: ${oneLine(h.detail)}`,
     ['send this answer to the lane', 'answered in the lane, continue', 'stop'], { obs: `director_pending@${fp}` });
   return q === PAUSE ? null : q; // already taken: the normal stall rules go on
+}
+
+// ------------------------------------------------------------------ fleet lane, script coordinator (plan 2026-10-16-fleet-script-coordinator)
+//
+// AGENT_NOTES `fleet.coordinator: script` → the runner's own terminal is the Run's coordinator and fleet-driver.mjs runs the
+// Task DAG; no coordinator LLM. Same phases as the agent lane (spawn-coordinator = setup, fleet, accept, commit,
+// committing, merge), same evidence dir, HANDOFF, accept and merge. Pinned per slice in `fleet_mode` at its first step.
+
+const DRV = 'drv:'; // a question's ref that belongs to the fleet driver
+const SCENE_DEFAULT = 'assets/scenes/game.scene';
+const CHAR_ANIM_DEFAULT = '/Users/wikz/Works/agent/char-anim-pipeline';
+// what each driver question offers when the DAG gives no options of its own
+const DRV_OPTIONS = {
+  worker_question: ['answer with --text', 'stop'],
+  worker_escalation: ['answer with --text', 'stop'],
+  review_director: ['answer with --text', 'stop'],
+  fleet_worker_start: ['retry', 'mark blocked', 'stop'],
+  fleet_spec: ['fixed, retry', 'mark blocked', 'stop'],
+  fleet_orca: ['retry', 'mark blocked', 'stop'],
+  fleet_manifest: ['manifest fixed, retry', 'mark blocked', 'stop'],
+  fleet_infra: ['preview fixed, review again', 'review again on the reviewer given in --text', 'mark blocked', 'stop'],
+};
+
+/** agent | script for this slice: pinned at its first step, so a later AGENT_NOTES change never switches a slice mid-way. */
+export function fleetMode(ctx, s) {
+  if (s.fleet_mode) return s.fleet_mode;
+  const { project, id } = ctx;
+  let mode = String(project.fleet.coordinator || 'agent').trim() === 'script' ? 'script' : 'agent';
+  // a port slice forwards selected study reports to its roles: the coordinator LLM still picks them (D7)
+  if (mode === 'script' && ripStudy(project, id, sliceFront(project, id).data).pin) {
+    st.log(project.root, id, 'fleet.coordinator script → agent for this slice: it has a rip study to forward');
+    mode = 'agent';
+  }
+  st.writeSliceState(project.root, id, { fleet_mode: mode });
+  return mode;
+}
+
+/** The agents each DAG role launches on (Cursor substitutes applied); the scanner writes the work order: Sonnet-class at least. */
+function scriptAgents(project) {
+  const f = project.fleet;
+  const pick = (spec) => agentFor(project, spec) || spec;
+  const cursorOn = cursorState(project).state === 'on';
+  const art = f.art_backend || 'antigravity';
+  const imageAgent = { antigravity: 'antigravity', cursor: 'cursor --model auto', 'gpt-image-gen': 'codex', 'codex-image': 'codex' }[art] || 'antigravity';
+  const scanner = pick(f.scanner_agent || f.orchestrator_agent);
+  const reviewer = st.readRunner(project.root).reviewer_override || f.reviewer_agent;
+  const mesh = meshAgent(project);
+  return {
+    scan: family(scanner) === 'cursor' ? CURSOR_FALLBACK : scanner,
+    artManifest: cursorOn ? 'cursor --model auto' : CURSOR_FALLBACK,
+    artImport: pick(f.writer_agent),
+    concept: ['gpt-image-gen', 'codex-image'].includes(art) ? 'codex' : 'antigravity',
+    mesh: mesh === 'art_backend' ? imageAgent : mesh,
+    art2d: imageAgent,
+    writer: pick(f.writer_agent),
+    reviewer: pick(reviewer),
+  };
+}
+
+/** Everything fleet-driver.mjs needs, rebuilt each step from the slice state (nothing lives only in memory). */
+function driverCtx(ctx, s) {
+  const { project, id } = ctx;
+  const root = project.root;
+  const wt = s.worktree;
+  const { data } = sliceFront(project, id);
+  const f = project.fleet;
+  const evRel = path.join('.cursor', 'evidence', 'tasks', `T-${id}`, 'evidence');
+  const artPaths = String((data.paths?.art || [])[0] || 'assets/art').replace(/\/\*.*$/, '').replace(/\/$/, '');
+  const agents = scriptAgents(project);
+  const pack = s.context_pack && s.context_pack !== 'none' ? s.context_pack : null;
+  return {
+    sliceDir: st.sliceDir(root, id), checkout: wt, evidenceRoot: path.join(wt, evRel), run: s.run, worktree: `path:${wt}`,
+    cfg: { lite: fleetIsLite(project, id), agents, art2dBackend: f.art_backend || 'antigravity' },
+    values: {
+      EVIDENCE_ROOT: evRel, FEATURE: path.basename(s.plan || `${id}`, '.md'), TASK_ID: `T-${id}`, SLICE_ID: id, WORKTREE_PATH: wt,
+      ART_PATHS: artPaths, SCENE: f.scene || SCENE_DEFAULT, ART_BACKEND: f.art_backend || 'antigravity', MESH_BACKEND: f.mesh_backend || 'auto',
+      MESH_AGENT: agents.mesh, CONCEPT_ROUTE: agents.concept === 'codex' ? 'codex-image' : 'antigravity', PROJECT_SLUG: path.basename(root),
+      CHAR_ANIM_HOME: f.char_anim_home || CHAR_ANIM_DEFAULT,
+    },
+    sliceAssets: data.assets || {}, manifestPath: path.join(wt, artPaths, 'manifest.json'),
+    slicePaths: { code: [...(data.paths?.code || []), ...(data.paths?.art || [])], scene: data.paths?.scene_objects || [] },
+    slug: path.basename(root), memory: pack ? { implement: pack, integrate: pack, fix: pack, commit: pack } : {},
+    waitMs: ctx.waitMs, log: (m) => st.log(root, id, m),
+  };
+}
+
+/** The driver's oldest open question as a runner question (one at a time, like every lane). */
+function driverQuestion(ctx, s, dctx) {
+  const q = driver.load(dctx).pending[0];
+  if (!q) return null;
+  const options = q.options?.length ? [...q.options.filter((o) => !/^stop$/i.test(o)), 'mark blocked', 'stop'] : DRV_OPTIONS[q.kind] || ['retry', 'mark blocked', 'stop'];
+  return ask(s, q.kind, q.text, options, { ref: `${DRV}${q.ref}` });
+}
+
+/** INFRA from a review: the single lane's checks, without a question when they settle it (curl, frozen tab, reviewer swap). */
+function scriptInfra(ctx, s, dctx) {
+  const q = driver.load(dctx).pending[0];
+  if (q?.kind !== 'fleet_infra' || s.infra_auto?.includes(q.ref)) return null;
+  const port = slicePort(s.worktree, ctx.id);
+  const code = port ? io.httpStatus(port) : 0;
+  if (code !== 200) return null; // no preview: the director (or the integrator) fixes it first
+  const verdict = readText(st.reviewFiles(dctx.evidenceRoot).verdict);
+  const swap = !isFrozenTab(verdict) && cursorState(ctx.project).state === 'on' && dctx.cfg.agents.reviewer !== FALLBACK_REVIEWER ? FALLBACK_REVIEWER : '';
+  st.writeSliceState(ctx.project.root, ctx.id, { infra_auto: [...(s.infra_auto || []), q.ref] });
+  st.log(ctx.project.root, ctx.id, `review INFRA while 127.0.0.1:${port} answers 200: a fresh review${swap ? ` on ${swap} for the rest of the lane` : ' (frozen tab: the Chrome headless fallback)'}`);
+  if (swap) st.writeRunner(ctx.project.root, { reviewer_override: swap });
+  driver.answer(dctx, q.ref, 'auto', swap);
+  return null;
+}
+
+function scriptSetup(ctx, s) {
+  const { project, id } = ctx;
+  const root = project.root;
+  let wt = s.worktree || sliceWorktrees(root)[id];
+  if (!wt) {
+    if (!admit(ctx, root, 'the fleet worktree (its Creator)', 'editor')) return PAUSE;
+    const base = sliceBase(root, id);
+    const name = `${id}-${path.basename(sliceFront(project, id).file, '.md').replace(/^S\d+[a-z]?-?/i, '') || 'fleet'}`;
+    const r = io.createWorktree({ root, name, base });
+    wt = sliceWorktrees(root)[id];
+    if (!wt) return ask(s, 'worktree_failed', `could not create the fleet worktree ${name}: ${r.ok ? 'orca created nothing git lists' : r.error}`, ['retry', 'mark blocked', 'stop']);
+    st.log(root, id, `fleet worktree ${wt} created from ${String(base).slice(0, 12)}`);
+  }
+  if (wt !== s.worktree) {
+    st.writeSliceState(root, id, { worktree: wt });
+    closeMain(ctx, wt);
+    const w = waitMcp(wt);
+    st.log(root, id, `fleet worktree MCP ${w.ok ? 'up' : `not confirmed (${w.error}); the workers start anyway`}`);
+  }
+  if (!s.plan) {
+    const P = prompts(project, id);
+    planPack(ctx, s, P);
+    const agents = scriptAgents(project);
+    const locks = { scanner_agent: agents.scan, writer_agent: agents.writer, reviewer_agent: agents.reviewer, art_backend: project.fleet.art_backend || 'antigravity',
+      mesh_backend: project.fleet.mesh_backend || 'auto', mesh_agent: agents.mesh };
+    let plan;
+    try {
+      plan = pointerPlan({ root: wt, id, locks, rollback: sliceBase(root, id), lite: fleetIsLite(project, id), budgetMode: P.values.BUDGET_MODE });
+    } catch (e) {
+      return ask(s, 'plan_invalid', `pointer PLAN for ${id}: ${e.message}`, ['slice fixed, retry', 'mark blocked', 'stop']);
+    }
+    fs.mkdirSync(path.join(wt, 'docs', 'plans'), { recursive: true });
+    fs.writeFileSync(path.join(wt, plan.file), plan.text);
+    const v = validatePlan(wt, plan.file);
+    if (!v.ok) return ask(s, 'plan_invalid', `PLAN ${plan.file} fails validation: ${v.errors.map((e) => `${e.code}: ${e.message}`).join('; ')}`, ['slice fixed, retry', 'mark blocked', 'stop']);
+    st.writeSliceState(root, id, { plan: plan.file });
+    st.log(root, id, `pointer PLAN ${plan.file} written and validated`);
+  }
+  if (!s.run) {
+    const r = io.runCreate(`T-${id} fleet (script coordinator)`);
+    if (!r.ok) return ask(s, 'orca_error', `run-create failed: ${r.error}`, ['retry', 'stop']);
+    st.writeSliceState(root, id, { run: r.run, run_coordinator: r.coordinator });
+    st.log(root, id, `fleet Run ${r.run}, coordinator = this runner's terminal ${r.coordinator}`);
+  }
+  setPhase(root, id, 'fleet');
+  return null;
+}
+
+/** A runner restarted in another terminal binds the Run again: only the bound terminal may mutate it (consumer_fenced). */
+function rebindRun(ctx, s) {
+  const me = process.env.ORCA_TERMINAL_HANDLE;
+  if (!s.run || !me || me === s.run_coordinator) return;
+  const r = io.runUse(s.run);
+  st.writeSliceState(ctx.project.root, ctx.id, r.ok ? { run_coordinator: me } : {});
+  st.log(ctx.project.root, ctx.id, r.ok ? `Run ${s.run} bound to this runner's terminal ${me}` : `run-use ${s.run} failed: ${r.error}`);
+}
+
+/** stats.json and final-report.md (FLEET_EVIDENCE) from the driver's own records, before accept reads them. */
+function scriptEvidence(ctx, s, dctx) {
+  const ev = dctx.evidenceRoot;
+  const stats = driver.stats(dctx);
+  st.writeJson(path.join(ev, 'stats.json'), stats);
+  const d = driver.load(dctx);
+  const tasks = Object.values(d.dag.tasks).map((t) => `| ${t.name} | ${t.role} | ${d.starts[t.name] || '—'} | ${t.status} | ${(t.body || '').replace(/\|/g, '/').slice(0, 120)} |`);
+  const report = [`# ${ctx.id} final report (fleet driver)`, '',
+    `Coordinator: the producer runner (script). Run ${s.run}, worktree ${s.worktree}, PLAN ${s.plan}.`,
+    `Review rounds ${stats.review_rounds}, fix rounds ${stats.fix_rounds}.`, '',
+    '| task | role | agent | status | worker summary |', '|---|---|---|---|---|', ...tasks, '',
+    d.retained.length ? `Terminals Orca kept (not released): ${d.retained.map((r) => `${r.task} ${r.handle} (${r.reason})`).join(', ')}` : 'Every worker terminal was released.',
+    `Decisions: ${d.dag.decisions.length ? d.dag.decisions.join(' | ') : 'none'}`, ''].join('\n');
+  fs.writeFileSync(path.join(ev, 'final-report.md'), report);
+}
+
+function scriptStep(ctx, s, phase) {
+  const { project, id } = ctx;
+  const root = project.root;
+  if (phase === 'spawn-coordinator') return scriptSetup(ctx, s);
+  rebindRun(ctx, s);
+  const dctx = driverCtx(ctx, s);
+  if (phase === 'accept') return accept(ctx, s, dctx.evidenceRoot, FLEET_EVIDENCE, ['evidence fixed, check again', 'mark blocked', 'stop']);
+  if (phase === 'commit') return ctx.autoCommit ? scriptCommit(ctx, s) : ask(s, 'commit_approval', 'auto_commit=false: approve the commit of this slice', ['commit', 'mark blocked', 'stop']);
+  if (phase !== 'fleet' && phase !== 'committing') throw new Error(`unknown fleet phase ${phase}`);
+  scriptInfra(ctx, s, dctx);
+  const open = driverQuestion(ctx, st.readSliceState(root, id), dctx);
+  if (open) return open;
+  const r = driver.tick(dctx);
+  ctx.waited = true;
+  const asked = driverQuestion(ctx, st.readSliceState(root, id), dctx);
+  if (asked) return asked;
+  if (r.phase === 'offer_commit' && phase === 'fleet') {
+    scriptEvidence(ctx, s, dctx);
+    setPhase(root, id, 'accept');
+    return null;
+  }
+  if (r.phase === 'committed') {
+    const h = readHandoff(path.join(dctx.evidenceRoot, 'HANDOFF.json'), -1);
+    if (h.status === 'committed' && h.sha) return committedTo(ctx, s, h.sha);
+  }
+  if (r.phase === 'stopped') return ask(s, 'lane_blocked', 'the fleet driver stopped on an answer', ['mark blocked', 'stop']);
+  return r.error ? orcaError(root, id, s, { error: r.error }) : null;
+}
+
+function scriptCommit(ctx, s) {
+  driver.commit(driverCtx(ctx, s));
+  setPhase(ctx.project.root, ctx.id, 'committing', commitMarks(ctx));
+  return null;
+}
+
+/** An answer to a driver question goes back to the driver; the runner's stop / mark blocked never reach here. */
+function scriptAnswer(ctx, s, q) {
+  const text = q.answer.text || '';
+  if (q.kind === 'fleet_infra' && q.answer.choice === 'review again on the reviewer given in --text' && text.trim()) st.writeRunner(ctx.project.root, { reviewer_override: text.trim() });
+  const choice = q.answer.choice === 'answer with --text' ? text : q.answer.choice;
+  driver.answer(driverCtx(ctx, s), q.ref.slice(DRV.length), choice, text);
+  return null;
 }
