@@ -80,4 +80,13 @@ Sau M5: thử trên dự án không chạy pilot, rồi bật cho capytal (cặp
   ` · worktree <tên>`; `producer-runner.json` có `lanes: [{slice, since}]` cạnh `slice`; `status` liệt kê lane
   (lane, checkout, phase); `pilot-wait` in `lane`/`checkout` cho câu hỏi được giao; `--once` giữ `slice_changed` khi
   chỉ một lane, báo `lane_started` / `lane_done` khi có hai. 205/205 test (+2 runner-lane-questions.test.mjs).
+- **M1 chạy thật (capytal S24, 2026-10-16):** worktree tạo trong 4 s, Creator thứ hai + MCP ~20 s, preview của worktree
+  dùng được cho mọi lần smoke và check-slice (base thật, tsc 0 lỗi mới, smoke dùng lại report), merge → evidence (không
+  PNG) → worktree_rm → reopen → verify trên main đều chạy. Một lỗi: verifier spawn vào worktree đã xoá (ctx.checkout
+  cũ) → sửa ở 726f614. RAM với 2 editor: tổng footprint tối đa 6,7 GB, swap tối đa 6,7 GB, availPct thấp nhất 34%;
+  res-guard đóng main lúc lane chạy trong worktree (đúng cho một lane).
+- **M4 xong (2026-10-16, b18f949):** res-guard `runnerInfo` đọc `runner.lanes` + `lane_checkout`; giữ editor của worktree
+  mà một lane còn sống đang dùng (kể cả giữa hai agent); "primary waits" không đóng main khi một lane khác đang làm ở
+  main (rơi về luật idle). `~/.agents/run/res-guard/config.json` `maxEditors: 3` (director duyệt; backup
+  config.json.bak-20261016). 14/14 test res-guard.
 
