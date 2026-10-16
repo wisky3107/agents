@@ -182,9 +182,17 @@ function startTask(ctx, d, name) {
   // a worker sends worker_done before its turn ends: a brief pasted into a busy TUI is lost (monster-truck S02)
   if (terminal && io.terminalWaitIdle && !io.terminalWaitIdle(terminal)) ctx.log?.(`fleet-driver: ${terminal} not tui-idle after 90 s, starting ${name} anyway`);
   const prev = t.retry ? d.tasks[`${name}#${(t.attempt ?? 2) - 1}`]?.dispatch : null;
+  // a failed start still owns the terminal it created (recovery reference): kept for the human to look at
+  // (codex update menu), released here, right before the retry the human asked for
+  if (rec.failedDispatch) {
+    const rel = io.workerRelease(rec.failedDispatch);
+    ctx.log?.(`fleet-driver: released the failed start ${rec.failedDispatch} of ${name}: ${rel.ok ? rel.state : rel.error}`);
+    delete rec.failedDispatch;
+  }
   const r = io.workerStart({ run: ctx.run, task: rec.task, agent: t.agent, terminal, worktree: ctx.worktree, retryOf: prev });
   if (!r.ok) {
     // never relaunch blind: the receipt says what is left (failedStage, residualResources)
+    if (r.dispatch && !terminal) rec.failedDispatch = r.dispatch;
     raise(ctx, d, { kind: 'fleet_worker_start', ref: `start:${k}`, text: `${name}: worker-start failed: ${r.error}; receipt ${JSON.stringify(r.receipt ?? {}).slice(0, 400)}`, options: null });
     return;
   }
