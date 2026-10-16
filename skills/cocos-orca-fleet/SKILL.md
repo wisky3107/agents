@@ -212,9 +212,9 @@ scan
   ├─ art-2d *              (optional; locked art_backend; textures / sprites only)
   ├─ art-concept-<stem> ×N (concept route: antigravity · codex-image / recipe C)  ─┐
   │         ↓ CONCEPT: PASS                                  │ parallel per stem
-  ├─ art-mesh-<stem> ×N    (locked art_backend; route per mesh_backend) ┘
+  ├─ art-mesh-<stem> ×N    (locked mesh_agent; route per mesh_backend) ┘
   │         ↓ VERDICT: PASS   (animated rows only)
-  └─ art-anim-<stem> ×M    (locked art_backend; char-anim-pipeline: rig + clips → FBX / FBF)
+  └─ art-anim-<stem> ×M    (locked mesh_agent; char-anim-pipeline: rig + clips → FBX / FBF)
 implement ∥ art-manifest (codes against skeleton); waits on mesh names only via status
 integrate ← all art-mesh + all art-anim + art-2d + implement
 ```
@@ -224,7 +224,7 @@ integrate ← all art-mesh + all art-anim + art-2d + implement
 | `art-manifest` | `cursor --model auto` (Cursor off → `claude --model sonnet --effort high`) | `art_paths/manifest.json` skeleton only (rows carry `complexity`, `tri_budget`) | concepts, meshes, evidence art |
 | `art-concept-<stem>` | concept route: `agy --dangerously-skip-permissions`, or `codex` when `art_backend` is gpt-image-gen / codex-image | `art_paths/concepts/<stem>/**` + `evidence/art/<stem>/concept-check.md` | other stems' concepts, any `.glb`, `manifest.json` |
 | `art-mesh-<stem>` | locked `mesh_agent` (default `codex --model gpt-6.1-sol --effort high`) | `art_paths/gen_<stem>_*.py`, `art_paths/gen3d/<stem>/**`, `art_paths/<stem>.glb` (or PLAN name), `art_paths/concepts/<stem>/toy/**`, `evidence/art/<stem>/**`, its `model-check.md`; may patch **only** its manifest row (`complexity`/`concepts`/`verify`) | other stems' files, Creator, `.meta` |
-| `art-anim-<stem>` | locked `art_backend` (needs local Blender + write access to `char_anim_home`) | `<char_anim_home>` files of id `<slug>-<stem>`, `art_paths/<stem>.fbx` (row `file`), `art_paths/<fbf_dir>/**`, `evidence/art/<stem>/anim/**`, `anim-check.md`; may patch **only** its row's `anim_verify` | other characters' pipeline files, pipeline code, Creator, `.meta` |
+| `art-anim-<stem>` | locked `mesh_agent` (needs local Blender + write access to `char_anim_home`) | `<char_anim_home>` files of id `<slug>-<stem>`, `art_paths/<stem>.fbx` (row `file`), `art_paths/<fbf_dir>/**`, `evidence/art/<stem>/anim/**`, `anim-check.md`; may patch **only** its row's `anim_verify` | other characters' pipeline files, pipeline code, Creator, `.meta` |
 | `art-2d` | locked `art_backend` | 2D files under `art_paths` that are not concepts/meshes; `evidence/art/2d/gen_2d.py`; `evidence/art/2d/2d-check.md` (every backend but cursor) | 3D |
 
 **Parallel rules**
@@ -327,7 +327,7 @@ account out (`!`) — then the choice is wait for the reset it prints, or the Ta
 | art-manifest | writer (assets) | `cursor --model auto`; `claude --model sonnet --effort high` when Cursor is off | `art_paths/manifest.json` skeleton | concepts, meshes |
 | art-concept-<stem> | writer (assets) | concept route (cocos-asset-gen): antigravity, or codex-image when `art_backend` is gpt-image-gen / codex-image | `concepts/<stem>/**`, concept-check block | meshes, other stems |
 | art-mesh-<stem> | writer (assets) | locked `mesh_agent` (default `codex --model gpt-6.1-sol --effort high`); route per `mesh_backend` (Blender script ∣ 3D Gen Studio ∣ fallback Blender) | generator or `gen3d/<stem>/**` + `.glb` for stem, iso/compare evidence, model-check block | other stems, Creator |
-| art-anim-<stem> | writer (assets) | locked `art_backend`; char-anim-pipeline (`char-anim` skill) | rigged FBX / FBF atlas for stem, anim evidence, anim-check block | other stems, pipeline code, Creator |
+| art-anim-<stem> | writer (assets) | locked `mesh_agent`; char-anim-pipeline (`char-anim` skill) | rigged FBX / FBF atlas for stem, anim evidence, anim-check block | other stems, pipeline code, Creator |
 | art-2d | writer (assets) | locked `art_backend` | 2D textures/sprites under `art_paths` per row `method`, gen_2d.py, 2d-check block (every backend but cursor) | 3D concepts/meshes |
 | implement | writer | per locked `writer_agent` (default `claude --model opus --effort high`) | `code_paths` TS | Funplay, lock, scene files, `art_paths` |
 | integrate | integrator | same terminal as implement, reused | editor lock, Creator on worktree, scene-tool/Funplay, import, editor evidence | reviewing its own work |
@@ -373,9 +373,11 @@ Fleet Progress:
              own, stronger session). Copy nothing; run the PLAN validation below. Fail → one
              `ask` listing the violated rows; do not "fix" the PLAN.
           B. Slice given — prompt names `slices/S<nn>-*.md` (e.g. spawned by `game-producer`).
-             Write the ≤20-line **pointer PLAN** from `../game-producer/reference/slice-to-plan.md`
-             (`plan_source: <slice file>` + locks + forbidden_changes + `lite`); do NOT copy the
-             front-matter — workers read the slice file. Validate through the mapping table.
+             Write the ≤20-line **pointer PLAN** with `node ~/.agents/skills/cocos-orca-fleet/scripts/plan-check.mjs
+             write --project <wt> --slice <Sxx> --locks '<json>' --forbidden '<dirty json array>' --rollback <sha>
+             [--lite true|false] [--budget-mode advisory|gate:<pct>]` (it applies
+             `../game-producer/reference/slice-to-plan.md`: `plan_source` + locks + forbidden_changes + `lite`);
+             do NOT copy the front-matter — workers read the slice file. Then `plan-check.mjs validate`.
              `lite: true` when the slice's `assets` block is empty and `release.fleet_lite_when_no_assets`
              is not `false`: skip `scan`, `art-manifest` and every `art-*` Task; `implement` reads
              `docs/flows/docs-index.md` itself (that is what scan produced anyway).
@@ -407,7 +409,10 @@ Fleet Progress:
 
 ### PLAN validation (coordinator, all branches — mechanical, no rewriting)
 
-Check and report as a short pass/fail list; any fail → `ask` (A/B) or bounce to the plan worker (C).
+Run `node ~/.agents/skills/cocos-orca-fleet/scripts/plan-check.mjs validate --project <wt> --plan <file>`: it checks
+every row below except two semantic ones (acceptance phrased as observations; paths inside SCOPE.md's
+allowed area), which stay yours. Report as a short pass/fail list; any fail → `ask` (A/B) or bounce to the
+plan worker (C).
 In branch B every key is read from the slice file through the slice-to-plan mapping table — the
 pointer PLAN itself only carries locks:
 
@@ -631,15 +636,18 @@ and wait again. Per Delivery:
    PLAN to `<to>` (a recorded fact), note it for the final report, continue as APPROVED.
    `budget_mode: advisory` and review.md lists a budget overrun as a finding → drop it (not a
    fix row); if nothing else is blocker/major, treat the review as APPROVED with `budget_bump`.
-   `worker_done` failed from review (`CHANGES_REQUESTED`) → if the only blocker is preview
-   infrastructure, route it to integrator recovery; do not consume a code-fix round or spawn
-   another reviewer until readiness is observed. Otherwise read the `## fix_routing` table
-   at the end of `evidence/review.md` and create one `fix` Task **per owner row group by
+   `worker_done` failed from review (`CHANGES_REQUESTED`) → run
+   `node ~/.agents/skills/cocos-orca-fleet/scripts/review-check.mjs --review evidence/review.md --project <wt> --plan <plan>`
+   (`ok: false` → send the errors back to the reviewer once, on its terminal). `infra_only: true` (every
+   non-followup row is `infra`) → route it to integrator recovery; do not consume a code-fix round or spawn
+   another reviewer until readiness is observed. `director` rows → one `ask`. Otherwise take its `fix_groups`
+   (the `## fix_routing` rows grouped by owner) and create one `fix` Task **per owner row group by
    copying it** (finding ids, owner, scope paths, acceptance) — **all rows in the same pass**,
    ordered with `--deps` (`scene` depends on `code`), never "create it once code lands": a
    row that exists only in your head dies with your turn. Do not re-derive scope: the
    reviewer is the strong model, you are not. Owner → handle: `code` → implement handle;
-   `scene` → integrate handle (it re-acquires the lock); `concept` → new
+   `scene` → integrate handle (it re-acquires the lock); `asset` → new `art-2d` (generated 2D) or
+   `art-import-<stem>` (copied / converted file) Task; `concept` → new
    `art-concept-<stem>` (concept route); `mesh` → `art-mesh-<stem>` (must re-run render with
    `--concepts`); `anim` → `art-anim-<stem>` (re-run the clip, re-ship, new anim-check round).
    A new concept or mesh for an animated stem also re-runs its `art-anim-<stem>`. A `review.md` without `fix_routing`, or a row whose owner is `unclear`, is
@@ -790,7 +798,7 @@ after a valid `worker_done`; never release on idle/heartbeat.
   `reference/worker-prompts-art.md` (all `art-*` specs), `scripts/gen3d_studio.py`,
   `scripts/render_model_iso.py`.
 - `../cocos-orca-worktree/SKILL.md` — seed, open, MCP parity, close, merge, remove.
-- `../vibe-game-director/reference/plan-schema.md` — PLAN format the coordinator writes.
+- `../vibe-game-director/reference/plan-schema.md` — PLAN format the coordinator validates (branch C: the plan worker writes it).
 - `../vibe-game-director/reference/cocos-output-contract.md` — `worker_done` body format.
 - `../vibe-game-director/reference/verification-playbook.md` — evidence bundle layout.
 - `../vibe-game-director/reference/preview-interact-playbook.md` — reviewer's browser channel.

@@ -22,9 +22,11 @@ worktree on this project or the feature worktree you create from it.
 3. Follow .cursor/skills/cocos-orca-fleet/SKILL.md. Task size is L (from the slice) → fleet.
    LITE: <LITE> — when true, the DAG is implement → integrate → review only (no scan, no art).
 4. PLAN: Step 0.5 branch B (slice given) — after `cd` into the worktree, write the ≤20-line
-   pointer PLAN docs/plans/<Sxx>-<name>.md per .cursor/skills/game-producer/reference/slice-to-plan.md
-   (plan_source = the slice file, locks, forbidden_changes, lite, budget_mode=<BUDGET_MODE>).
-   Do not copy the front-matter; validate through the mapping table. Do not widen paths or drop
+   pointer PLAN with one command (it applies .cursor/skills/game-producer/reference/slice-to-plan.md):
+   `node .cursor/skills/cocos-orca-fleet/scripts/plan-check.mjs write --project . --slice <Sxx>
+   --locks '<json of the locks above>' --forbidden '<json array: the dirty snapshot>' --rollback <base sha>
+   --lite <LITE> --budget-mode <BUDGET_MODE>`, then `plan-check.mjs validate --project . --plan <file it printed>`.
+   Validation errors → one `ask` listing them. Do not copy the front-matter. Do not widen paths or drop
    acceptance rows; feel_rows are blocking. Do NOT start a `plan` worker and do NOT author
    anything the slice does not contain — a gap is a Fable problem: `ask` me with the field.
    Lock `planner_agent` anyway (report `planner=skipped:slice`).

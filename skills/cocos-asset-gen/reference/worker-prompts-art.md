@@ -1,6 +1,6 @@
 # Art worker dispatch specs
 
-Copy the block for each art role into `.cursor/evidence/tasks/<TASK_ID>/specs/<role>.md`, fill
+Copy the block for each art role into `<EVIDENCE_ROOT>/specs/<role>.md`, fill
 the `<...>` placeholders from `docs/plans/<feature>.md`, prepend the fleet's shared header
 (`cocos-orca-fleet/reference/worker-prompts.md`), run
 `python3 ~/.agents/skills/orca-agent-fleet/scripts/clean_spec.py <file>`, then pass the content to

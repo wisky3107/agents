@@ -1,6 +1,6 @@
 # Worker dispatch specs
 
-Copy the block for each role into `.cursor/evidence/tasks/<TASK_ID>/specs/<role>.md`, fill the
+Copy the block for each role into `<EVIDENCE_ROOT>/specs/<role>.md`, fill the
 `<...>` placeholders from `docs/plans/<feature>.md`, run
 `python3 ~/.agents/skills/orca-agent-fleet/scripts/clean_spec.py <file>` (strips invisible
 Unicode that stalls Claude's submit), then pass the file content to
@@ -12,7 +12,7 @@ Shared header — prepend to every spec:
 ```text
 Project rules are binding: AGENTS.md, .cursor/rules/*. Read docs/plans/<feature>.md (the PLAN —
 a pointer; its `plan_source` slice file holds the real fields) before anything. Task id <TASK_ID>.
-Evidence root .cursor/evidence/tasks/<TASK_ID>/.
+Evidence root <EVIDENCE_ROOT>/ (every path written evidence/x in this card means <EVIDENCE_ROOT>/x).
 Before your first edit: run `pwd` and `git status`; the cwd must be worktree <WORKTREE_PATH>.
 Preserve unrelated dirty files listed in PLAN.forbidden_changes. Ask via `orca orchestration ask`
 only at real decision gates (behavior, scope, dependency, destructive, identity). Report with
@@ -28,7 +28,9 @@ Before your first `orca` call read ~/.agents/skills/cocos-orca-fleet/reference/o
 Context discipline (this spec is your role card and is complete): read ONLY the PLAN, its slice
 file, docs/flows/docs-index.md + the flow docs it names for your paths, and the files this spec
 lists. Do NOT open .cursor/skills/**/SKILL.md or reference/*.md unless this spec names the file
-and the step — the rules you need are already in AGENTS.md + .cursor/rules. Cap yourself: if the
+and the step — the rules you need are already in AGENTS.md + .cursor/rules. If evidence/discovery.md
+has a `## work order` subsection for your role, read and follow it; it is derived from the slice,
+and the slice/PLAN wins on any conflict. Cap yourself: if the
 turn count passes ~35 without a written evidence file, write what you have and report.
 Status file: on every state change write <EVIDENCE_ROOT>/HANDOFF.json
 {"role":"<role>","status":"working|blocked|ready_for_review|infra_blocked|approved|changes_requested|offer_commit|committed","detail":"<one line>","sha":null,"updatedAt":"<ISO>"}
@@ -157,10 +159,18 @@ Do:
 4. Write evidence/discovery.md: entry points, owning modules and layer (core/systems/entities/ui),
    patterns to follow, event registry constants involved, existing art conventions (folder,
    naming, sizes), preview/test commands.
+   Then a `## work order` section with one `### <role>` subsection per downstream role of this
+   DAG (implement, integrate, art-manifest / art-2d when the slice has assets, review): ordered
+   steps, the concrete numbers, files, references and video/probe paths the slice, its feel rows,
+   EXPECT_GAMEPLAY_VISUAL.md, the rip study and reference/ give for that role, which feel rows and
+   acceptance rows the role owns, and notes the integrator needs from the writer. Every item cites
+   its source (slice key, EXPECT row id, file:line). Nothing beyond the slice: no new scope, no
+   numbers the sources do not give (write "measure: <how>" instead). Max ~25 lines per role.
 5. Write evidence/baseline/: `git status`, `git diff --stat`, and a scene-tool index of every scene
    or prefab in allowed_scene_objects (BEFORE any change).
-6. `orca orchestration send --type status --to <IMPLEMENT_HANDLE> --subject "discovery ready"
-   --body "<paths>"` and the same to <ART_HANDLE>.
+6. For each handle given here that is not `none`: `orca orchestration send --type status --to
+   <handle> --subject "discovery ready" --body "<paths>"` (implement: <IMPLEMENT_HANDLE>, art:
+   <ART_HANDLE>).
 
 Never: edit any file outside the evidence root; open Creator; call Funplay mutations.
 Done: worker_done listing both artifact paths.
@@ -453,7 +463,7 @@ Runtime:
 
 Output evidence/review.md: severity-ranked findings (blocker / major / minor), each with an id
 (F1, F2, …), repro steps, expected vs actual, screenshot path, suspected owner
-(code | scene | concept | mesh | anim).
+(code | scene | asset | concept | mesh | anim | infra).
 Include a recipe-results section when recipe_refs is nonempty: id/revision, checked behavior,
 PASS/FAIL/manual_required, current evidence and deviations. Validate any learning candidate
 claims relevant to this review; source-project evidence cannot replace this run's checks.
@@ -467,9 +477,12 @@ coordinator is a cheap mechanical agent and will copy each row group into a fix 
 | F1,F3 | code | assets/Scripts/systems/Merge.ts | add scale tween 180ms easeOutBack on merge | merge pops within ≤200ms, no console error |
 | F2 | scene | Canvas/Board (MergeFx particle ref) | wire MergeFx prefab to @property | ref non-null after scene reopen |
 
-Rules for the table: one row per (owner, coherent change); never mix owners in a row; `scope
-paths` must already be inside the PLAN — a fix that needs a new path is `owner: unclear` with a
-one-line reason (the coordinator will ask the director). Mesh rows name the stem and say
+Rules for the table: one row per (owner, coherent change); never mix owners in a row. The owner
+cell is exactly one word — code | scene | asset (2D / imported files) | concept | mesh | anim |
+infra (preview, editor or runtime environment, not the work: integrator recovery, no fix round) |
+director (needs a director decision) | unclear | followup — optionally followed by "(reason)". `scope
+paths` must already be inside the PLAN — a fix that needs a new path is `unclear (<one-line reason>)`
+(the coordinator will ask the director). Mesh rows name the stem and say
 whether the concept or the model is at fault; anim rows name the stem and the clips (a rig
 failure caused by the model is a mesh or concept row, not anim). Only blocker/major ids must appear; minors may be
 listed as `owner: followup`.
@@ -479,6 +492,9 @@ an earlier slice committed (`git blame` the faulty lines; the commit subject nam
 `pre-slice` when older than every slice), or the single line `none`. Faults this slice made stay out.
 
 Last line of review.md is exactly APPROVED, CHANGES_REQUESTED, or INFRA_BLOCKED (Step 0 only).
+Before worker_done run `node .cursor/skills/cocos-orca-fleet/scripts/review-check.mjs --review
+evidence/review.md --project . --plan docs/plans/<feature>.md` and fix review.md until it prints
+`"ok": true` (it checks the verdict line, ids, owner words, scope inside the slice paths).
 Done: HANDOFF.json status approved | changes_requested | infra_blocked, then worker_done
 --outcome succeeded for APPROVED, --outcome failed otherwise, body = the verdict line plus the
 review.md path (and "fix_routing: <n> rows" when CHANGES_REQUESTED, "budget_bump: …" when used).
