@@ -140,6 +140,10 @@ test('M5c: a killed runner resumes both lanes — no second worktree, no second 
   assert.ok(first.at(-1).stopped, JSON.stringify(first.slice(-2)));
   assert.deepEqual(st.readRunner(p.root).lanes.map((l) => l.slice), ['S01', 'S02']);
   assert.equal(sliceState(p.root, 'S02').lane_checkout, p.wt);
+  // status shows the lanes as the lane loop sees them, not the one-lane 'more than one slice in progress'
+  const shown = runner(p.root, f, 'status').out[0];
+  assert.deepEqual(shown.next, { live: ['S01', 'S02'], next: null });
+  assert.deepEqual(shown.lanes.map((l) => [l.slice, l.lane]), [['S01', 'main'], ['S02', 'worktree']]);
 
   clearControl(p.root);
   // term_3 S01 reviewer, term_4 S02 reviewer, term_5 the verifier

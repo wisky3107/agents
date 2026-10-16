@@ -232,7 +232,12 @@ function ownsLive(root, id) {
 }
 
 async function status(root) {
-  const { next, blockers, statuses } = await plan(root);
+  let { project, next, blockers, statuses } = await plan(root);
+  // phase 2: two slices in progress are two lanes, not stuck; show what the lane loop sees
+  if (maxParallel(project) === 2) {
+    next = nextLanes(project, statuses);
+    blockers = next.next ? preflight(project, next.next) : [];
+  }
   const runner = st.readRunner(root);
   const manual = deferredManual(root);
   say({
