@@ -246,3 +246,116 @@ export function sendKeys(handle, text) {
     throw new Error(`terminal keys to ${handle} failed: ${e ? [e.code, e.message].filter(Boolean).join(': ') : (r.stderr || r.stdout).trim().slice(-200)}`);
   }
 }
+
+// ---- Fleet driver (plan 2026-10-16-fleet-script-coordinator): the runner's own terminal is the Run's coordinator.
+// Each call returns { ok, ...fields, error } and never throws on an Orca refusal: the driver records the
+// result before it decides, so a kill between the call and the record is reconciled from Orca state.
+
+const result = (r) => (r.status === 0 && r.parsed?.ok !== false ? r.parsed?.result ?? {} : null);
+const failure = (r) => {
+  const e = r.parsed?.error, x = r.parsed?.result;
+  if (e) return [e.code, e.message].filter(Boolean).join(': ');
+  // a failed receipt (worker-start) comes back as a result with ok: false
+  if (x) return [x.failedStage ?? x.stage, x.lastError ?? x.reason ?? x.message].filter(Boolean).join(': ') || JSON.stringify(x).slice(0, 300);
+  return (r.stderr || r.stdout || `exit ${r.status}`).trim().slice(-300);
+};
+
+/** Create and bind a Run to this terminal. → { ok, run } */
+export function runCreate(objective) {
+  const r = orca(['orchestration', 'run-create', '--objective', objective]);
+  const x = result(r);
+  return x?.run?.id ? { ok: true, run: x.run.id, coordinator: x.run.coordinator_handle } : { ok: false, error: failure(r) };
+}
+
+/** Re-bind a Run after a runner restart (the same terminal or its successor). */
+export function runUse(run) {
+  const r = orca(['orchestration', 'run-use', '--id', run]);
+  return result(r) ? { ok: true } : { ok: false, error: failure(r) };
+}
+
+/** → { ok, task } */
+export function taskCreate({ run, title, spec }) {
+  const r = orca(['orchestration', 'task-create', '--run', run, '--task-title', title, '--spec', spec]);
+  const x = result(r);
+  const id = x?.task?.id ?? x?.taskId ?? x?.id;
+  return id ? { ok: true, task: id } : { ok: false, error: failure(r) };
+}
+
+/** The Run's tasks → [{ id, title, status }] (for reconcile after a kill); null when Orca does not answer. */
+export function taskList(run) {
+  const x = result(orca(['orchestration', 'task-list', '--run', run]));
+  const rows = x?.tasks ?? (Array.isArray(x) ? x : null);
+  return rows ? rows.map((t) => ({ id: t.id, title: t.task_title, status: t.status })) : null;
+}
+
+/** The task's current dispatch → { id, status, handle, heartbeat } | null. */
+export function dispatchShow(task) {
+  const d = result(orca(['orchestration', 'dispatch-show', '--task', task]))?.dispatch;
+  return d ? { id: d.id, status: d.status, handle: d.assignee_handle, heartbeat: d.last_heartbeat_at } : null;
+}
+
+/**
+ * Start one worker on a created task: a fresh managed terminal (`agent` launch spec) or an existing one
+ * (`terminal`). → { ok, dispatch, handle, receipt } — a failed receipt is returned whole (failedStage,
+ * residualResources): the protocol forbids a blind relaunch.
+ */
+export function workerStart({ run, task, agent = null, terminal = null, worktree = 'current', retryOf = null }) {
+  const args = ['orchestration', 'worker-start', '--run', run, '--task', task, '--worktree', worktree];
+  if (terminal) args.push('--terminal', terminal);
+  else {
+    const [id, ...rest] = String(agent).trim().split(/\s+/);
+    args.push('--agent', id === 'agy' ? 'antigravity' : id);
+    const flag = (n) => { const i = rest.indexOf(`--${n}`); return i >= 0 ? rest[i + 1] : null; };
+    if (flag('model')) args.push('--model', flag('model'));
+    if (flag('model') && flag('effort')) args.push('--effort', flag('effort'));
+  }
+  if (retryOf) args.push('--retry-of', retryOf);
+  const r = orca(args, { timeout: 300000 });
+  const x = result(r);
+  const handle = terminal || x?.effects?.find((e) => e.kind === 'terminal' && e.role === 'agent')?.id || null;
+  if (x?.dispatchId) return { ok: true, dispatch: x.dispatchId, handle, receipt: x };
+  const receipt = r.parsed?.result ?? r.parsed?.error?.data ?? r.parsed ?? null;
+  return { ok: false, error: failure(r), receipt, dispatch: receipt?.dispatchId ?? null };
+}
+
+/**
+ * One consuming wait on the Run inbox. → { ok, delivery, messages: [{ id, type, from, subject, body, task, dispatch, outcome, question, options }] }
+ * (`payload` is a JSON string; its ids are lifted). An empty result is a checkpoint, not a failure.
+ */
+export function runCheck({ run, ack = null, waitMs = 60000 }) {
+  const args = ['orchestration', 'check', '--run', run, '--wait', '--types', 'worker_done,escalation,question', '--timeout-ms', String(waitMs)];
+  if (ack) args.push('--ack', ack);
+  const r = orca(args, { timeout: waitMs + 30000 });
+  const x = result(r);
+  if (!x) return { ok: false, error: failure(r), messages: [] };
+  const messages = (x.messages ?? []).map((m) => {
+    let p = {};
+    try { p = typeof m.payload === 'string' ? JSON.parse(m.payload) : m.payload ?? {}; } catch { /* prose payload */ }
+    return { id: m.id, type: m.type, from: m.from_handle, subject: m.subject, body: m.body, task: p.taskId ?? null, dispatch: p.dispatchId ?? null,
+      outcome: p.outcome ?? null, question: p.question ?? null, options: Array.isArray(p.options) ? p.options : [] };
+  });
+  return { ok: true, delivery: x.deliveryId ?? null, messages };
+}
+
+export function reply(msgId, text) {
+  const r = orca(['orchestration', 'reply', '--id', msgId, '--body', text]);
+  return result(r) ? { ok: true } : { ok: false, error: failure(r) };
+}
+
+/** → { ok, state: released|retained|release_pending|release_unknown, reason } */
+export function workerRelease(dispatch) {
+  const r = orca(['orchestration', 'worker-release', '--dispatch', dispatch]);
+  const x = result(r);
+  return x ? { ok: true, state: x.state, reason: x.reason ?? null } : { ok: false, error: failure(r) };
+}
+
+export function workerStop(dispatch) {
+  const r = orca(['orchestration', 'worker-stop', '--dispatch', dispatch]);
+  return result(r) ? { ok: true } : { ok: false, error: failure(r) };
+}
+
+/** Wait until a reused terminal's agent is idle (a worker sends worker_done before its turn ends). → true | false */
+export function terminalWaitIdle(handle, timeoutMs = 90000) {
+  const r = orca(['terminal', 'wait', '--terminal', handle, '--for', 'tui-idle', '--timeout-ms', String(timeoutMs)], { timeout: timeoutMs + 30000 });
+  return r.status === 0 && r.parsed?.ok !== false;
+}

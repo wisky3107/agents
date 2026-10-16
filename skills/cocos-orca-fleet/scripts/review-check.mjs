@@ -72,6 +72,7 @@ export function checkReview(text, { paths = null } = {}) {
     if (!OWNERS.includes(r.owner)) fail('fix_routing_owner', `${id}: owner "${r.owner_raw}" — use one of ${OWNERS.join(' | ')}, optionally "(reason)"`);
     else if (/[/&+]|\band\b/.test(r.owner_raw.replace(/\(.*\)\s*$/, ''))) fail('fix_routing_mixed_owner', `${id}: one owner per row ("${r.owner_raw}")`);
     if (r.owner === 'unclear' && !r.reason) fail('fix_routing_unclear_reason', `${id}: unclear needs "(reason)"`);
+    if (['concept', 'mesh', 'anim'].includes(r.owner) && !/^[\w-]+$/.test(r.reason ?? '')) fail('fix_routing_stem', `${id}: ${r.owner} row names its stem: "${r.owner} (<stem>)"`);
     if (FIX_OWNERS.includes(r.owner) && (!r.scope.length || !r.acceptance.trim())) fail('fix_routing_incomplete', `${id}: ${r.owner} row needs scope paths and acceptance`);
     if (paths && r.owner === 'code') for (const p of r.scope) if (!paths.code.some(a => overlap(a, p))) fail('fix_routing_outside_plan', `${id}: ${p} is outside the slice paths (owner unclear with a reason)`);
   }

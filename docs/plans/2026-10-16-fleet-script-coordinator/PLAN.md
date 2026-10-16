@@ -217,7 +217,7 @@ Mỗi mốc merge riêng và có test. Chế độ `agent` không đổi hành v
 | **M0** Spike + baseline ✅ (`m0-report.md`) | (a) Script trong một terminal Orca giữ Run qua `--from`: `run-create`, `task-create`, `worker-start` một worker cursor + một claude trên task đồ chơi, nhận `worker_done` qua `check --wait`, `reply` một `ask`, `worker-release`, `terminal close`. Ghi lại Orca có cần pane coordinator là agent không, có inject text vào terminal coordinator không (nếu có thì dùng terminal mailbox ở D1). (b) Baseline khoảng trễ `worker_done → worker-start` từ 5 Run fleet gần nhất (cat-dash, monster-truck). (c) Đọc `/commit-guard`. Kết quả ghi vào `m0-report.md`. **Kill:** Orca không cho script giữ Run và mailbox cũng không được → dừng plan, báo director. | — | trung bình |
 | **M1** Template + validator ✅ | Tách `reference/specs/*.md` (D5). `plan-check.mjs`: viết pointer PLAN từ slice (`slice-to-plan.md`) và validate theo S:408–432. Phần "observation-phrased" giữ là cảnh báo, không chặn. Sửa 3 mâu thuẫn tài liệu. Coordinator LLM gọi `plan-check.mjs` thay vì tự kiểm. | **có**: bớt lượt và lỗi PLAN | thấp |
 | **M2** Hợp đồng reviewer ✅ | Cột owner của `## fix_routing` là một từ cố định: code / scene / asset / concept / mesh / anim / infra / director / unclear / followup, có thể kèm `(lý do)`. `review-check.mjs` kiểm dòng verdict, ids, owner, scope nằm trong slice paths; gom nhóm theo owner, báo `infra_only`. Reviewer tự chạy trước `worker_done`. Coordinator LLM dùng `fix_groups`. Trên 127 review thật: 108 đạt hợp đồng mới. | **có**: coordinator chép bảng thay vì đọc văn xuôi | thấp |
-| **M3** Lõi DAG + IO | `fleet-dag.mjs` (thuần, test bảng), `fleet-driver.mjs`, wrapper `orca.mjs`, export `rescueDrafts`. Harness: fake orca thêm `run-create`, `task-create`, `task-list`, `worker-start`, `dispatch-show`, `check`, `reply`, `worker-stop`, `worker-release`, `terminal create`; queue phát `worker_done` / `ask` / `escalation`. | — | trung bình |
+| **M3** Lõi DAG + IO ✅ | `game-producer/scripts/lib/fleet-dag.mjs` (thuần, 9 test kịch bản) + `fleet-driver.mjs` (intent → act → record, reconcile sau kill, 7 test với io giả) + wrapper trong `orca.mjs`; card `commit` trong WP; owner concept/mesh/anim phải ghi `(stem)`. Đã kiểm wrapper với Orca thật (spike 2). Harness end-to-end của runner (fake orca thêm lệnh) chuyển sang M4. | — | trung bình |
 | **M4** Nối vào runner | `fleet.coordinator` trong preflight + `freshLane`, các phase của D7, câu hỏi mới (`worker_question`, `fix_routing_missing`, `worker_recovery`, `plan_invalid`) trong `applyAnswer` + judge kinds, D8 commit, D9 stuck/infra. Test kill/resume tại mỗi action (giữa intent và record), Orca restart, lost Enter, worker kẹt, 2 fix round, rig fail. `status` / pilot-wait hiện "fleet-driver". | — | **cao** |
 | **M5** Pilot | 2 slice L trên một project director chọn: (1) một slice `lite`, (2) một slice có art 3D. `workflow-pilot` watch như thường. So với 5 slice fleet gần nhất: tiêu chí §1, wall time, câu hỏi, sự cố. Ghi vào `results.md`. **Gate:** đạt §1.1, 1.3–1.6, không có sự cố mới do driver → M6. Ngược lại sửa rồi pilot lại, tối đa 2 vòng, sau đó báo director. | — | trung bình |
 | **M6** Rollout | Mặc định `fleet.coordinator: script` trong 4 template + các project đang chạy (director duyệt từng project). S / WP: ghi coordinator LLM chỉ còn cho standalone và branch C. Cập nhật `failure-signatures.md`, `docs/workflow-map/`, memory. | — | thấp |
@@ -231,6 +231,20 @@ Mỗi mốc merge riêng và có test. Chế độ `agent` không đổi hành v
 - Không đụng `startLanes` (`producer-runner.mjs:802–1038`) hay `fleetStep`.
 - Test `runner-m4b.test.mjs:219` (runner không gọi `task-create|dispatch|gate-resolve`) vẫn đúng cho chế độ
   `agent`. Thêm assertion ngược cho chế độ `script`: không có `gate-create`.
+
+### Phát hiện ở M3 (spike 2, 2026-10-16, Orca 1.4.218)
+
+- `task-create` → `result.task.id`; `task-list` trả `task_title`, nên reconcile sau kill dùng title
+  `T-<Sxx>:<task>#<attempt>`.
+- Dùng lại terminal: chờ `terminal wait --for tui-idle` rồi `worker-start --task --terminal --worktree`. A → A2
+  trên cùng terminal mất khoảng 4 s.
+- Release terminal dùng lại: dispatch **cuối** → `released` (đóng terminal); dispatch gốc → `retained:
+  ownership_transferred`. Driver đóng chain bằng release dispatch cuối, không bao giờ `terminal close`.
+- Chỉ terminal đang bind mới được thay đổi Run (`consumer_fenced`). Runner restart sang terminal khác phải
+  `run-use` (M4).
+- Codex có thể kẹt ở menu cập nhật khi khởi động: `worker-start` thất bại với `agent_readiness: Agent startup
+  blocked: agent-update-prompt` và dispatch `failed`/`reclaimable` (FS:12). Driver hỏi theo giao thức. Ứng viên M4:
+  tự release rồi retry một lần sau khi chọn "Skip until next version".
 
 ## 5. Kiểm thử stop / resume (bắt buộc cho M4)
 

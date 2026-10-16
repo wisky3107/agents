@@ -43,8 +43,10 @@ test('contract errors: missing table, bad ids, unknown or mixed owner, unclear w
     '| F5 | writer | a.ts | x | y |',
     '| F6 | unclear | — | needs new path | — |',
     '| F7 | scene |  | wire | |',
+    '| F8 | mesh | assets/Arts/truck.glb | remesh | wheels round |',
   ]));
-  assert.deepEqual(codes(r), ['fix_routing_ids', 'fix_routing_incomplete', 'fix_routing_mixed_owner', 'fix_routing_owner', 'fix_routing_unclear_reason']);
+  assert.deepEqual(codes(r), ['fix_routing_ids', 'fix_routing_incomplete', 'fix_routing_mixed_owner', 'fix_routing_owner', 'fix_routing_stem', 'fix_routing_unclear_reason']);
+  assert.equal(checkReview(review(['| F8 | mesh (truck) | assets/Arts/truck.glb | remesh | wheels round |'])).fix_groups.mesh[0].reason, 'truck');
   assert.ok(checkReview(review(['| F1 | code | a.ts | x | y |'], 'APPROVED', '')).warnings.some(w => w.code === 'escaped_missing'));
 });
 

@@ -482,9 +482,9 @@ cell is exactly one word — code | scene | asset (2D / imported files) | concep
 infra (preview, editor or runtime environment, not the work: integrator recovery, no fix round) |
 director (needs a director decision) | unclear | followup — optionally followed by "(reason)". `scope
 paths` must already be inside the PLAN — a fix that needs a new path is `unclear (<one-line reason>)`
-(the coordinator will ask the director). Mesh rows name the stem and say
-whether the concept or the model is at fault; anim rows name the stem and the clips (a rig
-failure caused by the model is a mesh or concept row, not anim). Only blocker/major ids must appear; minors may be
+(the coordinator will ask the director). Concept / mesh / anim rows put the stem in the owner
+cell — `mesh (truck)` — and the change says whether the concept or the model is at fault; anim rows
+also name the clips (a rig failure caused by the model is a mesh or concept row, not anim). Only blocker/major ids must appear; minors may be
 listed as `owner: followup`.
 
 Before the verdict line write `## escaped`: one line `F<n> ← S<nn>` for each finding whose fault
@@ -513,4 +513,21 @@ Art variant (3D): see "fix — art variant" in cocos-asset-gen/reference/worker-
 --concepts into round-<n+1>). Closed only by CONCEPT: PASS (when needed) + VERDICT: PASS with both
 sheets on disk, never by prose.
 Done: worker_done body = output-contract YAML delta + which finding ids are addressed.
+```
+
+## commit (fleet driver only: reuse the implement terminal after the producer accepted the slice)
+
+The LLM coordinator commits itself on the producer's `approved — commit` line; under the fleet driver
+(plan 2026-10-16-fleet-script-coordinator D8) this Task does it on the writer/integrator terminal.
+
+```text
+ROLE: committer — same terminal and rules as integrate. The slice is APPROVED and the producer accepted it.
+1. Run /commit-guard (.cursor/skills/commit-guard/SKILL.md) in worktree <WORKTREE_PATH>. Budget: the PLAN's
+   max_lines, or the recorded budget_bump (BUDGET_MAX_LINES=<n>); advisory mode never blocks on it.
+2. Stage the slice's changes and .cursor/evidence/tasks/<TASK_ID>/ (JSON and MD only, no PNG). Never stage a
+   file listed in PLAN.forbidden_changes.
+3. Commit with the message `feat(<SLICE_ID>): <player-facing behavior, one line>`. Never push, never tag.
+4. worker_done --outcome succeeded with the body `committed <full sha>`.
+A gate that fails and cannot be fixed inside the slice paths → worker_done --outcome failed naming the gate
+and the reason; commit nothing.
 ```
