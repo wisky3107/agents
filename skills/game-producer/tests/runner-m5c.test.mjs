@@ -74,6 +74,9 @@ test('M5c: a parallel_ok pair runs as two lanes — S01 in main, S02 in its own 
   const waits = f.waits().map((w) => `${w.on}:${w.step}`);
   assert.ok(waits.indexOf('term_3:s02-approved') < waits.indexOf('term_1:s01-ready'), waits.join(' '));
   assert.match(log(p.root, 'S02'), /selected \(single lane, beside S01: in its own worktree\)/);
+  // S02's worktree comes before S01's first wait: a lane that just spawned hands over (pilot 24 S39: ~80 s late)
+  const calls = fs.readFileSync(path.join(f.dir, 'calls.log'), 'utf8').split('\n');
+  assert.ok(calls.findIndex((c) => c.startsWith('worktree create')) < calls.findIndex((c) => c.startsWith('terminal wait') && c.includes('term_1')), calls.slice(0, 12).join('\n'));
   // M5d: S02 was ready to merge while S01 still worked in main; it merged once S01 was done
   assert.match(log(p.root, 'S02'), /merge waits: S01 works in main/);
   assert.ok(at(p.root, 'S01', /phase done/) <= at(p.root, 'S02', /merge journal started/));

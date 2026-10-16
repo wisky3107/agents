@@ -990,9 +990,12 @@ async function startLanes(root, { once }) {
       stepped += 1;
       let r;
       try {
-        // steps until the lane waits: one orca-wait (or a pause) is its turn
+        // steps until the lane waits: one orca-wait (or a pause) is its turn; a lane that just finished a spawn
+        // (worktree, writer, reviewer) hands over before its first wait, so the other lane sets up without waiting
         ctx.waited = false;
-        do r = stepLane(ctx); while (r === null && !ctx.waited && !mainTaken(id));
+        const spawning = () => /^(re)?spawn-/.test(st.readSliceState(root, id).phase || '');
+        const setup = spawning();
+        do r = stepLane(ctx); while (r === null && !ctx.waited && !mainTaken(id) && !(setup && !spawning()));
       } catch (err) {
         if (err instanceof CursorUndecided) stopFor(root, id, 'cursor_off', `${cursorState(project).reason} — Cursor roles: ${err.roles.join(', ')}`);
         else stopFor(root, id, 'runner_error', err.message);
