@@ -39,20 +39,34 @@ const reachable = up.includes(here);
 console.log(JSON.stringify({ funplay: { url: 'http://127.0.0.1:1/', reachable, servedProject: reachable ? path.basename(here) : null, parity: reachable ? true : null } }, null, 2));
 `;
 /** S01 + S02 with no dag between them; a parallel_ok pair unless told otherwise; Creator scripts for the worktree lane. */
-function pairProject({ parallelOk = [['S01', 'S02']], release = '' } = {}) {
+function pairProject({ parallelOk = [['S01', 'S02']], release = '', gate2 = false } = {}) {
+  // gate2: S02 needs the director and the policy line has not given it (the harness policy gives S02 by default)
+  const policy = gate2 ? TWO.replace(/ \(director gate: S02 GIVEN\)/, '') : TWO;
   const p = project({
-    notes: NOTES(TWO, '{}', release), slices: { S01: { needs: false }, S02: { needs: false } }, dag: { S01: [], S02: [] }, parallelOk,
+    notes: NOTES(policy, '{}', release), slices: { S01: { needs: false }, S02: { needs: gate2 } }, dag: { S01: [], S02: [] }, parallelOk,
     files: { '.gitignore': '/.cursor/evidence/\n', 'scripts/close-editor.sh': CLOSE, 'scripts/open-editor.sh': OPEN,
       '.cursor/skills/vibe-game-director/scripts/probe.mjs': PROBE, 'funplay-cocos-mcp.config.json': '{"port": 1}' },
   });
   for (const f of ['scripts/close-editor.sh', 'scripts/open-editor.sh']) fs.chmodSync(path.join(p.root, f), 0o755);
   spawnSync('git', ['-C', p.root, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qam', 'exec bits']);
-  return { ...p, wt: `${p.root}-wt-S02-x` };
+  return { ...p, wt: `${p.root}-wt-S02-x`, wt1: `${p.root}-wt-S01-x` };
 }
+/** Rewrite the policy's max_parallel (a director's re-lock between two runner runs). */
+const maxParallel = (p, n) => {
+  const notes = path.join(p.root, 'AGENT_NOTES.md');
+  fs.writeFileSync(notes, fs.readFileSync(notes, 'utf8').replace(/max_parallel=\d/, `max_parallel=${n}`));
+};
 
-test('M5c: a parallel_ok pair runs as two lanes — S01 in main, S02 in its own worktree; S02 merges after S01 (M5d)', () => {
+test('M5d: S01 already works in main (started with one lane), S02 beside it in a worktree merges after S01', () => {
   const p = pairProject();
   const f = fakes();
+  // the director allows two lanes while S01 runs alone in main (pilot 24 S36 + S37): S01 stays in main
+  maxParallel(p, 1);
+  f.queue({ term_1: [BUSY(0)] });
+  assert.ok(start(p, f).out.at(-1).stopped);
+  assert.equal(sliceState(p.root, 'S01').lane_in_main, true);
+  clearControl(p.root);
+  maxParallel(p, 2);
   // handles in spawn order: term_1 S01 writer, term_2 S02 writer, term_3 S02 reviewer (S02 is ready first),
   // term_4 S01 reviewer, term_5 the verifier in main after S02's worktree merge
   f.queue({
@@ -79,9 +93,6 @@ test('M5c: a parallel_ok pair runs as two lanes — S01 in main, S02 in its own 
   const waits = f.waits().map((w) => `${w.on}:${w.step}`);
   assert.ok(waits.indexOf('term_3:s02-approved') < waits.indexOf('term_1:s01-ready'), waits.join(' '));
   assert.match(log(p.root, 'S02'), /selected \(single lane, beside S01: in its own worktree\)/);
-  // S02's worktree comes before S01's first wait: a lane that just spawned hands over (pilot 24 S39: ~80 s late)
-  const calls = fs.readFileSync(path.join(f.dir, 'calls.log'), 'utf8').split('\n');
-  assert.ok(calls.findIndex((c) => c.startsWith('worktree create')) < calls.findIndex((c) => c.startsWith('terminal wait') && c.includes('term_1')), calls.slice(0, 12).join('\n'));
   // M5d: S02 was ready to merge while S01 still worked in main; it merged once S01 was done
   assert.match(log(p.root, 'S02'), /merge waits: S01 works in main/);
   assert.ok(at(p.root, 'S01', /phase done/) <= at(p.root, 'S02', /merge journal started/));
@@ -111,11 +122,13 @@ test('M5c: max_parallel=2 without a parallel_ok pair runs one lane at a time, in
 test('M5c: a question parks only its lane — S01 merges while S02 waits for the director', () => {
   const p = pairProject();
   const f = fakes();
-  // term_1 S01 writer, term_2 S02 writer (blocked: a question), term_3 S01 reviewer
+  // pair placement: both in worktrees. term_1 S01 writer, term_2 S02 writer (blocked: a question), term_3 S01 reviewer,
+  // term_4 S01's verifier in main after its worktree merge
   f.queue({
-    term_1: [{ name: 's01-ready', write: W('S01', 'ready_for_review', p.root) }, commitStep('S01')],
+    term_1: [{ name: 's01-ready', wt: 'S01', write: W('S01', 'ready_for_review', p.wt1) }, { ...commitStep('S01'), wt: 'S01' }],
     term_2: [{ name: 's02-blocked', wt: 'S02', write: W('S02', 'blocked', p.wt) }],
-    term_3: [{ name: 's01-approved', write: R('S01') }],
+    term_3: [{ name: 's01-approved', wt: 'S01', write: R('S01') }],
+    term_4: [VERIFY('S01')],
   });
   const out = start(p, f).out;
   const asked = out.find((o) => o.asked);
@@ -129,11 +142,11 @@ test('M5c: a question parks only its lane — S01 merges while S02 waits for the
   assert.equal(sliceState(p.root, 'S01').phase, 'done');
 
   runner(p.root, f, 'answer', '--id', last.waiting, '--choice', 'answered in the lane, continue');
-  // term_4 S02 reviewer, term_5 the verifier in main
+  // term_5 S02 reviewer, term_6 the verifier in main
   f.queue({
     term_2: [{ name: 's02-ready', wt: 'S02', write: W('S02', 'ready_for_review', p.wt) }, { ...commitStep('S02'), wt: 'S02' }],
-    term_4: [{ name: 's02-approved', wt: 'S02', write: R('S02') }],
-    term_5: [VERIFY('S02')],
+    term_5: [{ name: 's02-approved', wt: 'S02', write: R('S02') }],
+    term_6: [VERIFY('S02')],
   });
   const again = start(p, f).out;
   assert.equal(again.find((o) => o.merged)?.merged, 'S02', JSON.stringify(again.slice(-3)));
@@ -148,24 +161,26 @@ test('M5c: a killed runner resumes both lanes — no second worktree, no second 
   assert.ok(first.at(-1).stopped, JSON.stringify(first.slice(-2)));
   assert.deepEqual(st.readRunner(p.root).lanes.map((l) => l.slice), ['S01', 'S02']);
   assert.equal(sliceState(p.root, 'S02').lane_checkout, p.wt);
+  assert.equal(sliceState(p.root, 'S01').lane_checkout, p.wt1, 'pair placement: S01 in its own worktree too');
   // status shows the lanes as the lane loop sees them, not the one-lane 'more than one slice in progress'
   const shown = runner(p.root, f, 'status').out[0];
   assert.deepEqual(shown.next, { live: ['S01', 'S02'], next: null });
-  assert.deepEqual(shown.lanes.map((l) => [l.slice, l.lane]), [['S01', 'main'], ['S02', 'worktree']]);
+  assert.deepEqual(shown.lanes.map((l) => [l.slice, l.lane]), [['S01', 'worktree'], ['S02', 'worktree']]);
 
   clearControl(p.root);
-  // term_3 S01 reviewer, term_4 S02 reviewer, term_5 the verifier
+  // term_3 S01 reviewer, term_4 S02 reviewer, term_5 and term_6 the verifiers in main
   f.queue({
-    term_1: [{ name: 's01-ready', write: W('S01', 'ready_for_review', p.root) }, commitStep('S01')],
+    term_1: [{ name: 's01-ready', wt: 'S01', write: W('S01', 'ready_for_review', p.wt1) }, { ...commitStep('S01'), wt: 'S01' }],
     term_2: [{ name: 's02-ready', wt: 'S02', write: W('S02', 'ready_for_review', p.wt) }, { ...commitStep('S02'), wt: 'S02' }],
-    term_3: [{ name: 's01-approved', write: R('S01') }],
+    term_3: [{ name: 's01-approved', wt: 'S01', write: R('S01') }],
     term_4: [{ name: 's02-approved', wt: 'S02', write: R('S02') }],
-    term_5: [VERIFY('S02')],
+    term_5: [VERIFY('S01')],
+    term_6: [VERIFY('S02')],
   });
   const out = start(p, f).out;
   assert.deepEqual(out.filter((o) => o.merged).map((o) => o.merged), ['S01', 'S02'], JSON.stringify(out.slice(-3)));
-  assert.equal(lines(f.dir, 'wtcreate.log').length, 1);
-  assert.deepEqual(f.spawns().map((s) => s.slice), ['S01', 'S02', 'S01', 'S02', 'S02']);
+  assert.equal(lines(f.dir, 'wtcreate.log').length, 2, 'no worktree created twice');
+  assert.deepEqual(f.spawns().map((s) => s.slice), ['S01', 'S02', 'S01', 'S02', 'S01', 'S02']);
 });
 
 test('M5c: a lane sent back to main (worktree_failed → main) waits until the lane in main is done', () => {
@@ -174,9 +189,10 @@ test('M5c: a lane sent back to main (worktree_failed → main) waits until the l
   fs.writeFileSync(path.join(f.dir, 'worktree-create-fail'), '1');
   f.queue({ term_1: [BUSY(1)] });
   const first = start(p, f).out;
-  const q = first.find((o) => o.blocked === 'worktree_failed');
-  assert.equal(q?.slice, 'S02', JSON.stringify(first));
-  runner(p.root, f, 'answer', '--id', q.question, '--choice', 'run this slice in main');
+  // pair placement: both lanes ask for their worktree; the director sends both to main
+  const qs = first.filter((o) => o.blocked === 'worktree_failed');
+  assert.deepEqual(qs.map((q) => q.slice), ['S01', 'S02'], JSON.stringify(first));
+  for (const q of qs) runner(p.root, f, 'answer', '--id', q.question, '--choice', 'run this slice in main');
   fs.rmSync(path.join(f.dir, 'worktree-create-fail'));
 
   clearControl(p.root);
@@ -195,10 +211,10 @@ test('M5c: a lane sent back to main (worktree_failed → main) waits until the l
   assert.ok(at(p.root, 'S01', /phase done/) <= at(p.root, 'S02', /spawned writer/));
 });
 
-test('M5d: two worktree lanes merge one at a time, first come first (merge_owner)', () => {
-  const p = pairProject({ release: '  lane_worktree: true\n' });
+test('M5c pair placement: a pair starts both lanes in their own worktrees, main stays free; merges go one at a time (merge_owner)', () => {
+  const p = pairProject();
   const f = fakes();
-  const wt1 = `${p.root}-wt-S01-x`;
+  const wt1 = p.wt1;
   // term_1/term_2 the writers, term_3/term_4 the reviewers, term_5 S01's verifier (slow), term_6 S02's
   f.queue({
     term_1: [{ name: 's01-ready', wt: 'S01', write: W('S01', 'ready_for_review', wt1) }, { ...commitStep('S01'), wt: 'S01' }],
@@ -211,7 +227,30 @@ test('M5d: two worktree lanes merge one at a time, first come first (merge_owner
   const out = start(p, f).out;
   assert.deepEqual(out.filter((o) => o.merged).map((o) => o.merged), ['S01', 'S02'], JSON.stringify(out.slice(-3)));
   assert.deepEqual(lines(f.dir, 'wtcreate.log').map((c) => c.name), ['S01-x', 'S02-x']);
+  // pilot 24 S40/S41: the first lane of a pair took main for 0.07 s of "alone" and S41's merge would wait for it
+  assert.match(log(p.root, 'S01'), /selected \(single lane, S02 pairs with it: in its own worktree, main stays free\)/);
+  assert.match(log(p.root, 'S02'), /selected \(single lane, beside S01: in its own worktree\)/);
+  assert.doesNotMatch(log(p.root, 'S01') + log(p.root, 'S02'), /works in main/);
+  assert.ok(f.spawns().slice(0, 4).every((s) => s.path !== p.root), 'the two writers and two reviewers never work in main');
+  // S02's worktree comes before S01's first wait: a lane that just spawned hands over (pilot 24 S39: ~80 s late)
+  const calls = fs.readFileSync(path.join(f.dir, 'calls.log'), 'utf8').split('\n');
+  assert.ok(calls.findIndex((c) => c.startsWith('worktree create') && c.includes('S02-x')) < calls.findIndex((c) => c.startsWith('terminal wait') && c.includes('term_1')), calls.slice(0, 12).join('\n'));
   assert.match(log(p.root, 'S02'), /merge waits: S01 is merging/);
   assert.ok(at(p.root, 'S01', /phase done/) <= at(p.root, 'S02', /merge journal started/));
   assert.equal(st.readRunner(p.root).merge_owner, null);
+});
+
+test('M5c pair placement: a partner that cannot start now (its director gate is open) leaves main to the first lane', () => {
+  const p = pairProject({ gate2: true });
+  const f = fakes();
+  f.queue({
+    term_1: [{ name: 's01-ready', write: W('S01', 'ready_for_review', p.root) }, commitStep('S01')],
+    term_2: [{ name: 's01-approved', write: R('S01') }],
+  });
+  const out = start(p, f).out;
+  assert.ok(out.find((o) => o.blocked === 'director_gate' && o.slice === 'S02'), JSON.stringify(out));
+  assert.equal(out.find((o) => o.merged)?.merged, 'S01');
+  assert.deepEqual(lines(f.dir, 'wtcreate.log'), [], 'S01 alone in main: no worktree');
+  assert.match(log(p.root, 'S01'), /selected \(single lane\); slice in_progress/);
+  assert.equal(out.at(-1).waiting !== undefined, true, 'then the runner waits for the S02 gate');
 });

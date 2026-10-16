@@ -124,6 +124,10 @@ Chia nhỏ, mỗi bước merge riêng, `max_parallel=1` giữ nguyên hành vi 
   220/220 test (+6 runner-m5c.test.mjs: cặp main + worktree với merge chờ main; không phải cặp → nối tiếp ở main;
   câu hỏi chỉ đỗ lane của nó; kill + restart tiếp tục cả hai không spawn lại; lane trả về main chờ lane main;
   hai lane worktree merge FIFO). Harness: bước `sleepMs` dài hơn một lượt = một lượt bận (orca-wait gọi fake nhiều lần).
+- **Đặt chỗ theo cặp (2026-10-16, sau pilot 24 S40/S41):** lane được chọn một mình mà có slice ghép cặp khởi động
+  được ngay trong cùng lượt (`pairPartner`: nextLanes khi coi lane này in_progress, không đỗ câu hỏi, không vướng
+  preflight) cũng vào worktree — main trống, không merge nào phải chờ main. Lane thật sự chạy một mình vẫn ở main
+  (không tốn worktree + verify). Lane đã chạy ở main từ chế độ một lane (lane_in_main) giữ main; M5d vẫn áp dụng.
 - **Còn lại (M5e):** chạy thật với một cặp có director theo dõi; pilot 24 không còn cặp độc lập (S22 phụ thuộc mọi slice).
 - Lỗi nhỏ thấy khi làm M5c: `cancel` gửi `current_slice: ''` cho `writeRelease` (khoá đúng là `currentSlice`) nên
   không xoá `current_slice` — vô hại (lần chọn sau ghi đè).

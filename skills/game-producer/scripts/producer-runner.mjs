@@ -789,6 +789,17 @@ function laneContext(project, id, lane) {
 }
 
 /**
+ * The slice nextLanes would start beside `id` once `id` is in progress, when it can start now (not parked on a
+ * question, no preflight blocker), else null. A partner like that makes `id` a pair lane: worktree, not main.
+ */
+function pairPartner(project, statuses, id, parked) {
+  const after = { ...statuses, [id]: { ...(statuses[id] || {}), status: 'in_progress' } };
+  const p = nextLanes(project, after).next;
+  if (!p || p === id || parked.has(p)) return null;
+  return preflight(project, p).length ? null : p;
+}
+
+/**
  * A lane that waits its turn (merge or main) for lane `on`: logged with where `on` is, again every WAIT_LOG_MS with
  * the minutes so far, and once more when the wait ends; `status` shows the reason, since when and `on`'s phase.
  */
@@ -812,7 +823,8 @@ function waitTurn(root, id, why, on = null) {
  * - Every open question gets the judge / autopilot / the pilot and a notification now, whatever the other lane
  *   does; a question with a slice parks only that slice, one without parks everything.
  * - A new lane starts when nextLanes pairs it with the one live lane, never while a lane is merging, never under
- *   stop-after; it always gets its own worktree (placement: main only for a lane that is alone).
+ *   stop-after; it gets its own worktree, and so does a lane picked alone whose partner starts in the same pass
+   (pair placement: main only for a lane that really runs alone).
  * - Lanes take turns: each runs stepLane until it waits; orca-wait waits LANES_WAIT_MS while two lanes live.
  * - A worktree lane merges only when no lane works in main, and one worktree merge at a time (merge_owner).
  * - The runner waits for an answer only when no lane can move.
@@ -932,9 +944,13 @@ async function startLanes(root, { once }) {
       }
       const { lane, moved } = freshLane(root, next, project);
       const beside = live.length > 0;
+      // pair placement: a lane picked alone whose partner starts in the same pass works in a worktree too, so main
+      // stays free and neither merge waits for a lane in main (pilot 24 S40/S41; S39 waited 92 min behind S38)
+      const partner = beside ? null : pairPartner(project, statuses, next, parked);
       writeRelease(project, { ...(beside ? {} : { currentSlice: next }), slices: { [next]: 'in_progress' } });
-      if (beside) st.writeSliceState(root, next, { force_worktree: true });
-      st.log(root, next, `selected (${lane} lane${beside ? `, beside ${live.join(', ')}: in its own worktree` : ''}); slice in_progress${moved.length ? `; earlier state kept as ${moved.join(', ')}` : ''}`);
+      if (beside || partner) st.writeSliceState(root, next, { force_worktree: true });
+      const where = beside ? `, beside ${live.join(', ')}: in its own worktree` : partner ? `, ${partner} pairs with it: in its own worktree, main stays free` : '';
+      st.log(root, next, `selected (${lane} lane${where}); slice in_progress${moved.length ? `; earlier state kept as ${moved.join(', ')}` : ''}`);
       // a lane alone: look again at once, a partner may pair with it before the first lane's long wait
       if (!beside) continue;
       live.push(next);

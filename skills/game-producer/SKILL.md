@@ -184,9 +184,11 @@ node ~/.agents/skills/game-producer/scripts/producer-runner.mjs start --dry-run 
   `producer-runner.mjs status` shows a live runner; the Step 0–1 / Step 3 producers never dispatch
   slices. `handoff-reset` forgets a Step 0–1 / Step 3 handoff so the runner may spawn a new one.
 - **Two lanes (phase 2, `max_parallel=2`):** the runner pairs two single (S/M) lanes from a MILESTONES
-  `parallel_ok` pair with no shared `exclusive` group: the first works in main, the one beside it in its own
-  worktree (`lane_worktree` placement); a question parks only its lane; a worktree lane merges once no lane
-  works in main, one worktree merge at a time; no new lane starts while one merges. `status` lists both lanes.
+  `parallel_ok` pair with no shared `exclusive` group: a pair starts both lanes in their own worktrees (main
+  stays free, so neither merge waits for a lane in main); a lane with no partner that can start now works in
+  main; a question parks only its lane; a worktree lane merges once no lane works in main (a lane started in
+  main under one lane keeps it), one worktree merge at a time; no new lane starts while one merges. `status`
+  lists both lanes and what a waiting one waits for.
 - **Phase 1 limits:** `max_parallel=1` unless the director asks for two lanes; a port slice without a reviewed slice study stops
   (`needs_slice_study`: run the study with an LLM producer); verifying main after a fleet merge needs
   3.8 + Funplay — cc4 or no Funplay → the director verifies; a single lane gets the preview port from
