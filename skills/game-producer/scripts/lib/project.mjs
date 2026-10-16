@@ -345,6 +345,64 @@ export function nextSlice(project, statuses = sliceStatuses(project)) {
   return { stuck: true, reason: why.length ? `nothing runnable; ${why.join('; ')}` : 'nothing runnable' };
 }
 
+// ------------------------------------------------------------------ phase 2 M5b: two lanes
+
+/** `max_parallel` from the policy line, else AGENT_NOTES release; 1 unless it says 2. */
+export const maxParallel = (project) => (String(project.policy?.tokens?.max_parallel ?? project.release.max_parallel ?? '1') === '2' ? 2 : 1);
+
+/** A slice's exclusive groups: MILESTONES `exclusive: {api: [S26, …]}` plus its own front matter `exclusive: [api]`. */
+export function exclusiveGroups(project, id) {
+  const out = new Set();
+  const ex = project.milestones.exclusive;
+  if (ex && typeof ex === 'object') for (const [g, ids] of Object.entries(ex)) if (Array.isArray(ids) && ids.includes(id)) out.add(g);
+  try {
+    const own = sliceFront(project, id).data.exclusive;
+    for (const g of Array.isArray(own) ? own : own ? [own] : []) out.add(String(g));
+  } catch {
+    /* no slice file: no groups of its own */
+  }
+  return out;
+}
+
+/** May a and b run at once? A MILESTONES parallel_ok pair, both single lanes (size S/M), no shared exclusive group. → null | the reason not */
+export function pairProblem(project, a, b) {
+  const pairs = Array.isArray(project.milestones.parallel_ok) ? project.milestones.parallel_ok : [];
+  if (!pairs.some((p) => Array.isArray(p) && p.includes(a) && p.includes(b))) return `${a} and ${b} are not a parallel_ok pair in MILESTONES.md`;
+  for (const id of [a, b]) {
+    try {
+      if (sliceSize(sliceFront(project, id).data) === 'L') return `${id} is a fleet (L) slice: phase 2 pairs single lanes only`;
+    } catch {
+      return `${id} has no readable slice file`;
+    }
+  }
+  const shared = [...exclusiveGroups(project, a)].filter((g) => exclusiveGroups(project, b).has(g));
+  return shared.length ? `${a} and ${b} share the exclusive group ${shared.join(', ')}` : null;
+}
+
+/**
+ * The lanes to run (phase 2): `max_parallel` 1 → nextSlice as before. 2 → { live: [ids to resume], next: id | null }
+ * where `next` is the first runnable slice, taken only when it pairs with the one live lane (pairProblem null); or
+ * nextSlice's { done } / { stuck } when nothing is live. Two live slices that are not a valid pair are stuck.
+ */
+export function nextLanes(project, statuses = sliceStatuses(project)) {
+  if (maxParallel(project) < 2) return nextSlice(project, statuses);
+  const order = runnableOrder(project.milestones);
+  const live = order.filter((id) => statuses[id]?.status === 'in_progress');
+  if (live.length > 2) return { stuck: true, reason: `more than two slices in progress: ${live.join(', ')}` };
+  if (live.length === 2) {
+    const why = pairProblem(project, live[0], live[1]);
+    return why ? { stuck: true, reason: `two slices in progress that may not run together: ${why}` } : { live, next: null };
+  }
+  const first = nextSlice(project, statuses);
+  if (!live.length) return first.slice ? { live: [], next: first.slice } : first;
+  // one lane live: the first slice that is not live and whose dag is done, when it pairs with it
+  const ms = project.milestones;
+  const cand = order.find((id) => !live.includes(id) && !DONE.has(statuses[id]?.status) && !HELD.has(statuses[id]?.status)
+    && (ms.dag?.[id] || []).every((d) => DONE.has(statuses[d]?.status)));
+  const why = cand ? pairProblem(project, live[0], cand) : 'nothing else is runnable';
+  return { live, next: why ? null : cand, ...(why && cand ? { held: `${cand} waits for ${live[0]}: ${why}` } : {}) };
+}
+
 /**
  * Preflight gates before (re)dispatching a slice → list of { code, detail }. Empty = go.
  * Mirrors game-producer SKILL Inputs / Step 0–1; anything it cannot decide mechanically blocks.
@@ -359,7 +417,7 @@ export function preflight(project, id, { initial = false } = {}) {
     const y = project.release[k];
     if (t[k] !== undefined && y !== undefined && String(y) !== t[k]) add('policy_conflict', `policy line ${k}=${t[k]} but AGENT_NOTES release.${k}=${y}: re-lock the policy line`);
   }
-  if (t.max_parallel && t.max_parallel !== '1') add('max_parallel', `policy max_parallel=${t.max_parallel}; runner phase 1 runs one slice at a time`);
+  if (t.max_parallel && !['1', '2'].includes(t.max_parallel)) add('max_parallel', `policy max_parallel=${t.max_parallel}; the runner runs one or two lanes (phase 2)`);
   if (budgetMode(project) === null) add('policy_conflict', `policy budget=${t.budget} is neither advisory nor gate[:<pct>]`);
   // the lanes spawn the yaml specs: a policy line that locked another agent must be re-locked by the human
   for (const [k, spec] of Object.entries(policyAgents(project.policy?.raw))) {

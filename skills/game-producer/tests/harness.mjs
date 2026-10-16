@@ -47,21 +47,21 @@ ${policy}
 export const POLICY = '- policy: goal=end_to_end auto_commit=true auto_merge=true deploy=preview budget=advisory max_parallel=1 (director gate: S02 GIVEN)';
 
 /** slices: { S01: { needs, size, study, assets } } */
-export function project({ notes = NOTES(POLICY), slices = { S01: { needs: false }, S02: { needs: true }, S03: { needs: false } }, dag, prefix = 'runner-proj-', files = {} } = {}) {
+export function project({ notes = NOTES(POLICY), slices = { S01: { needs: false }, S02: { needs: true }, S03: { needs: false } }, dag, prefix = 'runner-proj-', files = {}, parallelOk = [], exclusive } = {}) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
   for (const [rel, body] of Object.entries(files)) {
     fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
     fs.writeFileSync(path.join(root, rel), body);
   }
   const ids = Object.keys(slices);
-  const ms = { slices: ids, dag: dag || Object.fromEntries(ids.map((id, i) => [id, i ? [ids[i - 1]] : []])), parallel_ok: [], v1_slice: 'S01', release_slice: ids[ids.length - 1] };
+  const ms = { slices: ids, dag: dag || Object.fromEntries(ids.map((id, i) => [id, i ? [ids[i - 1]] : []])), parallel_ok: parallelOk, ...(exclusive ? { exclusive } : {}), v1_slice: 'S01', release_slice: ids[ids.length - 1] };
   fs.writeFileSync(path.join(root, 'AGENT_NOTES.md'), notes);
   fs.writeFileSync(path.join(root, 'MILESTONES.md'), `# MILESTONES\n\n\`\`\`yaml\n${JSON.stringify(ms, null, 2)}\n\`\`\`\n`);
   fs.mkdirSync(path.join(root, 'slices'));
   for (const [id, o] of Object.entries(slices)) {
     const assets = o.assets ? `assets:\n  2d:\n    - ${o.assets}\n  3d: []\n` : 'assets:\n  2d: []\n  3d: []\n';
     fs.writeFileSync(path.join(root, 'slices', `${id}-x.md`),
-      `---\nid: ${id}\nsize: ${o.size || 'M'}             # S | M | L\nneeds_director_ok: ${o.needs}\n${o.study ? 'rip_study:\n  - a\n' : ''}${assets}---\n# ${id}\n${o.body || ''}`);
+      `---\nid: ${id}\nsize: ${o.size || 'M'}             # S | M | L\nneeds_director_ok: ${o.needs}\n${o.study ? 'rip_study:\n  - a\n' : ''}${o.exclusive ? `exclusive: [${o.exclusive.join(', ')}]\n` : ''}${assets}---\n# ${id}\n${o.body || ''}`);
   }
   const g = (...a) => spawnSync('git', ['-C', root, ...a], { encoding: 'utf8' });
   g('init', '-q');
