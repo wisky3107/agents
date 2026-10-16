@@ -212,3 +212,14 @@ test('heartbeats and status notes in a Delivery are not questions; an escalation
   assert.deepEqual(questions.map((q) => [q.kind, q.ref]), [['worker_escalation', 'msg:m3']]);
   assert.deepEqual(load(ctx).seen.slice(-3), ['m1', 'm2', 'm3']);
 });
+
+test('a question replayed from a worker that already finished is logged, not asked', () => {
+  const { ctx, io, questions } = context();
+  tick(ctx);
+  const d = dispatchOf(io, 'implement');
+  done(io, 'implement');
+  io.inbox.push({ id: 'late', type: 'question', dispatch: d, question: 'still there?' });
+  tick(ctx);
+  assert.deepEqual(questions, []);
+  assert.ok(load(ctx).seen.includes('late'));
+});

@@ -56,6 +56,12 @@ export function tick(ctx) {
     }
     const name = taskOf(d, m);
     if (!name) { ctx.log?.(`fleet-driver: ${m.type} ${m.id} from an unknown dispatch ${m.dispatch}, ignored`); d.seen.push(m.id); continue; }
+    // a question replayed after its worker settled (a mailbox caught up late) has nobody waiting for the reply
+    if (m.type !== 'worker_done' && d.dag.tasks[name]?.status === 'done') {
+      ctx.log?.(`fleet-driver: ${m.type} ${m.id} from ${name}, which already finished: logged, not asked — ${String(m.question ?? m.body ?? '').split('\n')[0].slice(0, 160)}`);
+      d.seen.push(m.id);
+      continue;
+    }
     const e = m.type === 'worker_done' ? { type: 'done', task: name, outcome: m.outcome ?? 'failed', body: m.body }
       : { type: m.type, task: name, msgId: m.id, text: m.question ?? m.body, options: m.options };
     feed(ctx, d, e);
