@@ -47,10 +47,17 @@ export function tick(ctx) {
   d.delivery = null;
   for (const m of r.messages) {
     if (d.seen.includes(m.id)) continue;
+    // a Delivery is the whole FIFO batch, whatever --types woke it: heartbeats and status notes ride along
+    // (capytal S44: a codex worker's progress notes became six questions). Only these three are acted on.
+    if (!['worker_done', 'question', 'escalation'].includes(m.type)) {
+      if (m.type !== 'heartbeat') ctx.log?.(`fleet-driver: ${m.type} from ${m.dispatch ?? m.from}: ${String(m.body ?? '').split('\n')[0].slice(0, 160)}`);
+      d.seen.push(m.id);
+      continue;
+    }
     const name = taskOf(d, m);
     if (!name) { ctx.log?.(`fleet-driver: ${m.type} ${m.id} from an unknown dispatch ${m.dispatch}, ignored`); d.seen.push(m.id); continue; }
     const e = m.type === 'worker_done' ? { type: 'done', task: name, outcome: m.outcome ?? 'failed', body: m.body }
-      : { type: m.type === 'question' ? 'question' : 'escalation', task: name, msgId: m.id, text: m.question ?? m.body, options: m.options };
+      : { type: m.type, task: name, msgId: m.id, text: m.question ?? m.body, options: m.options };
     feed(ctx, d, e);
     d.seen.push(m.id);
   }

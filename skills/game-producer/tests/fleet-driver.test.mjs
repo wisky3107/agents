@@ -201,3 +201,14 @@ test('a Delivery of a fenced consumer generation (after run-use) is dropped, not
   assert.deepEqual(checks.slice(-2), ['del_old_generation', null]);
   assert.equal(load(ctx).dag.tasks.integrate.status, 'started', 'the batch after the drop was handled');
 });
+
+test('heartbeats and status notes in a Delivery are not questions; an escalation still is', () => {
+  const { ctx, io, questions } = context();
+  tick(ctx);
+  const d = dispatchOf(io, 'implement');
+  io.inbox.push({ id: 'm1', type: 'heartbeat', dispatch: d, body: '' }, { id: 'm2', type: 'status', dispatch: d, body: 'Six images generated' },
+    { id: 'm3', type: 'escalation', dispatch: d, body: 'preview will not start' });
+  tick(ctx);
+  assert.deepEqual(questions.map((q) => [q.kind, q.ref]), [['worker_escalation', 'msg:m3']]);
+  assert.deepEqual(load(ctx).seen.slice(-3), ['m1', 'm2', 'm3']);
+});
