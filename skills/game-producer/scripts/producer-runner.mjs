@@ -50,6 +50,7 @@ const msEnv = (k, d) => Number(process.env[k]) || d;
 const WAIT_MS = msEnv('PRODUCER_RUNNER_WAIT_MS', 540000); // one orca-wait call (its own cap is 570000)
 const IDLE_MS = msEnv('PRODUCER_RUNNER_IDLE_MS', 60000); // pause before re-checking an idle lane
 const LANES_WAIT_MS = msEnv('PRODUCER_RUNNER_LANES_WAIT_MS', 75000); // one orca-wait while two lanes take turns
+const WAIT_LOG_MS = msEnv('PRODUCER_RUNNER_WAIT_LOG_MS', 30 * 60000); // a lane waiting its turn says so again this often
 const POLL_MS = msEnv('PRODUCER_RUNNER_POLL_MS', 5000); // answer polling
 const PILOT_POLL_MS = msEnv('PRODUCER_RUNNER_PILOT_POLL_MS', 2000); // pilot-wait polling
 const PILOT_WAIT_MS = 1740000; // pilot-wait's default life: under a Claude Code Monitor's 30-minute cap
@@ -244,7 +245,12 @@ async function status(root) {
     lock: st.lockHolder(root), control: st.readControl(root), runner, next, blockers,
     lane: runner.slice ? st.readSliceState(root, runner.slice) : null,
     // phase 2 M3: every live lane, where it works and its phase
-    lanes: (runner.lanes || []).map((l) => ({ ...l, ...laneTag(root, l.slice), phase: st.readSliceState(root, l.slice).phase || null, ...(st.readSliceState(root, l.slice).lane_wait ? { waits: st.readSliceState(root, l.slice).lane_wait } : {}) })),
+    lanes: (runner.lanes || []).map((l) => {
+      const s = st.readSliceState(root, l.slice);
+      // a lane waiting its turn: why, since when, and where the lane it waits for is now
+      const wait = s.lane_wait ? { waits: s.lane_wait, waiting_since: s.lane_wait_since ? new Date(s.lane_wait_since).toISOString() : null, waiting_min: s.lane_wait_since ? Math.round((Date.now() - s.lane_wait_since) / 60000) : null, ...(s.lane_wait_on ? { waits_on: { slice: s.lane_wait_on, phase: st.readSliceState(root, s.lane_wait_on).phase || null } } : {}) } : {};
+      return { ...l, ...laneTag(root, l.slice), phase: s.phase || null, ...wait };
+    }),
     slices: Object.fromEntries(Object.entries(statuses).map(([k, v]) => [k, v.source === 'cache' ? v.status : `${v.status} (${v.source})`])),
     ...(Object.keys(manual).length ? { manual_deferred: manual } : {}),
   });
@@ -782,11 +788,23 @@ function laneContext(project, id, lane) {
   };
 }
 
-/** A lane that waits its turn (merge or main): logged once per reason, kept in its state for `status`. */
-function waitTurn(root, id, why) {
-  if (st.readSliceState(root, id).lane_wait === why) return;
-  st.writeSliceState(root, id, { lane_wait: why });
-  st.log(root, id, why);
+/**
+ * A lane that waits its turn (merge or main) for lane `on`: logged with where `on` is, again every WAIT_LOG_MS with
+ * the minutes so far, and once more when the wait ends; `status` shows the reason, since when and `on`'s phase.
+ */
+function waitTurn(root, id, why, on = null) {
+  const s = st.readSliceState(root, id);
+  const now = Date.now();
+  const where = on ? `${on} at ${st.readSliceState(root, on).phase || '?'}` : null;
+  if (s.lane_wait === why) {
+    // pilot 24 S39: a finished worktree lane waited 92 min behind a main lane in fix rounds, said once; now every WAIT_LOG_MS
+    if (now - (s.lane_wait_logged || 0) < WAIT_LOG_MS) return;
+    st.writeSliceState(root, id, { lane_wait_logged: now });
+    st.log(root, id, `${why}: still waiting, ${Math.round((now - (s.lane_wait_since || now)) / 60000)} min${where ? `; ${where}` : ''}`);
+    return;
+  }
+  st.writeSliceState(root, id, { lane_wait: why, lane_wait_on: on, lane_wait_since: now, lane_wait_logged: now });
+  st.log(root, id, where ? `${why} (${where})` : why);
 }
 
 /**
@@ -967,7 +985,7 @@ async function startLanes(root, { once }) {
       }
       const taken = mainTaken(id);
       if (taken) {
-        waitTurn(root, id, `${taken} works in main; this lane runs in main after it`);
+        waitTurn(root, id, `${taken} works in main; this lane runs in main after it`, taken);
         continue;
       }
       // M5d: a worktree lane merges only when no other lane works in main; worktree merges one at a time (merge_owner)
@@ -976,12 +994,15 @@ async function startLanes(root, { once }) {
         const owner = st.readRunner(root).merge_owner;
         const busy = owner && owner !== id && live.includes(owner) && !isDone(owner);
         if (inMain || busy) {
-          waitTurn(root, id, inMain ? `merge waits: ${inMain} works in main` : `merge waits: ${owner} is merging`);
+          waitTurn(root, id, inMain ? `merge waits: ${inMain} works in main` : `merge waits: ${owner} is merging`, inMain || owner);
           continue;
         }
         if (owner !== id) st.writeRunner(root, { merge_owner: id });
       }
-      if (s.lane_wait) st.writeSliceState(root, id, { lane_wait: null });
+      if (s.lane_wait) {
+        st.log(root, id, `${s.lane_wait}: done waiting after ${Math.round((Date.now() - (s.lane_wait_since || Date.now())) / 60000)} min`);
+        st.writeSliceState(root, id, { lane_wait: null, lane_wait_on: null, lane_wait_since: null, lane_wait_logged: null });
+      }
       const ctx = ctxs.get(id) || laneContext(project, id, lane);
       ctxs.set(id, ctx);
       ctx.project = project;

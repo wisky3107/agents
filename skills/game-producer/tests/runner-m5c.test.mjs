@@ -62,9 +62,14 @@ test('M5c: a parallel_ok pair runs as two lanes — S01 in main, S02 in its own 
     term_4: [{ name: 's01-approved', write: R('S01') }],
     term_5: [VERIFY('S02')],
   });
-  const out = start(p, f).out;
+  const out = runner(p.root, f, 'start', '--once', { env: { PRODUCER_RUNNER_LANES_WAIT_MS: TURN_MS, PRODUCER_RUNNER_WAIT_LOG_MS: '1' } }).out;
   assert.deepEqual(out.filter((o) => o.merged).map((o) => o.merged), ['S01', 'S02'], JSON.stringify(out.slice(-3)));
   assert.ok(out.at(-1).done, 'then the release slice is merged');
+  // the wait names where the blocking lane is, says so again while it lasts (pilot 24 S39: 92 min, said once) and when it ends
+  assert.match(log(p.root, 'S02'), /merge waits: S01 works in main \(S01 at \w[\w-]*\)/);
+  assert.match(log(p.root, 'S02'), /merge waits: S01 works in main: still waiting, \d+ min; S01 at \w/);
+  assert.match(log(p.root, 'S02'), /merge waits: S01 works in main: done waiting after \d+ min/);
+  assert.equal(sliceState(p.root, 'S02').lane_wait_since, null);
 
   assert.deepEqual(lines(f.dir, 'wtcreate.log').map((c) => c.name), ['S02-x'], 'one worktree: the lane beside');
   const spawns = f.spawns();
