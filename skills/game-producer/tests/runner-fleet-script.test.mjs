@@ -188,3 +188,11 @@ test('script lane: CHANGES_REQUESTED → the fix_routing rows become a fix task 
   assert.match(spec, /F1 · assets\/scripts\/cat\.ts · jump 2 units · jump reads 2/);
   assert.equal(questions(p.root).length, 0);
 });
+
+test('artDir: the folder the art roles own, from folders, globs or the files a slice lists', async () => {
+  const { artDir } = await import('../scripts/lib/lanes.mjs');
+  assert.equal(artDir(['assets/art/Textures/IslandFrame/frame-top.png', 'assets/art/Textures/IslandFrame/frame-bottom.png']), 'assets/art/Textures/IslandFrame');
+  assert.equal(artDir(['assets/art/**']), 'assets/art');
+  assert.equal(artDir(['assets/art/ui/*.png', 'assets/art/fx/']), 'assets/art');
+  assert.equal(artDir([]), 'assets/art');
+});

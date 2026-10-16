@@ -2094,15 +2094,39 @@ function scriptAgents(project) {
   };
 }
 
+/**
+ * The directory the art roles own (<ART_PATHS>, manifest.json in it): the deepest folder shared by the slice's
+ * `paths.art`, globs cut and files taken by their folder (capytal S44 lists two PNGs, not a folder).
+ */
+export function artDir(paths) {
+  const dirs = paths.map((p) => String(p).replace(/\/?[^/]*[*?[{].*$/, '').replace(/\/$/, ''))
+    .map((p) => (/\.[a-z0-9]+$/i.test(path.basename(p)) ? path.dirname(p) : p)).filter((p) => p && p !== '.');
+  if (!dirs.length) return 'assets/art';
+  const parts = dirs.map((d) => d.split('/'));
+  const common = [];
+  for (let i = 0; parts.every((x) => x[i] !== undefined && x[i] === parts[0][i]); i++) common.push(parts[0][i]);
+  return common.join('/') || 'assets/art';
+}
+
+/** The scene the integrator locks: AGENT_NOTES `fleet.scene`, else assets/scenes/game.scene in any case (capytal: Game.scene). */
+function mainScene(checkout) {
+  try {
+    const hit = fs.readdirSync(path.join(checkout, 'assets', 'scenes')).find((n) => /^game\.scene$/i.test(n));
+    return hit ? `assets/scenes/${hit}` : SCENE_DEFAULT;
+  } catch {
+    return SCENE_DEFAULT;
+  }
+}
+
 /** Everything fleet-driver.mjs needs, rebuilt each step from the slice state (nothing lives only in memory). */
-function driverCtx(ctx, s) {
+export function driverCtx(ctx, s) {
   const { project, id } = ctx;
   const root = project.root;
   const wt = s.worktree;
   const { data } = sliceFront(project, id);
   const f = project.fleet;
   const evRel = path.join('.cursor', 'evidence', 'tasks', `T-${id}`, 'evidence');
-  const artPaths = String((data.paths?.art || [])[0] || 'assets/art').replace(/\/\*.*$/, '').replace(/\/$/, '');
+  const artPaths = artDir(data.paths?.art || []);
   const agents = scriptAgents(project);
   const pack = s.context_pack && s.context_pack !== 'none' ? s.context_pack : null;
   return {
@@ -2110,7 +2134,7 @@ function driverCtx(ctx, s) {
     cfg: { lite: fleetIsLite(project, id), agents, art2dBackend: f.art_backend || 'antigravity' },
     values: {
       EVIDENCE_ROOT: evRel, FEATURE: path.basename(s.plan || `${id}`, '.md'), TASK_ID: `T-${id}`, SLICE_ID: id, WORKTREE_PATH: wt,
-      ART_PATHS: artPaths, SCENE: f.scene || SCENE_DEFAULT, ART_BACKEND: f.art_backend || 'antigravity', MESH_BACKEND: f.mesh_backend || 'auto',
+      ART_PATHS: artPaths, SCENE: f.scene || mainScene(wt), ART_BACKEND: f.art_backend || 'antigravity', MESH_BACKEND: f.mesh_backend || 'auto',
       MESH_AGENT: agents.mesh, CONCEPT_ROUTE: agents.concept === 'codex' ? 'codex-image' : 'antigravity', PROJECT_SLUG: path.basename(root),
       CHAR_ANIM_HOME: f.char_anim_home || CHAR_ANIM_DEFAULT,
     },

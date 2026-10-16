@@ -280,3 +280,16 @@ Mỗi mốc merge riêng và có test. Chế độ `agent` không đổi hành v
 3. `worker_question` **judge được trả lời** (như `fleet_gate`, cần trích dẫn contracts).
 4. M0–M2 **bắt đầu ngay**, song song với trial M5e của phase 2. M4 vẫn chờ M5e.
 5. D10 work order: **scan viết** (`discovery.md` `## work order` theo role); lite → worker đọc slice.
+6. (đổi ý 1) Pilot M5 đầu tiên trên **cc-capytal-war S40** (island-layout-b4, đổi M → L, không asset → fleet lite), so với
+   S38/S39 (cùng loại, single lane, 2026-10-16). Session pilot-24 làm: chờ S38/S39 merge, dừng runner, `size: L` +
+   `fleet.coordinator: script`, commit contracts, restart runner trên master f8fc35e. Phần art (scan, art-manifest,
+   concept/mesh) vẫn cần một slice L có art ở dự án mới sau.
+   **Cập nhật 10:0xZ:** runner cũ (max_parallel=2) tự chọn S40 làm single lane cặp với S41 ngay khi S39 merge, nên
+   pilot chuyển sang **S43** (cùng loại). S43 là L nên không ghép cặp, kể cả với runner cũ: nó chờ S42 rồi chạy một
+   mình, nên có đủ thời gian restart runner trên code mới. Baseline giờ là S38–S42 (5 slice single cùng loại).
+   **Cập nhật 21:5xZ:** S43 cũng bị runner cũ chọn thành single (12:53Z, cùng lượt S41 merge; contracts chưa kịp
+   đổi). Director chọn **S44** (island-view-fit, có 2 asset 2D → fleet đầy đủ: scan → art-manifest ∥ implement →
+   art-2d (codex) → integrate → review). Commit `aadb39f0` trong capytal đổi `size: L` khi S43 còn chờ q27; runner
+   cũ giờ từ chối ghép S44. Dry-run trên dữ liệu thật tìm ra 2 lỗi, đã sửa: `ART_PATHS` lấy phần tử đầu của
+   `paths.art` (S44 liệt kê file PNG → `artDir` lấy thư mục chung); `SCENE` mặc định `game.scene` (capytal:
+   `Game.scene` → `mainScene`). Baseline: S38–S43.
