@@ -70,7 +70,8 @@ Do:
    An image-gen row that is key art, splash / title, store art, logo, a full-scene background
    or character hero art also gets "tier": "hero" (it routes to ChatGPT on gpt-image-gen).
 2. `orca orchestration send --type status` to every art-concept / art-mesh / art-anim / art-2d /
-   implement handle with the manifest path.
+   implement handle this spec names, with the manifest path. No handles named (the fleet driver starts
+   the next tasks from your worker_done) → skip this step; never send it to the Run as an escalation.
 3. worker_done.
 
 Never: write concept PNGs, generators, or .glb files; edit evidence/art except listing the path.
@@ -149,7 +150,7 @@ Do:
 3. CONCEPT FAIL → regenerate (max 2 rounds). No PASS → worker_done --outcome failed; do not
    signal the mesh worker to start.
 4. On PASS: `orca orchestration send --type status --to <MESH_HANDLE> --subject "concept ready"
-   --body "<concepts dir>"` then worker_done listing the PNGs. A proportions WARN goes in the
+   --body "<concepts dir>"` (skip it when the handle is `none`) then worker_done listing the PNGs. A proportions WARN goes in the
    worker_done summary too: the coordinator settles expect_dims before the mesh starts.
 
 Never: write .glb / generators; edit other stems; edit manifest.json; open Creator.
@@ -163,7 +164,7 @@ This concept feeds an auto-rig. Build every prompt from
 the torso, legs apart, feet forward), normal proportions, no cape / long skirt / loose sleeves /
 props / base, EXACTLY ONE FIGURE PER IMAGE (never a multi-view sheet). Add that file's rig lines
 (single figure, a-pose, hands, proportions, rig-hostile parts, background) to concept-check.md.
-On PASS, send status to the art-mesh handle; art-anim waits on the mesh.
+On PASS, send status to the art-mesh handle (none named → skip); art-anim waits on the mesh.
 ```
 
 ---
@@ -282,7 +283,7 @@ Studio glbs face +X. Render a turned copy that faces Blender -Y (glTF +Z):
 and pass that copy as --input with --forward +Z (omit --expect-dims; normalize scales to 1.7 m).
 model-check.md adds: rig readiness: PASS|FAIL — one humanoid, arms clear of the torso, two
 separate legs down to the feet, hands present, no fused props.
-PASS → send status "mesh ready" to the art-anim handle, with body <ART_PATHS>/gen3d/<STEM>/<STEM>.glb.
+PASS → send status "mesh ready" to the art-anim handle (none named → skip), with body <ART_PATHS>/gen3d/<STEM>/<STEM>.glb.
 ```
 
 ---
