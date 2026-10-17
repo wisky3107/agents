@@ -728,6 +728,7 @@ export function mergeStep(ctx, s, kit) {
       // to main by the evidence step, may go; anything else keeps the worktree
       let force = false;
       let captures = [];
+      let junkMetas = [];
       const prefix = git(j.wt, ['rev-parse', '--show-prefix']).stdout.trim();
       if (!kept) {
         const changed = changedPaths(j.wt);
@@ -741,7 +742,12 @@ export function mergeStep(ctx, s, kit) {
           const untracked = new Set(git(j.wt, ['ls-files', '--others', '--exclude-standard', '-z']).stdout.split('\0').filter(Boolean).map((f) => prefix + f));
           const capture = (f) => untracked.has(f) && (f.startsWith(`${prefix}docs/evidence/${id}/`) || (f.startsWith(ev) && /\.png$/i.test(f)));
           captures = changed.filter(capture);
-          if (j.steps.evidence?.not_copied || !changed.every((f) => carried(f) || capture(f))) kept = 'dirty';
+          // an untracked .meta with no asset beside it: Creator writes `assets/.meta` (a "directory" importer meta of an
+          // empty name) in some checkouts, and pilot 24 S43 kept its worktree over that alone; a new asset with its
+          // .meta is not junk and keeps the worktree as before
+          const junk = (f) => untracked.has(f) && /\.meta$/.test(f) && (path.basename(f) === '.meta' || !fs.existsSync(path.join(j.wt, f.slice(prefix.length, -'.meta'.length))));
+          junkMetas = changed.filter(junk);
+          if (j.steps.evidence?.not_copied || !changed.every((f) => carried(f) || capture(f) || junk(f))) kept = 'dirty';
           else force = true;
         }
         // PNGs in an ignored evidence dir never show as changes and the evidence copy skips them: keep them too
@@ -762,7 +768,7 @@ export function mergeStep(ctx, s, kit) {
       }
       if (!kept) ctx.checkout = root; // the lane's checkout is gone: reopen, verify and record work in main
       stepDone(root, id, 'worktree_rm', kept ? { kept, note: `worktree kept (${kept})` }
-        : { note: force ? `removed: only its evidence files had changed, copied to main first${captures.length ? ` (${captures.length} capture(s) → .cursor/evidence/tasks/T-${id}/captures/)` : ''} (branch kept)` : 'removed (branch kept)', ...(captures.length ? { captures: captures.length } : {}) });
+        : { note: force ? `removed: only its evidence files had changed, copied to main first${captures.length ? ` (${captures.length} capture(s) → .cursor/evidence/tasks/T-${id}/captures/)` : ''}${junkMetas.length ? ` (${junkMetas.length} Creator .meta without an asset left behind: ${junkMetas.slice(0, 3).join(', ')})` : ''} (branch kept)` : 'removed (branch kept)', ...(captures.length ? { captures: captures.length } : {}) });
       return null;
     }
 

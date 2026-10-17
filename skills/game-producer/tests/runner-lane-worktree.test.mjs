@@ -188,8 +188,8 @@ test('a worktree kept after the merge (dirty) still verifies in main: the verifi
   const wtPath = `${p.root}-wt-S01-x`;
   const preview = { [evRel('S01', 'preview-startup.json')]: { projectPath: wtPath, previewUrl: 'http://127.0.0.1:7466/', status: 'ready' } };
   f.queue([
-    // an untracked file left in the worktree (a Creator-made .meta): worktree_rm keeps it, dirty
-    { name: 'ready', wt: 'S01', write: { ...W('ready_for_review'), ...preview, 'assets/stray.png.meta': '{"uuid":"x"}' } },
+    // an untracked file left in the worktree (work nobody committed): worktree_rm keeps it, dirty
+    { name: 'ready', wt: 'S01', write: { ...W('ready_for_review'), ...preview, 'assets/stray.txt': 'not committed' } },
     { name: 'approved', wt: 'S01', write: R('approved', 'APPROVED') },
     { ...commitStep('S01'), wt: 'S01' },
     VERIFIED,
@@ -201,4 +201,38 @@ test('a worktree kept after the merge (dirty) still verifies in main: the verifi
   const verifier = f.spawns().at(-1);
   assert.match(verifier.title, /^verify-/);
   assert.equal(verifier.path, p.root, 'the verifier works in main, where res-guard counts it as main\'s user');
+});
+
+test('a Creator .meta with no asset (assets/.meta) never keeps the worktree: it is removed after the merge (pilot 24 S43)', () => {
+  const p = laneProject();
+  const f = fakes();
+  const wtPath = `${p.root}-wt-S01-x`;
+  const preview = { [evRel('S01', 'preview-startup.json')]: { projectPath: wtPath, previewUrl: 'http://127.0.0.1:7466/', status: 'ready' } };
+  f.queue([
+    { name: 'ready', wt: 'S01', write: { ...W('ready_for_review'), ...preview, 'assets/.meta': '{"importer":"directory","uuid":"fda5c72a"}', 'assets/gone.png.meta': '{"uuid":"y"}' } },
+    { name: 'approved', wt: 'S01', write: R('approved', 'APPROVED') },
+    { ...commitStep('S01'), wt: 'S01' },
+    VERIFIED,
+  ]);
+  const out = runner(p.root, f, 'start', '--once').out;
+  assert.ok(out.find((o) => o.merged), JSON.stringify(out.slice(-3)));
+  assert.equal(fs.existsSync(wtPath), false, 'removed');
+  assert.match(log(p.root), /worktree_rm done \(removed: .*2 Creator \.meta without an asset left behind: assets\/\.meta, assets\/gone\.png\.meta\)/);
+});
+
+test('a new asset with its .meta, both uncommitted, still keeps the worktree', () => {
+  const p = laneProject();
+  const f = fakes();
+  const wtPath = `${p.root}-wt-S01-x`;
+  const preview = { [evRel('S01', 'preview-startup.json')]: { projectPath: wtPath, previewUrl: 'http://127.0.0.1:7466/', status: 'ready' } };
+  f.queue([
+    { name: 'ready', wt: 'S01', write: { ...W('ready_for_review'), ...preview, 'assets/new.png': 'png', 'assets/new.png.meta': '{"uuid":"z"}' } },
+    { name: 'approved', wt: 'S01', write: R('approved', 'APPROVED') },
+    { ...commitStep('S01'), wt: 'S01' },
+    VERIFIED,
+  ]);
+  const out = runner(p.root, f, 'start', '--once').out;
+  assert.ok(out.find((o) => o.merged), JSON.stringify(out.slice(-3)));
+  assert.equal(fs.existsSync(wtPath), true, 'kept: real work nobody committed');
+  assert.match(log(p.root), /worktree_rm done \(worktree kept \(dirty\)\)/);
 });
