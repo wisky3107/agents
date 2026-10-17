@@ -19,7 +19,8 @@ Output: `<workdir>/output/` with `images/` (de-atlased sprites), `images_ingame/
 `de_atlas_*.json`, `README.md`, `manifest.json`.
 
 The output manifest retains `source_paths` for the original UnityProject/PrimaryContent
-trees and `code_availability: unassessed`. Report these paths with the output path. A clone
+trees (plus `decompiled` after Step 1b) and `code_availability: unassessed`. Report these
+paths with the output path. A clone
 or port caller routes through `rip-port-analysis` before game-brief, even when invoked as
 store-game-clone. Extraction alone does not launch a port. Preserve `ripped/` for the
 mid-tier analyst; distinguish readable bodies from stubs before making logic claims.
@@ -48,6 +49,8 @@ Unity APK Rip:
 - [ ] 0. Confirm input path exists; pick <workdir> (default: folder containing the apk)
 - [ ] 1. rip_apk.py            → ripped/ + output/{images,fonts,meshes,levels} + manifest.json
       (images are de-atlased slices; font atlases skipped; .ttf/.otf/.fnt → fonts/)
+- [ ] 1b. Code recovery        → IL2CPP with empty-body scripts: il2cpp-decompile → decompiled/
+      (background, ≈5 min; skip for Mono builds or when the user scoped assets only)
 - [ ] 2. Understand the game   → manifest, core scripts, 2–3 levels, asset name prefixes
 - [ ] 3. filter_ingame_images  → --list-atlases, choose allow/deny, run → output/images_ingame/
 - [ ] 4. build_asset_catalogs  → *_catalog.json + *_GUIDE.md; enrich JSON; --render-only
@@ -84,12 +87,25 @@ catalog builder read the lookup automatically.
 
 Exit ≠ 0 → read `<workdir>/assetripper.log`; rerun with `--skip-rip` if export already finished.
 
+## Step 1b — Code recovery (IL2CPP)
+
+With `scripting_backend: IL2CPP`, AssetRipper exports scripts with signatures and empty bodies
+(`{ }`, `return null;`), or as `Dummy class` when the metadata failed to load. The logic is in
+`apk_base/lib/<abi>/libil2cpp.so`. Run the Decompile branch of
+`~/.agents/skills/il2cpp-decompile/SKILL.md` on `<workdir>` in the background while Steps 2–6
+proceed. It writes `<workdir>/decompiled/` and adds `source_paths.decompiled` +
+`code_recovery` to `output/manifest.json`. An encrypted `global-metadata.dat` stops it: record
+that as the code gap in the report. Done when `decompiled/manifest.json` reports
+`functions_decompiled`, or the gap is recorded.
+
 ## Step 2 — Understand the game before writing
 
-Read, in this order (skip what is missing):
+Read, in this order (skip what is missing). Behavior questions climb the evidence ladder in
+`~/.agents/skills/il2cpp-decompile/SKILL.md`: serialized data first, then scripts, then
+`decompiled/`.
 
 - `output/manifest.json`
-- `ripped/UnityProject/ExportedProject/Assets/Scripts/<GameAssembly>/` — look for `*Model`, `*Core`, `*Sim`, `*LevelDef`, `*StateType`, color/kind enums, `*Manager` (PrimaryContent has no scripts). If `assetripper.log` shows a Cpp2IL metadata failure, every script is a `Dummy class`: names/fields only
+- `ripped/UnityProject/ExportedProject/Assets/Scripts/<GameAssembly>/` — look for `*Model`, `*Core`, `*Sim`, `*LevelDef`, `*StateType`, color/kind enums, `*Manager` (PrimaryContent has no scripts). IL2CPP scripts give names, fields and enums only; read bodies from `decompiled/pseudo_c` with `il2cpp-decompile/scripts/lookup.py <workdir>/decompiled <Class> [<Method>]`
 - Serialized MonoBehaviour `.asset` files under `ExportedProject/Assets/**` (e.g. `assetstobundle/`) — tuning/config values; `rip-port-analysis/scripts/inventory-rip.mjs` lists them
 - 2–3 files in `output/levels/` + any config dir (`Resources/*config*`)
 - `ls output/images | sed 's/[-_].*//' | sort | uniq -c | sort -rn | head` — prefixes reveal art kits
@@ -172,7 +188,7 @@ Fill [reference/output-readme-template.md](reference/output-readme-template.md):
 ## Step 7 — Report
 
 Print a table: images / images_ingame / fonts / meshes / levels / briefs / guides (count, size), Unity version,
-scripting backend, `images_method` (+ de-atlas counts: cropped / loose / font pages skipped / unresolved),
+scripting backend, code recovery (`decompiled/` functions decompiled, or the gap), `images_method` (+ de-atlas counts: cropped / loose / font pages skipped / unresolved),
 `--levels-glob` or `--allow/--deny` the user may want to change, open questions.
 Do not delete `ripped/` (source of truth for follow-ups).
 

@@ -17,10 +17,20 @@ export function writeRip(dir) {
   fs.writeFileSync(path.join(dir,'assetripper.log'),'Unity version: 6000.0.0f1\n');
   return {up,pc,out,log:path.join(dir,'assetripper.log')};
 }
+// il2cpp-decompile output next to the rip: one declaration file and one pseudo-C body.
+export function writeDecompiled(dir) {
+  const dec=path.join(dir,'decompiled'), decl='cpp2il_cs/DiffableCs/Assembly-CSharp/Board.cs', body='pseudo_c/Assembly-CSharp/Board.c';
+  for (const rel of [decl,body]) fs.mkdirSync(path.dirname(path.join(dec,rel)),{recursive:true});
+  fs.writeFileSync(path.join(dec,decl),'public class Board\n{\n\tprivate int count; //Field offset: 0x10\n\tpublic bool Won() { }\n}\n');
+  fs.writeFileSync(path.join(dec,body),'// public bool Won()\n// RVA 0x1000  Length 0x10\nbool Board__Won(int param_1)\n{\n  return *(int *)(param_1 + 0x10) == 0;\n}\n');
+  fs.writeFileSync(path.join(dec,'manifest.json'),JSON.stringify({tool:'il2cpp-decompile',abi:'arm64-v8a',functions_decompiled:1,decompiled_assemblies:['Assembly-CSharp']}));
+  return {dec,decl,body};
+}
 // Rebuild the inventory, re-hash it, and map every nonzero category to RP-001 unless a disposition already exists.
 export function writeInventory(f) {
-  const inv=buildInventory({unityProject:f.up,primaryContent:f.pc,output:f.out,log:f.log}), p=path.join(f.root,INVENTORY);
-  fs.writeFileSync(p,JSON.stringify({schemaVersion:1,sources:{main:{paths:{unityProject:f.up,primaryContent:f.pc,output:f.out,log:f.log},...inv}}}));
+  const paths={unityProject:f.up,primaryContent:f.pc,output:f.out,log:f.log,...(f.dec?{decompiled:f.dec}:{})};
+  const inv=buildInventory(paths), p=path.join(f.root,INVENTORY);
+  fs.writeFileSync(p,JSON.stringify({schemaVersion:1,sources:{main:{paths,...inv}}}));
   f.manifest.inventory={path:INVENTORY,sha256:sha256(p)};
   const have=new Set(f.manifest.inventoryCoverage.map(d=>d.category));
   for (const c of CATEGORIES) if (inv.counts[c] && !have.has(c)) f.manifest.inventoryCoverage.push({category:c,status:'mapped',claims:['RP-001']});

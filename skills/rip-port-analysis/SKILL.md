@@ -27,6 +27,7 @@ SLUG=<slug>
 RIP_OUTPUT=/absolute/path/to/unity-apk-rip/output
 UNITY_PROJECT=/absolute/.../ripped/UnityProject/ExportedProject # analysis root; required for code/data forensics
 PRIMARY_CONTENT=/absolute/.../ripped/PrimaryContent              # optional; GLB lookup only
+DECOMPILED=/absolute/.../decompiled                              # optional; il2cpp-decompile output
 ANALYST_AGENT=cursor --model auto                                # optional
 ```
 
@@ -37,7 +38,9 @@ when the caller gives only a workdir/output. **Never point the analysis at `ripp
 materials, TextAssets, audio, fonts and textures. `PrimaryContent` has no scripts and no
 `.asset` files; it only adds GLB conversions of meshes/prefab hierarchies (plus Unity
 built-in PNG/TTF). Pointing at `ripped/` lets the analyst sample the wrong tree and miss the
-serialized data.
+serialized data. `decompiled/` (from `il2cpp-decompile`, recorded as `source_paths.decompiled`)
+holds the method bodies an IL2CPP rip lacks: `pseudo_c/` bodies and `cpp2il_cs/` declarations
+with field offsets.
 
 Read [references/port-contract.md](references/port-contract.md) before preparing sources or
 dispatching. It defines source resolution, multi-source isolation, the evidence manifest,
@@ -91,9 +94,9 @@ director override → saved `rip_port.depth` (when not `auto`) → `recommendedD
 choice as `analysisDepth` in the manifest; the validator rejects `lightweight` for a source
 with readable or mixed code.
 
-- `full` (readable/mixed code): the whole procedure below. Method bodies justify tracing the
-  loop, state machine and level readers.
-- `lightweight` (stubs/none, e.g. IL2CPP metadata failure): stubs cannot prove rules, and
+- `full` (readable/mixed code, or decompiled pseudo-C: inventory `decompiledLogic`): the whole
+  procedure below. Method bodies justify tracing the loop, state machine and level readers.
+- `lightweight` (stubs/none without pseudo-C, e.g. IL2CPP metadata failure): stubs cannot prove rules, and
   server-driven economy is usually absent from the client. Spend the pass on the three outputs
   that still reach the port:
   1. **Structure**: board/level topology, entity counts and ordering from prefabs, scenes,
@@ -130,8 +133,16 @@ rip_port:
       unity_project: /absolute/original/workdir/ripped/UnityProject/ExportedProject # analysis root; empty when unavailable
       primary_content: /absolute/original/workdir/ripped/PrimaryContent # GLB lookup only; empty when unavailable
       log: /absolute/original/workdir/assetripper.log # empty when unavailable
+      decompiled: /absolute/original/workdir/decompiled # il2cpp-decompile output; empty when none
       staged_assets: reference/<slug>/rip/ # empty until mapped/importable
 ```
+
+**Code recovery.** The inventory below reports `codeAvailability: stubs` for an IL2CPP rip
+(AssetRipper keeps signatures, empties bodies). When a stub source has no `decompiled/` and
+`metadataFailure` is false, the coordinator runs the Decompile branch of
+`~/.agents/skills/il2cpp-decompile/SKILL.md` on the workdir before the inventory (≈5 min,
+background), then records `decompiled` in the source block. With `metadataFailure` it records
+the gap instead. Analysts never run recovery.
 
 Before launch, the coordinator writes the whole-tree inventory (one run per source ID, same
 output file):
@@ -142,9 +153,10 @@ node ~/.agents/skills/rip-port-analysis/scripts/inventory-rip.mjs --id main \
   --out "$PROJECT/reference/<slug>/rip-port/RIP_INVENTORY.json"
 ```
 
-It resolves ExportedProject/PrimaryContent/output/log (override with `--unity-project`,
-`--primary-content`, `--output`, `--log`) and prints counts, dummy-script share,
-`codeAvailability`, `coverageFloor`, `recommendedDepth` and `metadataFailure`. Resolve the
+It resolves ExportedProject/PrimaryContent/output/log/decompiled (override with `--unity-project`,
+`--primary-content`, `--output`, `--log`, `--decompiled`) and prints counts,
+`codeAvailability` (from member bodies: Dummy or emptied bodies are stubs), `decompiledLogic`,
+`coverageFloor`, `recommendedDepth` and `metadataFailure`. Resolve the
 depth (see Analysis depth) and include it with that summary in the analyst task.
 The analyst reads the inventory; it does not re-sample to decide what exists.
 
@@ -175,9 +187,14 @@ model escalation. A launch failure leaves analysis pending and is reported with 
    fonts, textures, PrimaryContent GLBs and output levels. Record Unity version and scripting
    backend. When `metadataFailure` is true, quote the `assetripper.log` lines (e.g. Cpp2IL
    "magic number check failed" → Unknown backend → every script a Dummy class), state the
-   cause in `codeRecovery`, and name the recovery path (decrypted `global-metadata.dat` +
-   Il2CppDumper/Cpp2IL re-run, or a Mono build) as a gap. Do not attempt it yourself.
-2. Trace core behavior. Readable bodies: follow callers and data readers from `*Model`,
+   cause in `codeRecovery`, and name the recovery path (decrypted `global-metadata.dat`, then
+   `il2cpp-decompile`) as a gap. Do not attempt it yourself.
+2. Trace core behavior by climbing the evidence ladder in
+   `~/.agents/skills/il2cpp-decompile/SKILL.md` § Evidence ladder: serialized data, readable
+   scripts, then (when the source lists `decompiled`) declarations and pseudo-C bodies, read with
+   its `lookup.py` / `vcall.py` and `references/reading-pseudo-c.md`. Cite pseudo-C as
+   `tree: decompiled`, kind `code`; `cpp2il_cs` declarations as kind `metadata`.
+   Readable bodies: follow callers and data readers from `*Model`,
    `*Core`, `*Sim`, `*State*`, `*Manager`, `*Level*`, config objects and enums. **Stubs are
    still evidence of declarations**: game-assembly type names, namespaces, field names, enums
    and ScriptableObject class names (cite as `code` with `INFERRED`, never as behavior).
@@ -214,14 +231,15 @@ model escalation. A launch failure leaves analysis pending and is reported with 
 Coverage follows the inventory, not the analyst's impression:
 
 - `readable_logic` — method bodies of the core paths were read (`codeAvailability`
-  readable/mixed).
+  readable/mixed, or the source's `decompiled` pseudo-C with inventory `decompiledLogic`).
 - `partial` — minimum whenever the inventory has any scripts (even 100% stubs) or any
   serialized MonoBehaviour with fields. Declarations + serialized values are real evidence.
 - `assets_only` — only when the inventory has zero scripts and zero serialized fields
   (output-only pack or a tree with nothing but media).
 
-`codeAvailability` must equal the inventory value (all Dummy → `stubs`, none → `readable`,
-some → `mixed`, no `.cs` → `none`). The validator enforces both.
+`codeAvailability` must equal the inventory value (no real member body → `stubs`, all bodied →
+`readable`, both → `mixed`, no `.cs` → `none`); it describes the Unity tree, never pseudo-C.
+The validator enforces both.
 
 ## Review checklist
 
@@ -236,6 +254,9 @@ machine and level lines may cite the UNKNOWN rows.
 - [ ] Inventory is current (`--recheck-inventory` passes) and every nonzero category has a
       disposition.
 - [ ] Coverage matches the rule above; `codeRecovery` explains any metadata failure.
+- [ ] Stub IL2CPP source: `decompiled` recorded, or the reason recovery was not run. Two
+      pseudo-C claims re-read: field offsets match the declaration, virtual calls resolved with
+      the manifest's calibrated `vtable_base`.
 - [ ] Script declarations: game assemblies (not only Assembly-CSharp) scanned for core
       types/enums/config classes.
 - [ ] Serialized data: the core `withFieldsByDir` directories read; values cited as OBSERVED.
@@ -253,6 +274,10 @@ Use these labels on every substantive row:
 - `INFERRED` — conclusion that combines multiple observed facts; cite each fact;
 - `UNKNOWN` — insufficient or contradictory evidence;
 - `PORT_DECISION` — Cocos implementation mapping, never a claim about shipped Unity behavior.
+
+Pseudo-C control flow, call targets, constants and field accesses are `OBSERVED`; rebuilt float
+arithmetic, inferred helper names and virtual calls named without a calibrated `vtable_base`
+are `INFERRED`.
 
 Rip briefs and guides describe the shipped game as research seeds. Cite them as `SEED` and
 corroborate mechanics with code/data/assets before treating them as port evidence.
@@ -294,6 +319,8 @@ is lit and assembled, which models sit where and with what materials, UI layout 
 usage, how each VFX is configured and triggered, camera framing, clip/controller timing. This
 survives IL2CPP stubbing: built-in component data (ParticleSystem, RectTransform, renderers,
 Camera, Light, clips, controllers, materials) and bundle MonoBehaviour fields stay serialized.
+What a stub hides (when an effect fires, which camera a trigger selects, how a value is
+computed) comes from the source's `decompiled` pseudo-C before it becomes UNKNOWN.
 Both depths (`full` and `lightweight`) use it; the global analysis stays at file level.
 
 **When.** The producer runs a study before dispatching each unmerged port slice, unless the

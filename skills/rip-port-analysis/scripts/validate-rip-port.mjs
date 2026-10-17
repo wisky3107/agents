@@ -34,8 +34,9 @@ function within(root, relative) {
   if (!file.startsWith(base + path.sep)) throw Error('Path escapes source root');
   return file;
 }
-// Evidence may cite the analysis tree (root = UnityProject/ExportedProject), PrimaryContent (GLB lookup only) or output (SEED only).
-const TREES = { root: null, primaryContent: ['asset'], output: ['seed'] };
+// Evidence may cite the analysis tree (root = UnityProject/ExportedProject), PrimaryContent (GLB lookup only),
+// output (SEED only) or decompiled (il2cpp-decompile: pseudo_c bodies as code, cpp2il_cs declarations as metadata).
+const TREES = { root: null, primaryContent: ['asset'], output: ['seed'], decompiled: ['code', 'metadata'] };
 const KINDS = ['code','data','asset','prefab','scene','metadata','seed'];
 const LABELS = ['OBSERVED','INFERRED','UNKNOWN','PORT_DECISION','SEED'];
 function checkSourceFile(e, sources, fail, code) {
@@ -79,6 +80,7 @@ export function validateRipPort(project, analysisPath, { allowAnalyzed = false, 
     if (sha256(p) !== m.inventory?.sha256) fail('rip_inventory_stale', 'Inventory hash differs from manifest');
   } catch(e) { fail('rip_inventory_missing', `Run scripts/inventory-rip.mjs: ${e.message}`); }
   const totals = Object.fromEntries(CATEGORIES.map(c => [c, 0]));
+  const decompiledLogic = new Set();
   if (inv) for (const [id, s] of sources) {
     const i = inv.sources?.[id];
     if (!i) { fail('rip_inventory_source', `No inventory for source ${id}`); continue; }
@@ -86,9 +88,14 @@ export function validateRipPort(project, analysisPath, { allowAnalyzed = false, 
     for (const c of CATEGORIES) totals[c] += i.counts?.[c] || 0;
     if (i.codeAvailability && i.codeAvailability !== s.codeAvailability) fail('rip_code_availability', `${id}: inventory says ${i.codeAvailability}, manifest says ${s.codeAvailability}`);
     if (i.metadataFailure && !(typeof m.codeRecovery === 'string' && m.codeRecovery.trim())) fail('rip_code_recovery', `${id}: assetripper.log shows IL2CPP metadata failure; record cause and recovery in codeRecovery`);
+    if (s.decompiled) {
+      if (path.resolve(i.paths?.decompiled || '') !== path.resolve(s.decompiled)) fail('rip_inventory_source', `${id}: inventory decompiled differs from source decompiled`);
+      else if (i.decompiledLogic) decompiledLogic.add(id);
+    }
     if (recheckInventory) {
       const fresh = buildInventory(i.paths || {});
       for (const c of CATEGORIES) if ((fresh.counts[c] || 0) !== (i.counts?.[c] || 0)) fail('rip_inventory_drift', `${id}.${c}: ${i.counts?.[c]} recorded, ${fresh.counts[c]} now`);
+      if (i.decompiled && (fresh.decompiled?.pseudoCFunctions || 0) !== (i.decompiled.pseudoCFunctions || 0)) fail('rip_inventory_drift', `${id}.decompiled: ${i.decompiled.pseudoCFunctions} pseudo-C functions recorded, ${fresh.decompiled?.pseudoCFunctions || 0} now`);
     }
   }
   if (m.logicCoverage === 'assets_only' && (totals.scripts || totals.serializedData)) fail('rip_coverage_floor', `assets_only but inventory has ${totals.scripts} scripts and ${totals.serializedData} serialized MonoBehaviours; use partial`);
@@ -97,7 +104,7 @@ export function validateRipPort(project, analysisPath, { allowAnalyzed = false, 
     for (const s of list(expectedSources)) if (!sources.has(s?.id) || path.resolve(s.root || '.') !== path.resolve(sources.get(s.id).root)) fail('rip_source_set', `Source changed: ${s?.id}`);
   }
   if (depth === 'lightweight' && [...sources.values()].some(s => ['readable','mixed'].includes(s.codeAvailability))) fail('rip_depth_mismatch', 'Readable/mixed code requires analysisDepth=full');
-  if (m.logicCoverage === 'readable_logic' && ![...sources.values()].some(s => ['readable','mixed'].includes(s.codeAvailability))) fail('rip_false_coverage', 'Readable logic requires inspected readable code');
+  if (m.logicCoverage === 'readable_logic' && ![...sources.values()].some(s => ['readable','mixed'].includes(s.codeAvailability) || decompiledLogic.has(s.id))) fail('rip_false_coverage', 'Readable logic requires inspected readable code or decompiled pseudo-C');
   if (!list(m.evidence).length) fail('rip_evidence', 'No inspected source evidence');
   for (const e of list(m.evidence)) {
     if (!e?.id || evidence.has(e.id) || !sources.has(e.source)) { fail('rip_evidence', 'Invalid/duplicate evidence ID or source'); continue; }
