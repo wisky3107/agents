@@ -27,6 +27,9 @@ export const CFG = {
   omnirouteUrl: env.CONSOLE_OMNIROUTE_URL ?? 'http://127.0.0.1:20128',
   omnirouteCli: env.CONSOLE_OMNIROUTE_CLI ?? path.join(HOME, '.local/lib/node_modules/omniroute'), // its machine-token module
   agyRotateState: env.CONSOLE_AGY_ROTATE_STATE ?? path.join(HOME, '.agents/logs/agy-rotate-state.json'),
+  agentQuestions: env.CONSOLE_AGENT_QUESTIONS ?? path.join(HOME, '.agents/tools/agent-questions'), // store.mjs + its CLI
+  bootIdea: env.CONSOLE_BOOT_IDEA_CLI ?? path.join(HOME, '.agents/tools/boot-idea/boot-idea.mjs'),
+  uploads: env.CONSOLE_UPLOADS ?? path.join(HOME, '.agents/run/director-console-uploads'), // boot images until boot-idea moves them
 };
 
 const om = {
@@ -41,6 +44,7 @@ const runnerProject = await import(path.join(CFG.runnerDir, 'lib/project.mjs'));
 const runnerAnswer = await import(path.join(CFG.runnerDir, 'lib/answer.mjs'));
 const runnerContext = await import(path.join(CFG.runnerDir, 'lib/context.mjs'));
 const runnerTranslate = await import(path.join(CFG.runnerDir, 'lib/translate.mjs'));
+const aq = await import(path.join(CFG.agentQuestions, 'store.mjs'));
 
 const readJson = (f, fallback = null) => {
   try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return fallback; }
@@ -152,7 +156,75 @@ export function projectDetail(id) {
   });
   const terminals = orcaTerminals().filter((t) => (t.worktreePath ?? '').includes(path.basename(p.path)))
     .map((t) => ({ handle: t.handle, title: t.title, worktree: t.worktreePath, agent: t.agentIdentity ?? null, connected: t.connected, last_output_at: t.lastOutputAt ?? null, preview: (t.preview ?? '').slice(-600) }));
-  return { ...p, release: release ? { goal: release.goal ?? null, current_slice: release.current_slice ?? null } : null, slices, terminals };
+  const now = p.runner ? liveSlices(p.path) : [];
+  const titles = new Map(orcaTerminals().map((t) => [t.handle, t.title]));
+  for (const x of now) for (const k of ['writer', 'reviewer']) if (x[k]) x[k] = { handle: x[k], title: titles.get(x[k]) ?? null, live: titles.has(x[k]) };
+  return { ...p, release: release ? { goal: release.goal ?? null, current_slice: release.current_slice ?? null } : null, slices, terminals, now };
+}
+
+const IMG = /\.(png|jpe?g|webp|gif)$/i;
+
+/** Image files under dir (depth ≤ 3), newest first: what a slice's evidence shows. */
+function imagesUnder(dir, n = 6) {
+  const out = [];
+  const walk = (d, depth) => {
+    let es;
+    try { es = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of es) {
+      const f = path.join(d, e.name);
+      if (e.isDirectory() && depth < 3 && e.name !== 'memory') walk(f, depth + 1);
+      else if (e.isFile() && IMG.test(e.name)) out.push({ path: f, name: path.relative(dir, f), at: safe(() => fs.statSync(f).mtimeMs) ?? 0 });
+    }
+  };
+  walk(dir, 0);
+  return out.sort((a, b) => b.at - a.at).slice(0, n).map((x) => ({ ...x, at: new Date(x.at).toISOString() }));
+}
+
+// a review.md ends on its verdict (the runner reads the last line); prose before it may name others
+const VERDICT = /^\W*(?:verdict\W*)?(APPROVED|CHANGES[_ ]REQUESTED|REQUEST[_ ]CHANGES|REJECTED|BLOCKED|NEEDS[_ ]FIX(?:ES)?)\b/i;
+export const reviewVerdict = (text) => String(text ?? '').split('\n').reverse().map((l) => l.match(VERDICT)?.[1]).find(Boolean)?.toUpperCase().replace(' ', '_') ?? null;
+
+/**
+ * Where each slice in progress stands (the runner's slice when its step is not done, plus every
+ * phase-2 lane), else the runner's last slice: phase, checkout, writer/reviewer, the review verdict,
+ * the runner log's last lines and the evidence's newest images (the lane's worktree first).
+ */
+export function liveSlices(root) {
+  const r = runnerState.readRunner(root);
+  const live = [...new Set([r.step && r.step !== 'done' ? r.slice : null, ...(r.lanes ?? []).map((l) => l.slice)].filter(Boolean))];
+  const ids = live.length ? live : r.slice ? [r.slice] : [];
+  return ids.map((id) => {
+    const s = runnerState.readSliceState(root, id);
+    const checkout = s.lane_checkout && fs.existsSync(s.lane_checkout) ? s.lane_checkout : root;
+    const evs = [...new Set([path.join(runnerState.sliceDir(checkout, id), 'evidence'), path.join(runnerState.sliceDir(root, id), 'evidence')])];
+    const first = (f) => evs.map((d) => path.join(d, f)).find((x) => fs.existsSync(x)) ?? null;
+    const handoff = readJson(first('HANDOFF.json') ?? '');
+    const stats = readJson(first('stats.json') ?? '');
+    const reviewFile = first('review.md');
+    const review = reviewFile ? { verdict: safe(() => reviewVerdict(fs.readFileSync(reviewFile, 'utf8'))), at: new Date(fs.statSync(reviewFile).mtimeMs).toISOString(), path: reviewFile } : null;
+    const logText = safe(() => fs.readFileSync(path.join(runnerState.sliceDir(root, id), 'producer-log.md'), 'utf8')) ?? '';
+    const seen = new Set();
+    const images = evs.flatMap((d) => imagesUnder(d)).filter((x) => !seen.has(x.name) && seen.add(x.name)).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 6);
+    return {
+      slice: id, live: live.includes(id), phase: s.phase ?? null, lane: s.lane ?? null, checkout, in_main: path.resolve(checkout) === path.resolve(root),
+      selected_at: s.selected_at ?? null, updated: s.updated ?? null, writer: s.writer ?? null, reviewer: s.reviewer ?? null,
+      static_result: s.static_result ?? null, commit_sha: s.commit_sha ?? null, wait: s.lane_wait ?? null,
+      handoff: handoff ? { role: handoff.role ?? null, status: handoff.status ?? null } : null,
+      fix_rounds: rounds(stats?.fix_rounds), review_rounds: rounds(stats?.review_rounds), review,
+      log: tail(logText.split('\n').filter(Boolean), 8), images,
+    };
+  });
+}
+
+/** A file the page may show as an image: an image under $HOME or a temp dir, at most 25 MB. → abs path */
+export function imageFile(p) {
+  if (!p || !path.isAbsolute(p) || !IMG.test(p)) throw Object.assign(new Error('not an image path'), { status: 400 });
+  const f = real(p);
+  const roots = [HOME, '/tmp', '/private/tmp', '/var/folders', '/private/var/folders'].map(real);
+  if (!IMG.test(f) || !roots.some((r) => f.startsWith(r + path.sep))) throw Object.assign(new Error('not an allowed image'), { status: 403 });
+  const st = safe(() => fs.statSync(f));
+  if (!st?.isFile() || st.size > 25 * 1024 * 1024) throw Object.assign(new Error('no such image'), { status: 404 });
+  return f;
 }
 
 // stats.json is agent-written: a round count may be a number, a list of rounds, or {count|total|n: number}
@@ -225,6 +297,41 @@ function questionView(p, q) {
 }
 
 /** Everything that waits on the director, across systems. */
+const TRIAGE_TEXT = ['finding', 'lesson', 'observation', 'summary', 'text', 'claim', 'note', 'topic'];
+
+/**
+ * Open triage rows grouped by source file: one file with four bad rows is one thing to fix, not four identical
+ * cards (capytal S42, 2026-10-17). Each row keeps a short preview of what the agent wrote, taken from the archive's
+ * triage.json (refresh-latest.json carries only source and reason), so the director can tell the rows apart.
+ */
+export function triageGroups(open, archived) {
+  const raws = new Map();
+  for (const t of Array.isArray(archived) ? archived : []) {
+    if (t?.resolution || !t?.source) continue;
+    if (!raws.has(t.source)) raws.set(t.source, []);
+    raws.get(t.source).push(t.raw ?? null);
+  }
+  const preview = (raw) => {
+    if (raw == null) return null;
+    if (typeof raw !== 'object') return String(raw).slice(0, 300);
+    const f = TRIAGE_TEXT.find((k) => typeof raw[k] === 'string' && raw[k].trim());
+    return (f ? raw[f] : JSON.stringify(raw)).slice(0, 300);
+  };
+  const groups = new Map();
+  for (const t of open) {
+    if (!groups.has(t.source)) groups.set(t.source, { source: t.source, reason: t.reason ?? '', reasons: [], count: 0, items: [] });
+    const g = groups.get(t.source);
+    if (t.reason && !g.reasons.includes(t.reason)) g.reasons.push(t.reason);
+    g.count += 1;
+  }
+  for (const g of groups.values()) {
+    g.reason = g.reasons.join('; ');
+    const rs = raws.get(g.source) ?? [];
+    g.items = rs.slice(0, g.count).map((raw) => ({ keys: raw && typeof raw === 'object' ? Object.keys(raw) : [], text: preview(raw) }));
+  }
+  return [...groups.values()];
+}
+
 export function pending(ps = projects()) {
   const questions = ps.flatMap((p) => {
     if (!p.runner) return [];
@@ -247,12 +354,33 @@ export function pending(ps = projects()) {
   });
   const unregistered = safe(() => om.hook.findUnregistered(om.config.loadConfig()).filter((u) => u.active)) ?? [];
   return {
-    questions, drafts,
-    triage: refresh?.triage_open ?? [],
+    questions, drafts, agent_questions: agentQuestions(),
+    triage: triageGroups(refresh?.triage_open ?? [], readJson(path.join(om.archive.archiveDir(), 'triage.json')) ?? []),
     refresh: refresh ? { at: refresh.at, ok: refresh.ok, failed_step: refresh.failed_step, stale: ageH > 48 } : null,
     manual_deferred: deferred, unregistered,
   };
 }
+
+/**
+ * Open questions agents asked the director in Orca terminals (tools/agent-questions), with the
+ * terminal's title. One whose terminal Orca no longer lists is left out (its session is gone);
+ * when Orca does not answer at all, every open one is shown.
+ */
+export function agentQuestions() {
+  const terms = orcaTerminals();
+  const byHandle = new Map(terms.map((t) => [t.handle, t]));
+  return aq.open().filter((q) => !terms.length || byHandle.get(q.handle)?.connected)
+    .map((q) => {
+      const t = byHandle.get(q.handle);
+      return {
+        ...q, terminal: t ? { title: t.title ?? null, worktree: t.worktreePath ?? null, last_output_at: t.lastOutputAt ? new Date(t.lastOutputAt).toISOString() : null } : null,
+        quick: q.kind === 'stop' ? quickRepliesFor(q) : null,
+      };
+    });
+}
+
+/** The last boots from the console (tools/boot-idea), newest first. */
+export const boots = (n = 8) => tail(readJsonl(path.join(CFG.logs, 'boot-idea.jsonl')), n).reverse();
 
 const clip = (s, n = 200) => {
   const t = String(s ?? '').replace(/\s+/g, ' ').trim();
@@ -271,6 +399,11 @@ export function attention(ps = projects(), pd = pending(ps)) {
     key: `runner:${q.project}:${q.id}`, kind: 'runner', tag: q.kind ?? null, level: 'critical', project: q.project, since: q.asked_at ?? null,
     title: `${q.project}${q.slice ? ` ${q.slice}` : ''}: runner đang chờ bạn trả lời`, body: q.vi?.summary ?? q.text, href: '#quests', quest: 'runner',
   });
+  for (const q of pd.agent_questions ?? []) add({
+    key: `agent:${q.id}`, kind: 'agent', tag: q.kind, level: 'critical', project: q.project, since: q.asked_at ?? null,
+    title: `${q.project}: agent hỏi bạn${q.terminal?.title ? ` (${q.terminal.title.replace(/^[^\w(]+/u, '').slice(0, 40)})` : ''}`,
+    body: q.kind === 'ask' ? q.questions.map((x) => x.question).join(' · ') : String(q.text).trim().split(/\n\s*\n/).at(-1), href: '#quests', quest: 'agent',
+  });
   // A runner that died mid-slice: no live lock, still in the lane step, and nobody asked it to stop.
   // Keyed by the dead runner's pid: the runner file's `updated` moves with every cache or answer write.
   for (const p of ps) {
@@ -288,7 +421,7 @@ export function attention(ps = projects(), pd = pending(ps)) {
   });
   for (const t of pd.triage) add({
     key: `triage:${t.source}`, kind: 'triage', level: 'warning', project: String(t.source).split(':')[0],
-    title: 'Memory triage: một dòng cần xem', body: `${t.source}: ${t.reason ?? ''}`, href: '#quests', quest: 'triage',
+    title: t.count > 1 ? `Memory triage: ${t.count} dòng cùng một file cần xem` : 'Memory triage: một dòng cần xem', body: `${t.source}: ${t.reason ?? ''}`, href: '#quests', quest: 'triage',
   });
   const rf = pd.refresh;
   if (rf && !rf.ok) add({
@@ -421,8 +554,32 @@ function claudeEnv() {
   return e && typeof e === 'object' ? Object.fromEntries(Object.entries(e).map(([k, v]) => [k, String(v)])) : {};
 }
 
-/** One `claude -p` sonnet call (the runner translator's flags: no tools, no hooks, no project CLAUDE.md) → the parsed structured output or null. */
-function translateRows(items) {
+/** One `claude -p` call with the runner translator's flags (no tools, no hooks, no project CLAUDE.md) → { out } | { error }. */
+function claudeStructured(prompt, schema, { model = 'sonnet', role = 'translate', timeoutMs = 120000 } = {}) {
+  const args = ['-p', '--output-format', 'json', '--model', model, '--restricted', '--tools', '', '--strict-mcp-config',
+    '--disable-slash-commands', '--permission-prompts', 'none', '--json-schema', JSON.stringify(schema)];
+  return new Promise((resolve) => {
+    let out = ''; let err = ''; let done = false;
+    const finish = (v) => { if (!done) { done = true; clearTimeout(timer); resolve(v); } };
+    let child;
+    try { child = spawn(env.PRODUCER_RUNNER_TRANSLATE_CMD || 'claude', args, { cwd: os.tmpdir(), env: { ...env, ...claudeEnv(), CC_ROLE: role }, stdio: ['pipe', 'pipe', 'pipe'] }); } catch (e) { resolve({ error: e.code || 'spawn' }); return; }
+    const timer = setTimeout(() => { child.kill(); finish({ error: 'ETIMEDOUT' }); }, timeoutMs);
+    child.stdout.on('data', (d) => (out += d));
+    child.stderr.on('data', (d) => (err += d));
+    child.on('error', (e) => finish({ error: e.code || 'spawn' }));
+    child.on('close', (code) => {
+      let j = null;
+      try { j = JSON.parse(out); } catch { j = null; }
+      if (j && !j.is_error && j.structured_output) finish({ out: j.structured_output });
+      else finish({ error: `${code !== 0 ? `exit ${code}` : 'no valid JSON'}${err ? `: ${err.trim().slice(-160)}` : ''}` });
+    });
+    child.stdin.on('error', () => {});
+    child.stdin.end(prompt);
+  });
+}
+
+/** One `claude -p` sonnet call → the rows in Vietnamese, or { error }. */
+async function translateRows(items) {
   const schema = {
     type: 'object', required: ['rows'],
     properties: { rows: { type: 'array', items: { type: 'object', required: ['n', 'claim', 'evidence'], properties: { n: { type: 'integer' }, claim: { type: 'string' }, evidence: { type: 'string' } } } } },
@@ -433,26 +590,44 @@ function translateRows(items) {
     `Return JSON { rows } with exactly ${items.length} entries in the given order: { n, claim: the lesson in Vietnamese (at most 400 characters; shorten but keep every condition and number), evidence: the judge's evidence in Vietnamese, whole }. An empty input stays "".`,
     '', ...items.map((it, i) => `--- ${i + 1}\nLESSON: ${it.claim}\nEVIDENCE: ${it.evidence}`),
   ].join('\n');
-  const args = ['-p', '--output-format', 'json', '--model', 'sonnet', '--restricted', '--tools', '', '--strict-mcp-config',
-    '--disable-slash-commands', '--permission-prompts', 'none', '--json-schema', JSON.stringify(schema)];
-  return new Promise((resolve) => {
-    let out = ''; let err = ''; let done = false;
-    const finish = (v) => { if (!done) { done = true; clearTimeout(timer); resolve(v); } };
-    let child;
-    try { child = spawn(env.PRODUCER_RUNNER_TRANSLATE_CMD || 'claude', args, { cwd: os.tmpdir(), env: { ...env, ...claudeEnv(), CC_ROLE: 'translate' }, stdio: ['pipe', 'pipe', 'pipe'] }); } catch (e) { resolve({ error: e.code || 'spawn' }); return; }
-    const timer = setTimeout(() => { child.kill(); finish({ error: 'ETIMEDOUT' }); }, 120000);
-    child.stdout.on('data', (d) => (out += d));
-    child.stderr.on('data', (d) => (err += d));
-    child.on('error', (e) => finish({ error: e.code || 'spawn' }));
-    child.on('close', (code) => {
-      let rows = null;
-      try { const j = JSON.parse(out); rows = j.is_error ? null : j.structured_output?.rows; } catch { rows = null; }
-      const ok = Array.isArray(rows) && rows.length === items.length && rows.every((r, i) => Number(r.n) === i + 1 && typeof r.claim === 'string' && typeof r.evidence === 'string');
-      finish(ok ? { rows: rows.map((r) => ({ claim: r.claim.trim(), evidence: r.evidence.trim() })) } : { error: `${code !== 0 ? `exit ${code}` : 'no valid JSON'}${err ? `: ${err.trim().slice(-160)}` : ''}` });
-    });
-    child.stdin.on('error', () => {});
-    child.stdin.end(prompt);
-  });
+  const r = await claudeStructured(prompt, schema);
+  const rows = r.out?.rows;
+  const ok = Array.isArray(rows) && rows.length === items.length && rows.every((x, i) => Number(x.n) === i + 1 && typeof x.claim === 'string' && typeof x.evidence === 'string');
+  return ok ? { rows: rows.map((x) => ({ claim: x.claim.trim(), evidence: x.evidence.trim() })) } : { error: r.error ?? 'rows do not match' };
+}
+
+// ------------------------------------------------------------------ agent questions: quick replies
+
+const suggestJobs = new Map(); // question id → the claude call in flight
+
+/**
+ * Quick replies for an agent's plain-text question: the rule-based ones (tools/agent-questions
+ * quickReplies) at once, then 2–4 from one `claude -p` haiku call made in the background and cached
+ * on disk by question id. → { state, source, replies: [{ label, text }] }
+ */
+function quickRepliesFor(q) {
+  const rules = aq.quickReplies(q.text);
+  const file = path.join(viDir(), `suggest-${aq.safeId(q.id)}.json`);
+  const cached = readJson(file);
+  if (cached?.replies?.length) return { state: 'ok', source: 'llm', replies: cached.replies };
+  if (cached?.failed && Date.now() - Date.parse(cached.at) < VI_RETRY_MS) return { state: 'failed', source: 'rules', replies: rules, error: cached.failed };
+  if (env.CONSOLE_TRANSLATE === 'off' || env.CONSOLE_SUGGEST === 'off') return { state: 'off', source: 'rules', replies: rules };
+  if (!suggestJobs.has(q.id)) {
+    const schema = { type: 'object', required: ['replies'], properties: { replies: { type: 'array', items: { type: 'object', required: ['label', 'text'], properties: { label: { type: 'string' }, text: { type: 'string' } } } } } };
+    const prompt = [
+      'An AI coding agent ended its turn with a question for the director, a game producer. Suggest the 2 to 4 replies the director is most likely to send, the most likely first.',
+      'Write them in the language of the agent\'s message. Each reply has a label (at most 5 words, for a button) and a text (the exact message sent to the agent: one short sentence that names the option or action, e.g. "Commit đi" or "Chọn phương án 2: chia 3 slice").',
+      'If the message offers explicit options, give one reply per option (at most 4). Do not invent facts, file names or numbers the message does not contain. Return JSON { replies }.',
+      '', '--- AGENT MESSAGE (its end)', String(q.text).slice(-3000),
+    ].join('\n');
+    suggestJobs.set(q.id, claudeStructured(prompt, schema, { model: 'haiku', role: 'suggest', timeoutMs: 60000 }).then((r) => {
+      const replies = (r.out?.replies ?? []).filter((x) => typeof x?.label === 'string' && typeof x?.text === 'string' && x.label.trim() && x.text.trim())
+        .slice(0, 4).map((x) => ({ label: x.label.trim().slice(0, 48), text: x.text.trim().slice(0, 600) }));
+      fs.mkdirSync(viDir(), { recursive: true });
+      fs.writeFileSync(file, JSON.stringify(replies.length ? { replies, at: new Date().toISOString() } : { failed: r.error ?? 'no replies', at: new Date().toISOString() }));
+    }).catch(() => {}).finally(() => suggestJobs.delete(q.id)));
+  }
+  return { state: 'pending', source: 'rules', replies: rules };
 }
 
 /** Vietnamese claim + evidence for each row, cached on disk by content; started in the background → { state, rows?, error? }. */
@@ -790,22 +965,69 @@ const ACTIONS = {
     om.util.writeAtomic(file, JSON.stringify(d, null, 2) + '\n');
     return [OM_CLI(), 'pilot', 'apply-draft', '--file', file];
   },
+  // tools/agent-questions types the answer into the agent's own Orca terminal
+  'agent.answer': (b) => {
+    const picks = (b.picks ?? []).map((p) => `${Number(p.n)}=${need(p.label, 'label')}`);
+    return [AQ_CLI(), 'answer', '--id', need(b.id, 'id'), ...picks.flatMap((p) => ['--pick', p]), ...(b.text ? ['--text', String(b.text)] : [])];
+  },
+  'agent.dismiss': (b) => [AQ_CLI(), 'dismiss', '--id', need(b.id, 'id'), '--note', need(b.note, 'note')],
+  'agent.focus': (b) => [AQ_CLI(), 'focus', '--id', need(b.id, 'id')],
+  // tools/boot-idea starts the orca-global session; the page's images are staged for it to move
+  'boot.idea': (b) => {
+    const opt = (k, flag) => (b[k] ? [flag, String(b[k])] : []);
+    const dir = stageImages(b.images ?? []);
+    return [CFG.bootIdea, '--source', need(b.source, 'source'), '--text', String(b.text ?? ''), ...opt('link', '--link'), ...opt('slug', '--slug'),
+      ...opt('template', '--template'), ...opt('brief', '--brief'), ...opt('goal', '--goal'), ...opt('deploy', '--deploy'), ...opt('memory', '--memory'),
+      ...opt('impl_agent', '--impl-agent'), ...opt('agent', '--agent'), ...(dir ? ['--images-dir', dir] : [])];
+  },
 };
+const AQ_CLI = () => path.join(CFG.agentQuestions, 'agent-questions.mjs');
+
+const MAGIC = [[/\.png$/i, [0x89, 0x50, 0x4e, 0x47]], [/\.jpe?g$/i, [0xff, 0xd8, 0xff]], [/\.gif$/i, [0x47, 0x49, 0x46]], [/\.webp$/i, [0x52, 0x49, 0x46, 0x46]]];
+
+/** The page's images ([{name, data: base64}], ≤ 10, ≤ 12 MB each, real image bytes) in a fresh staging dir. → dir | null */
+export function stageImages(images) {
+  if (!Array.isArray(images) || !images.length) return null;
+  if (images.length > 10) throw new Error('at most 10 images');
+  const dir = path.join(CFG.uploads, `${Date.now().toString(36)}-${crypto.randomBytes(4).toString('hex')}`);
+  fs.mkdirSync(dir, { recursive: true });
+  images.forEach((im, i) => {
+    const base = path.basename(String(im?.name ?? '')).replace(/[^\w.-]+/g, '_').replace(/^\.+/, '') || `image-${i + 1}.png`;
+    const magic = MAGIC.find(([re]) => re.test(base));
+    const buf = Buffer.from(String(im?.data ?? '').replace(/^data:[^,]*,/, ''), 'base64');
+    if (!magic || buf.length < 8 || !magic[1].every((x, k) => buf[k] === x)) throw new Error(`${base} is not a png/jpg/gif/webp image`);
+    if (buf.length > 12 * 1024 * 1024) throw new Error(`${base} is over 12 MB`);
+    fs.writeFileSync(path.join(dir, `${String(i + 1).padStart(2, '0')}-${base}`), buf);
+  });
+  return dir;
+}
 export const ACTION_NAMES = Object.keys(ACTIONS);
 
-export function runAction(name, body = {}) {
+const ACTION_TIMEOUT = { 'memory.refresh': 600000, 'boot.idea': 240000 };
+
+/** Run one allowlisted CLI without blocking the server (a boot waits up to 90 s for its session). */
+export async function runAction(name, body = {}) {
   const build = ACTIONS[name];
   if (!build) throw Object.assign(new Error(`unknown action ${name}`), { status: 404 });
   const argv = build(body);
-  const r = spawnSync(process.execPath, argv, { encoding: 'utf8', timeout: name === 'memory.refresh' ? 600000 : 120000, maxBuffer: 16 * 1024 * 1024 });
+  const r = await new Promise((resolve) => {
+    let stdout = ''; let stderr = '';
+    const child = spawn(process.execPath, argv, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const timer = setTimeout(() => child.kill(), ACTION_TIMEOUT[name] ?? 120000);
+    child.stdout.on('data', (d) => { if (stdout.length < 16 * 1024 * 1024) stdout += d; });
+    child.stderr.on('data', (d) => { if (stderr.length < 1024 * 1024) stderr += d; });
+    child.on('error', (e) => { clearTimeout(timer); resolve({ status: null, stdout, stderr: stderr + e.message }); });
+    child.on('close', (code) => { clearTimeout(timer); resolve({ status: code, stdout, stderr }); });
+  });
   const out = (r.stdout ?? '').trim();
   const err = (r.stderr ?? '').trim();
   const result = { ok: r.status === 0, code: r.status, out: safe(() => JSON.parse(out)) ?? out.slice(-4000), err: err.slice(-2000) || null };
   fs.mkdirSync(CFG.logs, { recursive: true });
-  fs.appendFileSync(path.join(CFG.logs, 'director-console.jsonl'), JSON.stringify({ at: new Date().toISOString(), action: name, body, argv: argv.slice(1), code: r.status, out: out.slice(-500), err: err.slice(-300) || null }) + '\n');
+  // a boot's images are bytes, not audit: the log keeps their names
+  const logged = body.images ? { ...body, images: body.images.map((im) => im?.name ?? '?') } : body;
+  fs.appendFileSync(path.join(CFG.logs, 'director-console.jsonl'), JSON.stringify({ at: new Date().toISOString(), action: name, body: logged, argv: argv.slice(1), code: r.status, out: out.slice(-500), err: err.slice(-300) || null }) + '\n');
   return result;
 }
-
 export function actionLog(n = 30) {
   return tail(readJsonl(path.join(CFG.logs, 'director-console.jsonl')), n).reverse();
 }

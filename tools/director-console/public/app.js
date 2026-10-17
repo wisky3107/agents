@@ -199,9 +199,26 @@
     questType: 'all', questProject: '', questQ: '', worldSlice: {}, recQ: '', recProject: '', recKind: '', recLife: '',
     pbQ: '', pbTags: new Set(), pbSource: '', pilotProject: null,
     notes: {}, // runner answer notes being typed, kept across the 20 s re-render
+    agentPick: {}, // agent question id → { [question n]: [labels] }, kept across re-renders
+    boot: { source: 'idea', text: '', link: '', slug: '', template: 'default', brief: 'deep', goal: 'e2e', deploy: 'preview', implAgent: '', agent: 'claude', memory: true, images: [] },
   };
+  // an evidence or question image, through the server's token-checked /img (an <img> sends no header)
+  const imgUrl = (p) => `/img?p=${encodeURIComponent(p)}&t=${encodeURIComponent(TOKEN)}`;
+  function openImage(src, caption) {
+    showOverlay(h('div', { class: 'lightbox', role: 'dialog', onclick: closeOverlay }, h('img', { src, alt: caption ?? '' }), caption ? h('div', { class: 'lb-cap mono small' }, caption) : null));
+  }
+  /** Thumbnails of image files ({path, name?, at?}); a click opens the full image. */
+  function thumbs(images) {
+    return h('div', { class: 'thumbs' }, images.map((im) => {
+      const p = typeof im === 'string' ? im : im.path;
+      const name = (typeof im === 'string' ? null : im.name) ?? p.split('/').pop();
+      return h('button', { class: 'thumb', type: 'button', title: p, onclick: () => openImage(imgUrl(p), p) },
+        h('img', { src: imgUrl(p), alt: name, loading: 'lazy' }),
+        h('span', { class: 'thumb-cap' }, name, im.at ? h('span', { class: 'muted' }, ` · ${ago(im.at)}`) : null));
+    }));
+  }
   const ROUTES = [
-    ['map', 'Bản đồ', 'map'], ['quests', 'Nhiệm vụ', 'flag'], ['worlds', 'Dự án', 'globe'], ['preview', 'Preview', 'phone'], ['memory', 'Memory', 'chip'],
+    ['map', 'Bản đồ', 'map'], ['quests', 'Nhiệm vụ', 'flag'], ['worlds', 'Dự án', 'globe'], ['boot', 'Game mới', 'play'], ['preview', 'Preview', 'phone'], ['memory', 'Memory', 'chip'],
     ['pilot', 'Pilot', 'flask'], ['playbook', 'Playbook', 'book'], ['scorecard', 'Scorecard', 'chart'], ['resources', 'Tài nguyên', 'bolt'], ['log', 'Nhật ký', 'list'],
   ];
   let route = { view: 'map', arg: null };
@@ -387,6 +404,15 @@
 
   // ---------------------------------------------------------------- shell
   const shell = {};
+  // every tab with its label does not fit the bar: then only the open tab keeps its label (the others
+  // keep the icon and a title), so no tab is pushed out of sight
+  function fitTabs() {
+    const nav = shell.nav?.[0]?.[1]?.parentElement;
+    if (!nav) return;
+    nav.classList.remove('compact');
+    nav.classList.toggle('compact', nav.scrollWidth > nav.clientWidth + 1);
+  }
+  window.addEventListener('resize', () => fitTabs());
   function buildShell() {
     const tabs = ROUTES.map(([id, label, ic]) => {
       const badge = h('span', { class: 'badge', hidden: true });
@@ -443,10 +469,10 @@
   function questCounts(ov) {
     const p = ov.pending;
     const system = (p.refresh && (!p.refresh.ok || p.refresh.stale) ? 1 : 0) + p.unregistered.length;
-    return { runner: p.questions.length, draft: p.drafts.length, triage: p.triage.length, system, manual: p.manual_deferred.reduce((n, d) => n + d.items.length, 0) };
+    return { runner: p.questions.length, agent: (p.agent_questions ?? []).length, draft: p.drafts.length, triage: p.triage.length, system, manual: p.manual_deferred.reduce((n, d) => n + d.items.length, 0) };
   }
 
-  const CRUMB = { map: 'TỔNG QUAN', quests: 'VIỆC CẦN QUYẾT', worlds: 'DỰ ÁN', preview: 'EDITOR PREVIEW', memory: 'ORCA-MEMORY', pilot: 'PILOT M08', playbook: 'COCOS-PLAYBOOK', scorecard: 'WORKFLOW', resources: 'RES-GUARD', log: 'THAO TÁC' };
+  const CRUMB = { map: 'TỔNG QUAN', quests: 'VIỆC CẦN QUYẾT', worlds: 'DỰ ÁN', boot: 'BOOT GAME MỚI', preview: 'EDITOR PREVIEW', memory: 'ORCA-MEMORY', pilot: 'PILOT M08', playbook: 'COCOS-PLAYBOOK', scorecard: 'WORKFLOW', resources: 'RES-GUARD', log: 'THAO TÁC' };
   function updateChrome() {
     const ov = store.ov;
     const r = ROUTES.find(([id]) => id === route.view);
@@ -455,9 +481,10 @@
     shell.baseTitle = `${r[1]} · Director`;
     drawBell();
     for (const list of [shell.nav, shell.bottom]) for (const [id, b] of list) b.classList.toggle('on', id === route.view);
+    fitTabs();
     if (!ov) return;
     const c = questCounts(ov);
-    const decisions = c.runner + c.draft + c.triage + c.system;
+    const decisions = c.runner + c.agent + c.draft + c.triage + c.system;
     for (const list of [shell.nav, shell.bottom]) for (const [id, , badge] of list) {
       if (id !== 'quests') continue;
       badge.hidden = !decisions;
@@ -470,6 +497,7 @@
       h('span', { class: 'tag' }, icon('clock', 13), `cập nhật ${ago(ov.at)}`),
       h('span', { class: `tag ${live ? 'warn' : ''}` }, h('span', { class: `pip ${live ? 'live' : ''}` }), `${live} runner chạy`),
       c.runner ? h('span', { class: 'tag bad' }, icon('alert', 13), `${c.runner} câu hỏi chặn runner`) : null,
+      c.agent ? h('span', { class: 'tag bad' }, icon('user', 13), `${c.agent} agent đang hỏi`) : null,
       rf ? h('span', { class: `tag ${rfOk ? 'good' : 'bad'}` }, icon(rfOk ? 'check' : 'alert', 13), `kho refresh ${ago(rf.at)}`) : h('span', { class: 'tag bad' }, icon('alert', 13), 'kho chưa refresh'),
     ].filter(Boolean));
   }
@@ -517,15 +545,19 @@
     const withLevels = ov.projects.filter((p) => p.levels.length);
     const assist = ov.projects.filter((p) => p.mode === 'assist').length;
     const rf = ov.pending.refresh;
-    const decisions = c.runner + c.draft + c.triage + c.system;
+    const decisions = c.runner + c.agent + c.draft + c.triage + c.system;
+    // quick action to the Game mới tab: the last boot in its foot
+    const lastBoot = (await api('/api/boots').then((r) => r.boots).catch(() => []))[0];
+    const bootFoot = lastBoot ? `gần nhất: ${lastBoot.title ?? lastBoot.source} · ${ago(lastBoot.at)}` : 'ý tưởng · App Store · Figma';
     const stat = (label, value, foot, tone, ic, onclick) =>
       h('div', { class: `stat s-${tone} ${onclick ? 'link' : ''}`, onclick, role: onclick ? 'button' : null, tabindex: onclick ? 0 : null },
         h('div', { class: 'label' }, icon(ic, 14), label), h('div', { class: `value ${typeof value === 'string' ? 'text' : ''}` }, value), h('div', { class: 'foot' }, foot));
     const stats = h('div', { class: 'stats' },
-      stat('Việc chờ bạn', decisions, c.runner ? `${c.runner} câu hỏi đang chặn runner` : `${c.draft} bảng nháp · ${c.triage} triage`, c.runner ? 'coral' : decisions ? 'yellow' : 'green', 'flag', () => go('quests')),
+      stat('Việc chờ bạn', decisions, c.runner || c.agent ? [c.runner ? `${c.runner} runner hỏi` : null, c.agent ? `${c.agent} agent hỏi` : null].filter(Boolean).join(' · ') : `${c.draft} bảng nháp · ${c.triage} triage`, c.runner || c.agent ? 'coral' : decisions ? 'yellow' : 'green', 'flag', () => go('quests')),
       stat('Runner đang chạy', live.length, live.map((p) => `${p.id} ${p.runner.slice ?? ''}`).join(', ') || 'không có', 'pink', 'bolt', () => go('worlds')),
       stat('Dự án', ov.projects.length, `${assist} assist · ${ov.projects.filter((p) => p.mode === 'shadow').length} shadow`, 'blue', 'globe', () => go('worlds')),
       stat('Kho bài học', ov.memory.records, `${ov.memory.active} đang dùng`, 'lilac', 'archive', () => go('memory')),
+      stat('Boot game mới', 'Mở', bootFoot, 'green', 'play', () => go('boot')),
       stat('Refresh kho', rf ? ago(rf.at) : 'chưa', rf ? (rf.ok ? (rf.stale ? 'cũ hơn 48 giờ' : 'ổn') : `lỗi ở ${rf.failed_step}`) : 'chưa chạy lần nào', rf?.ok && !rf.stale ? 'green' : 'coral', 'refresh', () => go('memory')));
 
     // the workflow + memory loop as a node graph with live numbers
@@ -567,6 +599,121 @@
     return [stats, h('div', { style: { height: '16px' } }), flow, h('div', { class: 'grid cols-2', style: { marginTop: '16px' } }, quests, worlds)];
   };
 
+  // ======== boot: a new game from an idea, an App Store link or a Figma link, the way the director
+  // starts one in orca-global (one Claude session given /new-cocos-game, /store-game-clone or
+  // /figma-game-clone). tools/boot-idea builds the same prompt the preview shows here.
+  const BOOT_SOURCES = [['idea', 'Ý tưởng', 'star'], ['store', 'App Store', 'globe'], ['figma', 'Figma', 'layers']];
+  const BOOT_OPTS = {
+    template: [['default', 'Cocos 3.8 (mặc định)'], ['playable', 'Playable ad'], ['cc4', 'Cocos 4']],
+    brief: [['deep', 'Brief sâu (Fable)'], ['inline', 'Brief inline (nhanh)']],
+    goal: [['e2e', 'End to end'], ['playable', 'Playable first']],
+    deploy: [['preview', 'Deploy preview'], ['prod', 'Lên prod'], ['none', 'Không deploy']],
+    agent: [['claude', 'claude'], ['claude --model opus', 'claude --model opus'], ['claude --model sonnet', 'claude --model sonnet']],
+  };
+  const oneLine = (t) => String(t ?? '').replace(/\s*\n\s*/g, ' · ').replace(/\s+/g, ' ').trim();
+  const slugOf = (t) => String(t ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+  /** Mirrors boot-idea.mjs bootPrompt (the toast after a boot shows the prompt the server really sent). */
+  function bootPromptPreview(b) {
+    const slug = b.slug ? (slugOf(b.slug).startsWith('cc-') ? slugOf(b.slug) : `cc-${slugOf(b.slug)}`) : null;
+    const words = [
+      { playable: 'template playable', cc4: 'cc4 (Cocos 4)' }[b.template], { inline: 'brief inline', deep: 'brief sâu bằng fable' }[b.brief],
+      { e2e: 'end to end', playable: 'playable first' }[b.goal], { preview: 'deploy preview', prod: 'lên prod', none: 'không deploy' }[b.deploy],
+      b.implAgent.trim() ? `agent ${oneLine(b.implAgent)}` : null, b.memory ? 'có hỗ trợ từ orca memory và playbook' : null,
+    ].filter(Boolean);
+    const text = oneLine(b.text);
+    const parts = b.source === 'idea'
+      ? [`/new-cocos-game ${slug ? `${slug}: ` : ''}${text}`, b.link.trim() ? `media/tham chiếu: ${oneLine(b.link)}` : null]
+      : [`${b.source === 'store' ? '/store-game-clone' : '/figma-game-clone'} ${oneLine(b.link) || '<link>'}`, slug ? `tên project ${slug}` : null, text ? `ghi chú gameplay của director: ${text}` : null];
+    parts.push(words.length ? `tuỳ chọn: ${words.join(', ')}` : null, b.images.length ? `ảnh tham chiếu của director: ~/orca-global/misc/boot-inbox/<giờ>-${slug ?? 'idea'}/ (${b.images.length} ảnh)` : null);
+    return oneLine(parts.filter(Boolean).join(' — '));
+  }
+
+  VIEWS.boot = async () => bootPanel();
+
+  async function bootPanel() {
+    const b = ui.boot;
+    const recent = await api('/api/boots').then((r) => r.boots).catch(() => []);
+    const preview = h('div', { class: 'boot-prompt mono small' });
+    const drawPreview = () => { preview.textContent = bootPromptPreview(b); };
+    const field = (label, el, hint) => h('label', { class: 'boot-field' }, h('span', { class: 'muted small' }, label), el, hint ? h('span', { class: 'small muted' }, hint) : null);
+    const input = (key, attrs = {}) => {
+      const el = h(attrs.multiline ? 'textarea' : 'input', { class: 'input', placeholder: attrs.placeholder ?? '', rows: attrs.multiline ? 4 : null });
+      el.value = b[key];
+      el.addEventListener('input', () => { b[key] = el.value; drawPreview(); });
+      return el;
+    };
+    const select = (key) => {
+      const el = h('select', { class: 'input' }, BOOT_OPTS[key].map(([v, label]) => h('option', { value: v, selected: b[key] === v }, label)));
+      el.addEventListener('change', () => { b[key] = el.value; drawPreview(); });
+      return el;
+    };
+    const text = input('text', { multiline: true, placeholder: b.source === 'idea' ? 'Ý tưởng game: thể loại, gameplay chính, đối tượng, phong cách hình ảnh, 2D/3D, dọc/ngang… (dán ảnh vào đây được)' : 'Ghi chú gameplay của bạn cho bản clone (tuỳ chọn; dán ảnh vào đây được)' });
+    const link = input('link', { placeholder: { idea: 'Link video gameplay / folder tham chiếu (tuỳ chọn)', store: 'https://apps.apple.com/…/id123456789', figma: 'https://www.figma.com/design/…' }[b.source] });
+
+    // reference images: picked or pasted, kept as data URLs (the CSP allows data:, not blob:)
+    const imgs = h('div', { class: 'thumbs' });
+    const drawImgs = () => {
+      imgs.replaceChildren(...b.images.map((im, i) => h('div', { class: 'thumb' }, h('img', { src: im.data, alt: im.name }),
+        h('span', { class: 'thumb-cap' }, im.name), h('button', { class: 'btn ghost sm icon-only thumb-x', type: 'button', title: 'Bỏ ảnh', onclick: () => { b.images.splice(i, 1); drawImgs(); drawPreview(); } }, icon('x', 13)))));
+    };
+    const addFiles = (files) => {
+      for (const f of [...files].filter((x) => /^image\/(png|jpe?g|gif|webp)$/.test(x.type))) {
+        if (b.images.length >= 10) { toast('Tối đa 10 ảnh.', true); break; }
+        if (f.size > 12 * 1024 * 1024) { toast(`${f.name} lớn hơn 12 MB.`, true); continue; }
+        const rd = new FileReader();
+        rd.onload = () => {
+          const ext = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' }[f.type];
+          const name = /\.(png|jpe?g|gif|webp)$/i.test(f.name) ? f.name : `paste-${b.images.length + 1}.${ext}`;
+          b.images.push({ name, data: rd.result });
+          drawImgs(); drawPreview();
+        };
+        rd.readAsDataURL(f);
+      }
+    };
+    const fileIn = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp', multiple: true, hidden: true });
+    fileIn.addEventListener('change', () => { addFiles(fileIn.files); fileIn.value = ''; });
+    text.addEventListener('paste', (e) => { const fs = e.clipboardData?.files; if (fs?.length) { e.preventDefault(); addFiles(fs); } });
+    drawImgs();
+
+    const memory = h('input', { type: 'checkbox', checked: b.memory });
+    memory.addEventListener('change', () => { b.memory = memory.checked; drawPreview(); });
+    const seg = h('div', { class: 'seg', role: 'tablist' }, BOOT_SOURCES.map(([v, label, ic]) =>
+      h('button', { class: b.source === v ? 'on' : '', type: 'button', onclick: () => { b.source = v; render(); } }, icon(ic, 14), label)));
+
+    const boot = async () => {
+      const t = oneLine(b.text);
+      if (b.source === 'idea' && t.length < 10) { toast('Viết ý tưởng game (ít nhất một câu).', true); text.focus(); return; }
+      if (b.source === 'store' && !/^https:\/\/apps\.apple\.com\//.test(b.link.trim())) { toast('Cần link apps.apple.com.', true); link.focus(); return; }
+      if (b.source === 'figma' && !/^https:\/\/(www\.)?figma\.com\/(design|file|proto)\//.test(b.link.trim())) { toast('Cần link figma.com/design.', true); link.focus(); return; }
+      const ok = await confirmBox({ title: 'Boot game mới ở orca-global', ok: 'Boot', body: `Mở một session ${b.agent} trong ~/orca-global và gửi:\n\n${bootPromptPreview(b)}` });
+      if (!ok) return;
+      toast('Đang mở session ở orca-global và chờ agent sẵn sàng (tối đa ~90 giây)…');
+      const r = await post('boot.idea', { source: b.source, text: b.text, link: b.link.trim() || null, slug: b.slug.trim() || null, template: b.template, brief: b.brief, goal: b.goal, deploy: b.deploy,
+        memory: b.memory ? 'on' : 'off', impl_agent: b.implAgent.trim() || null, agent: b.agent, images: b.images.map((im) => ({ name: im.name, data: im.data })) });
+      const out = r.out?.prompt ? `${r.out.title} · ${r.out.handle}\n${r.out.prompt}` : (r.out?.error ?? r.error ?? JSON.stringify(r.out ?? ''));
+      toast(`${r.ok ? '✓ Đã boot' : '✗ Boot lỗi'}\n${out}${r.err ? `\n${r.err}` : ''}`.slice(0, 1400), !r.ok);
+      if (r.ok) ui.boot = { ...b, text: '', link: '', slug: '', images: [] };
+      render();
+    };
+    drawPreview();
+    const recentList = recent.length ? h('div', { class: 'boot-recent' }, recent.slice(0, 5).map((x) => h('div', { class: 'boot-row small' },
+      chip(x.ok ? 'đã gửi' : 'lỗi', x.ok ? 'good' : 'bad'), h('b', {}, x.title ?? x.source), h('span', { class: 'muted' }, ago(x.at)),
+      h('span', { class: 'grow ink2 boot-row-p', title: x.prompt ?? x.error ?? '' }, x.ok ? x.prompt : (x.error ?? ''))))) : null;
+    return panel('Boot game mới', { icon: 'play', cls: 'boot', sub: 'Như một session ở orca-global: agent chạy /new-cocos-game (ý tưởng), /store-game-clone (App Store) hoặc /figma-game-clone (Figma). Câu hỏi của session đó hiện ở tab Nhiệm vụ.', right: seg },
+      h('div', { class: 'boot-grid' },
+        h('div', { class: 'boot-main' }, field(b.source === 'idea' ? 'Ý tưởng *' : 'Ghi chú gameplay', text),
+          field(b.source === 'idea' ? 'Media tham chiếu' : 'Link *', link),
+          h('div', { class: 'row' }, btn('Thêm ảnh tham chiếu', () => fileIn.click(), { cls: 'sm', ic: 'eye' }), h('span', { class: 'small muted' }, 'hoặc dán ảnh vào ô ý tưởng · tối đa 10 ảnh, mỗi ảnh ≤ 12 MB'), fileIn),
+          imgs),
+        h('div', { class: 'boot-side' }, field('Tên project (tuỳ chọn)', input('slug', { placeholder: 'cc-space-dash' })),
+          h('div', { class: 'boot-2' }, field('Template', select('template')), field('Brief', select('brief')), field('Mục tiêu', select('goal')), field('Deploy', select('deploy'))),
+          field('Agent implement (tuỳ chọn)', input('implAgent', { placeholder: 'claude --model opus · codex · cursor --model auto' })),
+          h('div', { class: 'boot-2' }, field('Agent chạy session boot', select('agent')), h('label', { class: 'boot-check small' }, memory, 'orca-memory + playbook')))),
+      h('div', { class: 'q-sec' }, h('div', { class: 'q-sec-h' }, 'Prompt sẽ gửi'), preview),
+      h('div', { class: 'quest-actions' }, btn('Boot', boot, { cls: 'primary', ic: 'play' }), h('span', { class: 'grow' })),
+      recentList ? h('div', { class: 'q-sec' }, h('div', { class: 'q-sec-h' }, 'Boot gần đây'), recentList) : null);
+  }
+
   // the server's order (lib.mjs projectOrder)
   const SORT_NOTE = 'Thứ tự: câu hỏi runner đang mở (nhiều trước) → runner đang chạy → hoạt động gần nhất (runner hoặc commit) → tên.';
   function worldCard(p) {
@@ -587,6 +734,7 @@
     const p = store.ov.pending;
     const out = [];
     for (const q of p.questions) out.push({ type: 'runner', project: q.project, at: q.asked_at, text: `${q.kind} ${q.slice ?? ''} ${q.text}`, data: q });
+    for (const q of p.agent_questions ?? []) out.push({ type: 'agent', project: q.project, at: q.asked_at, text: `${q.terminal?.title ?? ''} ${q.kind === 'ask' ? q.questions.map((x) => `${x.question} ${x.options.map((o) => o.label).join(' ')}`).join(' ') : q.text}`, data: q });
     for (const d of p.drafts) out.push({ type: 'draft', project: d.project, at: d.created_at, text: `${d.slice} ${d.rows.map((r) => r.record).join(' ')}`, data: d });
     for (const t of p.triage) out.push({ type: 'triage', project: t.source.split(':')[0], at: null, text: `${t.source} ${t.reason}`, data: t });
     if (p.refresh && (!p.refresh.ok || p.refresh.stale)) out.push({ type: 'system', project: '', at: p.refresh.at, text: 'refresh', data: { kind: 'refresh', ...p.refresh } });
@@ -594,7 +742,7 @@
     for (const d of p.manual_deferred) out.push({ type: 'manual', project: d.project, at: null, text: `${d.slice} ${d.items.join(' ')}`, data: d });
     return out;
   }
-  const QTYPES = [['all', 'Tất cả', 'flag'], ['runner', 'Runner hỏi', 'alert'], ['draft', 'Verdict', 'flask'], ['triage', 'Triage', 'archive'], ['system', 'Hệ thống', 'refresh'], ['manual', 'Kiểm tra tay', 'hand']];
+  const QTYPES = [['all', 'Tất cả', 'flag'], ['runner', 'Runner hỏi', 'alert'], ['agent', 'Agent hỏi', 'user'], ['draft', 'Verdict', 'flask'], ['triage', 'Triage', 'archive'], ['system', 'Hệ thống', 'refresh'], ['manual', 'Kiểm tra tay', 'hand']];
 
   VIEWS.quests = async () => {
     const qs = allQuests();
@@ -611,7 +759,7 @@
       const needle = ui.questQ.toLowerCase();
       const shown = qs.filter((q) => (ui.questType === 'all' ? q.type !== 'manual' : q.type === ui.questType)
         && (!ui.questProject || q.project === ui.questProject) && (!needle || q.text.toLowerCase().includes(needle) || q.project.toLowerCase().includes(needle)));
-      const order = { runner: 0, system: 1, draft: 2, triage: 3, manual: 4 };
+      const order = { runner: 0, agent: 0, system: 1, draft: 2, triage: 3, manual: 4 };
       shown.sort((a, b) => order[a.type] - order[b.type]);
       listEl.replaceChildren(...(shown.length ? shown.map(questCard) : [empty(ui.questType === 'manual' ? 'Không có check thủ công nào khớp.' : 'Không có việc nào khớp bộ lọc.')]));
     };
@@ -624,6 +772,7 @@
   function questMini(q) {
     const META = {
       runner: () => ['alert', 'Runner hỏi', 'q-runner', `${q.data.kind} · ${q.data.slice ?? ''}`],
+      agent: () => ['user', 'Agent hỏi', 'q-agent', `${q.data.terminal?.title ?? q.data.handle} · ${(q.data.kind === 'ask' ? q.data.questions[0]?.question : String(q.data.text).trim().split(/\n\s*\n/).at(-1)) ?? ''}`.slice(0, 180)],
       draft: () => ['flask', 'Bảng nháp verdict', 'q-draft', `${q.data.slice} · ${q.data.rows.length} dòng`],
       triage: () => ['archive', 'Triage', 'q-triage', q.data.reason],
       system: () => ['refresh', 'Hệ thống', 'q-system', q.data.kind === 'refresh' ? 'refresh kho lỗi hoặc cũ' : `chưa đăng ký memory: ${q.data.path.split('/').pop()}`],
@@ -636,6 +785,7 @@
 
   function questCard(q) {
     if (q.type === 'runner') return runnerCard(q.data);
+    if (q.type === 'agent') return agentCard(q.data);
     if (q.type === 'draft') return draftCard(q.data);
     if (q.type === 'triage') return triageCard(q.data);
     if (q.type === 'manual') return manualCard(q.data);
@@ -653,6 +803,7 @@
   const NOTE_VI = { required: 'cần ghi chú', optional: 'ghi chú tuỳ chọn' };
   const section = (label, ...kids) => h('div', { class: 'q-sec' }, h('div', { class: 'q-sec-h' }, label), ...kids);
   let translateRetry = null;
+  let suggestRetry = null;
 
   function runnerCard(q) {
     const noteKey = `${q.project}#${q.id}`;
@@ -714,6 +865,91 @@
       section('Các lựa chọn', opts),
       h('div', { style: { marginTop: '10px' } }, note),
       english, tech);
+  }
+
+  // ======== a question an agent asked in its own Orca terminal (tools/agent-questions)
+  function agentCard(q) {
+    const noteKey = `agent#${q.id}`;
+    const picks = ui.agentPick[q.id] ?? (ui.agentPick[q.id] = {});
+    const note = h('textarea', { class: 'input', placeholder: q.kind === 'ask' ? 'Ghi chú thêm, hoặc câu trả lời khác ngoài các lựa chọn (tuỳ chọn)' : 'Câu trả lời của bạn cho agent' });
+    note.value = ui.notes[noteKey] ?? '';
+    note.addEventListener('input', () => { ui.notes[noteKey] = note.value; });
+    const title = (q.terminal?.title ?? '').replace(/^[^\p{L}\p{N}(]+/u, '') || q.handle;
+
+    const qBlocks = q.kind === 'ask' ? q.questions.map((x, i) => {
+      const n = i + 1;
+      const rows = x.options.map((o) => {
+        const row = h('button', { class: `opt-row ${(picks[n] ?? []).includes(o.label) ? 'on' : ''}`, type: 'button', 'aria-pressed': String((picks[n] ?? []).includes(o.label)) },
+          h('span', { class: 'opt-num' }, x.multiSelect ? '☐' : '○'),
+          h('span', { class: 'opt-txt' }, h('b', {}, o.label), o.description ? h('span', { class: 'small' }, o.description) : null,
+            o.preview ? h('details', { class: 'q-more', onclick: (e) => e.stopPropagation() }, h('summary', {}, 'Xem preview'), h('pre', { class: 'code' }, o.preview)) : null));
+        row.addEventListener('click', () => {
+          const cur = picks[n] ?? [];
+          picks[n] = x.multiSelect ? (cur.includes(o.label) ? cur.filter((l) => l !== o.label) : [...cur, o.label]) : (cur[0] === o.label ? [] : [o.label]);
+          for (const r of row.parentElement.children) {
+            const on = picks[n].includes(r.querySelector('b').textContent);
+            r.classList.toggle('on', on);
+            r.setAttribute('aria-pressed', String(on));
+          }
+        });
+        return row;
+      });
+      return section(`Câu ${n}${x.header ? ` · ${x.header}` : ''}${x.multiSelect ? ' · chọn được nhiều' : ''}`, h('div', { class: 'quest-body' }, x.question), h('div', { class: 'opt-list' }, rows));
+    }) : [section('Agent hỏi', h('div', { class: 'quest-body md agent-text' }, md(q.text)))];
+
+    const send = () => {
+      const chosen = Object.entries(picks).flatMap(([n, labels]) => labels.map((label) => ({ n: Number(n), label })));
+      const text = note.value.trim();
+      if (q.kind === 'ask' && !chosen.length && !text) { toast('Chọn một lựa chọn hoặc ghi câu trả lời.', true); return; }
+      if (q.kind === 'stop' && !text) { toast('Ghi câu trả lời cho agent.', true); note.focus(); return; }
+      const lines = q.kind === 'ask'
+        ? [...q.questions.map((x, i) => `${i + 1}. ${x.header || x.question}: ${chosen.filter((c) => c.n === i + 1).map((c) => c.label).join(', ') || '(không chọn)'}`), text ? `Ghi chú: ${text}` : null]
+        : [text];
+      act('agent.answer', { id: q.id, picks: chosen, text }, {
+        title: `Trả lời agent · ${q.project}`, ok: 'Gửi cho agent',
+        body: `${lines.filter(Boolean).join('\n')}\n\n${q.kind === 'ask' ? 'Hộp chọn của agent được đóng rồi câu trả lời được gõ vào chat của agent như một tin nhắn.' : 'Câu trả lời được gõ vào chat của agent.'}\nTerminal: ${title}`,
+      }).then((r) => { if (r?.ok) { delete ui.notes[noteKey]; delete ui.agentPick[q.id]; } });
+    };
+    // quick replies: a plain question's suggestions (rules at once, a model's when ready); a dialog's
+    // recommended options, or each option of a lone single-choice question. A click opens the reply to edit or send.
+    const quickSend = (label, body) => act('agent.answer', { id: q.id, ...body }, {
+      title: `Trả lời nhanh · ${q.project}`, ok: 'Gửi cho agent',
+      body: body.picks ? `${body.picks.map((p) => `${p.n}. ${q.questions[p.n - 1].header || q.questions[p.n - 1].question}: ${p.label}`).join('\n')}\n\nHộp chọn của agent được đóng rồi câu trả lời được gõ vào chat.` : `Terminal: ${title}`,
+      fields: body.picks ? [] : [{ name: 'text', label: 'Câu gửi cho agent (sửa được)', value: label, multiline: true, required: true }],
+    }).then((r) => { if (r?.ok) { delete ui.notes[noteKey]; delete ui.agentPick[q.id]; } });
+    let quick = [];
+    let quickNote = null;
+    if (q.kind === 'stop') {
+      quick = (q.quick?.replies ?? []).map((r) => ({ label: r.label, title: r.text, go: () => quickSend(r.text, { text: r.text }) }));
+      quickNote = q.quick?.state === 'pending' ? chip('đang gợi ý thêm…', 'warn', 'clock') : q.quick?.source === 'llm' ? chip('gợi ý theo ngữ cảnh', 'outline', 'star') : null;
+      if (q.quick?.state === 'pending' && !suggestRetry) suggestRetry = setTimeout(() => { suggestRetry = null; refresh(false); }, 9000);
+    } else {
+      const REC = /recommended|đề xuất|khuyên dùng|khuyến nghị/i;
+      const rec = q.questions.map((x, i) => ({ n: i + 1, label: x.options.find((o) => REC.test(o.label))?.label })).filter((p) => p.label);
+      if (rec.length === q.questions.length) quick.push({ label: `Gửi lựa chọn đề xuất${rec.length > 1 ? ` (${rec.length} câu)` : `: ${rec[0].label}`}`, title: rec.map((p) => p.label).join(' · '), go: () => quickSend(null, { picks: rec }) });
+      if (q.questions.length === 1 && !q.questions[0].multiSelect && q.questions[0].options.length <= 4) {
+        for (const o of q.questions[0].options) if (!REC.test(o.label) || rec.length !== 1) quick.push({ label: o.label, title: o.description ?? o.label, go: () => quickSend(null, { picks: [{ n: 1, label: o.label }] }) });
+      }
+    }
+    const quickBox = quick.length ? section('Trả lời nhanh', quickNote, h('div', { class: 'quick-row' }, quick.map((x) => h('button', { class: 'btn sm quick', type: 'button', title: x.title, onclick: x.go }, icon('bolt', 14), x.label)))) : null;
+
+    const tech = h('details', { class: 'q-more' }, h('summary', {}, 'Mã kỹ thuật'),
+      h('div', { class: 'kv' }, [['id', q.id], ['loại', q.kind === 'ask' ? 'AskUserQuestion (hộp chọn)' : 'câu hỏi cuối lượt'], ['terminal', q.handle], ['vai trò', q.role], ['cwd', q.cwd], ['session', q.session_id], ['transcript', q.transcript_path], ['hỏi lúc', when(q.asked_at)], ['lỗi gửi lần trước', q.last_error]]
+        .filter(([, v]) => v).map(([k, v]) => [h('span', { class: 'muted' }, k), h('span', { class: 'mono' }, v)])));
+    return h('div', { class: 'quest q-agent' },
+      h('div', { class: 'quest-h' }, qtag('user', 'Agent hỏi'), chip(q.project, 'outline'), q.slice ? chip(q.slice, 'accent') : null, q.role ? chip(q.role, 'outline') : null,
+        chip(q.kind === 'ask' ? 'hộp chọn' : 'hỏi trong chat', 'warn'), chip(title, 'outline', 'terminal'), h('span', { class: 'grow' }),
+        h('span', { class: 'small muted' }, `${when(q.asked_at)} · ${ago(q.asked_at)}`)),
+      q.kind === 'ask' && q.context ? h('details', { class: 'q-more', open: q.context.length < 900 }, h('summary', {}, 'Agent đang nói gì trước khi hỏi'), h('div', { class: 'md agent-text small' }, md(q.context))) : null,
+      qBlocks,
+      q.images?.length ? section(`Hình agent nhắc tới · ${q.images.length}`, thumbs(q.images)) : null,
+      quickBox,
+      h('div', { style: { marginTop: '10px' } }, note),
+      h('div', { class: 'quest-actions' }, btn('Gửi cho agent', send, { cls: 'primary', ic: 'check' }),
+        btn('Mở terminal', () => act('agent.focus', { id: q.id }), { ic: 'terminal', title: 'Hiện terminal của agent trong Orca để trả lời trong chat' }),
+        btn('Bỏ qua', () => act('agent.dismiss', { id: q.id }, { title: 'Bỏ qua câu hỏi này', body: 'Thẻ đóng lại; agent không được báo gì.', fields: [{ name: 'note', label: 'Lý do', required: true }], ok: 'Bỏ qua' }), { cls: 'ghost', ic: 'x' })),
+      h('div', { class: 'small muted', style: { marginTop: '8px' } }, 'Trả lời ở đây hoặc ngay trong chat của agent: bên nào trả lời trước thì thẻ tự đóng.'),
+      tech);
   }
 
   function draftCard(d) {
@@ -816,12 +1052,19 @@
     return root;
   }
 
+  // one card per source file: its rows (what the agent wrote, with the fields it used), then the way out —
+  // fix the file to the schema and refresh, or dismiss the whole file (dismiss works per source)
   function triageCard(t) {
+    const n = t.count ?? 1, items = t.items ?? [];
+    const what = n > 1 ? `${n} dòng` : 'dòng này';
     return h('div', { class: 'quest q-triage' },
-      h('div', { class: 'quest-h' }, qtag('archive', 'Triage'), chip(t.source.split(':')[0], 'outline')),
+      h('div', { class: 'quest-h' }, qtag('archive', 'Triage'), chip(t.source.split(':')[0], 'outline'), n > 1 ? chip(`${n} dòng`, 'warn') : null),
       h('div', { class: 'mono small', style: { marginTop: '6px' } }, t.source), h('div', { class: 'quest-body' }, t.reason),
-      h('div', { class: 'quest-actions' }, btn('Bỏ qua dòng này', () => act('triage.dismiss', { source: t.source }, {
-        title: 'Bỏ qua dòng triage', body: `${t.source}\nÁp dụng ở lần refresh tiếp theo.`, fields: [{ name: 'note', label: 'Lý do', required: true }], ok: 'Bỏ qua',
+      items.length ? h('ol', { class: 'triage-items' }, items.map((it) => h('li', {},
+        it.keys.length ? h('span', { class: 'mono small ink2' }, `{${it.keys.join(', ')}} `) : null, it.text ?? '(không có nội dung)'))) : null,
+      h('div', { class: 'small ink2', style: { marginTop: '6px' } }, 'Sửa file theo schema rồi refresh để giữ bài học; bỏ qua thì các dòng này không vào memory.'),
+      h('div', { class: 'quest-actions' }, btn(n > 1 ? `Bỏ qua cả ${n} dòng` : 'Bỏ qua dòng này', () => act('triage.dismiss', { source: t.source }, {
+        title: 'Bỏ qua dòng triage', body: `${t.source}\nBỏ qua ${what} của file này. Áp dụng ở lần refresh tiếp theo.`, fields: [{ name: 'note', label: 'Lý do', required: true }], ok: 'Bỏ qua',
       }), { ic: 'x' })));
   }
 
@@ -902,7 +1145,32 @@
         h('div', { class: 'quest-h' }, icon('terminal', 15), h('b', {}, t.title ?? t.handle), t.agent ? chip(t.agent, 'outline') : null, h('span', { class: `pip ${t.connected ? 'good' : 'bad'}` }), h('span', { class: 'grow' }), h('span', { class: 'mono small muted' }, t.handle.slice(0, 18))),
         h('details', { style: { marginTop: '4px' } }, h('summary', { class: 'small' }, `output cuối · ${t.last_output_at ? ago(new Date(t.last_output_at).toISOString()) : '—'}`), h('pre', { class: 'code' }, t.preview || '(trống)'))))
         : empty('Không có terminal Orca nào của dự án này.', 'terminal'));
-    return [header, map, detail, terms];
+    return [header, nowPanel(d), map, detail, terms];
+  }
+
+  /** Where the running slice stands, with the newest evidence images (review screenshots, previews). */
+  function nowPanel(d) {
+    if (!d.now?.length) return null;
+    const live = d.now.some((x) => x.live);
+    const verdictTone = (v) => (/APPROVED/.test(v ?? '') ? 'good' : v ? 'warn' : 'outline');
+    // a lane terminal still open shows its title; a closed one only that it is closed (its handle is noise)
+    const term = (role, t) => (!t ? null : t.live ? chip(`${role}: ${(t.title ?? '').replace(/^[^\p{L}\p{N}(]+/u, '').slice(0, 36) || 'đang mở'}`, 'accent', 'terminal') : chip(`${role} đã đóng`, 'outline', 'terminal'));
+    const card = (x) => h('div', { class: 'now-card' },
+      h('div', { class: 'row' }, h('b', { class: 'now-slice' }, x.slice), x.live ? h('span', { class: 'chip accent' }, h('span', { class: 'pip live' }), `đang chạy · ${x.phase ?? '—'}`) : chip(`phase ${x.phase ?? '—'}`, x.phase === 'done' ? 'good' : 'outline'),
+        chip(x.in_main ? 'lane main' : 'lane worktree', 'outline', 'layers'), x.handoff ? chip(`HANDOFF ${x.handoff.role ?? ''} ${x.handoff.status ?? ''}`.trim(), 'outline', 'doc') : null,
+        x.review ? chip(`review ${x.review.verdict ?? 'chưa rõ verdict'} · ${ago(x.review.at)}`, verdictTone(x.review.verdict), 'eye') : null,
+        x.static_result ? chip(`static ${x.static_result}`, x.static_result === 'PASS' ? 'good' : 'warn') : null,
+        x.fix_rounds != null || x.review_rounds != null ? chip(`fix ${x.fix_rounds ?? '—'} · review ${x.review_rounds ?? '—'}`, 'outline') : null,
+        x.wait ? chip(`chờ: ${x.wait}`, 'warn', 'clock') : null),
+      h('div', { class: 'row small ink2', style: { marginTop: '6px' } }, term('writer', x.writer), term('reviewer', x.reviewer),
+        h('span', { class: 'grow' }), h('span', { class: 'muted' }, `bắt đầu ${ago(x.selected_at)} · cập nhật ${ago(x.updated)}`)),
+      x.in_main ? null : h('div', { class: 'mono small muted', style: { marginTop: '4px' } }, x.checkout),
+      h('div', { class: 'grid cols-2', style: { marginTop: '10px' } },
+        h('div', {}, h('h4', { class: 'hud small muted', style: { margin: '0 0 6px' } }, 'LOG RUNNER GẦN NHẤT'), x.log.length ? h('pre', { class: 'code now-log' }, x.log.join('\n')) : h('div', { class: 'small muted' }, 'Chưa có log.')),
+        h('div', {}, h('h4', { class: 'hud small muted', style: { margin: '0 0 6px' } }, `HÌNH MỚI NHẤT TRONG EVIDENCE${x.images.length ? ` · ${x.images.length}` : ''}`),
+          x.images.length ? thumbs(x.images) : h('div', { class: 'small muted' }, 'Slice chưa có hình review/preview nào.'))));
+    return panel(live ? 'Slice đang chạy' : 'Slice gần nhất', { icon: 'bolt', sub: live ? 'Tình hình lúc này của slice runner đang làm; hình là ảnh mới nhất trong evidence (ảnh review, preview, contact sheet).' : 'Runner không có slice nào đang chạy; đây là slice nó làm gần nhất.' },
+      d.now.map(card));
   }
 
   function controlDeck(d) {

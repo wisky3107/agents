@@ -12,7 +12,7 @@ node --test ~/.agents/tools/director-console/test/console.test.mjs
 The launchd job `com.agents.director-console` (plist in `launchd/`) keeps it running at login.
 Open the printed URL once, in Orca's browser or any browser on this Mac; the page keeps the token
 for the session. The token lives in `.token` (0600, made on first start, gitignored); delete the
-file and restart to rotate it. Deep links: `#map`, `#quests`, `#worlds/<project>`, `#memory`,
+file and restart to rotate it. Deep links: `#map`, `#quests`, `#worlds/<project>`, `#boot`, `#memory`,
 `#pilot/<project>`, `#playbook`, `#scorecard`, `#log`.
 
 ## The page
@@ -22,6 +22,7 @@ graph, verdict columns) and `app.js` (shell, router, overlays and views). There 
 so the page CSP can forbid it.
 - **Bản đồ**: HUD tiles, the workflow ↔ memory loop as a node graph with live counts (click a node
   to go where it is handled), and every project as a level map of its slices.
+  - The **Boot game mới** tile is the quick action to the Game mới tab, with the last boot in its foot.
 - **Nhiệm vụ**: one list of everything waiting on you, filterable by kind, project or text. Runner
   questions are answered in place; judge drafts take verdict pills and per-row confirmation;
   triage rows can be dismissed; system issues come with their fix.
@@ -33,8 +34,44 @@ so the page CSP can forbid it.
   - The English original, the judge's reason and the technical ids (key, gate/ref, obs, also) sit in two expandable sections.
   - A note you type survives the 20 s refresh.
   - The Vietnamese comes from the runner's `q.lang` when it was made from this exact question. Otherwise the server starts the runner's own `translate.mjs` in the background: one `claude -p` sonnet call, for every project, not only those with `release.question_lang: vi`. The call is cached on the question the same way the dialog caches it, so neither one asks twice. `CONSOLE_TRANSLATE=off` turns this off.
+  - **Agent hỏi**: every question a Claude agent asks in an Orca terminal, in any
+    project (a slice plan to confirm, a boot session's choices), from `tools/agent-questions`. Its
+    hook records an AskUserQuestion dialog (each question, its options with descriptions and previews)
+    and a turn that ends on a question, plus the images the text names (absolute, `~/` or relative to
+    the agent's cwd), shown as thumbnails.
+    - **Gửi cho agent** types the answer into the agent's own terminal. A dialog is closed with a raw
+      Esc first; the picks then go in as one chat message, typed raw with a separate Enter, because
+      Orca keeps the pane marked blocked after the Esc.
+    - **Trả lời nhanh**: one-click replies. A click opens the reply in the confirm box, where you
+      can edit it before it is sent.
+      - A plain question first gets rule replies (`quickReplies` in tools/agent-questions: the
+        action it names such as commit/push/merge/deploy, a listed option, a short "A hay B" side,
+        yes/no). Then 2–4 replies from one `claude -p` haiku call over the message's end, made in the
+        background and cached in `run/director-console-vi/suggest-<id>.json` ("gợi ý theo ngữ cảnh").
+        `CONSOLE_SUGGEST=off` keeps the rule replies only.
+      - A dialog gets "Gửi lựa chọn đề xuất" when every question has an option marked
+        Recommended/đề xuất, and one button per option when it is a single single-choice question.
+    - **Mở terminal** shows the terminal in Orca, so you can answer in the chat yourself. Whichever
+      side answers first closes the card: the chat's next prompt (UserPromptSubmit) or the dialog's
+      own answer (PostToolUse) does it.
+    - **Bỏ qua** closes the card with a note; the agent is not told.
+    - A card whose terminal Orca no longer lists is dropped. The runner's own lanes (`CC_ROLE`
+      worker/reviewer/…) count only for their dialogs: the runner watches their idle turns itself.
 - **Dự án**: a project's level map (pick a slice to see its merge-journal timeline, memory and
   deferred checks), the runner control deck and live Orca terminals.
+  - **Slice đang chạy** (else **Slice gần nhất**): the runner's slice and every phase-2 lane. Each
+    shows its phase, lane (main or worktree), HANDOFF, the review verdict (the last verdict line of
+    review.md), static result, rounds, its writer/reviewer terminals, the runner log's last 8 lines and
+    the 6 newest images in its evidence (the lane's worktree first). A click opens an image full size.
+    Images come through `/img?p=<abs>&t=<token>`: image files under $HOME or a temp dir, ≤ 25 MB.
+- **Game mới** (`#boot`): starts a game the way the director does it in orca-global. The form takes an
+  idea, an App Store link or a Figma link, the usual options (template, brief, goal, deploy,
+  implement agent, orca-memory + playbook) and reference images (picked or pasted, ≤ 10 × 12 MB).
+  It shows the one-line prompt live. **Boot** runs `tools/boot-idea/boot-idea.mjs`: one
+  `claude --dangerously-skip-permissions` terminal in `~/orca-global`, then `/new-cocos-game`,
+  `/store-game-clone` or `/figma-game-clone` with the options once the TUI is idle. The images go to
+  `~/orca-global/misc/boot-inbox/<stamp>-<slug>/` and are named in the prompt. The last boots are
+  listed under the form (`logs/boot-idea.jsonl`). The session's own questions come to Nhiệm vụ.
 - **Preview**: every open Cocos Creator 3.x editor (main or an Orca worktree) and its live preview
   in a 390×844 phone frame, with Dọc / Ngang. It is live only while the editor runs and
   `http://127.0.0.1:<port>/` answers with the Creator preview page. The port is found once per
@@ -76,6 +113,8 @@ so the page CSP can forbid it.
 - **Memory / Pilot / Playbook / Scorecard / Nhật ký**: modes as segmented controls, archive
   bars, a record explorer and drawer (promote/retract), stacked verdict columns with a table view,
   and recipe cards with filters plus a rendered recipe drawer.
+
+The top bar keeps every tab in sight: when the labelled tabs do not fit, only the open tab keeps its label and the others show their icon (with the name as a tooltip).
 
 Search everything with ⌘K or `/`. The theme follows the OS, or the toggle in the top bar.
 

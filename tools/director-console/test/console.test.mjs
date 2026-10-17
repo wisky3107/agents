@@ -13,8 +13,10 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SERVER = path.join(HERE, '..', 'server.mjs');
 // the runner lib of this checkout (a worktree tests its own change)
 const REAL_RUNNER_LIB = fileURLToPath(new URL('../../../skills/game-producer/scripts/lib', import.meta.url));
+const REAL_AGENT_QUESTIONS = fileURLToPath(new URL('../../agent-questions', import.meta.url));
 const TOKEN = 'test-token-123';
 let root, home, repo, srv, port, logs;
+const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
 
 const call = (method, p, { token = TOKEN, host, body, type = 'application/json', headers = {} } = {}) => new Promise((resolve, reject) => {
   const data = body === undefined ? null : typeof body === 'string' ? body : JSON.stringify(body);
@@ -64,7 +66,7 @@ before(async () => {
   fs.writeFileSync(orca, '#!/bin/sh\necho \'{"result":{"terminals":[]}}\'\n', { mode: 0o755 });
   // stands in for `claude -p` in the runner's translate.mjs: one Vietnamese entry per option
   const translator = path.join(root, 'translate');
-  fs.writeFileSync(translator, `#!${process.execPath}\nlet s = '';\nprocess.stdin.on('data', (c) => (s += c)).on('end', () => {\n  if (s.includes('Return JSON { rows }')) { const m = Number(s.match(/exactly (\\d+) entries/)[1]); console.log(JSON.stringify({ structured_output: { rows: Array.from({ length: m }, (_, i) => ({ n: i + 1, claim: 'Bài học ' + (i + 1), evidence: 'Bằng chứng ' + (i + 1) })) } })); return; }\n  const n = Number(s.match(/exactly (\\d+) entries/)[1]);\n  console.log(JSON.stringify({ structured_output: { summary: 'Cổng: chọn một hướng', why: 'Đây là quyết định phạm vi', options: Array.from({ length: n }, (_, i) => ({ n: i + 1, text: 'Lựa chọn ' + (i + 1) + ' đầy đủ', label: 'Lựa chọn ' + (i + 1) })) } }));\n});\n`, { mode: 0o755 });
+  fs.writeFileSync(translator, `#!${process.execPath}\nlet s = '';\nprocess.stdin.on('data', (c) => (s += c)).on('end', () => {\n  if (s.includes('--- AGENT MESSAGE')) { console.log(JSON.stringify({ structured_output: { replies: [{ label: 'Commit đi', text: 'Commit đi, rồi push.' }, { label: 'Chưa', text: 'Chưa commit.' }] } })); return; }\n  if (s.includes('Return JSON { rows }')) { const m = Number(s.match(/exactly (\\d+) entries/)[1]); console.log(JSON.stringify({ structured_output: { rows: Array.from({ length: m }, (_, i) => ({ n: i + 1, claim: 'Bài học ' + (i + 1), evidence: 'Bằng chứng ' + (i + 1) })) } })); return; }\n  const n = Number(s.match(/exactly (\\d+) entries/)[1]);\n  console.log(JSON.stringify({ structured_output: { summary: 'Cổng: chọn một hướng', why: 'Đây là quyết định phạm vi', options: Array.from({ length: n }, (_, i) => ({ n: i + 1, text: 'Lựa chọn ' + (i + 1) + ' đầy đủ', label: 'Lựa chọn ' + (i + 1) })) } }));\n});\n`, { mode: 0o755 });
   const playbook = path.join(root, 'playbook');
   fs.mkdirSync(path.join(playbook, 'recipes'), { recursive: true });
   fs.writeFileSync(path.join(playbook, 'registry.json'), JSON.stringify({ recipes: [{ id: 'r1', status: 'candidate', path: 'recipes/r1.md', summary: 'one recipe' }] }));
@@ -72,8 +74,19 @@ before(async () => {
   fs.writeFileSync(path.join(root, 'secret.md'), 'outside');
   // res-guard: no watcher state until the resources test writes one; a fake CLI records its argv
   fs.writeFileSync(path.join(root, 'res-guard.mjs'), `import fs from 'node:fs';\nfs.appendFileSync(${JSON.stringify(path.join(root, 'rg-argv.jsonl'))}, JSON.stringify(process.argv.slice(2)) + '\\n');\nconsole.log('closed');\n`);
+  // boot-idea stand-in: records its argv and the staged images it was given
+  fs.writeFileSync(path.join(root, 'boot-idea.mjs'), `import fs from 'node:fs';\nconst a = process.argv.slice(2);\nconst d = a[a.indexOf('--images-dir') + 1];\nfs.appendFileSync(${JSON.stringify(path.join(root, 'boot-argv.jsonl'))}, JSON.stringify({ argv: a, staged: a.includes('--images-dir') ? fs.readdirSync(d) : [] }) + '\\n');\nconsole.log(JSON.stringify({ ok: true, handle: 'term_b', prompt: 'p' }));\n`);
+  // the running slice: its state, a review verdict, runner log lines and two evidence images
+  const s01 = path.join(repo, '.cursor', 'evidence', 'tasks', 'T-S01');
+  fs.writeFileSync(path.join(s01, 'producer-state.json'), JSON.stringify({ phase: 'review', lane: 'single', writer: 'term_w', reviewer: 'term_r', selected_at: '2026-10-07T00:00:00Z' }));
+  fs.writeFileSync(path.join(s01, 'producer-log.md'), 'a\nb\nrunner: reviewer spawned\n');
+  fs.writeFileSync(path.join(s01, 'evidence', 'review.md'), '# Review\nThe blocked state is reported, not worked around.\n\n## Verdict\nAPPROVED\n');
+  fs.mkdirSync(path.join(s01, 'evidence', 'shots'));
+  fs.writeFileSync(path.join(s01, 'evidence', 'shots', 'old.png'), PNG);
+  fs.utimesSync(path.join(s01, 'evidence', 'shots', 'old.png'), new Date('2026-10-01'), new Date('2026-10-01'));
+  fs.writeFileSync(path.join(s01, 'evidence', 'preview.png'), PNG);
   port = 17000 + Math.floor(Math.random() * 2000);
-  srv = spawn(process.execPath, [SERVER], { env: { ...process.env, ORCA_MEMORY_HOME: home, CONSOLE_PORT: String(port), CONSOLE_TOKEN: TOKEN, CONSOLE_GAMES_ROOT: games, CONSOLE_RUNNER_DIR: runnerDir, CONSOLE_ORCA_BIN: orca, CONSOLE_PLAYBOOK: playbook, CONSOLE_LOG_DIR: logs, CONSOLE_RES_GUARD_HOME: path.join(root, 'rg'), CONSOLE_RES_GUARD_CLI: path.join(root, 'res-guard.mjs'), PRODUCER_RUNNER_TRANSLATE_CMD: translator, CC_SPAWN_REGISTRY: path.join(root, 'spawns.jsonl'), CONSOLE_VI_CACHE: path.join(root, 'vi-cache'), CONSOLE_TAILNET_HOST: 'mac.tail0.ts.net', CONSOLE_TAILNET_USERS: 'me@example.com', CONSOLE_WORKSPACES: path.join(root, 'ws'), CONSOLE_OMNIROUTE_HOME: path.join(root, 'omr'), CONSOLE_OMNIROUTE_URL: `http://127.0.0.1:${port + 1}`, CONSOLE_OMNIROUTE_TOKEN: 'tok-1', CONSOLE_AGY_ROTATE_STATE: path.join(root, 'agy-rotate-state.json') }, stdio: ['ignore', 'pipe', 'inherit'] });
+  srv = spawn(process.execPath, [SERVER], { env: { ...process.env, ORCA_MEMORY_HOME: home, CONSOLE_PORT: String(port), CONSOLE_TOKEN: TOKEN, CONSOLE_GAMES_ROOT: games, CONSOLE_RUNNER_DIR: runnerDir, CONSOLE_ORCA_BIN: orca, CONSOLE_PLAYBOOK: playbook, CONSOLE_LOG_DIR: logs, CONSOLE_RES_GUARD_HOME: path.join(root, 'rg'), CONSOLE_RES_GUARD_CLI: path.join(root, 'res-guard.mjs'), PRODUCER_RUNNER_TRANSLATE_CMD: translator, CC_SPAWN_REGISTRY: path.join(root, 'spawns.jsonl'), CONSOLE_VI_CACHE: path.join(root, 'vi-cache'), CONSOLE_TAILNET_HOST: 'mac.tail0.ts.net', CONSOLE_TAILNET_USERS: 'me@example.com', CONSOLE_WORKSPACES: path.join(root, 'ws'), CONSOLE_OMNIROUTE_HOME: path.join(root, 'omr'), CONSOLE_OMNIROUTE_URL: `http://127.0.0.1:${port + 1}`, CONSOLE_OMNIROUTE_TOKEN: 'tok-1', CONSOLE_AGY_ROTATE_STATE: path.join(root, 'agy-rotate-state.json'), CONSOLE_AGENT_QUESTIONS: REAL_AGENT_QUESTIONS, AGENT_QUESTIONS_HOME: path.join(root, 'aq'), AGENT_QUESTIONS_LOG: path.join(root, 'aq.jsonl'), AGENT_QUESTIONS_ORCA: orca, CONSOLE_BOOT_IDEA_CLI: path.join(root, 'boot-idea.mjs'), CONSOLE_UPLOADS: path.join(root, 'uploads') }, stdio: ['ignore', 'pipe', 'inherit'] });
   await new Promise((resolve) => srv.stdout.once('data', resolve));
 });
 
@@ -410,4 +423,88 @@ test('projects: open questions first, then a live runner, then the latest activi
     p('cc-b'),
   ];
   assert.deepEqual(list.sort(projectOrder).map((x) => x.id), ['cc-ask', 'cc-live', 'cc-new', 'cc-old', 'cc-a', 'cc-b']);
+});
+
+test('agent questions: an open one from the store is a quest and an attention row; agent.answer runs its CLI, which closes it', async () => {
+  const q = { id: 'aq1', session_id: 'sess1', kind: 'ask', status: 'open', handle: 'term_x', project: 'cc-a', asked_at: '2026-10-07T01:00:00Z', cwd: repo,
+    questions: [{ header: 'Slices', question: 'Chia mấy slice?', multiSelect: false, options: [{ label: '3', description: null, preview: null }, { label: '4', description: null, preview: null }] }], images: [] };
+  fs.mkdirSync(path.join(root, 'aq'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'aq', 'sess1--aq1.json'), JSON.stringify(q));
+  const ov = (await call('GET', '/api/overview')).json;
+  assert.deepEqual(ov.pending.agent_questions.map((x) => [x.id, x.questions[0].question]), [['aq1', 'Chia mấy slice?']]);
+  assert.ok(ov.attention.some((a) => a.key === 'agent:aq1' && a.kind === 'agent' && a.quest === 'agent'));
+  assert.equal((await call('POST', '/api/action/agent.answer', { body: { id: 'aq1', picks: [{ n: 1, label: '5' }] } })).json.ok, false, 'not an option');
+  const r = await call('POST', '/api/action/agent.answer', { body: { id: 'aq1', picks: [{ n: 1, label: '3' }], text: 'giữ nhỏ' } });
+  assert.equal(r.json.ok, true, JSON.stringify(r.json));
+  assert.match(r.json.out.message, /\(1\) Slices: 3 · Ghi chú: giữ nhỏ/);
+  assert.deepEqual((await call('GET', '/api/pending')).json.agent_questions, []);
+});
+
+test('project: the running slice with its phase, verdict, log tail and newest evidence images; /img serves only images, with the token', async () => {
+  const d = (await call('GET', '/api/project?id=cc-a')).json;
+  const [n] = d.now;
+  assert.deepEqual([n.slice, n.live, n.phase, n.in_main, n.review.verdict, n.writer.handle], ['S01', true, 'review', true, 'APPROVED', 'term_w']);
+  assert.deepEqual(n.log.slice(-1), ['runner: reviewer spawned']);
+  assert.deepEqual(n.images.map((i) => i.name), ['preview.png', path.join('shots', 'old.png')]);
+  const img = `/img?p=${encodeURIComponent(n.images[0].path)}`;
+  assert.equal((await call('GET', img, { token: null })).status, 401);
+  const ok = await new Promise((resolve) => http.get({ host: '127.0.0.1', port, path: `${img}&t=${TOKEN}`, headers: { host: `127.0.0.1:${port}` } }, (res) => { res.resume(); resolve([res.statusCode, res.headers['content-type']]); }));
+  assert.deepEqual(ok, [200, 'image/png']);
+  assert.equal((await call('GET', `/img?p=${encodeURIComponent(path.join(root, 'secret.md'))}&t=${TOKEN}`, { token: null })).status, 400);
+  assert.equal((await call('GET', `/img?p=${encodeURIComponent('/etc/x.png')}&t=${TOKEN}`, { token: null })).status, 403);
+});
+
+test('boot.idea: the page\'s images are staged as real image bytes and handed to boot-idea with the options', async () => {
+  const data = `data:image/png;base64,${PNG.toString('base64')}`;
+  const r = await call('POST', '/api/action/boot.idea', { body: { source: 'idea', text: 'một game xếp hình', slug: 'cc-x', template: 'cc4', memory: 'on', images: [{ name: 'ref one.png', data }] } });
+  assert.equal(r.json.ok, true, JSON.stringify(r.json));
+  const row = JSON.parse(fs.readFileSync(path.join(root, 'boot-argv.jsonl'), 'utf8').trim().split('\n').at(-1));
+  assert.deepEqual(row.argv.slice(0, 4), ['--source', 'idea', '--text', 'một game xếp hình']);
+  assert.ok(row.argv.includes('--template') && row.argv.includes('cc4'));
+  assert.deepEqual(row.staged, ['01-ref_one.png']);
+  const bad = await call('POST', '/api/action/boot.idea', { body: { source: 'idea', text: 'x', images: [{ name: 'evil.png', data: Buffer.from('#!/bin/sh').toString('base64') }] } });
+  assert.equal(bad.status, 400);
+  const log = fs.readFileSync(path.join(logs, 'director-console.jsonl'), 'utf8');
+  assert.ok(!log.includes(PNG.toString('base64')), 'image bytes stay out of the action log');
+});
+
+test('agent questions: a plain question gets rule quick replies at once, then the model\'s, cached', async () => {
+  const q = { id: 'aq2', session_id: 'sess2', kind: 'stop', status: 'open', handle: 'term_y', project: 'cc-a', asked_at: '2026-10-07T02:00:00Z', cwd: repo,
+    text: 'Xong S01, test pass.\n\nBạn có muốn mình commit không?', images: [] };
+  fs.writeFileSync(path.join(root, 'aq', 'sess2--aq2.json'), JSON.stringify(q));
+  let x = (await call('GET', '/api/pending')).json.agent_questions.find((a) => a.id === 'aq2');
+  assert.deepEqual([x.quick.state, x.quick.source, x.quick.replies.map((r) => r.label)], ['pending', 'rules', ['Commit đi', 'Chưa, để sau']]);
+  for (let i = 0; i < 50 && x.quick.source !== 'llm'; i++) {
+    await new Promise((r) => setTimeout(r, 100));
+    x = (await call('GET', '/api/pending')).json.agent_questions.find((a) => a.id === 'aq2');
+  }
+  assert.deepEqual([x.quick.state, x.quick.replies.map((r) => r.text)], ['ok', ['Commit đi, rồi push.', 'Chưa commit.']]);
+  assert.ok(fs.existsSync(path.join(root, 'vi-cache', 'suggest-aq2.json')));
+  fs.rmSync(path.join(root, 'aq', 'sess2--aq2.json'));
+});
+
+test('triage: rows from one file are one card with what each row says; a dismissed archive row is not shown', async () => {
+  const src = 'cc-a:.cursor/evidence/tasks/T-S42/evidence/learning-candidates.json';
+  const latest = path.join(home, 'reports', 'refresh-latest.json');
+  const archived = path.join(home, 'archive', 'triage.json');
+  fs.mkdirSync(path.dirname(archived), { recursive: true });
+  // capytal S42 (2026-10-17): four {type, text} rows → four identical cards
+  fs.writeFileSync(latest, JSON.stringify({ at: new Date().toISOString(), ok: true, failed_step: null,
+    triage_open: [0, 1, 2, 3].map(() => ({ source: src, reason: 'no id or claim field' })).concat([{ source: 'cc-a:lessons.jsonl#L3', reason: 'bad row' }]) }));
+  fs.writeFileSync(archived, JSON.stringify([
+    { source: 'cc-a:old.json', reason: 'no id or claim field', raw: { note: 'old' }, resolution: 'dismissed: no id' },
+    ...['port 7457', 'auto_period', 'level 59', 'CLAIM panel'].map((text) => ({ source: src, reason: 'no id or claim field', raw: { type: 'pitfall', text } })),
+    { source: 'cc-a:lessons.jsonl#L3', reason: 'bad row', raw: null },
+  ]));
+  try {
+    const t = (await call('GET', '/api/pending')).json.triage;
+    assert.deepEqual(t.map((g) => [g.source, g.count, g.reason]), [[src, 4, 'no id or claim field'], ['cc-a:lessons.jsonl#L3', 1, 'bad row']]);
+    assert.deepEqual(t[0].items, ['port 7457', 'auto_period', 'level 59', 'CLAIM panel'].map((text) => ({ keys: ['type', 'text'], text })));
+    assert.deepEqual(t[1].items, [{ keys: [], text: null }]);
+    const rows = (await call('GET', '/api/attention')).json.items.filter((x) => x.kind === 'triage');
+    assert.deepEqual(rows.map((x) => [x.key, x.title]), [[`triage:${src}`, 'Memory triage: 4 dòng cùng một file cần xem'], ['triage:cc-a:lessons.jsonl#L3', 'Memory triage: một dòng cần xem']]);
+  } finally {
+    fs.rmSync(latest);
+    fs.rmSync(archived);
+  }
 });

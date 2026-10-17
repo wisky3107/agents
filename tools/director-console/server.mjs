@@ -59,13 +59,13 @@ const send = (res, status, body, type = 'application/json; charset=utf-8') => {
   res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 };
 
-function readBody(req) {
+function readBody(req, limit = 1_000_000) {
   return new Promise((resolve, reject) => {
     let n = 0;
     const chunks = [];
     req.on('data', (c) => {
       n += c.length;
-      if (n > 1_000_000) reject(Object.assign(new Error('body too large'), { status: 413 }));
+      if (n > limit) reject(Object.assign(new Error('body too large'), { status: 413 }));
       else chunks.push(c);
     });
     req.on('end', () => {
@@ -95,7 +95,11 @@ const GET = {
   '/api/resources': () => lib.resources(),
   '/api/previews': () => lib.previews(),
   '/api/quota': (q) => lib.quota({ force: q.get('force') === '1' }),
+  '/api/boots': () => ({ boots: lib.boots() }),
 };
+const IMG_TYPE = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
+// a boot carries its reference images inline (base64): up to 10 × 12 MB
+const BODY_LIMIT = { 'boot.idea': 170_000_000 };
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -113,14 +117,20 @@ const server = http.createServer(async (req, res) => {
       if (!tokenOk) return send(res, 401, { error: 'token' });
       return fs.existsSync(SCORECARD) ? send(res, 200, fs.readFileSync(SCORECARD), 'text/html; charset=utf-8') : send(res, 404, 'no scorecard dashboard yet', 'text/plain');
     }
+    // an <img> cannot send the header: the token comes in the query, like /scorecard
+    if (url.pathname === '/img') {
+      if (!tokenOk) return send(res, 401, { error: 'token' });
+      const file = lib.imageFile(url.searchParams.get('p'));
+      return send(res, 200, fs.readFileSync(file), IMG_TYPE[path.extname(file).slice(1).toLowerCase()]);
+    }
     if (!url.pathname.startsWith('/api/')) return send(res, 404, { error: 'not found' });
     if (req.headers['x-console-token'] !== TOKEN) return send(res, 401, { error: 'token' });
     if (req.method === 'GET' && GET[url.pathname]) return send(res, 200, await GET[url.pathname](url.searchParams));
     const m = url.pathname.match(/^\/api\/action\/([a-z.]+)$/);
     if (req.method === 'POST' && m) {
       if (!(req.headers['content-type'] ?? '').startsWith('application/json')) return send(res, 415, { error: 'json only' });
-      const body = await readBody(req);
-      return send(res, 200, lib.runAction(m[1], body));
+      const body = await readBody(req, BODY_LIMIT[m[1]]);
+      return send(res, 200, await lib.runAction(m[1], body));
     }
     return send(res, 404, { error: 'not found' });
   } catch (e) {
