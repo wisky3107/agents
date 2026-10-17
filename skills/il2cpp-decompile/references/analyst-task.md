@@ -26,6 +26,8 @@ Procedure: climb the ladder from rung 1 and stop at the rung that answers.
 2. Declarations (rung 3), then bodies (rung 4). Resolve every field offset against the
    declaration, every virtual call with vcall.py, every enum constant with its .cs values.
    Follow callers to the trigger: a Unity message, an input handler or a level item.
+   An unnamed virtual call reaches Open questions only after vcall.py on its static type
+   failed to name it; record the vcall.py output there.
 3. Pair the flow with the serialized numbers the code reads (rung 1).
 
 Write <TOPIC>.md: Architecture; reconstructed C# for the key methods; trigger table; tuned
