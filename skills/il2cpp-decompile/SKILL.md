@@ -86,6 +86,36 @@ The pipeline also records `source_paths.decompiled` and `code_recovery` in
    trigger table, tuned values, and a confidence section separating OBSERVED from INFERRED.
    Done when every claim cites a `.c`/`.cs`/rip path and every inferred rule says why.
 
+## Delegation: the user names a model
+
+"Use Sonnet to understand this logic from the rip", "dùng codex tìm hiểu …": the session that
+got the request is the **coordinator**; the named model is the **analyst** and runs the
+Answer branch. The coordinator never hands over preparation or review.
+
+1. Resolve the workdir (an unity-apk-rip workdir: `output/manifest.json`, `ripped/`) and the
+   question. Ask when the game or the system is ambiguous; "this logic" with no context is
+   ambiguous. Done when both are named.
+2. Prepare: Decompile branch if `decompiled/` is missing; `helpers.tsv` and `vtable_base`
+   present (steps 3–4 there). Done when `decompiled/manifest.json` has `vtable_base`.
+3. Fill [references/analyst-task.md](references/analyst-task.md) and save it as
+   `decompiled/analysis/<topic>.task.md`.
+4. Launch the analyst with "Read <task path> and execute only that task.":
+   - Claude models (sonnet, opus, haiku) from Claude Code: a subagent with that model override.
+   - Any other spec (Cursor, Codex, Gemini), or the user wants it visible: build the command with
+     `node ~/.agents/skills/new-cocos-game/scripts/bootstrap.mjs agent-cmd --agent '<spec>'`,
+     open an Orca terminal in the workdir with that command and send the prompt, following
+     `~/.agents/skills/orca-cli/SKILL.md`. Not `bootstrap.mjs agent-session`: it writes Cocos
+     MCP configs into its target.
+
+   A model the provider rejects is reported, never swapped for another. Done when the analyst
+   returns the report path.
+5. Review: re-read two claims against their cited files, one pseudo-C flow (field offsets
+   against the declaration, virtual calls with `vcall.py`) and one serialized number. Fix a wrong
+   claim, or send the exact gap back to the same analyst once. Append `## Review` to the report
+   (checked claims, result, reviewer). Done when the section exists.
+6. Answer the user from the reviewed report: short answer, report path, open questions, and
+   which model analysed and which reviewed.
+
 ## Guardrails
 
 - Analyze only builds the user supplied; never download APKs.
