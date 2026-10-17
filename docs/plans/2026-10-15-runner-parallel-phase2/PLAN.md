@@ -128,7 +128,18 @@ Chia nhỏ, mỗi bước merge riêng, `max_parallel=1` giữ nguyên hành vi 
   được ngay trong cùng lượt (`pairPartner`: nextLanes khi coi lane này in_progress, không đỗ câu hỏi, không vướng
   preflight) cũng vào worktree — main trống, không merge nào phải chờ main. Lane thật sự chạy một mình vẫn ở main
   (không tốn worktree + verify). Lane đã chạy ở main từ chế độ một lane (lane_in_main) giữ main; M5d vẫn áp dụng.
-- **Còn lại (M5e):** chạy thật với một cặp có director theo dõi; pilot 24 không còn cặp độc lập (S22 phụ thuộc mọi slice).
+- **M5e xong (capytal, pilot 24, 2026-10-16 → 17):** bốn cặp chạy thật trên runner hai lane: S36 main + S37 worktree,
+  S38 main + S39 worktree, S40 main + S41 worktree, S42 + S43 cả hai worktree; S44 (fleet-script) và S22 chạy một mình;
+  cả release (S22) merge. Số liệu: dựng worktree + Creator thứ hai ~1,5 phút (23 s khi lane kia không đang chờ); RAM tối
+  đa 2 editor, availPct thấp nhất 33%; M5d chạy đúng (S39 chờ S38 ở main 92 phút — S38 lặp vòng sửa). Phát hiện và sửa
+  trong lúc chạy: `status` báo stuck giả (c26978d), nhường lượt sau spawn (9099391), câu hỏi director thay vòng sửa
+  (d6bf149, chạy thật ở S22 q43), smoke flaky chọn lần ít đỏ + chạy lại trang mới (dbe052b), log chờ merge (4f2c573),
+  smoke mọi agent trên chrome (89af1aa; Orca ~19-20 đỏ giả, chrome 7 đã biết; verify 36 → 14 phút), đặt chỗ theo cặp
+  (4e02173), cổng preview từ `url` + SKIP→WARN (32d96e7), verifier dùng run-args (69f9ed1), lane đã merge verify ở main
+  + res-guard giữ main khi lane merge (8c6031f, sau khi res-guard đóng Creator main giữa verify S43).
+- **Chưa kiểm trên máy thật:** đặt chỗ theo cặp (không còn cặp nào bắt đầu sau lần restart), log "still waiting".
+- **Đề xuất còn mở:** E2 — run-smoke dò tab ẩn / rAF trước mỗi check (agent-skills + template); `assets/.meta` (meta
+  thư mục Creator tự sinh) không làm worktree "dirty"; đồng bộ `--channel chrome` sang rule của template / agent-skills.
 - Lỗi nhỏ thấy khi làm M5c: `cancel` gửi `current_slice: ''` cho `writeRelease` (khoá đúng là `currentSlice`) nên
   không xoá `current_slice` — vô hại (lần chọn sau ghi đè).
 
