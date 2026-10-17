@@ -11,6 +11,9 @@ Read <ABSOLUTE_PORT_CONTRACT_PATH> fully, then this source list:
 Inventory: <ABSOLUTE_RIP_INVENTORY_PATH> — summary: <INVENTORY_COUNTS_CODE_AVAILABILITY_FLOOR_METADATA_FAILURE>.
 Analysis root = UnityProject/ExportedProject (scripts, serialized .asset, prefabs, scenes, anim,
 audio, fonts, textures). PrimaryContent = GLB lookup only. output/ = SEED only. Never analyze ripped/.
+decompiled/ (when a source lists it) = IL2CPP pseudo-C bodies + declarations; climb the evidence
+ladder in ~/.agents/skills/il2cpp-decompile/SKILL.md and read pseudo-C with its lookup.py,
+vcall.py and references/reading-pseudo-c.md.
 Director's target and investigation scope: <REQUEST_AND_SUBSYSTEM_SCOPE>.
 Analysis depth: <full|lightweight> (record as analysisDepth). For lightweight, follow the
 "Analysis depth" section of ~/.agents/skills/rip-port-analysis/SKILL.md: structure, asset map
@@ -23,7 +26,8 @@ Source trees, AGENT_NOTES, root game contracts and runtime assets are read-only 
 Read the inventory first; it defines what exists. Inspect method bodies before claiming code
 recovery; codeAvailability and the coverage floor must match the inventory. With stubs, use
 game-assembly declarations (types, enums, fields) as INFERRED structure and serialized
-MonoBehaviour values as OBSERVED data. If metadataFailure, quote assetripper.log in codeRecovery.
+MonoBehaviour values as OBSERVED data; with decompiled pseudo-C, trace bodies there
+(tree: decompiled, kind code) and pair them with the serialized values they read. If metadataFailure, quote assetripper.log in codeRecovery.
 Trace core input, move resolution, state/reset, win/lose, config/level readers, serialized
 parameters, prefab/scene wiring and art references. Catalog/brief prose is a research seed.
 Each substantive conclusion uses RP IDs, OBSERVED/INFERRED/UNKNOWN/PORT_DECISION/SEED labels,

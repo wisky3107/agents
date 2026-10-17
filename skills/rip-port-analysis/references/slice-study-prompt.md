@@ -10,7 +10,7 @@ Read fully: <ABSOLUTE_PORT_CONTRACT_PATH> § Slice studies, the Unity → Cocos 
 file, and <SLICE_FILE>. From the parent analysis read RIP_ASSET_MAP.md (owning files) and
 RIP_PORT_GAPS.md; open other reports only to answer a named question.
 Parent analysis: <ANALYSIS_DIR>/RIP_PORT_MANIFEST.json, SHA-256 <PARENT_HASH>.
-Sources (read-only): <SOURCE_IDS_AND_ROOTS>.
+Sources (read-only): <SOURCE_IDS_AND_ROOTS>; decompiled: <DECOMPILED or "none">.
 Topics (<slice | derived>):
 <TOPICS_YAML>
 Write only: <STUDY_DIR> — SLICE_STUDY_MANIFEST.json, RIP_SLICE_STUDY.md, extracts/.
@@ -28,8 +28,11 @@ Per topic:
 4. Answer every question with claims: serialized values with their units, label, disposition
    (adopt | adapt | reference | exclude), Cocos target from the table, deviation for adapt.
    Cite parent E/RP IDs where they apply (`refines`).
-5. No data is an answer: noFields MonoBehaviours, missing references, stub behavior and
-   runtime-driven values are UNKNOWN with a verification step (a store or gameplay video measured
+5. Stub behavior (trigger, timing, selection logic) is read from the source's decompiled
+   pseudo-C when it has one: `python3 -I ~/.agents/skills/il2cpp-decompile/scripts/lookup.py
+   <DECOMPILED> <Class> [<Method>] [--callers]`; cite it as tree decompiled, kind code.
+6. No data is an answer: noFields MonoBehaviours, missing references, stub behavior without
+   pseudo-C and runtime-driven values are UNKNOWN with a verification step (a store or gameplay video measured
    with the gameplay-video skill, or the director).
    Never fill them with Unity or Cocos defaults.
 Read extracts, not raw YAML; open the raw file only to confirm a single value. Stay inside the

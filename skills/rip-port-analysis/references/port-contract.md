@@ -14,8 +14,10 @@ Tree roles are fixed. `root` (AGENT_NOTES `unity_project`) is `UnityProject/Expo
 the only tree with scripts, serialized `.asset` data, prefabs, scenes, animation, TextAssets,
 audio, fonts and textures. `primaryContent` is `ripped/PrimaryContent`, used only to look up
 GLB conversions by stem (it has no `.cs`/`.asset`; its extra PNG/TTF are Unity built-ins).
-`output` is the unity-apk-rip pack and is SEED only. `scripts/inventory-rip.mjs` resolves
-all three from `output/manifest.json` `source_paths` and records them in `RIP_INVENTORY.json`.
+`output` is the unity-apk-rip pack and is SEED only. `decompiled` is the `il2cpp-decompile`
+output for an IL2CPP source: `pseudo_c/` bodies (evidence kind `code`) and `cpp2il_cs/`
+declarations (kind `metadata`). `scripts/inventory-rip.mjs` resolves all four from
+`output/manifest.json` `source_paths` and records them in `RIP_INVENTORY.json`.
 
 Assign stable source IDs, one per supplied version/project. `root` is an existing absolute
 directory: the ExportedProject for Unity-backed sources. When output and Unity trees are in
@@ -25,8 +27,10 @@ the same version. A root is an allowed read source, never a write target.
 
 The source list in AGENT_NOTES is input state owned by the caller/coordinator. Analyst records
 the same IDs and roots in the manifest, adding `codeAvailability`: `readable`, `stubs`, `none`,
-or `mixed`; it must equal the inventory's value (Dummy-class share). IL2CPP/Mono is recorded
-separately; backend alone never proves code recovery. When the inventory reports
+or `mixed`; it must equal the inventory's value (member bodies of the Unity tree: Dummy or
+emptied bodies are stubs). IL2CPP/Mono is recorded separately; backend alone never proves code
+recovery. Recovered IL2CPP bodies are recorded as the source's `decompiled` path, never by
+changing `codeAvailability`. When the inventory reports
 `metadataFailure`, `codeRecovery` states the cause from `assetripper.log` and the recovery path. Read source hashes before reusing a previous report.
 
 For multiple packs, stage canonical output at `reference/<slug>/rip/` and alternatives at
@@ -51,14 +55,15 @@ replace sample values with inspected evidence and actual hashes.
   "analystAgent": "cursor --model auto",
   "logicCoverage": "partial",
   "analysisDepth": "lightweight",
-  "sources": [{"id": "main", "root": "/abs/workdir/ripped/UnityProject/ExportedProject", "primaryContent": "/abs/workdir/ripped/PrimaryContent", "output": "/abs/workdir/output", "version": "unknown", "codeAvailability": "stubs"}],
+  "sources": [{"id": "main", "root": "/abs/workdir/ripped/UnityProject/ExportedProject", "primaryContent": "/abs/workdir/ripped/PrimaryContent", "output": "/abs/workdir/output", "decompiled": "/abs/workdir/decompiled", "version": "unknown", "codeAvailability": "stubs"}],
   "inventory": {"path": "RIP_INVENTORY.json", "sha256": "hash of RIP_INVENTORY.json"},
   "codeRecovery": "Cpp2IL: invalid global-metadata.dat magic → Unknown backend; needs decrypted metadata + Il2CppDumper",
   "evidence": [
     {"id": "E-001", "source": "main", "path": "Assets/Scripts/Game/Board.cs", "sha256": "64 lowercase hex characters", "kind": "code", "symbol": "Board"},
     {"id": "E-002", "source": "main", "path": "Assets/Data/BoardConfig.asset", "sha256": "…", "kind": "data", "symbol": "tiles"},
     {"id": "E-003", "source": "main", "tree": "primaryContent", "path": "Assets/Mesh/Token.glb", "sha256": "…", "kind": "asset"},
-    {"id": "E-004", "source": "main", "tree": "output", "path": "levels/level_001.json", "sha256": "…", "kind": "seed"}
+    {"id": "E-004", "source": "main", "tree": "output", "path": "levels/level_001.json", "sha256": "…", "kind": "seed"},
+    {"id": "E-005", "source": "main", "tree": "decompiled", "path": "pseudo_c/Assembly-CSharp/Board.c", "sha256": "…", "kind": "code", "symbol": "Board__Won @RVA 0x1000"}
   ],
   "claims": [{"id": "RP-001", "label": "OBSERVED", "summary": "Board has 40 tiles (serialized)", "evidence": ["E-002"]}],
   "inventoryCoverage": [
@@ -72,7 +77,9 @@ replace sample values with inspected evidence and actual hashes.
 ```
 
 Evidence `path` is relative to the source tree named by `tree`: default `root`
-(ExportedProject), `primaryContent` (kind `asset` only) or `output` (kind `seed` only).
+(ExportedProject), `primaryContent` (kind `asset` only), `output` (kind `seed` only) or
+`decompiled` (kind `code` for `pseudo_c/`, `metadata` for `cpp2il_cs/`; needs the source's
+`decompiled` path).
 `inventoryCoverage` disposes of every nonzero category in `RIP_INVENTORY.json`
 (`scripts`, `serializedData`, `prefabs`, `scenes`, `animation`, `textAssets`, `audio`,
 `fonts`, `textures`, `glb`, `outputLevels`): `mapped` cites existing RP IDs, `excluded`
@@ -83,7 +90,8 @@ do not claim this fingerprints every file in the Unity tree. Evidence `kind` is 
 `data`, `asset`, `prefab`, `scene`, `metadata`, or `seed`. Citations in reports use stable
 `RP-001` claim IDs and `E-001 (main:path#symbol)` evidence locators. Reuse IDs across revisions.
 `OBSERVED`/`INFERRED` claims need non-seed evidence; `UNKNOWN`, `PORT_DECISION`, and `SEED`
-stay distinct. `readable_logic` means core paths were read, not that every system was recovered.
+stay distinct. `readable_logic` means core paths were read (Unity bodies or decompiled pseudo-C),
+not that every system was recovered.
 `partial`/`assets_only` require a nonempty unknowns list. Unavailable behavior stays UNKNOWN.
 `analysisDepth` is `full` (default when absent) or `lightweight`; lightweight is invalid while
 any source has readable or mixed code. It narrows effort, never the evidence rules.

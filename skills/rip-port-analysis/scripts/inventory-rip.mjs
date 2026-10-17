@@ -31,6 +31,48 @@ function groupCount(rels, depth) {
   return Object.fromEntries(Object.entries(m).sort((a, b) => b[1] - a[1]));
 }
 
+// AssetRipper's IL2CPP export keeps signatures but replaces bodies with defaults: `{ }`,
+// `return null;`, `x = default; return false;` (out params), `return Kind.None;`, `throw null;`.
+// ILSpy also emits explicit-interface forwarders (`this.MoveNext();`, `return Ns_002EType_002Eget_Current();`).
+const CONST = String.raw`(null|default(\([^()]*\))?|false|true|""|'.'|(\([\w.<>]+\))?-?[\d.]+[fdmlu]*|[A-Za-z_][\w.]*)`;
+const TRIVIAL_STMT = new RegExp(String.raw`^(return(${CONST})?|thrownull|[\w.]+=${CONST}|this=default(\([^()]*\))?|(return)?this\.[\w.]+(\([^;]*\))?|(return)?\w*_002E\w*\(\))$`, 'i');
+const TRIVIAL_EXPR = new RegExp(String.raw`^(${CONST}|thrownull)$`, 'i');
+const trivialBody = b => b.split(';').every((st, i, all) => (i === all.length - 1 ? st === '' : TRIVIAL_STMT.test(st)));
+// Classifies one .cs file: 'dummy' (Dummy class), 'stub' (every member body trivial), 'bodied'
+// (at least one real body) or 'declarations' (no member bodies: enums, plain data types).
+export function classifyScript(text) {
+  if (text.includes(DUMMY)) return 'dummy';
+  const src = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '').replace(/@?"(?:[^"\\\n]|\\.)*"/g, '""').replace(/'(?:[^'\\\n]|\\.)'/g, "'.'");
+  const stack = []; let head = '', bodies = 0, real = 0;
+  const body = []; // text of the member body currently open (stack depth of its start)
+  for (const ch of src) {
+    const top = stack[stack.length - 1];
+    if (ch === '{') {
+      const h = head.trim();
+      let kind = 'inner';
+      if (top !== 'member' && top !== 'inner') {
+        if (/\b(class|struct|interface|enum|namespace|record)\b/.test(h)) kind = 'type';
+        else if (/\)\s*(where\b[^{]*)?$|(^|\s)(get|set|add|remove|init)$|\)\s*:\s*(base|this)\s*\([^{]*\)$/.test(h)) kind = 'member';
+        else kind = 'prop';
+      }
+      if (kind === 'member') body.push('');
+      else if (body.length) body[body.length - 1] += ch;
+      stack.push(kind); head = '';
+    } else if (ch === '}') {
+      const kind = stack.pop();
+      if (kind === 'member') { bodies++; if (!trivialBody(body.pop().replace(/\s+/g, ''))) real++; }
+      else if (body.length) body[body.length - 1] += ch;
+      head = '';
+    } else if (ch === ';' && top !== 'member' && top !== 'inner') {
+      const m = head.match(/=>\s*([\s\S]+)$/);
+      if (m && /\)\s*=>|^\s*[^=(]*=>/.test(head)) { bodies++; if (!TRIVIAL_EXPR.test(m[1].replace(/\s+/g, ''))) real++; }
+      head = '';
+    } else if (body.length) body[body.length - 1] += ch;
+    else head += ch;
+  }
+  return real ? 'bodied' : bodies ? 'stub' : 'declarations';
+}
+
 // Unity YAML: class id of the first object, plus top-level custom fields after m_EditorClassIdentifier.
 function readUnityAsset(file) {
   let text;
@@ -50,12 +92,16 @@ function inventoryUnityProject(root) {
   const assemblies = {};
   for (const f of cs) {
     const r = path.relative(scriptsDir, f), asm = r.startsWith('..') ? '(outside Scripts)' : r.split(path.sep)[0];
-    const a = assemblies[asm] ||= { files: 0, dummy: 0 };
+    const a = assemblies[asm] ||= { files: 0, dummy: 0, stubs: 0, bodied: 0, tooling: 0 };
     a.files++;
-    if (fs.readFileSync(f, 'utf8').includes(DUMMY)) a.dummy++;
+    // AssetRipper adds its own editor patch scripts (real bodies); they are not game code.
+    if (rel(f).split(path.sep).includes('AssetRipperPatches')) { a.tooling++; continue; }
+    const kind = classifyScript(fs.readFileSync(f, 'utf8'));
+    if (kind === 'dummy') a.dummy++; else if (kind === 'stub') a.stubs++; else if (kind === 'bodied') a.bodied++;
   }
   const byAsm = Object.entries(assemblies).sort((a, b) => b[1].files - a[1].files);
-  const dummy = byAsm.reduce((n, [, a]) => n + a.dummy, 0);
+  const sum = k => byAsm.reduce((n, [, a]) => n + a[k], 0);
+  const dummy = sum('dummy'), stubs = sum('stubs'), bodied = sum('bodied'), tooling = sum('tooling');
   const classIds = {}, withFields = [];
   for (const f of files.filter(f => ext(f) === 'asset')) {
     const a = readUnityAsset(f); if (!a) continue;
@@ -68,7 +114,8 @@ function inventoryUnityProject(root) {
   return {
     root, unityVersion,
     scripts: {
-      total: cs.length, dummy, withBodiesOrDeclarations: cs.length - dummy,
+      // stubs: empty-body files (AssetRipper IL2CPP export); declarations: no member bodies at all.
+      total: cs.length, dummy, stubs, bodied, tooling, declarations: cs.length - dummy - stubs - bodied - tooling,
       assemblies: Object.fromEntries(byAsm),
       gameAssemblyCandidates: byAsm.filter(([n]) => !THIRD_PARTY.test(n)).slice(0, 20).map(([n, a]) => ({ name: n, ...a })),
     },
@@ -105,6 +152,24 @@ function inventoryOutput(root) {
   return { root, levels: levels.length, meshes: count(files.filter(f => path.relative(root, f).startsWith('meshes')), ['glb','gltf']), hasManifest: fs.existsSync(path.join(root, 'manifest.json')) };
 }
 
+// il2cpp-decompile output: C# declarations (cpp2il_cs) plus pseudo-C bodies (pseudo_c) of the
+// decompiled assemblies. It recovers bodies the stub scripts lack; codeAvailability still
+// describes the Unity tree only.
+function inventoryDecompiled(root) {
+  let m = {};
+  try { m = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8')); } catch {}
+  const declDir = path.join(root, 'cpp2il_cs/DiffableCs');
+  const assemblies = fs.existsSync(declDir) ? fs.readdirSync(declDir).filter(n => fs.statSync(path.join(declDir, n)).isDirectory()) : [];
+  return {
+    root, abi: m.abi || '', unityVersion: m.unity_version || '', metadataVersion: m.metadata_version ?? null,
+    declarationFiles: count(walk(declDir), ['cs']), declarationAssemblies: assemblies.length,
+    pseudoCFiles: count(walk(path.join(root, 'pseudo_c')), ['c']), pseudoCFunctions: m.functions_decompiled || 0,
+    decompiledAssemblies: m.decompiled_assemblies || [], vtableBase: m.vtable_base ?? null,
+    ghidraProject: fs.existsSync(path.join(root, 'ghidra_project')),
+  };
+}
+const isDecompiled = p => { try { return JSON.parse(fs.readFileSync(path.join(p, 'manifest.json'), 'utf8')).tool === 'il2cpp-decompile'; } catch { return false; } };
+
 function readLog(file) {
   if (!file || !fs.existsSync(file)) return { path: file || '', lines: [], metadataFailure: false };
   const lines = fs.readFileSync(file, 'utf8').split('\n').filter(l => LOG_LINE.test(l)).slice(0, 40).map(l => l.slice(0, 300));
@@ -116,7 +181,7 @@ export function resolveSource(input) {
   const abs = path.resolve(input), isDir = p => p && fs.existsSync(p) && fs.statSync(p).isDirectory();
   let workdir = abs, sp = {};
   const readManifest = dir => { try { return JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8')); } catch { return null; } };
-  if (isDir(path.join(abs, 'Assets')) && isDir(path.join(abs, 'ProjectSettings'))) return { unityProject: abs, primaryContent: '', output: '', log: '' };
+  if (isDir(path.join(abs, 'Assets')) && isDir(path.join(abs, 'ProjectSettings'))) return { unityProject: abs, primaryContent: '', output: '', log: '', decompiled: '' };
   if (path.basename(abs) === 'ripped') workdir = path.dirname(abs);
   else if (readManifest(abs) && !isDir(path.join(abs, 'ripped'))) { sp = readManifest(abs).source_paths || {}; workdir = path.dirname(abs); }
   const ripped = sp.ripped || path.join(workdir, 'ripped');
@@ -124,16 +189,20 @@ export function resolveSource(input) {
   const primaryContent = [sp.primary_content, path.join(ripped, 'PrimaryContent')].find(isDir) || '';
   const output = [path.join(workdir, 'output'), readManifest(abs) ? abs : ''].find(p => isDir(p) && readManifest(p)) || '';
   const log = [path.join(workdir, 'assetripper.log')].find(p => fs.existsSync(p)) || '';
-  return { unityProject, primaryContent, output, log };
+  const outSp = output ? readManifest(output)?.source_paths || {} : {};
+  const decompiled = [sp.decompiled, outSp.decompiled, path.join(workdir, 'decompiled')].find(p => isDir(p) && isDecompiled(p)) || '';
+  return { unityProject, primaryContent, output, log, decompiled };
 }
 
 export function buildInventory(paths) {
   const up = paths.unityProject ? inventoryUnityProject(paths.unityProject) : null;
   const pc = paths.primaryContent ? inventoryPrimaryContent(paths.primaryContent) : null;
   const out = paths.output ? inventoryOutput(paths.output) : null;
+  const dec = paths.decompiled ? inventoryDecompiled(paths.decompiled) : null;
   const log = readLog(paths.log);
   const s = up?.scripts;
-  const codeAvailability = !s?.total ? 'none' : s.dummy === s.total ? 'stubs' : s.dummy ? 'mixed' : 'readable';
+  // Bodies decide: no real body anywhere → stubs; declaration-only files (enums, data) are neutral.
+  const codeAvailability = !s?.total ? 'none' : !s.bodied ? 'stubs' : (s.dummy + s.stubs) ? 'mixed' : 'readable';
   // Nonzero counts that the analysis must map or exclude. Content comes from UnityProject; GLB from PrimaryContent.
   const counts = {
     scripts: s?.total || 0, serializedData: up?.serializedData.withFields || 0, prefabs: up?.prefabs || 0,
@@ -142,23 +211,25 @@ export function buildInventory(paths) {
     fonts: up?.fonts || pc?.fonts || 0, textures: up?.textures || pc?.textures || 0,
     glb: pc?.glb || 0, outputLevels: out?.levels || 0,
   };
-  const floor = !up ? 'assets_only' : (s.total > s.dummy ? 'readable_logic_or_partial' : 'partial');
-  // Readable bodies earn the full forensic pass; stubs/none only support structure, assets and unknowns.
-  const recommendedDepth = ['readable', 'mixed'].includes(codeAvailability) ? 'full' : 'lightweight';
-  return { counts, codeAvailability, coverageFloor: floor, recommendedDepth, metadataFailure: log.metadataFailure, unityProject: up, primaryContent: pc, output: out, log };
+  const floor = !up ? 'assets_only' : (s.bodied ? 'readable_logic_or_partial' : 'partial');
+  // Readable bodies (Unity scripts or decompiled pseudo-C) earn the full forensic pass; stubs/none
+  // only support structure, assets and unknowns.
+  const decompiledLogic = (dec?.pseudoCFunctions || 0) > 0;
+  const recommendedDepth = ['readable', 'mixed'].includes(codeAvailability) || decompiledLogic ? 'full' : 'lightweight';
+  return { counts, codeAvailability, decompiledLogic, coverageFloor: decompiledLogic ? 'readable_logic_or_partial' : floor, recommendedDepth, metadataFailure: log.metadataFailure, unityProject: up, primaryContent: pc, output: out, decompiled: dec, log };
 }
 
-export const summarize = inv => ({ counts: inv.counts, codeAvailability: inv.codeAvailability });
+export const summarize = inv => ({ counts: inv.counts, codeAvailability: inv.codeAvailability, decompiledLogic: inv.decompiledLogic });
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const argv = process.argv.slice(2), opt = k => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
   const outFile = opt('--out'), id = opt('--id') || 'main', input = opt('--source');
   if (!outFile || (!input && !opt('--unity-project'))) {
-    console.error('usage: inventory-rip.mjs --out <analysis>/RIP_INVENTORY.json [--id main] (--source <workdir|output|ripped|ExportedProject> | --unity-project <dir> [--primary-content <dir>] [--output <dir>] [--log <file>])');
+    console.error('usage: inventory-rip.mjs --out <analysis>/RIP_INVENTORY.json [--id main] (--source <workdir|output|ripped|ExportedProject> | --unity-project <dir> [--primary-content <dir>] [--output <dir>] [--log <file>] [--decompiled <dir>])');
     process.exitCode = 2;
   } else {
     const resolved = input ? resolveSource(input) : {};
-    const paths = { unityProject: opt('--unity-project') ?? resolved.unityProject, primaryContent: opt('--primary-content') ?? resolved.primaryContent, output: opt('--output') ?? resolved.output, log: opt('--log') ?? resolved.log };
+    const paths = { unityProject: opt('--unity-project') ?? resolved.unityProject, primaryContent: opt('--primary-content') ?? resolved.primaryContent, output: opt('--output') ?? resolved.output, log: opt('--log') ?? resolved.log, decompiled: opt('--decompiled') ?? resolved.decompiled ?? '' };
     const inv = buildInventory(paths);
     let doc = { schemaVersion: 1, sources: {} };
     try { doc = JSON.parse(fs.readFileSync(outFile, 'utf8')); } catch {}
