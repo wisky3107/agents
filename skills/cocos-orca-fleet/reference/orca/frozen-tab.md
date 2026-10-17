@@ -19,7 +19,11 @@ visible.
    was ready and then starves mid-run (another preview became the visible pane, the Editor reopened)
    makes plain check FAILs, which never switch. Pilot 24 (2026-10-16, two lanes = two previews in one
    Orca window): S38's full run on orca read 20 reds and the post-merge verify of S39 19, with empty-page
-   reads (sprites 0, requested false); the same code on chrome had only the 7 known reds.
+   reads (sprites 0, requested false); the same code on chrome had only the 7 known reds. Since agent-skills
+   01a8507 (in the templates; a project gets it with `/update-skills`) run-smoke also catches that on the Orca
+   channel: after a check that does not PASS it looks whether the page still draws frames; a starved tab is
+   refocused and the check rerun, else the run ends as an infra error `orca tab starved mid-run`, which
+   `--channel auto` reruns on chrome. Agents still run chrome.
    A report with no `channel` field comes from a project whose run-smoke predates the fallback
    (it ignores the flag): run `/update-skills`, or run the same check files by hand in Chrome with the
    snippet from the template's smoke-test SKILL.md §Chrome headless fallback, and save the JSON.

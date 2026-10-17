@@ -138,8 +138,11 @@ Chia nhỏ, mỗi bước merge riêng, `max_parallel=1` giữ nguyên hành vi 
   (4e02173), cổng preview từ `url` + SKIP→WARN (32d96e7), verifier dùng run-args (69f9ed1), lane đã merge verify ở main
   + res-guard giữ main khi lane merge (8c6031f, sau khi res-guard đóng Creator main giữa verify S43).
 - **Chưa kiểm trên máy thật:** đặt chỗ theo cặp (không còn cặp nào bắt đầu sau lần restart), log "still waiting".
-- **Đề xuất còn mở:** E2 — run-smoke dò tab ẩn / rAF trước mỗi check (agent-skills + template); `assets/.meta` (meta
-  thư mục Creator tự sinh) không làm worktree "dirty"; đồng bộ `--channel chrome` sang rule của template / agent-skills.
+- **Ba đề xuất cuối xong (2026-10-17):** E2 — run-smoke đếm frame, sau check không PASS dò tab còn vẽ không; tab đói →
+  focus lại tab của chính lần chạy và chạy lại check, vẫn đói → lỗi hạ tầng `orca tab starved mid-run` (auto → chrome)
+  (agent-skills 01a8507; cc-game-template f2dec2c, cc-playable-template 9c59c40, cc4-game-template 6eab328; dự án
+  nhận qua `/update-skills`); `.meta` chưa track không có asset (vd. `assets/.meta`) không giữ worktree (a085d2e);
+  rule 60, smoke-test SKILL, preview playbook: agent chạy mọi smoke bằng `--channel chrome` (cùng các commit trên).
 - Lỗi nhỏ thấy khi làm M5c: `cancel` gửi `current_slice: ''` cho `writeRelease` (khoá đúng là `currentSlice`) nên
   không xoá `current_slice` — vô hại (lần chọn sau ghi đè).
 
