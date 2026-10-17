@@ -266,7 +266,8 @@ Do:
    `node ~/.agents/skills/cocos-playbook/kits/kit.mjs check . <feature folder>` prints. Omit when empty; reviewer
    supplies validation in review.md. This evidence file is an allowed handoff output.
    Schema: cocos-playbook references/workflow.md §Capture. If `~/.orca-memory/bin/orca-memory`
-   exists, run it as `capture --validate-only <file>` and fix every error it prints.
+   exists, run it as `capture --validate-only <file>` and fix every error it prints. Any other
+   shape ({type,text}, {topic,note}) FAILs check-slice `learning` and never reaches memory.
    Write limitations you observed; leave unknown ones out rather than guessing.
 
 Never: Funplay, editor lock, .scene/.prefab/.meta, art_paths, refresh_assets, starting preview.

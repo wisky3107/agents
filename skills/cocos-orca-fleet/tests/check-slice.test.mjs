@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { specCommands, slicePaths, outOfScope, nanUnsafe, es5Errors, sliceFacts, evidenceRe, section, classifyErrors, assumptionNotes, errorKey, splitAgainstBaseline, renameMap, defaultBase, smokeVerdict, smokePort, previewUrlPort, parseKnownRed, reusableSmoke, smokeArgs, smokeEstimateMs, smokeGroups, smokeGate, sceneFindings, textWidth, splitScene, headerDelayMs, measuredSmokeMs } from '../scripts/check-slice.mjs';
+import { specCommands, slicePaths, outOfScope, nanUnsafe, es5Errors, sliceFacts, evidenceRe, section, classifyErrors, assumptionNotes, errorKey, splitAgainstBaseline, renameMap, defaultBase, smokeVerdict, smokePort, previewUrlPort, parseKnownRed, reusableSmoke, smokeArgs, smokeEstimateMs, smokeGroups, smokeGate, sceneFindings, textWidth, splitScene, headerDelayMs, measuredSmokeMs, candidateProblems } from '../scripts/check-slice.mjs';
 
 const SCRIPT = new URL('../scripts/check-slice.mjs', import.meta.url).pathname;
 
@@ -769,4 +769,41 @@ console.log(JSON.stringify({ checks: files.map((f) => ({ id: f.replace(/^\\d{3}~
   assert.deepEqual(pages, ['000~S01-boot.check.js,001~S12-a.check.js'], 'this slice\'s chain ran first');
   assert.match(r.stdout, /WARN smoke: 4 checks, 0 red \(0 known\), 1 new\/changed run on a fresh page/);
   assert.match(r.stdout, /\n  2 new\/changed check\(s\) not run on a fresh page \(the smoke budget or 16 pages ran out\): S05-a, S06-a\n/);
+});
+
+test('learning: learning-candidates.json follows the playbook schema (capytal S39 {topic, note}, S42 {type, text})', () => {
+  const ok = { id: 's12-x', kind: 'failure_fix', topic: 't', finding: 'f', reuse_value: 'r', evidence: ['integration-notes.md'] };
+  assert.deepEqual(candidateProblems([ok]), []);
+  assert.deepEqual(candidateProblems({}), ['not an array']);
+  assert.deepEqual(candidateProblems([{ type: 'pitfall', text: 'x' }]), ['[0]: id required', '[0]: kind must be failure_fix|successful_pattern',
+    '[0]: topic required', '[0]: finding required', '[0]: reuse_value required', '[0]: evidence must be a non-empty list of paths']);
+
+  const { d, g } = repo();
+  fs.writeFileSync(path.join(d, 'slices/S12-x.md'), '---\nid: S12\npaths:\n  code: [src/a.js]\n---\n');
+  g('add', '-A'); g('commit', '-qm', 'slice');
+  const run = (bin) => spawnSync(process.execPath, [SCRIPT, '--root', d, '--slice', 'slices/S12-x.md', '--only', 'learning'],
+    { encoding: 'utf8', env: { ...process.env, ORCA_MEMORY_BIN: bin, CHECK_SLICE_CACHE_DIR: path.join(d, '.cache-baseline') } });
+  const none = path.join(d, 'no-orca-memory');
+  assert.match(run(none).stdout, /SKIP learning: no learning-candidates\.json/);
+
+  const ev = path.join(d, '.cursor/evidence/tasks/T-S12/evidence');
+  fs.mkdirSync(ev, { recursive: true });
+  fs.writeFileSync(path.join(ev, 'learning-candidates.json'), JSON.stringify([{ type: 'pitfall', text: 'port 7457 is another worktree' }]));
+  let r = run(none);
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /FAIL learning: 6 problem\(s\)[^\n]*director triage[^\n]*\n  \.cursor\/evidence\/tasks\/T-S12\/evidence\/learning-candidates\.json: \[0\]: id required/);
+
+  fs.writeFileSync(path.join(ev, 'learning-candidates.json'), JSON.stringify([ok]));
+  r = run(none);
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, /PASS learning: 1 candidate\(s\) valid \(playbook schema\)/);
+
+  // the orca-memory validator, when present, is the authority: its errors fail, its warnings warn
+  const bin = path.join(d, 'fake-orca-memory');
+  fs.writeFileSync(bin, '#!/bin/sh\necho \'{"errors":[],"warnings":["[0] : limitations not recorded (kept unknown)"],"count":1}\'\n', { mode: 0o755 });
+  r = run(bin);
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, /WARN learning: 1 candidate\(s\) valid \(orca-memory capture --validate-only\), 1 warning\(s\)[^\n]*\n  [^\n]*limitations not recorded/);
+  fs.writeFileSync(bin, '#!/bin/sh\necho \'{"errors":["[0]: evidence must be a non-empty list of paths"],"warnings":[],"count":1}\'\nexit 1\n', { mode: 0o755 });
+  assert.match(run(bin).stdout, /FAIL learning: 1 problem\(s\)[^\n]*\n  [^\n]*evidence must be a non-empty list/);
 });

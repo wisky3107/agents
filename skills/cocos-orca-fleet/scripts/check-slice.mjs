@@ -53,6 +53,13 @@
  *               gate, or `none`) — a gap the writer noted and shipped anyway (S08 F4);
  *               `## negative controls` names every new or changed smoke check and spec with the
  *               broken state it went red on — vacuous checks passed (S04 F3, S11 F-04).
+ *   learning    the slice's learning-candidates.json (task evidence) against the playbook schema
+ *               (cocos-playbook references/workflow.md "Capture"): an array of {id, kind failure_fix |
+ *               successful_pattern, topic, finding, reuse_value, evidence [paths], …}. Checked with
+ *               `orca-memory capture --validate-only` when ~/.orca-memory/bin/orca-memory (or $ORCA_MEMORY_BIN)
+ *               is there, else with the same required fields here. A row without an id never becomes a memory
+ *               record: it waits in director triage (capytal S39 `{topic, note}`, S42 `{type, text}`).
+ *               No file → SKIP (an empty finding list is omitted).
  *   assumptions a changed .ts/.js/.mjs/.json file still holds a "tune on the preview" note: numbers authored as a
  *               guess and never tuned shipped wheels 8-26 px off their arches (cc-car-service-kids S02-S09).
  *               WARN: measure the value, or file a followup.
@@ -99,7 +106,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 
-const CHECKS = ['tsc', 'es5', 'specs', 'scope', 'smoke-lint', 'evidence', 'notes', 'assumptions', 'scene', 'smoke'];
+const CHECKS = ['tsc', 'es5', 'specs', 'scope', 'smoke-lint', 'evidence', 'notes', 'learning', 'assumptions', 'scene', 'smoke'];
 // always inside a slice: tests, evidence, producer state, docs
 const ALWAYS = ['tests/**', 'scripts/smoke/checks/**', 'scripts/smoke/known-red.json', '.cursor/evidence/**', '.cursor/producer*', 'docs/**', 'slices/**',
   '*.md', 'producer-state.json', 'producer-log.md'];
@@ -539,6 +546,62 @@ function checkEvidence(root, o, changed) {
   if (missing.length) return { status: 'FAIL', note: `${missing.length} named evidence path(s) missing — produce them or list them under ## evidence deferred with a reason`, lines };
   if (stale.length) return { status: 'WARN', note: `${stale.length} evidence file(s) older than the last code/data change`, lines };
   return { status: 'PASS', note: `${evidence.length} named path(s) present` };
+}
+
+const CANDIDATE_KINDS = ['failure_fix', 'successful_pattern'];
+
+/** Playbook-schema problems in a parsed learning-candidates.json; [] when it is valid. */
+export function candidateProblems(data) {
+  if (!Array.isArray(data)) return ['not an array'];
+  const out = [];
+  data.forEach((c, i) => {
+    if (!c || typeof c !== 'object' || Array.isArray(c)) { out.push(`[${i}]: not an object`); return; }
+    const str = (k) => typeof c[k] === 'string' && c[k].trim();
+    if (!str('id')) out.push(`[${i}]: id required`);
+    if (!CANDIDATE_KINDS.includes(c.kind)) out.push(`[${i}]: kind must be ${CANDIDATE_KINDS.join('|')}`);
+    for (const k of ['topic', 'finding', 'reuse_value']) if (!str(k)) out.push(`[${i}]: ${k} required`);
+    if (!Array.isArray(c.evidence) || !c.evidence.length || !c.evidence.every((e) => typeof e === 'string' && e)) out.push(`[${i}]: evidence must be a non-empty list of paths`);
+  });
+  return out;
+}
+
+const orcaMemoryBin = () => {
+  const f = process.env.ORCA_MEMORY_BIN || path.join(os.homedir(), '.orca-memory', 'bin', 'orca-memory');
+  try { fs.accessSync(f, fs.constants.X_OK); return f; } catch { return null; }
+};
+
+function checkLearning(root, o) {
+  const src = readSlice(root, o.slice);
+  if (!src) return { status: 'SKIP', note: o.slice ? `${o.slice} not found` : 'no --slice' };
+  const { id } = sliceFacts(src);
+  if (!id) return { status: 'SKIP', note: 'the slice has no id' };
+  const task = `.cursor/evidence/tasks/T-${id}`;
+  const files = [`${task}/evidence/learning-candidates.json`, `${task}/learning-candidates.json`].filter((f) => fs.existsSync(path.join(root, f)));
+  if (!files.length) return { status: 'SKIP', note: 'no learning-candidates.json (omitted when there is no reusable finding)' };
+  const fix = 'fix to the playbook schema (cocos-playbook references/workflow.md "Capture"): rows without an id wait in director triage';
+  const bin = orcaMemoryBin();
+  const lines = [], warn = [];
+  let count = 0;
+  for (const f of files) {
+    const abs = path.join(root, f);
+    let data;
+    try { data = JSON.parse(fs.readFileSync(abs, 'utf8')); } catch (e) { lines.push(`${f}: not JSON (${e.message})`); continue; }
+    if (Array.isArray(data)) count += data.length;
+    let errors = null;
+    if (bin) {
+      const r = sh(bin, ['capture', '--validate-only', abs], root, 60000);
+      try {
+        const j = JSON.parse(r.stdout);
+        errors = j.errors || [];
+        warn.push(...(j.warnings || []).map((w) => `${f}: ${w}`));
+      } catch { /* validator unusable: fall back to the schema here */ }
+    }
+    for (const e of errors ?? candidateProblems(data)) lines.push(`${f}: ${e}`);
+  }
+  const by = bin ? 'orca-memory capture --validate-only' : 'playbook schema';
+  if (lines.length) return { status: 'FAIL', note: `${lines.length} problem(s) — ${fix}`, lines: [...lines.slice(0, 30), ...(lines.length > 30 ? [`… (${lines.length - 30} more)`] : [])] };
+  if (warn.length) return { status: 'WARN', note: `${count} candidate(s) valid (${by}), ${warn.length} warning(s)`, lines: warn.slice(0, 20) };
+  return { status: 'PASS', note: `${count} candidate(s) valid (${by})` };
 }
 
 const DISPOSITION = /\b(fixed|none|followups?|F-\d+|director|D-?\d+|gate_\w+|deferred)\b/i;
@@ -1013,6 +1076,7 @@ export function main(argv) {
     'smoke-lint': () => checkSmokeLint(root, changed, o.allChecks),
     evidence: () => checkEvidence(root, o, changed),
     notes: () => checkNotes(root, o, changed),
+    learning: () => checkLearning(root, o),
     assumptions: () => checkAssumptions(root, changed),
     scene: () => checkScene(root, changed, o.allChecks, base),
     smoke: () => checkSmoke(root, o, changed, base),
